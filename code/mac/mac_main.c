@@ -59,15 +59,31 @@ void *Sys_GetBotAIAPI (void *parms) {
 	return NULL;
 }
 
-void dllEntry( int (*syscallptr)( int arg,... ) );
-int vmMain( int command, ... );
+
+
+extern int Game_vmMain( int command, ... );
+extern int CGame_vmMain( int command, ... );
+extern int UI_vmMain( int command, ... );
+
+extern void Game_dllEntry( int (*syscallptr)( int arg,... ) );
+extern void CGame_dllEntry( int (*syscallptr)( int arg,... ) );
+extern void UI_dllEntry( int (*syscallptr)( int arg,... ) );
 
 void *Sys_LoadDll( const char *name, int (**entryPoint)(int, ...),
 	int (*systemCalls)(int, ...) ) {
 	
-	dllEntry( systemCalls );
-	
-	*entryPoint = vmMain;
+	if ( !Q_stricmp( name, "game" ) ) {
+		Game_dllEntry( systemCalls );
+		*entryPoint = Game_vmMain;
+	} else if ( !Q_stricmp( name, "cgame" ) ) {
+		CGame_dllEntry( systemCalls );
+		*entryPoint = CGame_vmMain;
+	} else if ( !Q_stricmp( name, "ui" ) ) {
+		UI_dllEntry( systemCalls );
+		*entryPoint = UI_vmMain;
+	} else {
+		return NULL;
+	}
 	
 	return (void *)1;
 }

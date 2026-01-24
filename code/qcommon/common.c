@@ -29,7 +29,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #else
 #if defined(MACOS_X)
 #include <netinet/in.h>
-#else
+#elif !defined(__MACOS__)
 #include <winsock.h>
 #endif
 #endif
