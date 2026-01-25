@@ -97,31 +97,56 @@ if [[ "$1" == "package" ]]; then
         # Let's clean up extraction but maybe keep installer? No, clean all temp at end.
     fi
 
-    # 3. Create HFS Image
-    echo "Creating HFS Disk Image..."
+    # 3. Create HFS Image (Native HFS Volume)
+    echo "Creating Native HFS Disk Image..."
     IMAGE_NAME="$RELEASE_ROOT/Quake3_Install.img"
-    MAPPING_FILE="$TEMP_DIR/hfs_mapping.txt"
     
-    # Create a mapping file for HFS creator/types
-    # Format: Extension XLate Creator Type Comment
-    cat > "$MAPPING_FILE" <<EOF
-.pk3   Raw   Q3A  Stak "Quake 3 Data"
-.cfg   Ascii Q3A  TEXT "Quake 3 Config"
-Quake3 Raw   Q3A  APPL "Quake 3 App"
-EOF
+    # Calculate required size (in KB) + 20MB buffer for HFS overhead
+    CONTENT_SIZE=$(du -sk "$CONTENT_DIR" | awk '{print $1}')
+    IMAGE_SIZE_KB=$((CONTENT_SIZE + 20480))
     
-    if command -v genisoimage &> /dev/null; then
-        MKISOFS="genisoimage"
-    elif command -v mkisofs &> /dev/null; then
-        MKISOFS="mkisofs"
-    else
-        echo "Error: genisoimage/mkisofs not found. Cannot create HFS image."
-        echo "Install cdrkit or genisoimage package."
+    echo "Allocating ${IMAGE_SIZE_KB}KB for HFS volume..."
+    dd if=/dev/zero of="$IMAGE_NAME" bs=1024 count=$IMAGE_SIZE_KB status=none
+    
+    if ! command -v hformat &> /dev/null; then
+        echo "Error: hfsutils not found. Cannot create native HFS image."
+        echo "Please install 'hfsutils' (e.g., sudo apt-get install hfsutils)."
         exit 1
     fi
     
-    # -part generates an HFS partition table, crucial for Disk Copy/Mac OS 9 to recognize the volume structure.
-    $MKISOFS -hfs -part -map "$MAPPING_FILE" -o "$IMAGE_NAME" -V "Quake 3 Arena" "$CONTENT_DIR"
+    # Format as HFS
+    hformat -l "Quake 3 Arena" "$IMAGE_NAME" > /dev/null
+    
+    # Mount internal volume for hfsutils operations
+    hmount "$IMAGE_NAME" > /dev/null
+    
+    # Recursive copy function for hfsutils using absolute HFS paths
+    hcopy_recursive() {
+        local local_dir="$1"
+        local hfs_base="$2"
+        for item in "$local_dir"/*; do
+            if [ -d "$item" ]; then
+                local folder_name=$(basename "$item")
+                hmkdir "${hfs_base}${folder_name}" > /dev/null
+                hcopy_recursive "$item" "${hfs_base}${folder_name}:"
+            else
+                local file_name=$(basename "$item")
+                hcopy "$item" "${hfs_base}${file_name}" > /dev/null
+            fi
+        done
+    }
+    
+    echo "Copying files to HFS volume..."
+    cd "$CONTENT_DIR"
+    hcopy_recursive "." ":"
+    cd - > /dev/null
+    
+    # Set Metadata on the application binary
+    echo "Setting Type/Creator metadata..."
+    hattrib -t APPL -c 'Q3A ' ":Quake 3 Arena:Quake3" > /dev/null
+    
+    # Unmount
+    humount > /dev/null
     
     echo "HFS Image created: $IMAGE_NAME"
     
