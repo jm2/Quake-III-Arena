@@ -31,7 +31,7 @@ file(GLOB COMMON_SRCS code/qcommon/*.c)
 file(GLOB SERVER_SRCS code/server/*.c)
 file(GLOB CLIENT_SRCS code/client/*.c)
 file(GLOB RENDERER_SRCS code/renderer/*.c)
-file(GLOB MAC_SRCS code/mac/*.c)
+file(GLOB MAC_SRCS code/mac/*.c code/mac/*.r)
 file(GLOB BOTLIB_SRCS code/botlib/*.c)
 file(GLOB JPEG_SRCS code/jpeg-6/*.c)
 file(GLOB NULL_SRCS code/null/*.c) # Might need null implementations for some things?
@@ -86,6 +86,31 @@ target_compile_definitions(ui_obj PRIVATE
     -DUI_MODULE
 )
 
+# Mission Pack (Team Arena) Modules
+add_library(game_mp_obj OBJECT ${GAME_SRCS})
+target_compile_definitions(game_mp_obj PRIVATE 
+    -DvmMain=Game_vmMain 
+    -DdllEntry=Game_dllEntry
+    -DGAME_MODULE
+    -DMISSIONPACK
+)
+
+add_library(cgame_mp_obj OBJECT ${CGAME_SRCS})
+target_compile_definitions(cgame_mp_obj PRIVATE 
+    -DvmMain=CGame_vmMain 
+    -DdllEntry=CGame_dllEntry
+    -DCGAME_MODULE
+    -DMISSIONPACK
+)
+
+add_library(ui_mp_obj OBJECT ${UI_SRCS})
+target_compile_definitions(ui_mp_obj PRIVATE 
+    -DvmMain=UI_vmMain 
+    -DdllEntry=UI_dllEntry
+    -DUI_MODULE
+    -DMISSIONPACK
+)
+
 # Main Executable
 add_executable(Quake3
     ${COMMON_SRCS}
@@ -98,6 +123,20 @@ add_executable(Quake3
     $<TARGET_OBJECTS:game_obj>
     $<TARGET_OBJECTS:cgame_obj>
     $<TARGET_OBJECTS:ui_obj>
+)
+
+# Team Arena Executable
+add_executable(Quake3_TeamArena
+    ${COMMON_SRCS}
+    ${SERVER_SRCS}
+    ${CLIENT_SRCS}
+    ${RENDERER_SRCS}
+    ${MAC_SRCS}
+    ${BOTLIB_SRCS}
+    ${JPEG_SRCS}
+    $<TARGET_OBJECTS:game_mp_obj>
+    $<TARGET_OBJECTS:cgame_mp_obj>
+    $<TARGET_OBJECTS:ui_mp_obj>
 )
 
 # Link libraries
@@ -129,12 +168,28 @@ target_link_libraries(Quake3 PUBLIC
     "${OGL_LIB_DIR}/libOpenGLLibraryStub.a"
 )
 
+target_link_libraries(Quake3_TeamArena PUBLIC
+    -lm
+    -lInterfaceLib
+    -lOpenTransportLib
+    -lOpenTransportAppPPC
+    -lOpenTptUtilsAppPPC
+    -lOpenTptInternetLib
+    -lCarbonLib
+    -lInputSprocketLib
+    -lDrawSprocketLib
+    "${OGL_LIB_DIR}/libOpenGLLibraryStub.a"
+)
+
 if(ENABLE_SOUND)
     target_link_libraries(Quake3 PUBLIC "${MPW_LIB_DIR}/SoundLib")
+    target_link_libraries(Quake3_TeamArena PUBLIC "${MPW_LIB_DIR}/SoundLib")
 endif()
 
 # Output name
 set_target_properties(Quake3 PROPERTIES OUTPUT_NAME "Quake3")
+set_target_properties(Quake3_TeamArena PROPERTIES OUTPUT_NAME "Quake3_TeamArena")
+
 
 # Bundle creation (Retro68 specific helpers if available, or just the bin)
 # We might wan explicitly set the CREATOR and TYPE

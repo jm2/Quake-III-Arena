@@ -57,109 +57,160 @@ if [[ "$1" == "package" ]]; then
         exit 1
     fi
     
-    # 2. Asset Retrieval
-    echo "Checking for assets..."
-    # Search for pak0.pk3 anywhere in the current directory (max depth 3 to avoid slow scan)
-    # Exclude release_mac to avoid finding our own copies from previous runs
-    LOCAL_PAK=$(find . -maxdepth 3 -path "./$RELEASE_ROOT" -prune -o -name "pak0.pk3" -print | head -n 1)
+    # 1. Asset Retrieval Strategy
+    echo "Checking for Game Assets..."
     
-    if [ -n "$LOCAL_PAK" ]; then
-        echo "Found local pak0.pk3 at $LOCAL_PAK"
-        cp "$LOCAL_PAK" "$CONTENT_DIR/Quake 3 Arena/baseq3/"
+    # Check for baseq3/pak0.pk3 (look specifically for 'pak0.pk3' inside a 'baseq3' folder)
+    PAK0_PATH=$(find . -name "*/baseq3/pak0.pk3" -not -path "*/release_mac/*" -print -quit)
+    # Check for missionpack/pak0.pk3 (look specifically for 'pak0.pk3' inside a 'missionpack' folder)
+    MP_PAK0_PATH=$(find . -path "*/missionpack/pak0.pk3" -not -path "*/release_mac/*" -print -quit)
+    
+    if [ -n "$PAK0_PATH" ]; then
+        echo "Found Base Game Data: $PAK0_PATH"
+        cp "$PAK0_PATH" "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/"
+        
+        if [ -n "$MP_PAK0_PATH" ]; then
+             echo "Found Team Arena Data: $MP_PAK0_PATH"
+             mkdir -p "$RELEASE_ROOT/content/Quake 3 Arena/missionpack"
+             cp "$MP_PAK0_PATH" "$RELEASE_ROOT/content/Quake 3 Arena/missionpack/"
+        fi
+        
+        # Check for Updates
+        # Download if pak1 is missing in baseq3 OR if we have missionpack but missing its updates
+        NEED_UPDATE=0
+        if [ ! -f "pak1.pk3" ] && [ ! -f "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/pak1.pk3" ]; then
+            NEED_UPDATE=1
+        fi
+        if [ -n "$MP_PAK0_PATH" ] && [ ! -f "missionpack/pak1.pk3" ] && [ ! -f "$RELEASE_ROOT/content/Quake 3 Arena/missionpack/pak1.pk3" ]; then
+             NEED_UPDATE=1
+        fi
+
+        if [ "$NEED_UPDATE" -eq 1 ]; then
+            echo "Downloading Updates (BaseQ3 / MissionPack)..."
+            
+            # User provided URL for latest pk3s
+            PR_URL="https://files.ioquake3.org/quake3-latest-pk3s.zip"
+            PR_FILE="quake3-latest-pk3s.zip"
+            
+            wget -q --show-progress "$PR_URL" -O "$TEMP_DIR/$PR_FILE"
+            
+            if [ -f "$TEMP_DIR/$PR_FILE" ]; then
+                echo "Extracting Updates..."
+                # Extract ZIP
+                unzip -q -o "$TEMP_DIR/$PR_FILE" -d "$TEMP_DIR/pr_extract"
+                
+                echo "Copying BaseQ3 Updates..."
+                find "$TEMP_DIR/pr_extract" -path "*/baseq3/pak*.pk3" -exec cp {} "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/" \;
+                
+                if [ -n "$MP_PAK0_PATH" ]; then
+                    echo "Copying MissionPack Updates..."
+                    find "$TEMP_DIR/pr_extract" -path "*/missionpack/pak*.pk3" -exec cp {} "$RELEASE_ROOT/content/Quake 3 Arena/missionpack/" \;
+                fi
+            else
+                echo "Warning: Failed to download Updates."
+            fi
+        fi
     else
-        echo "Local pak0.pk3 not found in hierarchy."
-        DEMO_INSTALLER="$TEMP_DIR/linuxq3ademo.sh"
-        if [ ! -f "$DEMO_INSTALLER" ]; then
-            echo "Downloading Quake 3 Demo assets..."
-            # GWDG Mirror - Verified Working
-            wget "https://ftp.gwdg.de/pub/misc/ftp.idsoftware.com/idstuff/quake3/linux/linuxq3ademo-1.11-6.x86.gz.sh" -O "$DEMO_INSTALLER"
-        fi
+        echo "Local pak0.pk3 (Full Game) not found. Falling back to Demo assets..."
+        DEMO_URL="ftp://ftp.gwdg.de/pub/linux/q3a/linuxq3ademo-1.11-6.x86.gz.sh"
+        DEMO_FILE="$TEMP_DIR/linuxq3ademo.sh"
         
-        echo "Extracting Demo Assets..."
-        # Extract pak0.pk3 from the shell script installer
-        # The data starts after line 165
-        EXTRACT_DIR="$TEMP_DIR/extracted"
-        mkdir -p "$EXTRACT_DIR"
-        tail -n +165 "$DEMO_INSTALLER" | tar xz -C "$EXTRACT_DIR"
-        
-        # Locate pak0.pk3
-        DEMO_PAK=$(find "$EXTRACT_DIR" -name "pak0.pk3" | head -n 1)
-        if [ -n "$DEMO_PAK" ]; then
-             cp "$DEMO_PAK" "$CONTENT_DIR/Quake 3 Arena/baseq3/"
-             echo "Demo assets packaged."
+        echo "Downloading Quake 3 Arena Demo..."
+        if command -v wget &> /dev/null; then
+            wget -q --show-progress "$DEMO_URL" -O "$DEMO_FILE"
         else
-             echo "Error: Could not find pak0.pk3 in demo installer."
-             chmod -R u+w "$TEMP_DIR" # Fix permissions before delete
-             rm -rf "$TEMP_DIR"
-             exit 1
+            echo "Error: wget not found. Cannot download demo assets."
+            exit 1
         fi
-        # We keep the temp dir for a moment until done, or clean up now.
-        # Let's clean up extraction but maybe keep installer? No, clean all temp at end.
+        
+        if [ -f "$DEMO_FILE" ]; then
+            echo "Extracting Demo Assets..."
+            chmod +x "$DEMO_FILE"
+            "$DEMO_FILE" --target "$TEMP_DIR/demo_extract" --noexec > /dev/null
+            
+            if [ -f "$TEMP_DIR/demo_extract/demoq3/pak0.pk3" ]; then
+                echo "Found Demo pak0.pk3"
+                cp "$TEMP_DIR/demo_extract/demoq3/pak0.pk3" "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/"
+            else
+                echo "Error: Could not extract demo pak0.pk3."
+                exit 1
+            fi
+        else
+            echo "Error: Demo download failed."
+            exit 1
+        fi
     fi
 
-    # 3. Create HFS Image (Native HFS Volume)
-    echo "Creating Native HFS Disk Image..."
+    # Manually compile Mac Resources
+    echo "Compiling Mac Resources..."
+    tools/Retro68-build/bin/Rez -o build_mac/Quake3.rsrc -I tools/Retro68-build/RIncludes code/mac/mac_resources.r
+    
+    # 3. Create HFS/ISO Hybrid Image
+    # We revert to genisoimage as hfsutils wrappers caused mounting errors (-8819/-8816).
+    # genisoimage produces a valid hybrid (ISOf) that Disk Copy 6.5 can read.
+    echo "Creating HFS/ISO Hybrid Image..."
     IMAGE_NAME="$RELEASE_ROOT/Quake3_Install.img"
+    MAPPING_FILE="$TEMP_DIR/hfs_mapping.txt"
     
-    # Calculate required size (in KB) + 20MB buffer for HFS overhead
-    CONTENT_SIZE=$(du -sk "$CONTENT_DIR" | awk '{print $1}')
-    IMAGE_SIZE_KB=$((CONTENT_SIZE + 20480))
+    # Create a mapping file for HFS creator/types
+    cat > "$MAPPING_FILE" <<EOF
+.pk3   Raw   Q3A  Stak "Quake 3 Data"
+.cfg   Ascii Q3A  TEXT "Quake 3 Config"
+Quake3 Raw   Q3A  APPL "Quake 3 App"
+Quake3_TeamArena Raw Q3A APPL "Quake 3 Team Arena"
+EOF
     
-    echo "Allocating ${IMAGE_SIZE_KB}KB for HFS volume..."
-    dd if=/dev/zero of="$IMAGE_NAME" bs=1024 count=$IMAGE_SIZE_KB status=none
-    
-    if ! command -v hformat &> /dev/null; then
-        echo "Error: hfsutils not found. Cannot create native HFS image."
-        echo "Please install 'hfsutils' (e.g., sudo apt-get install hfsutils)."
+    if command -v genisoimage &> /dev/null; then
+        MKISOFS="genisoimage"
+    elif command -v mkisofs &> /dev/null; then
+        MKISOFS="mkisofs"
+    else
+        echo "Error: genisoimage/mkisofs not found."
         exit 1
     fi
     
-    # Format as HFS
-    hformat -l "Quake 3 Arena" "$IMAGE_NAME" > /dev/null
+    # Prepare Content:
+    # 1. Copy Binary
+    cp build_mac/Quake3 "$RELEASE_ROOT/content/Quake 3 Arena/Quake3"
     
-    # Mount internal volume for hfsutils operations
-    hmount "$IMAGE_NAME" > /dev/null
+    if [ -f "build_mac/Quake3_TeamArena" ]; then
+         cp build_mac/Quake3_TeamArena "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena"
+    fi
     
-    # Recursive copy function for hfsutils using absolute HFS paths
-    hcopy_recursive() {
-        local local_dir="$1"
-        local hfs_base="$2"
-        for item in "$local_dir"/*; do
-            if [ -d "$item" ]; then
-                local folder_name=$(basename "$item")
-                hmkdir "${hfs_base}${folder_name}" > /dev/null
-                hcopy_recursive "$item" "${hfs_base}${folder_name}:"
-            else
-                local file_name=$(basename "$item")
-                hcopy "$item" "${hfs_base}${file_name}" > /dev/null
-            fi
-        done
-    }
+    # 2. Generate AppleDouble for Resource Fork
+    if [ -f "build_mac/Quake3.rsrc" ]; then
+        echo "Generating AppleDouble resource fork..."
+        python3 create_appledouble.py "build_mac/Quake3.rsrc" "$RELEASE_ROOT/content/Quake 3 Arena/._Quake3"
+        
+        # Apply the same resource fork to Team Arena binary (it's similar enough for basic launching)
+        if [ -f "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena" ]; then
+             cp "$RELEASE_ROOT/content/Quake 3 Arena/._Quake3" "$RELEASE_ROOT/content/Quake 3 Arena/._Quake3_TeamArena"
+        fi
+    else
+        echo "Warning: Quake3.rsrc not found. Application icon and Type/Creator might be missing."
+    fi
+
+    # 3. Copy all pak*.pk3 files recursively
+    # (Already handled in Step 1)
+
     
-    echo "Copying files to HFS volume..."
-    cd "$CONTENT_DIR"
-    hcopy_recursive "." ":"
-    cd - > /dev/null
-    
-    # Set Metadata on the application binary
-    echo "Setting Type/Creator metadata..."
-    hattrib -t APPL -c 'Q3A ' ":Quake 3 Arena:Quake3" > /dev/null
-    
-    # Unmount
-    humount > /dev/null
+    # Create Hybrid Image (No -part, as that might confuse simple mounting)
+    # -hfs automatically detects AppleDouble (._ file) if present (in most versions).
+    # Removed -apple (conflict). Kept -double just in case, or will check.
+    $MKISOFS -hfs -double -map "$MAPPING_FILE" -o "$IMAGE_NAME" -V "Quake 3 Arena" "$CONTENT_DIR"
     
     echo "HFS Image created: $IMAGE_NAME"
     
-    # MacBinary Encode the Image for classic Mac handling
-    # Type: ???? (Generic/Unknown), Creator: dCpy (Disk Copy)
-    # Using '????' forces Disk Copy to probe the filesystem rather than expect an NDIF header (dImg).
+    # MacBinary Encode
+    # Type: 'iso ' (ISO Image), Creator: dCpy (Disk Copy)
+    # This matches the hybrid format and should allow generic mounting.
     echo "Encoding as MacBinary II..."
     BIN_NAME="$RELEASE_ROOT/Quake3_Install.img.bin"
-    python3 macbinary_encode.py "$IMAGE_NAME" "$BIN_NAME" "????" "dCpy"
+    python3 macbinary_encode.py "$IMAGE_NAME" "$BIN_NAME" "iso " "dCpy"
     
     if [ -f "$BIN_NAME" ]; then
         echo "Package created: $BIN_NAME"
-        rm -f "$IMAGE_NAME" # Remove the raw image, we keep the bin
+        rm -f "$IMAGE_NAME"
     else
         echo "Error: MacBinary encoding failed."
         exit 1

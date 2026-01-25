@@ -1,4 +1,5 @@
 tools/
 build_mac/
 release_mac/
-pak0.pk3
+baseq3/
+missionpack/
