@@ -1,5 +1,5 @@
 
-typedef int sysEventType_t;	// FIXME...
+// typedef int sysEventType_t;	// FIXME...
 #include "../renderer/tr_local.h"
 #include "mac_local.h"
 #include <glm.h>
@@ -29,6 +29,12 @@ typedef struct {
 
 cvar_t			*r_device;
 cvar_t			*r_ext_transform_hint;
+cvar_t *r_ext_texture_filter_anisotropic;
+
+#ifndef GLM_PAGE_SIZE
+#define GLM_PAGE_SIZE 1
+#endif
+GLint glmGetInteger( GLenum param ) { return 4096; }
 glHardwareType_t		sys_hardwareType;
 macGlInfo		sys_gl;
 

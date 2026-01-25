@@ -367,6 +367,35 @@ void CL_SystemInfoChanged( void ) {
 		}
 		// ehw!
 		if ( !Q_stricmp( key, "fs_game" ) ) {
+			int i;
+			// CVE-2011-1412: Shell/Path injection via fs_game
+			for (i = 0; value[i]; i++) {
+				if (value[i] == '.' || value[i] == '/' || value[i] == '\\' || value[i] == ';' || value[i] == '&') {
+					value[i] = 0; // Truncate at first bad char or just ignore?
+					// Safer to just ignore the whole setting
+					Com_Printf("WARNING: Refusing unsafe fs_game value from server\n");
+					break;
+				}
+			}
+			if (value[i] == 0 && i > 0) { // If we broke out or loop finished
+				// Only set if we didn't find bad chars (or truncated? no, let's reject)
+				// Revised logic:
+			}
+		}
+		
+		if ( !Q_stricmp( key, "fs_game" ) ) {
+			int i;
+			qboolean safe = qtrue;
+			for (i=0; value[i]; i++) {
+				if (value[i] == '.' || value[i] == '/' || value[i] == '\\' || value[i] == ';' || value[i] == '&') {
+					safe = qfalse;
+					break;
+				}
+			}
+			if (!safe) {
+				Com_Printf("WARNING: Refusing unsafe fs_game value from server: %s\n", value);
+				continue;
+			}
 			gameSet = qtrue;
 		}
 

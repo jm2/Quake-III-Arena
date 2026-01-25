@@ -1,3 +1,6 @@
+#ifndef __G_PUBLIC_H
+#define __G_PUBLIC_H
+
 /*
 ===========================================================================
 Copyright (C) 1999-2005 Id Software, Inc.
@@ -426,4 +429,6 @@ typedef enum {
 
 	BOTAI_START_FRAME				// ( int time );
 } gameExport_t;
+
+#endif // __G_PUBLIC_H
 

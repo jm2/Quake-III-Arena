@@ -499,9 +499,14 @@ Clients that are in the game can still send
 connectionless packets.
 =================
 */
+#define MAX_BUCKET_COUNT 10
+static int burstCount = 0;
+static int burstTime = 0;
+
 void SV_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 	char	*s;
 	char	*c;
+	int		currentTime;
 
 	MSG_BeginReadingOOB( msg );
 	MSG_ReadLong( msg );		// skip the -1 marker
@@ -516,9 +521,22 @@ void SV_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 	c = Cmd_Argv(0);
 	Com_DPrintf ("SV packet %s : %s\n", NET_AdrToString(from), c);
 
+	// Rate limiting for amplification attacks (CVE-2010-5077)
+	currentTime = Sys_Milliseconds();
+	if ( (currentTime - burstTime) > 1000 ) {
+		burstTime = currentTime;
+		burstCount = 0;
+	}
+	
+	if ( !Q_stricmp(c, "getstatus") || !Q_stricmp(c, "rcon") ) {
+		if ( ++burstCount > MAX_BUCKET_COUNT ) {
+			return; // Drop packet
+		}
+	}
+
 	if (!Q_stricmp(c, "getstatus")) {
 		SVC_Status( from  );
-  } else if (!Q_stricmp(c, "getinfo")) {
+	} else if (!Q_stricmp(c, "getinfo")) {
 		SVC_Info( from );
 	} else if (!Q_stricmp(c, "getchallenge")) {
 		SV_GetChallenge( from );

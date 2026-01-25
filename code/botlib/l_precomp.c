@@ -705,7 +705,7 @@ int PC_ExpandBuiltinDefine(source_t *source, token_t *deftoken, define_t *define
 										token_t **firsttoken, token_t **lasttoken)
 {
 	token_t *token;
-	unsigned long t;	//	time_t t; //to prevent LCC warning
+	// time_t t; removed here, declared locally in cases
 	char *curtime;
 
 	token = PC_CopyToken(deftoken);
@@ -735,6 +735,7 @@ int PC_ExpandBuiltinDefine(source_t *source, token_t *deftoken, define_t *define
 		} //end case
 		case BUILTIN_DATE:
 		{
+			time_t t;
 			t = time(NULL);
 			curtime = ctime(&t);
 			strcpy(token->string, "\"");
@@ -750,6 +751,7 @@ int PC_ExpandBuiltinDefine(source_t *source, token_t *deftoken, define_t *define
 		} //end case
 		case BUILTIN_TIME:
 		{
+			time_t t;
 			t = time(NULL);
 			curtime = ctime(&t);
 			strcpy(token->string, "\"");
@@ -1010,7 +1012,9 @@ int PC_Directive_include(source_t *source)
 				break;
 			} //end if
 			if (token.type == TT_PUNCTUATION && *token.string == '>') break;
-			strncat(path, token.string, MAX_PATH);
+			if (strlen(path) + strlen(token.string) < MAX_PATH) {
+				strcat(path, token.string);
+			}
 		} //end while
 		if (*token.string != '>')
 		{

@@ -1,7 +1,7 @@
 #include "../client/client.h"
 #include "mac_local.h"
 #include <DriverServices.h>
-#include <console.h>
+// #include <console.h>
 
 #define	CONSOLE_MASK	1023
 static char	consoleChars[CONSOLE_MASK+1];
@@ -14,13 +14,15 @@ Sys_InitConsole
 ==================
 */
 void	Sys_InitConsole( void ) {
-	SIOUXSettings.initializeTB   = 0;
-	SIOUXSettings.standalone   = 0;
-	SIOUXSettings.setupmenus   = 0;
-	SIOUXSettings.autocloseonquit   = 1;
-	SIOUXSettings.asktosaveonclose   = 0;
-	SIOUXSettings.toppixel = 40;
-	SIOUXSettings.leftpixel = 10;
+//	SIOUXSettings.initializeTB   = 0;
+//	SIOUXSettings.standalone     = 0;
+//	SIOUXSettings.setupmenus     = 0;
+//	SIOUXSettings.autocloseonquit= 1;
+//	SIOUXSettings.asktosaveonclose = 0;
+//	SIOUXSettings.toppixel       = 38;
+//	SIOUXSettings.leftpixel      = 10;
+//	SIOUXSettings.columns        = 100;
+//	SIOUXSettings.rows           = 40;
 	
 //	Sys_ShowConsole( 1, qfalse );
 }
@@ -66,7 +68,7 @@ Sys_ConsoleEvent
 qboolean Sys_ConsoleEvent( EventRecord *event ) {
 	qboolean flag;
 	
-	flag = SIOUXHandleOneEvent(event);
+	flag = qfalse; // SIOUXHandleOneEvent(event);
 	
 	// track keyboard events so we can do console input,
 	// because SIOUX doesn't offer a polled read as far
@@ -116,4 +118,3 @@ char *Sys_ConsoleInput( void ) {
 		
 	return NULL;
 }
-

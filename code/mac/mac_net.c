@@ -1,7 +1,15 @@
 #include "../client/client.h"
 #include "mac_local.h"
 #include <OpenTransport.h>
+#include <OpenTransportProviders.h>
 #include <OpenTptInternet.h>
+
+#ifndef AF_INET
+#define AF_INET 2 
+// Fallback if not defined, though OpenTptInternet usually defines it.
+#endif
+
+// InetAddress is defined in OpenTransportProviders.h
 
 static qboolean	gOTInited;
 static EndpointRef endpoint = kOTInvalidEndpointRef;
@@ -208,7 +216,7 @@ typedef struct InetAddress InetAddress;
 */
 void Sys_InitNetworking( void ) {
 	OSStatus		err;
-	OTConfiguration *config;
+	OTConfigurationRef config;
 	TBind			bind, bindOut;
 	InetAddress		in, out;
 	int				i;

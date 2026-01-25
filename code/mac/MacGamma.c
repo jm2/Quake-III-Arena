@@ -30,7 +30,7 @@
 #include <MacTypes.h>
 #include <QDOffscreen.h>
 #include <Quickdraw.h>
-#include <video.h>
+#include <Video.h>
 
 
 
@@ -231,7 +231,7 @@ Ptr GetSystemGammas (void)
 		return (Ptr) pSysGammaOut;									// return pointer to structure
 	else
 	{
-		DisposeSystemGammas (&(Ptr)pSysGammaOut);					// otherwise dump the current structures (dispose does error checking)
+		DisposeSystemGammas ((Ptr*)&pSysGammaOut);					// otherwise dump the current structures (dispose does error checking)
 		return NULL;												// could not complete
 	}
 }

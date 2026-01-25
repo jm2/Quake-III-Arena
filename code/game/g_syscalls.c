@@ -31,15 +31,37 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 static int (QDECL *syscall)( int arg, ... ) = (int (QDECL *)( int, ...))-1;
 
 
+#ifndef Q3_STATIC
 void dllEntry( int (QDECL *syscallptr)( int arg,... ) ) {
 	syscall = syscallptr;
 }
+#endif
 
+#ifndef Q3_STATIC
 int PASSFLOAT( float x ) {
 	float	floatTemp;
 	floatTemp = x;
 	return *(int *)&floatTemp;
 }
+#else
+// in static build, these might be defined once in common code or we rename them
+// but trap calls normally use them?
+// Actually if they are macros in q_shared.h they are fine.
+// But implementation is here.
+// Let's make them static inline or just rename for static build?
+// Better: weak linkage? No.
+// Let's just exclude them and see if trap calls fail.
+// Trap macros might use PASSFLOAT.
+// #define PASSFLOAT(x) (*(int*)&(x)) in q_shared.h?
+// No, it's a function here.
+// Let's rename it to G_PASSFLOAT and use a macro to map it if needed?
+// Or just make it static.
+static int PASSFLOAT( float x ) {
+	float	floatTemp;
+	floatTemp = x;
+	return *(int *)&floatTemp;
+}
+#endif
 
 void	trap_Printf( const char *fmt ) {
 	syscall( G_PRINT, fmt );

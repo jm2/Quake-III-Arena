@@ -1,3 +1,6 @@
+#ifndef __CG_PUBLIC_H
+#define __CG_PUBLIC_H
+
 /*
 ===========================================================================
 Copyright (C) 1999-2005 Id Software, Inc.
@@ -236,3 +239,6 @@ typedef enum {
 } cgameExport_t;
 
 //----------------------------------------------
+
+#endif // __CG_PUBLIC_H
+

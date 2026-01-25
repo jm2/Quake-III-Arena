@@ -1,3 +1,5 @@
+#ifndef __L_PRECOMP_H
+#define __L_PRECOMP_H
 /*
 ===========================================================================
 Copyright (C) 1999-2005 Id Software, Inc.
@@ -178,3 +180,4 @@ int PC_FreeSourceHandle(int handle);
 int PC_ReadTokenHandle(int handle, pc_token_t *pc_token);
 int PC_SourceFileAndLine(int handle, char *filename, int *line);
 void PC_CheckOpenSourceHandles(void);
+#endif // __L_PRECOMP_H

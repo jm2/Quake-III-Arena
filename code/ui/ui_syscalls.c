@@ -30,15 +30,25 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 static int (QDECL *syscall)( int arg, ... ) = (int (QDECL *)( int, ...))-1;
 
+#ifndef Q3_STATIC
 void dllEntry( int (QDECL *syscallptr)( int arg,... ) ) {
 	syscall = syscallptr;
 }
+#endif
 
+#ifndef Q3_STATIC
 int PASSFLOAT( float x ) {
 	float	floatTemp;
 	floatTemp = x;
 	return *(int *)&floatTemp;
 }
+#else
+static int PASSFLOAT( float x ) {
+	float	floatTemp;
+	floatTemp = x;
+	return *(int *)&floatTemp;
+}
+#endif
 
 void trap_Print( const char *string ) {
 	syscall( UI_PRINT, string );

@@ -158,7 +158,7 @@ void DoKeyUp(EventRecord *event)
 Sys_ModifierEvents
 ==================
 */
-static void Sys_ModifierEvents( int modifiers ) {
+void Sys_ModifierEvents( int modifiers ) {
 	static int		oldModifiers;
 	int				changed;
 	int				i;
@@ -197,17 +197,17 @@ static void Sys_ModifierEvents( int modifiers ) {
 }
 
 
-static void DoDiskEvent(EventRecord	*event)
+void DoDiskEvent(EventRecord	*event)
 {
 
 }
 
-static void	DoOSEvent(EventRecord	*event)
+void	DoOSEvent(EventRecord	*event)
 {
 
 }
 
-static void DoUpdate(WindowPtr	myWindow)
+void DoUpdate(WindowPtr	myWindow)
 { 
 	GrafPtr		origPort;
 	
@@ -222,11 +222,11 @@ static void DoUpdate(WindowPtr	myWindow)
 	SetPort(origPort);
 }
 
-static void DoActivate( WindowPtr myWindow, int myModifiers) {
+void DoActivate( WindowPtr myWindow, int myModifiers) {
 
 }
 
-static void DoAboutBox( void ) {
+void DoAboutBox( void ) {
 	DialogPtr	myDialog;
 	short		itemHit;
 
@@ -235,7 +235,7 @@ static void DoAboutBox( void ) {
 	DisposeDialog(myDialog);
 }
 
-static void DoMenuCommand( long menuAndItem ) {
+void DoMenuCommand( long menuAndItem ) {
 	int			myMenuNum;
 	int			myItemNum;
 	int			myResult;

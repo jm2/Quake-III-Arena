@@ -3,7 +3,7 @@
 // all other sound mixing is portable
 
 #include "../client/snd_local.h"
-#include <sound.h>
+#include <Sound.h>
 
 #define	MAX_MIXED_SAMPLES	0x8000
 #define	SUBMISSION_CHUNK	0x100

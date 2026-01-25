@@ -252,12 +252,12 @@
 
 #include <gl.h>
 #include <agl.h>
-#include <console.h>
-#include <SIOUX.h>
+// #include <console.h>
+// #include <SIOUX.h>
 #include <math.h>
 #include <time.h>
 #include <errno.h>
-#include <Profiler.h>
+// #include <Profiler.h>
 
 /* Menus: */
 	#define rMenuBar	128

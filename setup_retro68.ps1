@@ -26,7 +26,7 @@ Write-Host "Retro68 works best on Windows via Cygwin or MSYS2."
 Start-Sleep -Seconds 3
 
 # Dependency Checking
-$Dependencies = @("cmake", "git", "bison", "flex", "makeinfo", "bash")
+$Dependencies = @("cmake", "git", "bison", "flex", "makeinfo", "bash", "unar")
 $MissingDeps = $false
 
 foreach ($dep in $Dependencies) {
@@ -62,6 +62,77 @@ if (-not (Test-Path $SOURCE_DIR)) {
     git pull
     git submodule update --init --recursive
     Pop-Location
+}
+
+# 2. Prepare InterfacesAndLibraries
+Write-Host "Step 2: Preparing SDKs..." -ForegroundColor Green
+$SDK_DEST = Join-Path $SOURCE_DIR "InterfacesAndLibraries"
+if (-not (Test-Path $SDK_DEST)) {
+    New-Item -ItemType Directory -Path $SDK_DEST | Out-Null
+}
+
+$MPW_URL = "https://download.macintoshgarden.org/apps/MPW_fully_updated.sit"
+$OPENGL_URL = "https://download.macintoshgarden.org/apps/OpenGL_SDK_1.2.sit"
+
+# Helper for download
+function Download-FileIfMissing {
+    param($Url, $Dest)
+    if (-not (Test-Path $Dest)) {
+        Write-Host "Downloading $dest..."
+        Invoke-WebRequest -Uri $Url -OutFile $Dest
+    }
+}
+
+Download-FileIfMissing -Url $MPW_URL -Dest "tools\MPW_fully_updated.sit"
+Download-FileIfMissing -Url $OPENGL_URL -Dest "tools\OpenGL_SDK_1.2.sit"
+
+# Extract function using unar (assuming available as checked)
+function Extract-Site {
+    param($File, $DestDir)
+    if (Test-Path $DestDir) { Remove-Item -Recurse -Force $DestDir }
+    Write-Host "Extracting $File..."
+    # unar usage: unar -f file.sit -o output_dir
+    # we need to be careful with paths in powershell calling binaries
+    & unar -f $File -o $DestDir | Out-Null
+}
+
+# Process MPW
+Extract-Site -File "tools\MPW_fully_updated.sit" -DestDir "tools\temp_mpw"
+$MPW_I_AND_L = Get-ChildItem -Path "tools\temp_mpw" -Recurse -Directory -Filter "Interfaces&Libraries" | Select-Object -First 1
+if ($MPW_I_AND_L) {
+    Write-Host "Injecting MPW Interfaces&Libraries..."
+    Copy-Item -Path "$($MPW_I_AND_L.FullName)\*" -Destination $SDK_DEST -Recurse -Force
+} else {
+    Write-Host "Error: Could not find Interfaces&Libraries in MPW" -ForegroundColor Red
+    exit 1
+}
+
+# Process OpenGL
+Extract-Site -File "tools\OpenGL_SDK_1.2.sit" -DestDir "tools\temp_opengl"
+$OGL_LIBS = Get-ChildItem -Path "tools\temp_opengl" -Recurse -Directory -Filter "Libraries" | Select-Object -First 1
+$OGL_HEADERS = Get-ChildItem -Path "tools\temp_opengl" -Recurse -Directory -Filter "Headers" | Select-Object -First 1
+
+if (-not (Test-Path "$SDK_DEST\Libraries")) { New-Item -ItemType Directory -Path "$SDK_DEST\Libraries" | Out-Null }
+if (-not (Test-Path "$SDK_DEST\Interfaces\CIncludes")) { New-Item -ItemType Directory -Path "$SDK_DEST\Interfaces\CIncludes" | Out-Null }
+
+if ($OGL_LIBS) {
+    Write-Host "Injecting OpenGL Libraries..."
+    Copy-Item -Path "$($OGL_LIBS.FullName)\*" -Destination "$SDK_DEST\Libraries" -Recurse -Force
+}
+if ($OGL_HEADERS) {
+    Write-Host "Injecting OpenGL Headers..."
+    Copy-Item -Path "$($OGL_HEADERS.FullName)\*" -Destination "$SDK_DEST\Interfaces\CIncludes" -Recurse -Force
+}
+
+# Cleanup Temps
+Remove-Item -Recurse -Force "tools\temp_mpw" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "tools\temp_opengl" -ErrorAction SilentlyContinue
+
+# Prune Conflicting Headers
+Write-Host "Pruning conflicting MPW headers..." -ForegroundColor Yellow
+$ConflictingHeaders = @("assert.h", "ctype.h", "errno.h", "float.h", "limits.h", "locale.h", "math.h", "setjmp.h", "signal.h", "stdarg.h", "stddef.h", "stdio.h", "stdlib.h", "string.h", "time.h")
+foreach ($header in $ConflictingHeaders) {
+    Get-ChildItem -Path "$SDK_DEST\Interfaces\CIncludes" -Filter $header -Recurse | Remove-Item -Force
 }
 
 # Patch CMakeLists.txt for Boost 'system' dependency (same logic as bash script)

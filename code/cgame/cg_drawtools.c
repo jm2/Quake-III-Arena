@@ -436,10 +436,10 @@ void CG_ColorForHealth( vec4_t hcolor ) {
 // bk001205 - code below duplicated in q3_ui/ui-atoms.c
 // bk001205 - FIXME: does this belong in ui_shared.c?
 // bk001205 - FIXME: HARD_LINKED flags not visible here
-#ifndef Q3_STATIC // bk001205 - q_shared defines not visible here 
+// #ifndef Q3_STATIC - q_shared defines not visible here 
 /*
 =================
-UI_DrawProportionalString2
+CG_DrawProportionalString2
 =================
 */
 static int	propMap[128][3] = {
@@ -590,10 +590,10 @@ static int propMapB[26][3] = {
 
 /*
 =================
-UI_DrawBannerString
+CG_DrawBannerString
 =================
 */
-static void UI_DrawBannerString2( int x, int y, const char* str, vec4_t color )
+static void CG_DrawBannerString2( int x, int y, const char* str, vec4_t color )
 {
 	const char* s;
 	unsigned char	ch; // bk001204 : array subscript
@@ -636,7 +636,7 @@ static void UI_DrawBannerString2( int x, int y, const char* str, vec4_t color )
 	trap_R_SetColor( NULL );
 }
 
-void UI_DrawBannerString( int x, int y, const char* str, int style, vec4_t color ) {
+void CG_DrawBannerString( int x, int y, const char* str, int style, vec4_t color ) {
 	const char *	s;
 	int				ch;
 	int				width;
@@ -674,14 +674,14 @@ void UI_DrawBannerString( int x, int y, const char* str, int style, vec4_t color
 	if ( style & UI_DROPSHADOW ) {
 		drawcolor[0] = drawcolor[1] = drawcolor[2] = 0;
 		drawcolor[3] = color[3];
-		UI_DrawBannerString2( x+2, y+2, str, drawcolor );
+		CG_DrawBannerString2( x+2, y+2, str, drawcolor );
 	}
 
-	UI_DrawBannerString2( x, y, str, color );
+	CG_DrawBannerString2( x, y, str, color );
 }
 
 
-int UI_ProportionalStringWidth( const char* str ) {
+int CG_ProportionalStringWidth( const char* str ) {
 	const char *	s;
 	int				ch;
 	int				charWidth;
@@ -703,7 +703,7 @@ int UI_ProportionalStringWidth( const char* str ) {
 	return width;
 }
 
-static void UI_DrawProportionalString2( int x, int y, const char* str, vec4_t color, float sizeScale, qhandle_t charset )
+static void CG_DrawProportionalString2( int x, int y, const char* str, vec4_t color, float sizeScale, qhandle_t charset )
 {
 	const char* s;
 	unsigned char	ch; // bk001204 - unsigned
@@ -763,10 +763,10 @@ float UI_ProportionalSizeScale( int style ) {
 
 /*
 =================
-UI_DrawProportionalString
+CG_DrawProportionalString
 =================
 */
-void UI_DrawProportionalString( int x, int y, const char* str, int style, vec4_t color ) {
+void CG_DrawProportionalString( int x, int y, const char* str, int style, vec4_t color ) {
 	vec4_t	drawcolor;
 	int		width;
 	float	sizeScale;
@@ -775,12 +775,12 @@ void UI_DrawProportionalString( int x, int y, const char* str, int style, vec4_t
 
 	switch( style & UI_FORMATMASK ) {
 		case UI_CENTER:
-			width = UI_ProportionalStringWidth( str ) * sizeScale;
+			width = CG_ProportionalStringWidth( str ) * sizeScale;
 			x -= width / 2;
 			break;
 
 		case UI_RIGHT:
-			width = UI_ProportionalStringWidth( str ) * sizeScale;
+			width = CG_ProportionalStringWidth( str ) * sizeScale;
 			x -= width;
 			break;
 
@@ -792,7 +792,7 @@ void UI_DrawProportionalString( int x, int y, const char* str, int style, vec4_t
 	if ( style & UI_DROPSHADOW ) {
 		drawcolor[0] = drawcolor[1] = drawcolor[2] = 0;
 		drawcolor[3] = color[3];
-		UI_DrawProportionalString2( x+2, y+2, str, drawcolor, sizeScale, cgs.media.charsetProp );
+		CG_DrawProportionalString2( x+2, y+2, str, drawcolor, sizeScale, cgs.media.charsetProp );
 	}
 
 	if ( style & UI_INVERSE ) {
@@ -800,7 +800,7 @@ void UI_DrawProportionalString( int x, int y, const char* str, int style, vec4_t
 		drawcolor[1] = color[1] * 0.8;
 		drawcolor[2] = color[2] * 0.8;
 		drawcolor[3] = color[3];
-		UI_DrawProportionalString2( x, y, str, drawcolor, sizeScale, cgs.media.charsetProp );
+		CG_DrawProportionalString2( x, y, str, drawcolor, sizeScale, cgs.media.charsetProp );
 		return;
 	}
 
@@ -809,16 +809,16 @@ void UI_DrawProportionalString( int x, int y, const char* str, int style, vec4_t
 		drawcolor[1] = color[1] * 0.8;
 		drawcolor[2] = color[2] * 0.8;
 		drawcolor[3] = color[3];
-		UI_DrawProportionalString2( x, y, str, color, sizeScale, cgs.media.charsetProp );
+		CG_DrawProportionalString2( x, y, str, color, sizeScale, cgs.media.charsetProp );
 
 		drawcolor[0] = color[0];
 		drawcolor[1] = color[1];
 		drawcolor[2] = color[2];
 		drawcolor[3] = 0.5 + 0.5 * sin( cg.time / PULSE_DIVISOR );
-		UI_DrawProportionalString2( x, y, str, drawcolor, sizeScale, cgs.media.charsetPropGlow );
+		CG_DrawProportionalString2( x, y, str, drawcolor, sizeScale, cgs.media.charsetPropGlow );
 		return;
 	}
 
-	UI_DrawProportionalString2( x, y, str, color, sizeScale, cgs.media.charsetProp );
+	CG_DrawProportionalString2( x, y, str, color, sizeScale, cgs.media.charsetProp );
 }
-#endif // Q3STATIC
+// #endif // Q3STATIC

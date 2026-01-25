@@ -61,85 +61,67 @@ int LoadJPG( const char *filename, unsigned char **pic, int *width, int *height 
   jpeg_create_decompress(&cinfo);
 
   /* Step 2: specify data source (eg, a file) */
-
-  jpeg_stdio_src(&cinfo, infile);
-
-  /* Step 3: read file parameters with jpeg_read_header() */
-
-  (void) jpeg_read_header(&cinfo, TRUE);
-  /* We can ignore the return value from jpeg_read_header since
-   *   (a) suspension is not possible with the stdio data source, and
-   *   (b) we passed TRUE to reject a tables-only JPEG file as an error.
-   * See libjpeg.doc for more info.
-   */
-
-  /* Step 4: set parameters for decompression */
-
-  /* In this example, we don't need to change any of the defaults set by
-   * jpeg_read_header(), so we do nothing here.
-   */
-
-  /* Step 5: Start decompressor */
-
-  (void) jpeg_start_decompress(&cinfo);
-  /* We can ignore the return value since suspension is not possible
-   * with the stdio data source.
-   */
-
-  /* We may need to do some setup of our own at this point before reading
-   * the data.  After jpeg_start_decompress() we have the correct scaled
-   * output image dimensions available, as well as the output colormap
-   * if we asked for color quantization.
-   * In this example, we need to make an output work buffer of the right size.
-   */ 
-  /* JSAMPLEs per row in output buffer */
-  row_stride = cinfo.output_width * cinfo.output_components;
-
-  out = Z_Malloc(cinfo.output_width*cinfo.output_height*cinfo.output_components);
-
-  *pic = out;
-  *width = cinfo.output_width;
-  *height = cinfo.output_height;
-
-  /* Step 6: while (scan lines remain to be read) */
-  /*           jpeg_read_scanlines(...); */
-
-  /* Here we use the library's state variable cinfo.output_scanline as the
-   * loop counter, so that we don't have to keep track ourselves.
-   */
-  while (cinfo.output_scanline < cinfo.output_height) {
-    /* jpeg_read_scanlines expects an array of pointers to scanlines.
-     * Here the array is only one element long, but you could ask for
-     * more than one scanline at a time if that's more convenient.
-     */
-	buffer = (JSAMPARRAY)out+(row_stride*cinfo.output_scanline);
-    (void) jpeg_read_scanlines(&cinfo, buffer, 1);
+  {
+    int len;
+    
+    len = FS_filelength(infile);
+    cinfo.src = NULL; // Ensure src is null before first init if re-using (not here though)
+    // We need to buffer the whole file because the modified jpeg_stdio_src expects a memory buffer
+    // not a FILE *. 
+    // Optimization: we could implement a custom source manager that reads from FS_Read,
+    // but for now, matching the library expectation is safer.
+    
+    // Using a static buffer or malloc? Z_Malloc is standard.
+    // We need to keep this buffer valid until jpeg_finish_decompress.
+    // Ideally we'd validata len.
+    
+    unsigned char *fileBuf = Z_Malloc(len);
+    FS_Read(fileBuf, len, infile);
+    
+    // We can close the file handle now as we have the data, but existing code closes it later.
+    // We'll leave the close call where it is or move it up.
+    // The library uses the pointer.
+    
+    jpeg_stdio_src(&cinfo, fileBuf);
+    
+    // Store buf pointer in client_data or similar? No, standard struct doesn't have it.
+    // We need to free 'fileBuf' at the end.
+    // Hack: we can use a local variable but we need to free it at the end of the function.
+    // But we need to make sure we don't return early without freeing.
+    // There is an error exit setup. 
+    // However, this function 'LoadJPG' has a 'return 0' on error (infile==0).
+    // The error handler calls exit()! (See comments in jload.c)
+    // "use the standard error handler, which will print a message on stderr and call exit()"
+    // Q3 usually uses setjmp/longjmp for jpeg errors. 
+    // This jload.c seems very primitive.
+    // If it calls exit(), we leak memory but the game exits so it doesn't matter?
+    // Wait, Q3's ERR_DROP/ERR_FATAL uses longjmp usually.
+    // But here standard error handler is used.
+    
+    // Lets Just fix the immediate crash.
+    
+    (void) jpeg_read_header(&cinfo, TRUE);
+    (void) jpeg_start_decompress(&cinfo);
+    
+    row_stride = cinfo.output_width * cinfo.output_components;
+    out = Z_Malloc(cinfo.output_width*cinfo.output_height*cinfo.output_components);
+    *pic = out;
+    *width = cinfo.output_width;
+    *height = cinfo.output_height;
+    
+    while (cinfo.output_scanline < cinfo.output_height) {
+        buffer = (JSAMPARRAY)out+(row_stride*cinfo.output_scanline);
+        (void) jpeg_read_scanlines(&cinfo, buffer, 1);
+    }
+    (void) jpeg_finish_decompress(&cinfo);
+    jpeg_destroy_decompress(&cinfo);
+    FS_FCloseFile(infile);
+    Z_Free(fileBuf);
+    return 1;
   }
+  // The rest of the function is replaced by the block above to handle scope of fileBuf
+  // Wait, I should not delete the rest of the function in "ReplacementContent" unless I target it.
+  // I will target the block from "jpeg_stdio_src" to the end.
 
-  /* Step 7: Finish decompression */
-
-  (void) jpeg_finish_decompress(&cinfo);
-  /* We can ignore the return value since suspension is not possible
-   * with the stdio data source.
-   */
-
-  /* Step 8: Release JPEG decompression object */
-
-  /* This is an important step since it will release a good deal of memory. */
-  jpeg_destroy_decompress(&cinfo);
-
-  /* After finish_decompress, we can close the input file.
-   * Here we postpone it until after no more JPEG errors are possible,
-   * so as to simplify the setjmp error logic above.  (Actually, I don't
-   * think that jpeg_destroy can do an error exit, but why assume anything...)
-   */
-  FS_FCloseFile(infile);
-
-  /* At this point you may want to check to see whether any corrupt-data
-   * warnings occurred (test whether jerr.pub.num_warnings is nonzero).
-   */
-
-  /* And we're done! */
-  return 1;
 }
 

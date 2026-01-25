@@ -619,6 +619,40 @@ qboolean FS_SV_FileExists( const char *file )
 
 
 /*
+===================
+FS_CheckFilenameIsNotExecutable
+
+Return qtrue if the filename is deemed safe for creation
+===================
+*/
+static qboolean FS_CheckFilenameIsNotExecutable( const char *filename, const char *function ) {
+	const char *ext;
+	
+	// absolute paths check
+	if ( *filename == '/' || *filename == '\\' ) {
+		Com_Printf( "WARNING: %s: Not allowing absolute path: %s\n", function, filename );
+		return qfalse;
+	}
+
+	// dangerous extensions
+	ext = strrchr( filename, '.' );
+	if ( !ext ) {
+		return qtrue;
+	}
+
+	if ( !Q_stricmp( ext, ".dll" ) ||
+		 !Q_stricmp( ext, ".exe" ) ||
+		 !Q_stricmp( ext, ".so" ) ||
+		 !Q_stricmp( ext, ".dylib" ) ||
+		 !Q_stricmp( ext, ".app" ) || 
+		 !Q_stricmp( ext, ".sh" ) ) {
+		Com_Printf( "WARNING: %s: Not allowing write to unsafe file %s\n", function, filename );
+		return qfalse;
+	}
+	return qtrue;
+}
+
+/*
 ===========
 FS_SV_FOpenFileWrite
 
@@ -630,6 +664,10 @@ fileHandle_t FS_SV_FOpenFileWrite( const char *filename ) {
 
 	if ( !fs_searchpaths ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
+	}
+
+	if ( !FS_CheckFilenameIsNotExecutable( filename, "FS_SV_FOpenFileWrite" ) ) {
+		return 0;
 	}
 
 	ospath = FS_BuildOSPath( fs_homepath->string, filename, "" );

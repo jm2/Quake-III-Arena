@@ -23,6 +23,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #ifndef __Q_SHARED_H
 #define __Q_SHARED_H
 
+#ifdef Q3_STATIC
+#include "q_static_linked.h"
+#endif
+
 // q_shared.h -- included first by ALL program modules.
 // A user mod should never modify this file
 
@@ -221,6 +225,15 @@ static inline float LittleFloat (const float l) { return FloatSwap(&l); }
 
 #include <MacTypes.h>
 #define	MAC_STATIC
+#define stricmp strcasecmp
+
+#ifdef Q3_STATIC
+#define	GAME_HARD_LINKED
+#define	CGAME_HARD_LINKED
+#define	UI_HARD_LINKED
+#define	BOTLIB_HARD_LINKED
+#endif
+
 #define ID_INLINE inline 
 
 #define	CPUSTRING	"MacOS-PPC"
