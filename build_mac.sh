@@ -150,11 +150,12 @@ if [[ "$1" == "package" ]]; then
     
     echo "HFS Image created: $IMAGE_NAME"
     
-    # MacBinary Encode the Image for classic Mac handling (preserves Type/Creator)
-    # Type: dImg (Disk Copy Image), Creator: dCpy (Disk Copy)
+    # MacBinary Encode the Image for classic Mac handling
+    # Type: ???? (Generic/Unknown), Creator: dCpy (Disk Copy)
+    # Using '????' forces Disk Copy to probe the filesystem rather than expect an NDIF header (dImg).
     echo "Encoding as MacBinary II..."
     BIN_NAME="$RELEASE_ROOT/Quake3_Install.img.bin"
-    python3 macbinary_encode.py "$IMAGE_NAME" "$BIN_NAME" "dImg" "dCpy"
+    python3 macbinary_encode.py "$IMAGE_NAME" "$BIN_NAME" "????" "dCpy"
     
     if [ -f "$BIN_NAME" ]; then
         echo "Package created: $BIN_NAME"

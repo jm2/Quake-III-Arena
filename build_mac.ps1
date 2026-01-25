@@ -157,11 +157,12 @@ Quake3 Raw   Q3A  APPL 'Quake 3 App'"
     if (Test-Path $ImageName) {
         Write-Host "HFS Image created: $ImageName" -ForegroundColor Green
         
-        # Encoding
-        # Type: dImg (Disk Copy Image), Creator: dCpy (Disk Copy)
+        # MacBinary Encode the Image for classic Mac handling
+        # Type: ???? (Generic/Unknown), Creator: dCpy (Disk Copy)
+        # Using '????' forces Disk Copy to probe the filesystem rather than expect an NDIF header (dImg).
         Write-Host "Encoding as MacBinary II..."
         $BinName = Join-Path $ReleaseRoot "Quake3_Install.img.bin"
-        python macbinary_encode.py $ImageName $BinName "dImg" "dCpy"
+        python macbinary_encode.py $ImageName $BinName "????" "dCpy"
         
         if (Test-Path $BinName) {
             Write-Host "Package created: $BinName" -ForegroundColor Green
