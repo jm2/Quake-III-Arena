@@ -150,11 +150,25 @@ if ($args[0] -eq "package") {
 Quake3 Raw   Q3A  APPL 'Quake 3 App'"
     
     # Run mkisofs
+    # -part: Generate HFS partition table for compatibility
     $ImageName = Join-Path $ReleaseRoot "Quake3_Install.img"
-    & $MkIsoFs -hfs -map $MappingFile -o $ImageName -V "Quake 3 Arena" $ContentDir | Out-Null
+    & $MkIsoFs -hfs -part -map $MappingFile -o $ImageName -V "Quake 3 Arena" $ContentDir | Out-Null
     
     if (Test-Path $ImageName) {
-        Write-Host "Package created: $ImageName" -ForegroundColor Green
+        Write-Host "HFS Image created: $ImageName" -ForegroundColor Green
+        
+        # Encoding
+        # Type: dImg (Disk Copy Image), Creator: dCpy (Disk Copy)
+        Write-Host "Encoding as MacBinary II..."
+        $BinName = Join-Path $ReleaseRoot "Quake3_Install.img.bin"
+        python macbinary_encode.py $ImageName $BinName "dImg" "dCpy"
+        
+        if (Test-Path $BinName) {
+            Write-Host "Package created: $BinName" -ForegroundColor Green
+            Remove-Item $ImageName -Force
+        } else {
+             Write-Host "Error: MacBinary encoding failed." -ForegroundColor Red
+        }
     } else {
         Write-Host "Error creating image." -ForegroundColor Red
     }

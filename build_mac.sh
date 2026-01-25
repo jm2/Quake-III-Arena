@@ -120,9 +120,24 @@ EOF
         exit 1
     fi
     
-    $MKISOFS -hfs -map "$MAPPING_FILE" -o "$IMAGE_NAME" -V "Quake 3 Arena" "$CONTENT_DIR"
+    # -part generates an HFS partition table, crucial for Disk Copy/Mac OS 9 to recognize the volume structure.
+    $MKISOFS -hfs -part -map "$MAPPING_FILE" -o "$IMAGE_NAME" -V "Quake 3 Arena" "$CONTENT_DIR"
     
-    echo "Package created: $IMAGE_NAME"
+    echo "HFS Image created: $IMAGE_NAME"
+    
+    # MacBinary Encode the Image for classic Mac handling (preserves Type/Creator)
+    # Type: dImg (Disk Copy Image), Creator: dCpy (Disk Copy)
+    echo "Encoding as MacBinary II..."
+    BIN_NAME="$RELEASE_ROOT/Quake3_Install.img.bin"
+    python3 macbinary_encode.py "$IMAGE_NAME" "$BIN_NAME" "dImg" "dCpy"
+    
+    if [ -f "$BIN_NAME" ]; then
+        echo "Package created: $BIN_NAME"
+        rm -f "$IMAGE_NAME" # Remove the raw image, we keep the bin
+    else
+        echo "Error: MacBinary encoding failed."
+        exit 1
+    fi
     
     # Cleanup
     echo "Cleaning up temp files..."
