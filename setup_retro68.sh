@@ -181,6 +181,32 @@ fi
 
 bash "$SOURCE_DIR/build-toolchain.bash" --prefix="$INSTALL_DIR"
 
+# 6. Post-Build Fixes
+echo "Step 6: Post-Build Fixes..."
+SDK_DEST="$SOURCE_DIR/InterfacesAndLibraries"
+STUB_SRC="$SDK_DEST/SharedLibraries/OpenGLLibraryStub"
+STUB_RSRC="$SDK_DEST/SharedLibraries/OpenGLLibraryStub.rsrc"
+STUB_AD="$SDK_DEST/SharedLibraries/%OpenGLLibraryStub"
+STUB_LIB="$SDK_DEST/SharedLibraries/libOpenGLLibraryStub.a"
+
+if [ -f "$STUB_SRC" ] && [ -f "$STUB_RSRC" ]; then
+    echo "Generating OpenGLLibraryStub import library..."
+    # Prepare AppleDouble resource fork (required for Linux/MakeImport)
+    cp "$STUB_RSRC" "$STUB_AD"
+    
+    # Use the newly built MakeImport
+    export PATH="$INSTALL_DIR/bin:$PATH"
+    
+    if command -v MakeImport &> /dev/null; then
+        MakeImport "$STUB_SRC" "$STUB_LIB"
+        echo "Created $STUB_LIB"
+    else
+        echo "Error: MakeImport not found in $INSTALL_DIR/bin"
+        # Don't fail the whole script if just this optional fix fails, but warn.
+        echo "Warning: MakeImport failed. Linux build might fail linking OpenGL."
+    fi
+fi
+
 echo "=========================================="
 echo "Retro68 Re-Build Complete!"
 echo "Check $INSTALL_DIR for results."

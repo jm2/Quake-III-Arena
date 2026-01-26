@@ -111,6 +111,15 @@ target_compile_definitions(ui_mp_obj PRIVATE
     -DMISSIONPACK
 )
 
+# Link directories (Must be before add_executable)
+link_directories(
+    "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/SharedLibraries"
+    "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Libraries/SharedLibraries"
+    "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Libraries/PPCLibraries"
+    "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Libraries/Libraries"
+    "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Libraries"
+)
+
 # Main Executable
 add_executable(Quake3
     ${COMMON_SRCS}
@@ -139,15 +148,6 @@ add_executable(Quake3_TeamArena
     $<TARGET_OBJECTS:ui_mp_obj>
 )
 
-# Link libraries
-# Retro68 automatically links standard libs, but check if we need m
-# Add MPW Library Paths
-link_directories(
-    "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Libraries/SharedLibraries"
-    "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Libraries/PPCLibraries"
-    "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Libraries/Libraries"
-    "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Libraries"
-)
 
 # Link Libraries
 # Note: Retro68/GCC expects libraries to be -lName (searching libName.a) or full path.

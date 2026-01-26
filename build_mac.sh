@@ -198,13 +198,12 @@ EOF
     # Only needed for mkisofs strategy or if we want to retain them generally.
     # We generate them here for compatibility, but hdiutil path handles them natively.
     if [ -f "build_mac/Quake3.rsrc" ]; then
-        if [ "$MKISOFS" != "hdiutil" ]; then
-            echo "Generating AppleDouble resource fork for mkisofs..."
-            python3 create_appledouble.py "build_mac/Quake3.rsrc" "$RELEASE_ROOT/content/Quake 3 Arena/._Quake3"
-            
-            if [ -f "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena" ]; then
-                 cp "$RELEASE_ROOT/content/Quake 3 Arena/._Quake3" "$RELEASE_ROOT/content/Quake 3 Arena/._Quake3_TeamArena"
-            fi
+        echo "Generating AppleDouble resource fork for mkisofs..."
+        # mkisofs expects '%' prefix for AppleDouble files to merge them into the resource fork
+        python3 create_appledouble.py "build_mac/Quake3.rsrc" "$RELEASE_ROOT/content/Quake 3 Arena/%Quake3"
+        
+        if [ -f "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena" ]; then
+            cp "$RELEASE_ROOT/content/Quake 3 Arena/%Quake3" "$RELEASE_ROOT/content/Quake 3 Arena/%Quake3_TeamArena"
         fi
     else
         echo "Warning: Quake3.rsrc not found. Application icon and Type/Creator might be missing."

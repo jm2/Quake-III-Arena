@@ -214,11 +214,12 @@ if ($args[0] -eq "package") {
     # 4. Generate AppleDouble
     if (Test-Path $RsrcFile) {
         Write-Host "Generating AppleDouble resource fork..."
-        $AppleDoubleFile = Join-Path $AppDir "._Quake3"
+        # mkisofs expects '%' prefix for AppleDouble files to merge them
+        $AppleDoubleFile = Join-Path $AppDir "%Quake3"
         python create_appledouble.py "$RsrcFile" "$AppleDoubleFile"
        
         if (Test-Path "$AppDir\Quake3_TeamArena") {
-            Copy-Item $AppleDoubleFile "$AppDir\._Quake3_TeamArena" -Force
+            Copy-Item $AppleDoubleFile "$AppDir\%Quake3_TeamArena" -Force
         }
     }
     else {

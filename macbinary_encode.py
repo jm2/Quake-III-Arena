@@ -17,13 +17,15 @@ def calc_crc(data):
             crc &= 0xFFFF
     return crc
 
-def encode_macbinary(input_path, output_path, file_type, file_creator):
+def encode_macbinary(input_path, output_path, file_type, file_creator, rsrc_path=None):
     filename = os.path.basename(input_path)
     if len(filename) > 63:
         filename = filename[:63]
     
     data_len = os.path.getsize(input_path)
-    rsrc_len = 0 # No resource fork for the image file itself
+    rsrc_len = 0
+    if rsrc_path and os.path.exists(rsrc_path):
+        rsrc_len = os.path.getsize(rsrc_path)
     
     # Creation/Mod time: seconds since Jan 1 1904. 
     # For simplicity, using 0 or strict generic date (e.g. 2000-01-01) isn't strictly necessary 
@@ -76,13 +78,27 @@ def encode_macbinary(input_path, output_path, file_type, file_creator):
         pad_len = (128 - (data_len % 128)) % 128
         outfile.write(b'\x00' * pad_len)
         
-        # No Resource Fork -> No Rsrc Padding
+        # Write Resource Fork
+        if rsrc_len > 0:
+            with open(rsrc_path, 'rb') as infile:
+                while True:
+                    chunk = infile.read(65536)
+                    if not chunk: break
+                    outfile.write(chunk)
+            
+            # Pad Resource Fork to 128 bytes
+            pad_len = (128 - (rsrc_len % 128)) % 128
+            outfile.write(b'\x00' * pad_len)
 
     print(f"Encoded {input_path} to {output_path} ({file_type}/{file_creator})")
 
 if __name__ == "__main__":
     if len(sys.argv) < 5:
-        print("Usage: macbinary_encode.py <input> <output> <type> <creator>")
+        print("Usage: macbinary_encode.py <input> <output> <type> <creator> [rsrc_input]")
         sys.exit(1)
         
-    encode_macbinary(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])
+    rsrc = None
+    if len(sys.argv) > 5:
+        rsrc = sys.argv[5]
+        
+    encode_macbinary(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], rsrc)
