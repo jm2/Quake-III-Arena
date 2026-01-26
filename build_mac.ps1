@@ -3,6 +3,11 @@
 
 $ErrorActionPreference = "Stop"
 
+# Add default MSYS2 binary path if it exists
+if (Test-Path "C:\msys64\usr\bin") {
+    $env:PATH = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;$env:PATH"
+}
+
 $BuildDir = "build_mac"
 if (-not (Test-Path $BuildDir)) {
     New-Item -ItemType Directory -Path $BuildDir | Out-Null
@@ -49,7 +54,8 @@ cmake --build . --parallel
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Build complete." -ForegroundColor Green
-} else {
+}
+else {
     Write-Host "Build failed." -ForegroundColor Red
     exit 1
 }
@@ -80,9 +86,11 @@ if ($args[0] -eq "package") {
     # 1. Copy Binary (Base Game)
     if (Test-Path "build_mac\Quake3") {
         Copy-Item "build_mac\Quake3" "$AppDir\Quake3" -Force
-    } elseif (Test-Path "build_mac\Quake3.exe") {
+    }
+    elseif (Test-Path "build_mac\Quake3.exe") {
         Copy-Item "build_mac\Quake3.exe" "$AppDir\Quake3" -Force 
-    } else {
+    }
+    else {
         Write-Host "Error: Binary build_mac\Quake3 not found." -ForegroundColor Red
         exit 1
     }
@@ -91,7 +99,8 @@ if ($args[0] -eq "package") {
     if (Test-Path "build_mac\Quake3_TeamArena") {
         Copy-Item "build_mac\Quake3_TeamArena" "$AppDir\Quake3_TeamArena" -Force
         Write-Host "Found Team Arena Binary." -ForegroundColor Green
-    } elseif (Test-Path "build_mac\Quake3_TeamArena.exe") {
+    }
+    elseif (Test-Path "build_mac\Quake3_TeamArena.exe") {
         Copy-Item "build_mac\Quake3_TeamArena.exe" "$AppDir\Quake3_TeamArena" -Force
         Write-Host "Found Team Arena Binary." -ForegroundColor Green
     }
@@ -108,9 +117,9 @@ if ($args[0] -eq "package") {
         Copy-Item $LocalPak.FullName "$BaseQ3Dir\pak0.pk3" -Force
         
         if ($MissionPak) {
-             Write-Host "Found Team Arena Data at $($MissionPak.FullName)"
-             if (-not (Test-Path $MissionPackDir)) { New-Item -ItemType Directory -Path $MissionPackDir -Force | Out-Null }
-             Copy-Item $MissionPak.FullName "$MissionPackDir\pak0.pk3" -Force
+            Write-Host "Found Team Arena Data at $($MissionPak.FullName)"
+            if (-not (Test-Path $MissionPackDir)) { New-Item -ItemType Directory -Path $MissionPackDir -Force | Out-Null }
+            Copy-Item $MissionPak.FullName "$MissionPackDir\pak0.pk3" -Force
         }
 
         # Check for Updates (pak1-8)
@@ -142,11 +151,13 @@ if ($args[0] -eq "package") {
                         Copy-Item $_.FullName "$MissionPackDir" -Force
                     }
                 }
-            } else {
+            }
+            else {
                 Write-Host "Warning: Failed to download Updates." -ForegroundColor Yellow
             }
         }
-    } else {
+    }
+    else {
         Write-Host "Local pak0.pk3 not found. Falling back to Demo assets..." -ForegroundColor Yellow
         $DemoInstaller = Join-Path $TempDir "linuxq3ademo.sh"
         $DemoUrl = "https://ftp.gwdg.de/pub/misc/ftp.idsoftware.com/idstuff/quake3/linux/linuxq3ademo-1.11-6.x86.gz.sh"
@@ -155,7 +166,8 @@ if ($args[0] -eq "package") {
             Write-Host "Downloading Quake 3 Demo..."
             try {
                 Invoke-WebRequest -Uri $DemoUrl -OutFile $DemoInstaller
-            } catch {
+            }
+            catch {
                 Write-Host "Error downloading demo: $_" -ForegroundColor Red
                 exit 1
             }
@@ -164,64 +176,70 @@ if ($args[0] -eq "package") {
         Write-Host "Extracting Demo Assets..."
         # Try unar or 7z if available
         if (Get-Command "unar" -ErrorAction SilentlyContinue) {
-             # Extraction dir
-             $ExtractDir = Join-Path $TempDir "extracted"
-             if (Test-Path $ExtractDir) { Remove-Item -Recurse -Force $ExtractDir }
+            # Extraction dir
+            $ExtractDir = Join-Path $TempDir "extracted"
+            if (Test-Path $ExtractDir) { Remove-Item -Recurse -Force $ExtractDir }
              
-             & unar -f $DemoInstaller -o $ExtractDir | Out-Null
-             $DemoPak = Get-ChildItem -Path $ExtractDir -Recurse -Filter "pak0.pk3" | Select-Object -First 1
-             if ($DemoPak) {
-                 Copy-Item $DemoPak.FullName "$BaseQ3Dir\pak0.pk3" -Force
-                 Write-Host "Demo assets packaged." -ForegroundColor Green
-             } else {
-                 Write-Host "Error: pak0.pk3 not found in extraction." -ForegroundColor Red
-                 exit 1
-             }
-        } else {
-             Write-Host "Error: 'unar' not found. Cannot extract .sh installer on Windows easily without it." -ForegroundColor Red
-             Write-Host "Please install 'unar'."
-             exit 1
+            & unar -f $DemoInstaller -o $ExtractDir | Out-Null
+            $DemoPak = Get-ChildItem -Path $ExtractDir -Recurse -Filter "pak0.pk3" | Select-Object -First 1
+            if ($DemoPak) {
+                Copy-Item $DemoPak.FullName "$BaseQ3Dir\pak0.pk3" -Force
+                Write-Host "Demo assets packaged." -ForegroundColor Green
+            }
+            else {
+                Write-Host "Error: pak0.pk3 not found in extraction." -ForegroundColor Red
+                exit 1
+            }
         }
-   }
+        else {
+            Write-Host "Error: 'unar' not found. Cannot extract .sh installer on Windows easily without it." -ForegroundColor Red
+            Write-Host "Please run 'setup_retro68.ps1' to automatically build 'unar', or install it manually."
+            exit 1
+        }
+    }
    
-   # 3. Compile Mac Resources
-   Write-Host "Compiling Mac Resources..."
-   $RezTool = Join-Path $ToolsDir "Rez.exe"
-   $RIncludes = Join-Path $ToolsDir "..\RIncludes"
-   $RsrcFile = Join-Path $BuildDir "Quake3.rsrc"
+    # 3. Compile Mac Resources
+    Write-Host "Compiling Mac Resources..."
+    $RezTool = Join-Path $ToolsDir "Rez.exe"
+    $RIncludes = Join-Path $ToolsDir "..\RIncludes"
+    $RsrcFile = Join-Path $BuildDir "Quake3.rsrc"
    
-   if (Test-Path $RezTool) {
-       & $RezTool -o $RsrcFile -I $RIncludes "code\mac\mac_resources.r"
-   } else {
-       Write-Host "Warning: Rez tool not found at $RezTool" -ForegroundColor Yellow
-   }
+    if (Test-Path $RezTool) {
+        & $RezTool -o $RsrcFile -I $RIncludes "code\mac\mac_resources.r"
+    }
+    else {
+        Write-Host "Warning: Rez tool not found at $RezTool" -ForegroundColor Yellow
+    }
 
-   # 4. Generate AppleDouble
-   if (Test-Path $RsrcFile) {
-       Write-Host "Generating AppleDouble resource fork..."
-       $AppleDoubleFile = Join-Path $AppDir "._Quake3"
-       python create_appledouble.py "$RsrcFile" "$AppleDoubleFile"
+    # 4. Generate AppleDouble
+    if (Test-Path $RsrcFile) {
+        Write-Host "Generating AppleDouble resource fork..."
+        $AppleDoubleFile = Join-Path $AppDir "._Quake3"
+        python create_appledouble.py "$RsrcFile" "$AppleDoubleFile"
        
-       if (Test-Path "$AppDir\Quake3_TeamArena") {
-           Copy-Item $AppleDoubleFile "$AppDir\._Quake3_TeamArena" -Force
-       }
-   } else {
-       Write-Host "Warning: Quake3.rsrc not found. Icons/Type/Creator will be missing." -ForegroundColor Yellow
-   }
+        if (Test-Path "$AppDir\Quake3_TeamArena") {
+            Copy-Item $AppleDoubleFile "$AppDir\._Quake3_TeamArena" -Force
+        }
+    }
+    else {
+        Write-Host "Warning: Quake3.rsrc not found. Icons/Type/Creator will be missing." -ForegroundColor Yellow
+    }
 
-   # 5. Create Image
-   # Check for mkisofs/genisoimage
-   if (Get-Command "genisoimage" -ErrorAction SilentlyContinue) {
+    # 5. Create Image
+    # Check for mkisofs/genisoimage
+    if (Get-Command "genisoimage" -ErrorAction SilentlyContinue) {
         $MkIsoFs = "genisoimage"
-   } elseif (Get-Command "mkisofs" -ErrorAction SilentlyContinue) {
+    }
+    elseif (Get-Command "mkisofs" -ErrorAction SilentlyContinue) {
         $MkIsoFs = "mkisofs"
-   } else {
+    }
+    else {
         Write-Host "Warning: HFS creation tool (genisoimage/mkisofs) not found." -ForegroundColor Yellow
         Write-Host "Creating a standard ZIP archive instead." -ForegroundColor Yellow
         $ZipName = Join-Path $ReleaseRoot "Quake3_Install_Win.zip"
         Compress-Archive -Path "$ContentDir\*" -DestinationPath $ZipName -Force
         exit 0
-   }
+    }
     
     Write-Host "Creating HFS Disk Image..."
     
@@ -251,10 +269,12 @@ if ($args[0] -eq "package") {
         if (Test-Path $BinName) {
             Write-Host "Package created: $BinName" -ForegroundColor Green
             Remove-Item $ImageName -Force
-        } else {
-             Write-Host "Error: MacBinary encoding failed." -ForegroundColor Red
         }
-    } else {
+        else {
+            Write-Host "Error: MacBinary encoding failed." -ForegroundColor Red
+        }
+    }
+    else {
         Write-Host "Error creating image." -ForegroundColor Red
     }
     
