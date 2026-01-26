@@ -265,7 +265,9 @@ if (-not (Test-Path "$SDK_DEST\Interfaces\CIncludes")) { New-Item -ItemType Dire
 
 if ($OGL_LIBS) {
     Write-Host "Injecting OpenGL Libraries..."
-    Copy-Item -Path "$($OGL_LIBS.FullName)\*" -Destination "$SDK_DEST\Libraries" -Recurse -Force
+    # Copy to SharedLibraries so MakeImport handles them (they are PEF)
+    if (-not (Test-Path "$SDK_DEST\SharedLibraries")) { New-Item -ItemType Directory -Path "$SDK_DEST\SharedLibraries" | Out-Null }
+    Copy-Item -Path "$($OGL_LIBS.FullName)\*" -Destination "$SDK_DEST\SharedLibraries" -Recurse -Force
 }
 if ($OGL_HEADERS) {
     Write-Host "Injecting OpenGL Headers..."

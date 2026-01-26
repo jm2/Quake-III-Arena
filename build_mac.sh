@@ -1,6 +1,22 @@
 #!/bin/bash
 set -e
 
+function download_file() {
+    local url="$1"
+    local output="$2"
+
+    if command -v curl &> /dev/null; then
+        echo "Downloading $url using curl..."
+        curl -L --progress-bar -o "$output" "$url"
+    elif command -v wget &> /dev/null; then
+        echo "Downloading $url using wget..."
+        wget -q --show-progress -O "$output" "$url"
+    else
+        echo "Error: Neither curl nor wget found. Cannot download files."
+        return 1
+    fi
+}
+
 # Create build directory
 mkdir -p build_mac
 cd build_mac
@@ -61,7 +77,8 @@ if [[ "$1" == "package" ]]; then
     echo "Checking for Game Assets..."
     
     # Check for baseq3/pak0.pk3 (look specifically for 'pak0.pk3' inside a 'baseq3' folder)
-    PAK0_PATH=$(find . -name "*/baseq3/pak0.pk3" -not -path "*/release_mac/*" -print -quit)
+    # Check for baseq3/pak0.pk3 (look specifically for 'pak0.pk3' inside a 'baseq3' folder)
+    PAK0_PATH=$(find . -path "*/baseq3/pak0.pk3" -not -path "*/release_mac/*" -print -quit)
     # Check for missionpack/pak0.pk3 (look specifically for 'pak0.pk3' inside a 'missionpack' folder)
     MP_PAK0_PATH=$(find . -path "*/missionpack/pak0.pk3" -not -path "*/release_mac/*" -print -quit)
     
@@ -92,7 +109,7 @@ if [[ "$1" == "package" ]]; then
             PR_URL="https://files.ioquake3.org/quake3-latest-pk3s.zip"
             PR_FILE="quake3-latest-pk3s.zip"
             
-            wget -q --show-progress "$PR_URL" -O "$TEMP_DIR/$PR_FILE"
+            download_file "$PR_URL" "$TEMP_DIR/$PR_FILE"
             
             if [ -f "$TEMP_DIR/$PR_FILE" ]; then
                 echo "Extracting Updates..."
@@ -112,21 +129,17 @@ if [[ "$1" == "package" ]]; then
         fi
     else
         echo "Local pak0.pk3 (Full Game) not found. Falling back to Demo assets..."
-        DEMO_URL="ftp://ftp.gwdg.de/pub/linux/q3a/linuxq3ademo-1.11-6.x86.gz.sh"
+        DEMO_URL="https://ftp.gwdg.de/pub/misc/ftp.idsoftware.com/idstuff/quake3/linux/linuxq3ademo-1.11-6.x86.gz.sh"
         DEMO_FILE="$TEMP_DIR/linuxq3ademo.sh"
         
         echo "Downloading Quake 3 Arena Demo..."
-        if command -v wget &> /dev/null; then
-            wget -q --show-progress "$DEMO_URL" -O "$DEMO_FILE"
-        else
-            echo "Error: wget not found. Cannot download demo assets."
-            exit 1
-        fi
+        download_file "$DEMO_URL" "$DEMO_FILE"
         
         if [ -f "$DEMO_FILE" ]; then
             echo "Extracting Demo Assets..."
-            chmod +x "$DEMO_FILE"
-            "$DEMO_FILE" --target "$TEMP_DIR/demo_extract" --noexec > /dev/null
+            # Manually extract to avoid issues with old makeself script on macOS
+            mkdir -p "$TEMP_DIR/demo_extract"
+            tail -n +165 "$DEMO_FILE" | gzip -cd | tar xf - -C "$TEMP_DIR/demo_extract"
             
             if [ -f "$TEMP_DIR/demo_extract/demoq3/pak0.pk3" ]; then
                 echo "Found Demo pak0.pk3"
@@ -165,8 +178,12 @@ EOF
     elif command -v mkisofs &> /dev/null; then
         MKISOFS="mkisofs"
     else
-        echo "Error: genisoimage/mkisofs not found."
-        exit 1
+        if command -v hdiutil &> /dev/null; then
+             MKISOFS="hdiutil"
+        else
+             echo "Error: genisoimage/mkisofs/hdiutil not found."
+             exit 1
+        fi
     fi
     
     # Prepare Content:
@@ -178,13 +195,16 @@ EOF
     fi
     
     # 2. Generate AppleDouble for Resource Fork
+    # Only needed for mkisofs strategy or if we want to retain them generally.
+    # We generate them here for compatibility, but hdiutil path handles them natively.
     if [ -f "build_mac/Quake3.rsrc" ]; then
-        echo "Generating AppleDouble resource fork..."
-        python3 create_appledouble.py "build_mac/Quake3.rsrc" "$RELEASE_ROOT/content/Quake 3 Arena/._Quake3"
-        
-        # Apply the same resource fork to Team Arena binary (it's similar enough for basic launching)
-        if [ -f "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena" ]; then
-             cp "$RELEASE_ROOT/content/Quake 3 Arena/._Quake3" "$RELEASE_ROOT/content/Quake 3 Arena/._Quake3_TeamArena"
+        if [ "$MKISOFS" != "hdiutil" ]; then
+            echo "Generating AppleDouble resource fork for mkisofs..."
+            python3 create_appledouble.py "build_mac/Quake3.rsrc" "$RELEASE_ROOT/content/Quake 3 Arena/._Quake3"
+            
+            if [ -f "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena" ]; then
+                 cp "$RELEASE_ROOT/content/Quake 3 Arena/._Quake3" "$RELEASE_ROOT/content/Quake 3 Arena/._Quake3_TeamArena"
+            fi
         fi
     else
         echo "Warning: Quake3.rsrc not found. Application icon and Type/Creator might be missing."
@@ -193,11 +213,55 @@ EOF
     # 3. Copy all pak*.pk3 files recursively
     # (Already handled in Step 1)
 
-    
-    # Create Hybrid Image (No -part, as that might confuse simple mounting)
-    # -hfs automatically detects AppleDouble (._ file) if present (in most versions).
-    # Removed -apple (conflict). Kept -double just in case, or will check.
-    $MKISOFS -hfs -double -map "$MAPPING_FILE" -o "$IMAGE_NAME" -V "Quake 3 Arena" "$CONTENT_DIR"
+     # Create Hybrid Image
+     rm -f "$IMAGE_NAME" "${IMAGE_NAME}.iso"
+     
+     if [ "$MKISOFS" == "hdiutil" ]; then
+         # Native macOS approach
+         echo "Using hdiutil to create hybrid image..."
+         
+         # 1. Apply resource forks natively
+         if [ -f "build_mac/Quake3.rsrc" ]; then
+             echo "Applying resource forks natively for hdiutil..."
+             # Apply to base binary
+             cat "build_mac/Quake3.rsrc" > "$RELEASE_ROOT/content/Quake 3 Arena/Quake3/..namedfork/rsrc"
+             
+             # Apply to Team Arena binary
+             if [ -f "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena" ]; then
+                  cat "build_mac/Quake3.rsrc" > "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena/..namedfork/rsrc"
+             fi
+             
+             # Set Type/Creator Codes
+             # Quake3: APPL Q3A (0x51334120)
+             # We use python to set FinderInfo if SetFile is missing
+             echo "Setting FinderInfo (Type/Creator)..."
+             # Type: APPL (0x4150504C), Creator: Q3A (0x51334120) followed by 24 bytes of zeros
+             # Hex: 4150504C51334120000000000000000000000000000000000000000000000000
+             FINDER_INFO_HEX="4150504C51334120000000000000000000000000000000000000000000000000"
+             
+             xattr -wx com.apple.FinderInfo "$FINDER_INFO_HEX" "$RELEASE_ROOT/content/Quake 3 Arena/Quake3"
+             if [ -f "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena" ]; then
+                 xattr -wx com.apple.FinderInfo "$FINDER_INFO_HEX" "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena"
+             fi
+         fi
+         
+         # hdiutil makehybrid
+         # -hfs -joliet -iso creates a hybrid. 
+         # -hfs-volume-name sets the HFS volume name.
+         # -hfs-volume-name sets the HFS volume name.
+         hdiutil makehybrid -o "$IMAGE_NAME" -hfs -joliet -iso -default-volume-name "Quake 3 Arena" "$CONTENT_DIR"
+         
+         if [ -f "${IMAGE_NAME}.iso" ]; then
+             mv "${IMAGE_NAME}.iso" "$IMAGE_NAME"
+         fi
+         
+    else
+         # mkisofs strategy
+         # Create Hybrid Image (No -part, as that might confuse simple mounting)
+         # -hfs automatically detects AppleDouble (._ file) if present (in most versions).
+         echo "Using mkisofs/genisoimage..."
+         $MKISOFS -hfs -double -map "$MAPPING_FILE" -o "$IMAGE_NAME" -V "Quake 3 Arena" "$CONTENT_DIR"
+    fi
     
     echo "HFS Image created: $IMAGE_NAME"
     

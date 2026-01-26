@@ -165,7 +165,7 @@ target_link_libraries(Quake3 PUBLIC
     -lCarbonLib
     -lInputSprocketLib
     -lDrawSprocketLib
-    "${OGL_LIB_DIR}/libOpenGLLibraryStub.a"
+    -lOpenGLLibraryStub
 )
 
 target_link_libraries(Quake3_TeamArena PUBLIC
@@ -178,7 +178,7 @@ target_link_libraries(Quake3_TeamArena PUBLIC
     -lCarbonLib
     -lInputSprocketLib
     -lDrawSprocketLib
-    "${OGL_LIB_DIR}/libOpenGLLibraryStub.a"
+    -lOpenGLLibraryStub
 )
 
 if(ENABLE_SOUND)

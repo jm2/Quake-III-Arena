@@ -120,7 +120,9 @@ mkdir -p "$SDK_DEST/Interfaces/CIncludes"
 OGL_LIBS=$(find tools/temp_opengl -type d -name "Libraries" | head -n 1)
 if [ -n "$OGL_LIBS" ]; then
     echo "Copying OpenGL Libs from $OGL_LIBS..."
-    cp -r "$OGL_LIBS/"* "$SDK_DEST/Libraries/"
+    # Copy to SharedLibraries so MakeImport handles them (they are PEF)
+    mkdir -p "$SDK_DEST/SharedLibraries"
+    cp -r "$OGL_LIBS/"* "$SDK_DEST/SharedLibraries/"
 else
     echo "Warning: Could not find Libraries in OpenGL SDK"
 fi
