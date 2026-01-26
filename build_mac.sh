@@ -154,9 +154,30 @@ if [[ "$1" == "package" ]]; then
         fi
     fi
 
+    # Icon Generation
+    # Check if we need to generate icons (if quake3_icons.r doesn't exist)
+    if [ ! -f "code/mac/quake3_icons.r" ] || [ ! -s "code/mac/quake3_icons.r" ]; then
+        if [ -f "code/mac/quake3.svg" ] && command -v convert &> /dev/null; then
+            echo "Generating Icons from SVG..."
+            convert -background none -resize 32x32 code/mac/quake3.svg code/mac/quake3_32.png
+            convert -background none -resize 16x16 code/mac/quake3.svg code/mac/quake3_16.png
+            
+            if [ -f "code/mac/quake3_32.png" ] && [ -f "code/mac/quake3_16.png" ]; then
+                 python3 generate_icon_r.py code/mac/quake3_32.png code/mac/quake3_16.png > code/mac/quake3_icons.r
+            fi
+        fi
+    else
+        echo "Icons already generated (code/mac/quake3_icons.r exists)."
+    fi
+
     # Manually compile Mac Resources
     echo "Compiling Mac Resources..."
-    tools/Retro68-build/bin/Rez -o build_mac/Quake3.rsrc -I tools/Retro68-build/RIncludes code/mac/mac_resources.r
+    # Ensure quake3_icons.r exists (create dummy if missing to avoid Rez error)
+    if [ ! -f "code/mac/quake3_icons.r" ]; then
+        echo "/* No icons */" > "code/mac/quake3_icons.r"
+    fi
+    
+    tools/Retro68-build/bin/Rez -o build_mac/Quake3.rsrc -I tools/Retro68-src/InterfacesAndLibraries/Interfaces/RIncludes -I code/mac code/mac/mac_resources.r
     
     # 3. Create HFS/ISO Hybrid Image
     # We revert to genisoimage as hfsutils wrappers caused mounting errors (-8819/-8816).
@@ -197,16 +218,23 @@ EOF
     # 2. Generate AppleDouble for Resource Fork
     # Only needed for mkisofs strategy or if we want to retain them generally.
     # We generate them here for compatibility, but hdiutil path handles them natively.
-    if [ -f "build_mac/Quake3.rsrc" ]; then
-        echo "Generating AppleDouble resource fork for mkisofs..."
+    
+    # Retro68 Rez might output to .rsrc subdirectory
+    RSRC_FILE="build_mac/Quake3.rsrc"
+    if [ -f "build_mac/.rsrc/Quake3.rsrc" ]; then
+        RSRC_FILE="build_mac/.rsrc/Quake3.rsrc"
+    fi
+
+    if [ -f "$RSRC_FILE" ] && [ -s "$RSRC_FILE" ]; then
+        echo "Generating AppleDouble resource fork for mkisofs (from $RSRC_FILE)..."
         # mkisofs expects '%' prefix for AppleDouble files to merge them into the resource fork
-        python3 create_appledouble.py "build_mac/Quake3.rsrc" "$RELEASE_ROOT/content/Quake 3 Arena/%Quake3"
+        python3 create_appledouble.py "$RSRC_FILE" "$RELEASE_ROOT/content/Quake 3 Arena/%Quake3"
         
         if [ -f "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena" ]; then
-            cp "$RELEASE_ROOT/content/Quake 3 Arena/%Quake3" "$RELEASE_ROOT/content/Quake 3 Arena/%Quake3_TeamArena"
+             cp "$RELEASE_ROOT/content/Quake 3 Arena/%Quake3" "$RELEASE_ROOT/content/Quake 3 Arena/%Quake3_TeamArena"
         fi
     else
-        echo "Warning: Quake3.rsrc not found. Application icon and Type/Creator might be missing."
+        echo "Warning: Quake3.rsrc not found or empty. Application icon/type/creator/cfrg might be missing."
     fi
 
     # 3. Copy all pak*.pk3 files recursively
@@ -220,14 +248,14 @@ EOF
          echo "Using hdiutil to create hybrid image..."
          
          # 1. Apply resource forks natively
-         if [ -f "build_mac/Quake3.rsrc" ]; then
-             echo "Applying resource forks natively for hdiutil..."
+         if [ -f "$RSRC_FILE" ]; then
+             echo "Applying resource forks natively for hdiutil (from $RSRC_FILE)..."
              # Apply to base binary
-             cat "build_mac/Quake3.rsrc" > "$RELEASE_ROOT/content/Quake 3 Arena/Quake3/..namedfork/rsrc"
+             cat "$RSRC_FILE" > "$RELEASE_ROOT/content/Quake 3 Arena/Quake3/..namedfork/rsrc"
              
              # Apply to Team Arena binary
              if [ -f "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena" ]; then
-                  cat "build_mac/Quake3.rsrc" > "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena/..namedfork/rsrc"
+                  cat "$RSRC_FILE" > "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena/..namedfork/rsrc"
              fi
              
              # Set Type/Creator Codes

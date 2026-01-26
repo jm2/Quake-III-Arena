@@ -1,4 +1,6 @@
-#include "CodeFragmentTypes.r"
+#include "Types.r"
+#include "CodeFragments.r"
+#include "quake3_icons.r"
 
 type 'sizc' {
     longint; /* Minimum Size */

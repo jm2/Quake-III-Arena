@@ -204,6 +204,11 @@ if ($args[0] -eq "package") {
     $RIncludes = Join-Path $ToolsDir "..\RIncludes"
     $RsrcFile = Join-Path $BuildDir "Quake3.rsrc"
    
+    # Ensure quake3_icons.r exists (create dummy if missing to avoid Rez error)
+    if (-not (Test-Path "code\mac\quake3_icons.r")) {
+        Set-Content -Path "code\mac\quake3_icons.r" -Value "/* No icons */"
+    }
+
     if (Test-Path $RezTool) {
         & $RezTool -o $RsrcFile -I $RIncludes "code\mac\mac_resources.r"
     }
@@ -212,6 +217,13 @@ if ($args[0] -eq "package") {
     }
 
     # 4. Generate AppleDouble
+    $RsrcFile = Join-Path $BuildDir "Quake3.rsrc"
+    $SplitRsrcFile = Join-Path $BuildDir ".rsrc\Quake3.rsrc"
+    
+    if (Test-Path $SplitRsrcFile) {
+        $RsrcFile = $SplitRsrcFile
+    }
+
     if (Test-Path $RsrcFile) {
         Write-Host "Generating AppleDouble resource fork..."
         # mkisofs expects '%' prefix for AppleDouble files to merge them
