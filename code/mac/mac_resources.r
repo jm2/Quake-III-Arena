@@ -21,7 +21,30 @@ resource 'cfrg' (0) {
 
 resource 'sizc' (0) {
 	/* Minimum Size (heap margin) */
-	18000 * 1024,
+	64000 * 1024,
 	/* Preferred Size */
-	48000 * 1024
+	128000 * 1024
+};
+
+resource 'SIZE' (-1) {
+	reserved,
+	acceptSuspendResumeEvents,
+	reserved,
+	canBackground,
+	doesActivateOnFGSwitch,
+	backgroundAndForeground,
+	dontGetFrontClicks,
+	ignoreAppDiedEvents,
+	is32BitCompatible,
+	isHighLevelEventAware,
+	localAndRemoteHLEvents,
+	isStationeryAware,
+	useTextEditServices,
+	reserved,
+	reserved,
+	reserved,
+	
+	/* Memory Size (Same as sizc for consistency) */
+	128000 * 1024,
+	64000 * 1024
 };

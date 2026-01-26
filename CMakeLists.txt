@@ -162,7 +162,6 @@ target_link_libraries(Quake3 PUBLIC
     -lOpenTransportAppPPC
     -lOpenTptUtilsAppPPC
     -lOpenTptInternetLib
-    -lCarbonLib
     -lInputSprocketLib
     -lDrawSprocketLib
     -lOpenGLLibraryStub
@@ -175,7 +174,6 @@ target_link_libraries(Quake3_TeamArena PUBLIC
     -lOpenTransportAppPPC
     -lOpenTptUtilsAppPPC
     -lOpenTptInternetLib
-    -lCarbonLib
     -lInputSprocketLib
     -lDrawSprocketLib
     -lOpenGLLibraryStub

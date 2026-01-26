@@ -76,7 +76,9 @@ def create_appledouble(resource_fork_path, output_path):
     struct.pack_into('>I', finder_info, 0, 0x4150504C)
     # Q3A (with space)
     struct.pack_into('>I', finder_info, 4, 0x51334120)
-    # Flags? 0 is fine probably.
+    # Flags: kHasBundle (0x2000)
+    # This is critical for Finder to read BNDL and SIZE resources!
+    struct.pack_into('>H', finder_info, 8, 0x2000)
     
     data += finder_info
     data += rsrc_data
