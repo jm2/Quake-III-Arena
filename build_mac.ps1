@@ -54,6 +54,82 @@ cmake --build . --parallel
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Build complete." -ForegroundColor Green
+    
+    # Convert to PEF (Fix for XCOFF output)
+    $MakePEF = Join-Path $ToolsDir "MakePEF.exe"
+    if (Test-Path $MakePEF) {
+        Write-Host "Checking binaries for PEF conversion..."
+        
+        # Helper to check for Joy! header (0x4A 0x6F 0x79 0x21)
+        function Test-IsPEF {
+            param($Path)
+            try {
+                if (-not (Test-Path $Path)) { return $false }
+                # Read first 4 bytes
+                $stream = [System.IO.File]::OpenRead((Convert-Path $Path))
+                $buffer = New-Object byte[] 4
+                $count = $stream.Read($buffer, 0, 4)
+                $stream.Close()
+                
+                if ($count -lt 4) { return $false }
+                if ($buffer[0] -eq 0x4A -and $buffer[1] -eq 0x6F -and $buffer[2] -eq 0x79 -and $buffer[3] -eq 0x21) {
+                    return $true
+                }
+            }
+            catch { return $false }
+            return $false
+        }
+
+        if (Test-Path "Quake3") {
+            if (-not (Test-IsPEF "Quake3")) {
+                Write-Host "Converting Quake3 to PEF..."
+                & $MakePEF "Quake3" -o "Quake3.pef"
+                Move-Item -Force "Quake3.pef" "Quake3"
+                Write-Host "Created Quake3 (PEF)"
+            }
+            else {
+                Write-Host "Quake3 is already PEF."
+            }
+        }
+        if (Test-Path "Quake3.exe") {
+            # On Windows sometimes output adds .exe
+            if (-not (Test-IsPEF "Quake3.exe")) {
+                Write-Host "Converting Quake3.exe to PEF..."
+                & $MakePEF "Quake3.exe" -o "Quake3.pef"
+                Move-Item -Force "Quake3.pef" "Quake3.exe"
+                Write-Host "Created Quake3.exe (PEF)"
+            }
+            else {
+                Write-Host "Quake3.exe is already PEF."
+            }
+        }
+        
+        if (Test-Path "Quake3_TeamArena") {
+            if (-not (Test-IsPEF "Quake3_TeamArena")) {
+                Write-Host "Converting Quake3_TeamArena to PEF..."
+                & $MakePEF "Quake3_TeamArena" -o "Quake3_TeamArena.pef"
+                Move-Item -Force "Quake3_TeamArena.pef" "Quake3_TeamArena"
+                Write-Host "Created Quake3_TeamArena (PEF)"
+            }
+            else {
+                Write-Host "Quake3_TeamArena is already PEF."
+            }
+        }
+        if (Test-Path "Quake3_TeamArena.exe") {
+            if (-not (Test-IsPEF "Quake3_TeamArena.exe")) {
+                Write-Host "Converting Quake3_TeamArena.exe to PEF..."
+                & $MakePEF "Quake3_TeamArena.exe" -o "Quake3_TeamArena.pef"
+                Move-Item -Force "Quake3_TeamArena.pef" "Quake3_TeamArena.exe"
+                Write-Host "Created Quake3_TeamArena.exe (PEF)"
+            }
+            else {
+                Write-Host "Quake3_TeamArena.exe is already PEF."
+            }
+        }
+    }
+    else {
+        Write-Host "Warning: MakePEF not found. Binaries might be invalid XCOFF." -ForegroundColor Yellow
+    }
 }
 else {
     Write-Host "Build failed." -ForegroundColor Red
@@ -289,6 +365,33 @@ if ($args[0] -eq "package") {
     }
     else {
         Write-Host "Error creating image." -ForegroundColor Red
+    }
+    
+    # ---------------------------------------------------------
+    # Create Binary-Only Image
+    # ---------------------------------------------------------
+    Write-Host "Creating Binaries-Only Image..."
+    $BinImgName = Join-Path $ReleaseRoot "Quake3_Bin.img"
+    $BinContentDir = Join-Path $ReleaseRoot "bin_content"
+    if (Test-Path $BinContentDir) { Remove-Item -Recurse -Force $BinContentDir }
+    New-Item -ItemType Directory -Path $BinContentDir | Out-Null
+    
+    # Copy Binaries and AppleDouble
+    if (Test-Path "$AppDir\Quake3") { Copy-Item "$AppDir\Quake3" $BinContentDir }
+    if (Test-Path "$AppDir\%Quake3") { Copy-Item "$AppDir\%Quake3" $BinContentDir }
+    if (Test-Path "$AppDir\Quake3_TeamArena") { Copy-Item "$AppDir\Quake3_TeamArena" $BinContentDir }
+    if (Test-Path "$AppDir\%Quake3_TeamArena") { Copy-Item "$AppDir\%Quake3_TeamArena" $BinContentDir }
+    
+    & $MkIsoFs -hfs -double -map $MappingFile -o $BinImgName -V "Quake 3 Binaries" $BinContentDir | Out-Null
+    
+    if (Test-Path $BinImgName) {
+        Write-Host "Encoding Binaries Image..."
+        $BinBinName = Join-Path $ReleaseRoot "Quake3_Bin.img.bin"
+        python macbinary_encode.py $BinImgName $BinBinName "iso " "dCpy"
+        if (Test-Path $BinBinName) {
+            Write-Host "Package created: $BinBinName" -ForegroundColor Green
+            Remove-Item $BinImgName -Force
+        }
     }
     
     # Cleanup

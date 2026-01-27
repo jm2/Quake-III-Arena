@@ -45,20 +45,34 @@ make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 # Convert to PEF (Fix for XCOFF output)
 MAKEPEF="../tools/Retro68-build/bin/MakePEF"
 if [ -f "$MAKEPEF" ]; then
-    echo "Converting binaries to PEF..."
+    echo "Checking binaries for PEF conversion..."
+    
     if [ -f "Quake3" ]; then
-        "$MAKEPEF" Quake3 -o Quake3.pef
-        # MakePEF might create a resource fork or separate file, usually just the container
-        mv Quake3.pef Quake3
-        echo "Created Quake3 (PEF)"
+        # Check if already PEF (Joy! header) using xxd
+        MAGIC=$(xxd -l 4 -p Quake3 2>/dev/null || echo "00000000")
+        if [[ "$MAGIC" != "4a6f7921" ]]; then
+             echo "Converting Quake3 to PEF..."
+             "$MAKEPEF" Quake3 -o Quake3.pef
+             mv Quake3.pef Quake3
+             echo "Created Quake3 (PEF)"
+        else
+             echo "Quake3 is already PEF."
+        fi
     fi
+    
     if [ -f "Quake3_TeamArena" ]; then
-        "$MAKEPEF" Quake3_TeamArena -o Quake3_TeamArena.pef
-        mv Quake3_TeamArena.pef Quake3_TeamArena
-        echo "Created Quake3_TeamArena (PEF)"
+        MAGIC=$(xxd -l 4 -p Quake3_TeamArena 2>/dev/null || echo "00000000")
+        if [[ "$MAGIC" != "4a6f7921" ]]; then
+             echo "Converting Quake3_TeamArena to PEF..."
+             "$MAKEPEF" Quake3_TeamArena -o Quake3_TeamArena.pef
+             mv Quake3_TeamArena.pef Quake3_TeamArena
+             echo "Created Quake3_TeamArena (PEF)"
+        else
+             echo "Quake3_TeamArena is already PEF."
+        fi
     fi
 else
-    echo "Warning: MakePEF not found at $MAKEPEF. Binaries might be invalid XCOFF."
+    echo "Warning: MakePEF not found. Binaries might be invalid XCOFF."
 fi
 
 echo "Build complete. Check build_mac/Quake3 or similar."
@@ -317,6 +331,45 @@ EOF
     echo "Encoding as MacBinary II..."
     BIN_NAME="$RELEASE_ROOT/Quake3_Install.img.bin"
     python3 macbinary_encode.py "$IMAGE_NAME" "$BIN_NAME" "iso " "dCpy"
+    
+    # ---------------------------------------------------------
+    # Create Binary-Only Image (for faster deployment/testing)
+    # ---------------------------------------------------------
+    echo "Creating Binaries-Only Image..."
+    BIN_IMG_NAME="$RELEASE_ROOT/Quake3_Bin.img"
+    BIN_CONTENT_DIR="$RELEASE_ROOT/bin_content"
+    mkdir -p "$BIN_CONTENT_DIR"
+    
+    # Copy Binaries and AppleDouble resource forks (for linux mkisofs)
+    # If using hdiutil, resources are inside the file, but we can't easily split them on Linux without hfsutils.
+    # We assume mkisofs strategy here since we are on Linux.
+    
+    cp "$CONTENT_DIR/Quake 3 Arena/Quake3" "$BIN_CONTENT_DIR/"
+    if [ -f "$CONTENT_DIR/Quake 3 Arena/%Quake3" ]; then
+        cp "$CONTENT_DIR/Quake 3 Arena/%Quake3" "$BIN_CONTENT_DIR/"
+    fi
+    
+    if [ -f "$CONTENT_DIR/Quake 3 Arena/Quake3_TeamArena" ]; then
+        cp "$CONTENT_DIR/Quake 3 Arena/Quake3_TeamArena" "$BIN_CONTENT_DIR/"
+        if [ -f "$CONTENT_DIR/Quake 3 Arena/%Quake3_TeamArena" ]; then
+             cp "$CONTENT_DIR/Quake 3 Arena/%Quake3_TeamArena" "$BIN_CONTENT_DIR/"
+        fi
+    fi
+    
+    if [[ "$MKISOFS" != "hdiutil" ]]; then
+         $MKISOFS -hfs -double -map "$MAPPING_FILE" -o "$BIN_IMG_NAME" -V "Quake 3 Binaries" "$BIN_CONTENT_DIR"
+    else
+         # On macOS, native copy works
+         hdiutil makehybrid -o "$BIN_IMG_NAME" -hfs -joliet -iso -default-volume-name "Quake 3 Binaries" "$BIN_CONTENT_DIR"
+         if [ -f "${BIN_IMG_NAME}.iso" ]; then mv "${BIN_IMG_NAME}.iso" "$BIN_IMG_NAME"; fi
+    fi
+    
+    if [ -f "$BIN_IMG_NAME" ]; then
+         echo "Encoding Binaries Image..."
+         python3 macbinary_encode.py "$BIN_IMG_NAME" "${BIN_IMG_NAME}.bin" "iso " "dCpy"
+         echo "Package created: ${BIN_IMG_NAME}.bin"
+         rm -f "$BIN_IMG_NAME"
+    fi
     
     if [ -f "$BIN_NAME" ]; then
         echo "Package created: $BIN_NAME"
