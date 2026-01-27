@@ -106,15 +106,6 @@ sysEvent_t Sys_GetEvent( void ) {
     return ev;
 }
 
-// Stubs for mkdir/getcwd (needed if not in libs)
-int mkdir(const char *path, mode_t mode) {
-    return 0;
-}
-
-char *getcwd(char *buf, size_t size) {
-    if (size > 0 && buf) buf[0] = '\0';
-    return buf;
-}
 
 // ==========================================
 // Main Entry Point and System Routines
@@ -187,11 +178,142 @@ qboolean Sys_LowPhysicalMemory( void ) { return qfalse; }
 
 cvar_t *sys_waitNextEvent;
 
-char **Sys_ListFiles( const char *directory, const char *extension, char *filter, int *numfiles, qboolean wantsubs ) {
-    *numfiles = 0;
-    return NULL;
+#define MAX_FOUND_FILES 0x1000
+
+// Helper: Convert C path to FSSpec
+static OSErr PathToFSSpec(const char *path, FSSpec *spec) {
+    Str255 ppath;
+    int len = strlen(path);
+    if (len > 255) len = 255;
+    ppath[0] = len;
+    memcpy(&ppath[1], path, len);
+    return FSMakeFSSpec(0, 0, ppath, spec);
 }
-void Sys_FreeFileList( char **list ) {}
+
+char **Sys_ListFiles( const char *directory, const char *extension, char *filter, int *numfiles, qboolean wantsubs ) {
+    FSSpec dirSpec;
+    CInfoPBRec pb;
+    Str255 name;
+    OSErr err;
+    short vRefNum;
+    long dirID;
+    int nfiles = 0;
+    char *list[MAX_FOUND_FILES];
+    char **listCopy;
+    int i;
+    int extLen;
+    qboolean dironly = wantsubs;
+    
+    *numfiles = 0;
+    
+    // Convert path to FSSpec
+    err = PathToFSSpec(directory, &dirSpec);
+    if (err != noErr && err != fnfErr) {
+        return NULL;
+    }
+    
+    // Get directory ID
+    memset(&pb, 0, sizeof(pb));
+    pb.dirInfo.ioNamePtr = dirSpec.name;
+    pb.dirInfo.ioVRefNum = dirSpec.vRefNum;
+    pb.dirInfo.ioDrDirID = dirSpec.parID;
+    pb.dirInfo.ioFDirIndex = 0;
+    
+    err = PBGetCatInfoSync(&pb);
+    if (err != noErr) {
+        return NULL;
+    }
+    
+    if (!(pb.dirInfo.ioFlAttrib & 0x10)) {
+        // Not a directory
+        return NULL;
+    }
+    
+    vRefNum = dirSpec.vRefNum;
+    dirID = pb.dirInfo.ioDrDirID;
+    
+    if (!extension)
+        extension = "";
+    
+    if (extension[0] == '/' && extension[1] == 0) {
+        extension = "";
+        dironly = qtrue;
+    }
+    
+    extLen = strlen(extension);
+    
+    // Iterate through directory
+    for (i = 1; ; i++) {
+        memset(&pb, 0, sizeof(pb));
+        pb.hFileInfo.ioNamePtr = name;
+        pb.hFileInfo.ioVRefNum = vRefNum;
+        pb.hFileInfo.ioDirID = dirID;
+        pb.hFileInfo.ioFDirIndex = i;
+        
+        err = PBGetCatInfoSync(&pb);
+        if (err != noErr) {
+            break;  // No more files
+        }
+        
+        // Convert Pascal string to C string
+        char cname[256];
+        int nameLen = name[0];
+        memcpy(cname, &name[1], nameLen);
+        cname[nameLen] = '\0';
+        
+        // Check if directory
+        qboolean isDir = (pb.hFileInfo.ioFlAttrib & 0x10) != 0;
+        
+        if ((dironly && !isDir) || (!dironly && isDir)) {
+            continue;
+        }
+        
+        // Check extension
+        if (*extension) {
+            if (nameLen < extLen ||
+                Q_stricmp(cname + nameLen - extLen, extension) != 0) {
+                continue;
+            }
+        }
+        
+        if (nfiles >= MAX_FOUND_FILES - 1) {
+            break;
+        }
+        
+        list[nfiles] = CopyString(cname);
+        nfiles++;
+    }
+    
+    list[nfiles] = NULL;
+    *numfiles = nfiles;
+    
+    if (!nfiles) {
+        return NULL;
+    }
+    
+    // Copy list to Z_Malloc'd memory
+    listCopy = Z_Malloc((nfiles + 1) * sizeof(*listCopy));
+    for (i = 0; i < nfiles; i++) {
+        listCopy[i] = list[i];
+    }
+    listCopy[i] = NULL;
+    
+    return listCopy;
+}
+
+void Sys_FreeFileList( char **list ) {
+    int i;
+    
+    if (!list) {
+        return;
+    }
+    
+    for (i = 0; list[i]; i++) {
+        Z_Free(list[i]);
+    }
+    
+    Z_Free(list);
+}
 
 void *Sys_LoadDll( const char *name, char *fqpath, int (QDECL **entryPoint)(int, ...), int (*systemcalls)(int, ...) ) { return NULL; }
 void Sys_UnloadDll( void *dllHandle ) {}

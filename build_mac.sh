@@ -42,6 +42,25 @@ cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/Retro68.toolchain.cmake -DCMAKE_BUILD_T
 # Build
 make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
+# Convert to PEF (Fix for XCOFF output)
+MAKEPEF="../tools/Retro68-build/bin/MakePEF"
+if [ -f "$MAKEPEF" ]; then
+    echo "Converting binaries to PEF..."
+    if [ -f "Quake3" ]; then
+        "$MAKEPEF" Quake3 -o Quake3.pef
+        # MakePEF might create a resource fork or separate file, usually just the container
+        mv Quake3.pef Quake3
+        echo "Created Quake3 (PEF)"
+    fi
+    if [ -f "Quake3_TeamArena" ]; then
+        "$MAKEPEF" Quake3_TeamArena -o Quake3_TeamArena.pef
+        mv Quake3_TeamArena.pef Quake3_TeamArena
+        echo "Created Quake3_TeamArena (PEF)"
+    fi
+else
+    echo "Warning: MakePEF not found at $MAKEPEF. Binaries might be invalid XCOFF."
+fi
+
 echo "Build complete. Check build_mac/Quake3 or similar."
 
 # Packaging Subcommand

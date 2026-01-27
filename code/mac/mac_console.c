@@ -1,7 +1,7 @@
+#include <stdio.h>
 #include "../client/client.h"
 #include "mac_local.h"
 #include <DriverServices.h>
-// #include <console.h>
 
 #define	CONSOLE_MASK	1023
 static char	consoleChars[CONSOLE_MASK+1];
@@ -14,17 +14,7 @@ Sys_InitConsole
 ==================
 */
 void	Sys_InitConsole( void ) {
-//	SIOUXSettings.initializeTB   = 0;
-//	SIOUXSettings.standalone     = 0;
-//	SIOUXSettings.setupmenus     = 0;
-//	SIOUXSettings.autocloseonquit= 1;
-//	SIOUXSettings.asktosaveonclose = 0;
-//	SIOUXSettings.toppixel       = 38;
-//	SIOUXSettings.leftpixel      = 10;
-//	SIOUXSettings.columns        = 100;
-//	SIOUXSettings.rows           = 40;
-	
-//	Sys_ShowConsole( 1, qfalse );
+    // StdCLib should handle console initialization if linked.
 }
 
 /*
@@ -38,7 +28,6 @@ void	Sys_ShowConsole( int level, qboolean quitOnClose ) {
 		consoleDisplayed = qtrue;
 		printf( "\n" );
 	} else {
-		// FIXME: I don't know how to hide this window...
 		consoleDisplayed = qfalse;
 	}	
 }
@@ -66,28 +55,11 @@ Sys_ConsoleEvent
 ==================
 */
 qboolean Sys_ConsoleEvent( EventRecord *event ) {
-	qboolean flag;
-	
-	flag = qfalse; // SIOUXHandleOneEvent(event);
-	
-	// track keyboard events so we can do console input,
-	// because SIOUX doesn't offer a polled read as far
-	// as I can tell...
-	if ( flag && event->what == keyDown ) {
-		int		myCharCode;
-	
-		myCharCode	= BitAnd( event->message, charCodeMask );
-		if ( myCharCode == 8 || myCharCode == 28 ) {
-			if ( consoleHead > consoleTail ) {
-				consoleHead--;
-			}
-		} else if ( myCharCode >= 32 || myCharCode == 13 ) {
-			consoleChars[ consoleHead & CONSOLE_MASK ] = myCharCode;
-			consoleHead++;
-		}
-	}
-		
-	return flag;
+    // SIOUX handling removed. 
+    // If we need input, we'd need to poll stdin or similar if supported, 
+    // or handle system events that map to console if using a specific library.
+    // For now, just return false as we rely on the game loop for main input.
+    return qfalse;
 }
 
 
@@ -100,21 +72,8 @@ Return NULL if a complete line is not ready.
 ================
 */
 char *Sys_ConsoleInput( void ) {
-	static char	string[1024];
-	int		i;
-
-	if ( consoleTail == consoleHead ) {
-		return NULL;
-	}
-	
-	for ( i = 0 ; i + consoleTail < consoleHead ; i++ ) {
-		string[i] = consoleChars[ ( consoleTail + i ) & CONSOLE_MASK ];
-		if ( string[i] == 13 ) {
-			consoleTail += i + 1;
-			string[i] = 0;
-			return string;
-		}
-	}
-		
+    // Simple stdin polling not implemented effectively here without blocking or 
+    // knowing how StdCLib maps input events in the game loop.
+    // Returning NULL disables dedicated server console input for now.
 	return NULL;
 }

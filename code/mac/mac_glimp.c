@@ -271,11 +271,11 @@ static void GLimp_Extensions( void ) {
 
 	if ( strstr( extensions, "GL_ARB_multitexture" )  ) {
 		if ( r_ext_multitexture->integer && r_allowExtensions->integer ) {
-			qglMultiTexCoord2fARB = glMultiTexCoord2fARB;
-			qglActiveTextureARB = glActiveTextureARB;
-			qglClientActiveTextureARB = glClientActiveTextureARB;
+			// qglMultiTexCoord2fARB = glMultiTexCoord2fARB;
+			// qglActiveTextureARB = glActiveTextureARB;
+			// qglClientActiveTextureARB = glClientActiveTextureARB;
 
-			ri.Printf( PRINT_ALL, "...using GL_ARB_multitexture\n" );
+			ri.Printf( PRINT_ALL, "...using GL_ARB_multitexture (Disabled for compatibility)\n" );
 		} else {
 			ri.Printf( PRINT_ALL, "...ignoring GL_ARB_multitexture\n" );
 		}
@@ -289,10 +289,10 @@ static void GLimp_Extensions( void ) {
 
 	if ( strstr( extensions, "GL_EXT_compiled_vertex_array" ) ) {
 		if ( r_ext_compiled_vertex_array->integer && r_allowExtensions->integer ) {
-			qglLockArraysEXT = glLockArraysEXT;
-			qglUnlockArraysEXT = glUnlockArraysEXT;
+			// qglLockArraysEXT = glLockArraysEXT;
+			// qglUnlockArraysEXT = glUnlockArraysEXT;
 
-			ri.Printf( PRINT_ALL, "...using GL_EXT_compiled_vertex_array\n" );
+			ri.Printf( PRINT_ALL, "...using GL_EXT_compiled_vertex_array (Disabled for compatibility)\n" );
 		} else {
 			ri.Printf( PRINT_ALL, "...ignoring GL_EXT_compiled_vertex_array\n" );
 		}

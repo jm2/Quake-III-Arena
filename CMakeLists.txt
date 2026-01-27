@@ -113,11 +113,8 @@ target_compile_definitions(ui_mp_obj PRIVATE
 
 # Link directories (Must be before add_executable)
 link_directories(
+    "${CMAKE_SOURCE_DIR}/tools/Retro68-build/powerpc-apple-macos/lib"
     "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/SharedLibraries"
-    "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Libraries/SharedLibraries"
-    "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Libraries/PPCLibraries"
-    "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Libraries/Libraries"
-    "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Libraries"
 )
 
 # Main Executable
@@ -165,6 +162,9 @@ target_link_libraries(Quake3 PUBLIC
     -lInputSprocketLib
     -lDrawSprocketLib
     -lOpenGLLibraryStub
+    -lSoundLib
+    -lRetroConsole
+    -lstdc++
 )
 
 target_link_libraries(Quake3_TeamArena PUBLIC
@@ -177,12 +177,11 @@ target_link_libraries(Quake3_TeamArena PUBLIC
     -lInputSprocketLib
     -lDrawSprocketLib
     -lOpenGLLibraryStub
+    -lSoundLib
+    -lRetroConsole
+    -lstdc++
 )
 
-if(ENABLE_SOUND)
-    target_link_libraries(Quake3 PUBLIC "${MPW_LIB_DIR}/SoundLib")
-    target_link_libraries(Quake3_TeamArena PUBLIC "${MPW_LIB_DIR}/SoundLib")
-endif()
 
 # Output name
 set_target_properties(Quake3 PROPERTIES OUTPUT_NAME "Quake3")
