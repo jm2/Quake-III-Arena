@@ -33,6 +33,9 @@ USER INTERFACE MAIN
 
 #include "ui_local.h"
 
+// Prototype for va() if needed, but it's usually in q_shared.h included by ui_local.h
+
+
 uiInfo_t uiInfo;
 
 static const char *MonthAbbrev[] = {
@@ -170,6 +173,7 @@ int vmMain( int command, int arg0, int arg1, int arg2, int arg3, int arg4, int a
     // We use trap_Print if initialized, otherwise printf might be safer or vice versa depending on stage.
     // Since this is static link, printf should appear in stdout.
 	printf("UI_vmMain: Entered with command %i\n", command);
+	fflush(stdout);
 
   switch ( command ) {
 	  case UI_GETAPIVERSION:

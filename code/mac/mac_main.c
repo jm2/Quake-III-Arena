@@ -702,6 +702,7 @@ void *Sys_LoadDll( const char *name, char *fqpath, int (QDECL **entryPoint)(int,
 	if ( !Q_stricmp( name, "ui" ) ) {
 		*entryPoint = (int (QDECL *)(int, ...))UI_vmMain;
 		printf("Sys_LoadDll: Assigned UI_vmMain address: %p\n", (void *)UI_vmMain);
+		fflush(stdout);
 		return (void *)UI_vmMain;
 	}
 	if ( !Q_stricmp( name, "cgame" ) ) {

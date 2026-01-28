@@ -68,8 +68,14 @@ target_compile_definitions(game_obj PRIVATE
     -DGAME_MODULE
 )
 
-file(GLOB CGAME_SRCS code/cgame/*.c)
+file(GLOB ALL_CGAME_SRCS code/cgame/*.c)
+
+# Vanilla CGame (excludes cg_newdraw.c)
+set(CGAME_SRCS ${ALL_CGAME_SRCS})
 list(REMOVE_ITEM CGAME_SRCS "${CMAKE_SOURCE_DIR}/code/cgame/cg_newdraw.c")
+
+# Mission Pack CGame (includes everything)
+set(CGAME_MP_SRCS ${ALL_CGAME_SRCS})
 
 add_library(cgame_obj OBJECT ${CGAME_SRCS})
 target_compile_definitions(cgame_obj PRIVATE 
@@ -95,7 +101,7 @@ target_compile_definitions(game_mp_obj PRIVATE
     -DMISSIONPACK
 )
 
-add_library(cgame_mp_obj OBJECT ${CGAME_SRCS})
+add_library(cgame_mp_obj OBJECT ${CGAME_MP_SRCS})
 target_compile_definitions(cgame_mp_obj PRIVATE 
     -DvmMain=CGame_vmMain 
     -DdllEntry=CGame_dllEntry

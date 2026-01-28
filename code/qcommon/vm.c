@@ -690,6 +690,7 @@ int	QDECL VM_Call( vm_t *vm, int callnum, ... ) {
 		//rcg010207 -  see dissertation at top of VM_DllSyscall() in this file.
 		if ( vm_debugLevel || !Q_stricmp(vm->name, "ui") ) {
 			Com_Printf("VM_Call: Calling native %s entryPoint %p cmd=%i\n", vm->name, vm->entryPoint, callnum);
+			fflush(stdout);
 		}
 		va_start(ap, callnum);
 		for (i = 0; i < sizeof (args) / sizeof (args[i]); i++) {
@@ -697,10 +698,16 @@ int	QDECL VM_Call( vm_t *vm, int callnum, ... ) {
 		}
 		va_end(ap);
 
-		r = vm->entryPoint( callnum,  args[0],  args[1],  args[2], args[3],
+		// Fix for PPC/Static Build: Cast to the exact function signature of vmMain
+		// vmMain takes command + 12 integers = 13 arguments.
+		// Original code passed 17 arguments (command + 16 args) via a varargs pointer, 
+		// which breaks on PPC because fixed-arg functions expect args in registers differently than varargs.
+		typedef int (QDECL *vmMain_t)(int, int, int, int, int, int, int, int, int, int, int, int, int);
+		vmMain_t func = (vmMain_t)vm->entryPoint;
+		
+		r = func( callnum,  args[0],  args[1],  args[2], args[3],
                             args[4],  args[5],  args[6], args[7],
-                            args[8],  args[9], args[10], args[11],
-                            args[12], args[13], args[14], args[15]);
+                            args[8],  args[9], args[10], args[11] );
 	} else if ( vm->compiled ) {
 		r = VM_CallCompiled( vm, &callnum );
 	} else {
