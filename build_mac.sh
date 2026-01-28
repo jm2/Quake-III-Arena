@@ -96,7 +96,7 @@ if [[ "$1" == "package" ]]; then
     
     mkdir -p "$CONTENT_DIR/Quake 3 Arena/baseq3"
     mkdir -p "$TEMP_DIR"
-    chmod -R u+w "$RELEASE_ROOT" # Ensure we can overwrite
+    chmod -R u+w "$RELEASE_ROOT" 2>/dev/null || true # Ensure we can overwrite
     
     # 1. Copy Binary
     if [ -f "build_mac/Quake3" ]; then
@@ -221,10 +221,10 @@ if [[ "$1" == "package" ]]; then
     
     # Create a mapping file for HFS creator/types
     cat > "$MAPPING_FILE" <<EOF
-.pk3   Raw   Q3A  Stak "Quake 3 Data"
-.cfg   Ascii Q3A  TEXT "Quake 3 Config"
-Quake3 Raw   Q3A  APPL "Quake 3 App"
-Quake3_TeamArena Raw Q3A APPL "Quake 3 Team Arena"
+.pk3   Raw   IDQ3  Stak "Quake 3 Data"
+.cfg   Ascii IDQ3  TEXT "Quake 3 Config"
+Quake3 Raw   IDQ3  APPL "Quake 3 App"
+Quake3_TeamArena Raw IDQ3 APPL "Quake 3 Team Arena"
 EOF
     
     if command -v genisoimage &> /dev/null; then
@@ -295,9 +295,9 @@ EOF
              # Quake3: APPL Q3A (0x51334120)
              # We use python to set FinderInfo if SetFile is missing
              echo "Setting FinderInfo (Type/Creator)..."
-             # Type: APPL (0x4150504C), Creator: Q3A (0x51334120) followed by 24 bytes of zeros
-             # Hex: 4150504C51334120000000000000000000000000000000000000000000000000
-             FINDER_INFO_HEX="4150504C51334120000000000000000000000000000000000000000000000000"
+             # Type: APPL (0x4150504C), Creator: IDQ3 (0x49445133) followed by 24 bytes of zeros
+             # Hex: 4150504C49445133000000000000000000000000000000000000000000000000
+             FINDER_INFO_HEX="4150504C49445133000000000000000000000000000000000000000000000000"
              
              xattr -wx com.apple.FinderInfo "$FINDER_INFO_HEX" "$RELEASE_ROOT/content/Quake 3 Arena/Quake3"
              if [ -f "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena" ]; then

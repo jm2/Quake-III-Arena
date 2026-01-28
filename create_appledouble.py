@@ -64,7 +64,7 @@ def create_appledouble(resource_fork_path, output_path):
     data += entries
     
     # Write Finder Info (32 bytes zeros is fine, or set Type/Creator?)
-    # Type: APPL (0x4150504C), Creator: Q3A (0x51334120) are in FinderInfo!
+    # Type: APPL (0x4150504C), Creator: IDQ3 (0x49445133) are in FinderInfo!
     # FinderInfo format:
     # 0x00: Type (4)
     # 0x04: Creator (4)
@@ -74,8 +74,8 @@ def create_appledouble(resource_fork_path, output_path):
     finder_info = bytearray(32)
     # APPL
     struct.pack_into('>I', finder_info, 0, 0x4150504C)
-    # Q3A (with space)
-    struct.pack_into('>I', finder_info, 4, 0x51334120)
+    # IDQ3 (MacQuake3 Original)
+    struct.pack_into('>I', finder_info, 4, 0x49445133)
     # Flags: kHasBundle (0x2000)
     # This is critical for Finder to read BNDL and SIZE resources!
     struct.pack_into('>H', finder_info, 8, 0x2000)
@@ -86,7 +86,7 @@ def create_appledouble(resource_fork_path, output_path):
     with open(output_path, 'wb') as f:
         f.write(data)
         
-    print(f"Created AppleDouble file {output_path} (Type: APPL, Creator: Q3A )")
+    print(f"Created AppleDouble file {output_path} (Type: APPL, Creator: IDQ3 )")
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
