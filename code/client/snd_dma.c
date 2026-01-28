@@ -140,7 +140,12 @@ void S_Init( void ) {
 	cvar_t	*cv;
 	qboolean	r;
 
+	// TEMPORARY: Unconditionally skip sound on Mac OS 9 due to SNDDMA_Init hang
+	printf("SOFF\n");  // Sound OFF
 	Com_Printf("\n------- sound initialization -------\n");
+	Com_Printf ("Sound disabled for Mac OS 9 debugging.\n");
+	Com_Printf("------------------------------------\n");
+	return;
 
 	s_volume = Cvar_Get ("s_volume", "0.8", CVAR_ARCHIVE);
 	s_musicVolume = Cvar_Get ("s_musicvolume", "0.25", CVAR_ARCHIVE);
@@ -153,8 +158,9 @@ void S_Init( void ) {
 	s_show = Cvar_Get ("s_show", "0", CVAR_CHEAT);
 	s_testsound = Cvar_Get ("s_testsound", "0", CVAR_CHEAT);
 
-	cv = Cvar_Get ("s_initsound", "1", 0);
+	cv = Cvar_Get ("s_initsound", "0", 0);  // Disabled to bypass Mac sound driver hang
 	if ( !cv->integer ) {
+		printf("SND0\n");  // Sound disabled
 		Com_Printf ("not initializing.\n");
 		Com_Printf("------------------------------------\n");
 		return;
@@ -368,17 +374,30 @@ S_BeginRegistration
 =====================
 */
 void S_BeginRegistration( void ) {
+	printf("S_BeginRegistration Entry\n");
+	
+	// Early return if sound is disabled
+	if (!s_soundStarted) {
+		printf("S_BeginRegistration SKIP\n");
+		return;
+	}
+	
 	s_soundMuted = qfalse;		// we can play again
 
 	if (s_numSfx == 0) {
+		printf("Calling SND_setup\n");
 		SND_setup();
+		printf("SND_setup OK\n");
 
 		s_numSfx = 0;
 		Com_Memset( s_knownSfx, 0, sizeof( s_knownSfx ) );
 		Com_Memset(sfxHash, 0, sizeof(sfx_t *)*LOOP_HASH);
 
+		printf("RegisterDefaultSound\n");
 		S_RegisterSound("sound/feedback/hit.wav", qfalse);		// changed to a sound in baseq3
+		printf("RegisterDefaultSound OK\n");
 	}
+	printf("S_BeginRegistration DONE\n");
 }
 
 

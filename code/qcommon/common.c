@@ -2384,7 +2384,11 @@ void Com_Init( char *commandLine ) {
 
 	FS_InitFilesystem ();
 
+	//printf("DEBUG: Com_Init: FS_InitFilesystem complete\n");
+
 	Com_InitJournaling();
+
+	//printf("DEBUG: Com_Init: Com_InitJournaling complete\n");
 
 	Cbuf_AddText ("exec default.cfg\n");
 
@@ -2395,7 +2399,11 @@ void Com_Init( char *commandLine ) {
 
 	Cbuf_AddText ("exec autoexec.cfg\n");
 
+	//printf("DEBUG: Com_Init: About to execute config files\n");
+
 	Cbuf_Execute ();
+
+	//printf("DEBUG: Com_Init: Cbuf_Execute complete\n");
 
 	// override anything from the config files with command line args
 	Com_StartupVariable( NULL );
@@ -2406,8 +2414,13 @@ void Com_Init( char *commandLine ) {
 #else
 	com_dedicated = Cvar_Get ("dedicated", "0", CVAR_LATCH);
 #endif
+
+	//printf("DEBUG: Com_Init: About to init hunk memory\n");
+
 	// allocate the stack based hunk allocator
 	Com_InitHunkMemory();
+
+	//printf("DEBUG: Com_Init: Com_InitHunkMemory complete\n");
 
 	// if any archived cvars are modified after this, we will trigger a writing
 	// of the config file
@@ -2461,14 +2474,29 @@ void Com_Init( char *commandLine ) {
 	s = va("%s %s %s", Q3_VERSION, CPUSTRING, __DATE__ );
 	com_version = Cvar_Get ("version", s, CVAR_ROM | CVAR_SERVERINFO );
 
+	//printf("DEBUG: Com_Init: About to call Sys_Init\n");
+
 	Sys_Init();
+
+	//printf("DEBUG: Com_Init: Sys_Init complete\n");
+
 	Netchan_Init( Com_Milliseconds() & 0xffff );	// pick a port value that should be nice and random
+
+	//printf("DEBUG: Com_Init: Netchan_Init complete\n");
+
 	VM_Init();
+
+	//printf("DEBUG: Com_Init: VM_Init complete\n");
+
 	SV_Init();
+
+	//printf("DEBUG: Com_Init: SV_Init complete\n");
 
 	com_dedicated->modified = qfalse;
 	if ( !com_dedicated->integer ) {
+		//printf("DEBUG: Com_Init: About to call CL_Init\n");
 		CL_Init();
+		//printf("DEBUG: Com_Init: CL_Init complete\n");
 		Sys_ShowConsole( com_viewlog->integer, qfalse );
 	}
 
@@ -2492,7 +2520,11 @@ void Com_Init( char *commandLine ) {
 	// start in full screen ui mode
 	Cvar_Set("r_uiFullScreen", "1");
 
+	//printf("DEBUG: Com_Init: About to call CL_StartHunkUsers\n");
+
 	CL_StartHunkUsers();
+
+	//printf("DEBUG: Com_Init: CL_StartHunkUsers complete\n");
 
 	// make sure single player is off by default
 	Cvar_Set("ui_singlePlayerActive", "0");

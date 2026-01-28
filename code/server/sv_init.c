@@ -558,7 +558,11 @@ Only called at main exe startup, not for each game
 void SV_BotInitBotLib(void);
 
 void SV_Init (void) {
+	//printf("DEBUG: SV_Init: Starting\n");
+
 	SV_AddOperatorCommands ();
+
+	//printf("DEBUG: SV_Init: SV_AddOperatorCommands complete\n");
 
 	// serverinfo vars
 	Cvar_Get ("dmflags", "0", CVAR_SERVERINFO);
@@ -577,6 +581,8 @@ void SV_Init (void) {
 	sv_maxPing = Cvar_Get ("sv_maxPing", "0", CVAR_ARCHIVE | CVAR_SERVERINFO );
 	sv_floodProtect = Cvar_Get ("sv_floodProtect", "1", CVAR_ARCHIVE | CVAR_SERVERINFO );
 
+	//printf("DEBUG: SV_Init: Serverinfo cvars complete\n");
+
 	// systeminfo
 	Cvar_Get ("sv_cheats", "1", CVAR_SYSTEMINFO | CVAR_ROM );
 	sv_serverid = Cvar_Get ("sv_serverid", "0", CVAR_SYSTEMINFO | CVAR_ROM );
@@ -589,6 +595,8 @@ void SV_Init (void) {
 	Cvar_Get ("sv_pakNames", "", CVAR_SYSTEMINFO | CVAR_ROM );
 	Cvar_Get ("sv_referencedPaks", "", CVAR_SYSTEMINFO | CVAR_ROM );
 	Cvar_Get ("sv_referencedPakNames", "", CVAR_SYSTEMINFO | CVAR_ROM );
+
+	//printf("DEBUG: SV_Init: Systeminfo cvars complete\n");
 
 	// server vars
 	sv_rconPassword = Cvar_Get ("rconPassword", "", CVAR_TEMP );
@@ -612,11 +620,18 @@ void SV_Init (void) {
 	sv_lanForceRate = Cvar_Get ("sv_lanForceRate", "1", CVAR_ARCHIVE );
 	sv_strictAuth = Cvar_Get ("sv_strictAuth", "1", CVAR_ARCHIVE );
 
+	//printf("DEBUG: SV_Init: Server vars complete\n");
+
 	// initialize bot cvars so they are listed and can be set before loading the botlib
 	SV_BotInitCvars();
 
+	//printf("DEBUG: SV_Init: SV_BotInitCvars complete\n");
+
 	// init the botlib here because we need the pre-compiler in the UI
+	//printf("DEBUG: SV_Init: About to call SV_BotInitBotLib\n");
 	SV_BotInitBotLib();
+
+	//printf("DEBUG: SV_Init: SV_BotInitBotLib complete - SV_Init DONE\n");
 }
 
 

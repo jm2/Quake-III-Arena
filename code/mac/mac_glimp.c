@@ -506,7 +506,9 @@ static qboolean CreateGameWindow( void ) {
 	int			mode;
 	int			x, y;
 	Str255    	pstr;
-
+	Rect		windowRect;
+	
+	//printf("DEBUG: CreateGameWindow: Starting\n");
 	
 	vid_xpos = ri.Cvar_Get( "vid_xpos", "30", 0 );
 	vid_ypos = ri.Cvar_Get( "vid_ypos", "30", 0 );
@@ -514,39 +516,71 @@ static qboolean CreateGameWindow( void ) {
 	// get mode info
 	mode = r_mode->integer;
     ri.Printf( PRINT_ALL, "...setting mode %d:", mode );
+	//printf("DEBUG: CreateGameWindow: mode=%d\n", mode);
 
     if ( !R_GetModeInfo( &glConfig.vidWidth, &glConfig.vidHeight, &glConfig.windowAspect, mode ) )  {
         ri.Printf( PRINT_ALL, " invalid mode\n" );
+		//printf("DEBUG: CreateGameWindow: R_GetModeInfo failed (invalid mode)\n");
         return false;
     }
     ri.Printf( PRINT_ALL, " %d %d\n", glConfig.vidWidth, glConfig.vidHeight );
+	//printf("DEBUG: CreateGameWindow: vidWidth=%d, vidHeight=%d\n", glConfig.vidWidth, glConfig.vidHeight);
 
-	/* Create window */
+	/* Create window - using NewCWindow instead of GetNewCWindow (no resources needed) */
 	if ( r_fullscreen->integer ) {
 		int		actualWidth, actualHeight;
+		
+		//printf("DEBUG: CreateGameWindow: Fullscreen mode, calling GLimp_ChangeDisplay\n");
 		
 		// change display resolution
 		GLimp_ChangeDisplay( &actualWidth, &actualHeight );
 		
 		x = ( actualWidth - glConfig.vidWidth ) / 2;
 		y = ( actualHeight - glConfig.vidHeight ) / 2;
-		sys_gl.drawable = (AGLDrawable) GetNewCWindow(kFullScreenWindow,nil,(WindowPtr)-1L);
+		
+		//printf("DEBUG: CreateGameWindow: actualWidth=%d, actualHeight=%d, x=%d, y=%d\n", actualWidth, actualHeight, x, y);
 	} else {
-		x = vid_xpos->integer;
-		y = vid_ypos->integer;
-		sys_gl.drawable = (AGLDrawable) GetNewCWindow(kMainWindow,nil,(WindowPtr)-1L);
+		// Position window in upper-right corner to keep console visible
+		x = 320;  // Right side of screen
+		y = 30;   // Near top
+		// Force smaller size for debugging
+		glConfig.vidWidth = 320;
+		glConfig.vidHeight = 240;
+		//printf("DEBUG: Windowed mode, FORCED small window at x=%d, y=%d, size=%dx%d\n", x, y, glConfig.vidWidth, glConfig.vidHeight);
 	}
+	
+	// Create window rect
+	windowRect.left = x;
+	windowRect.top = y;
+	windowRect.right = x + glConfig.vidWidth;
+	windowRect.bottom = y + glConfig.vidHeight;
+	
+	//printf("DEBUG: CreateGameWindow: Calling NewCWindow, rect=(%d,%d,%d,%d)\n", 
+	//	   windowRect.left, windowRect.top, windowRect.right, windowRect.bottom);
+	
+	// Use NewCWindow instead of GetNewCWindow to avoid resource dependency
+	// Window style: 5 = noGrowDocProc (standard document window without grow box)
+	// For fullscreen, use 2 = plainDBox (plain box)
+	{
+		short windowStyle = r_fullscreen->integer ? 2 : 5;
+		CToPStr("Quake3: Arena", pstr);
+		sys_gl.drawable = (AGLDrawable) NewCWindow(nil, &windowRect, pstr, true, windowStyle, (WindowPtr)-1L, false, 0);
+	}
+	
 	if( !sys_gl.drawable ) {
+		//printf("DEBUG: CreateGameWindow: NewCWindow FAILED!\n");
 		return qfalse;
 	}
+	
+	//printf("DEBUG: CreateGameWindow: NewCWindow succeeded, drawable=%p\n", sys_gl.drawable);
 	
 	SizeWindow((GrafPort *) sys_gl.drawable, glConfig.vidWidth, glConfig.vidHeight,GL_FALSE);
 	MoveWindow((GrafPort *) sys_gl.drawable,x, y, GL_FALSE);
 	ShowWindow((GrafPort *) sys_gl.drawable);
 	SetPort((GrafPort *) sys_gl.drawable);
-	CToPStr("Quake3: Arena", pstr);
-	SetWTitle((GrafPort *) sys_gl.drawable, pstr);
 	HiliteWindow((GrafPort *) sys_gl.drawable, 1);
+	
+	//printf("DEBUG: CreateGameWindow: Window setup complete\n");
 	
 	return qtrue;
 }
@@ -565,14 +599,22 @@ qboolean GLimp_SetMode( void ) {
 	GLint		attrib[64];
 	int			i;
 
+	//printf("DEBUG: GLimp_SetMode: Starting\n");
+
 	if ( !CreateGameWindow() ) {
+		//printf("DEBUG: GLimp_SetMode: CreateGameWindow FAILED\n");
 		ri.Printf( PRINT_ALL, "GLimp_Init: window could not be created" );
 		return qfalse;
 	}
 	
+	//printf("DEBUG: GLimp_SetMode: CreateGameWindow succeeded\n");
+	
 	// check devices now that the game has set the display mode,
 	// because RAVE devices don't get reported if in an 8 bit desktop
+	//printf("DEBUG: GLimp_SetMode: Calling CheckDevices\n");
 	CheckDevices();
+	
+	//printf("DEBUG: GLimp_SetMode: CheckDevices complete, numDevices=%d\n", sys_gl.numDevices);
 	
 	// set up the attribute list
 	i = 0;
@@ -618,15 +660,18 @@ qboolean GLimp_SetMode( void ) {
 	attrib[i++] = 0;
 	
 	/* Choose pixel format */
+	//printf("DEBUG: GLimp_SetMode: Calling aglChoosePixelFormat\n");
 	ri.Printf( PRINT_ALL, "aglChoosePixelFormat\n" );
 	if ( r_device->integer < 0 || r_device->integer >= sys_gl.numDevices ) {
 		ri.Cvar_Set( "r_device", "0" );
 	}
 	sys_gl.fmt = aglChoosePixelFormat( &sys_gl.devices[ r_device->integer ], 1, attrib);
 	if(!sys_gl.fmt) {
+		//printf("DEBUG: GLimp_SetMode: aglChoosePixelFormat FAILED\n");
 		ri.Printf( PRINT_ALL, "GLimp_Init: Pixel format could not be achieved\n");
 		return qfalse;
 	}
+	//printf("DEBUG: GLimp_SetMode: aglChoosePixelFormat succeeded, fmt=0x%x\n", (int)sys_gl.fmt);
 	ri.Printf( PRINT_ALL, "Selected pixel format 0x%x\n", (int)sys_gl.fmt );
 	
 	aglDescribePixelFormat(sys_gl.fmt, AGL_RED_SIZE, &value);
@@ -700,9 +745,11 @@ void GLimp_Init( void ) {
 	static		qboolean	registered;
 	
 	ri.Printf( PRINT_ALL, "--- GLimp_Init ---\n" );
+	//printf("DEBUG: GLimp_Init: Starting\n");
 
 	aglGetVersion( &major, &minor );
 	ri.Printf( PRINT_ALL, "aglVersion: %i.%i\n", (int)major, (int)minor );
+	//printf("DEBUG: GLimp_Init: aglVersion %d.%d\n", (int)major, (int)minor);
 	
 	r_device = ri.Cvar_Get( "r_device", "0", CVAR_LATCH | CVAR_ARCHIVE );
 	r_ext_transform_hint = ri.Cvar_Get( "r_ext_transform_hint", "1", CVAR_LATCH | CVAR_ARCHIVE );
@@ -721,25 +768,38 @@ void GLimp_Init( void ) {
 	glConfig.deviceSupportsGamma = qtrue;
 	
 	// FIXME: try for a voodoo first
+	//printf("DEBUG: GLimp_Init: Getting system gammas\n");
 	sys_gl.systemGammas = GetSystemGammas();
 	
+	// FORCE windowed mode for Mac OS 9 debugging to prevent system freeze
+	ri.Cvar_Set( "r_fullscreen", "0" );
+	//printf("DEBUG: GLimp_Init: Forced r_fullscreen=0 for safe debugging\n");
+	
+	//printf("DEBUG: GLimp_Init: Calling GLimp_SetMode (first attempt)\n");
 	if ( GLimp_SetMode() ) {
+		//printf("DEBUG: GLimp_Init: GLimp_SetMode succeeded!\n");
 		ri.Printf( PRINT_ALL, "------------------\n" );
 		return;
 	}
 	
-	// fall back to the known-good mode
-	ri.Cvar_Set( "r_fullscreen", "1" );
+	//printf("DEBUG: GLimp_Init: First GLimp_SetMode failed, trying fallback\n");
+	
+	// fall back to the known-good mode - use windowed for Mac OS 9 debugging
+	ri.Cvar_Set( "r_fullscreen", "0" );  // Windowed mode to avoid freezing Mac OS 9
 	ri.Cvar_Set( "r_mode", "3" );
 	ri.Cvar_Set( "r_stereo", "0" );
 	ri.Cvar_Set( "r_depthBits", "16" );
 	ri.Cvar_Set( "r_colorBits", "16" );
 	ri.Cvar_Set( "r_stencilBits", "0" );
+	
+	//printf("DEBUG: GLimp_Init: Calling GLimp_SetMode (second attempt with fallback)\n");
 	if ( GLimp_SetMode() ) {
+		//printf("DEBUG: GLimp_Init: Fallback GLimp_SetMode succeeded!\n");
 		ri.Printf( PRINT_ALL, "------------------\n" );
 		return;
 	}
 
+	//printf("DEBUG: GLimp_Init: Both GLimp_SetMode attempts failed!\n");
 	ri.Error( ERR_FATAL, "Could not initialize OpenGL" );
 }
 

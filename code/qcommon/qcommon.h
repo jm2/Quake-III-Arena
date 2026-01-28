@@ -25,7 +25,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "../qcommon/cm_public.h"
 
-//#define	PRE_RELEASE_DEMO
+#define	PRE_RELEASE_DEMO  // Bypass product ID check for Mac OS 9 port
 
 //============================================================================
 

@@ -518,13 +518,22 @@ SV_BotInitBotLib
 void SV_BotInitBotLib(void) {
 	botlib_import_t	botlib_import;
 
+	//printf("DEBUG: SV_BotInitBotLib: Starting\n");
+
+	// CD check disabled for Mac OS 9 port
+#if 0
 	if ( !Cvar_VariableValue("fs_restrict") && !Sys_CheckCD() ) {
 		Com_Error( ERR_NEED_CD, "Game CD not in drive" );
 	}
+#endif
+
+	//printf("DEBUG: SV_BotInitBotLib: CD check bypassed\n");
 
 	if (debugpolygons) Z_Free(debugpolygons);
 	bot_maxdebugpolys = Cvar_VariableIntegerValue("bot_maxdebugpolys");
 	debugpolygons = Z_Malloc(sizeof(bot_debugpoly_t) * bot_maxdebugpolys);
+
+	//printf("DEBUG: SV_BotInitBotLib: debugpolygons allocated\n");
 
 	botlib_import.Print = BotImport_Print;
 	botlib_import.Trace = BotImport_Trace;

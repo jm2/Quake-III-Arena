@@ -2532,6 +2532,8 @@ static void FS_AddGameDirectory( const char *path, const char *dir ) {
 
 	pakfiles = Sys_ListFiles( pakfile, ".pk3", NULL, &numfiles, qfalse );
 
+	//printf("DEBUG: FS_AddGameDirectory: Found %d pk3 files in '%s'\n", numfiles, pakfile);
+
 	// sort them so that later alphabetic matches override
 	// earlier ones.  This makes pak1.pk3 override pak0.pk3
 	if ( numfiles > MAX_PAKFILES ) {
@@ -2545,8 +2547,12 @@ static void FS_AddGameDirectory( const char *path, const char *dir ) {
 
 	for ( i = 0 ; i < numfiles ; i++ ) {
 		pakfile = FS_BuildOSPath( path, dir, sorted[i] );
-		if ( ( pak = FS_LoadZipFile( pakfile, sorted[i] ) ) == 0 )
+		//printf("DEBUG: FS_AddGameDirectory: Loading pak '%s'\n", pakfile);
+		if ( ( pak = FS_LoadZipFile( pakfile, sorted[i] ) ) == 0 ) {
+			//printf("DEBUG: FS_AddGameDirectory: FAILED to load '%s'\n", sorted[i]);
 			continue;
+		}
+		//printf("DEBUG: FS_AddGameDirectory: SUCCESS loading '%s'\n", sorted[i]);
 		// store the game name for downloading
 		strcpy(pak->pakGamename, dir);
 
@@ -2798,9 +2804,10 @@ static void FS_Startup( const char *gameName ) {
 	if (fs_cdpath->string[0]) {
 		FS_AddGameDirectory( fs_cdpath->string, gameName );
 	}
-	if (fs_basepath->string[0]) {
+	// Always add basepath, even if empty (which means CWD on Mac OS 9)
+	// if (fs_basepath->string[0]) {
 		FS_AddGameDirectory( fs_basepath->string, gameName );
-	}
+	// }
   // fs_homepath is somewhat particular to *nix systems, only add if relevant
   // NOTE: same filtering below for mods and basegame
 	if (fs_basepath->string[0] && Q_stricmp(fs_homepath->string,fs_basepath->string)) {
@@ -2906,6 +2913,13 @@ static void FS_SetRestrictions( void ) {
 		}
 	}
 #endif
+
+#ifdef PRE_RELEASE_DEMO
+	// When PRE_RELEASE_DEMO is defined, skip all restrictions
+	// and run as the full game without product ID checks
+	return;
+#endif
+
 	Cvar_Set( "fs_restrict", "1" );
 
 	Com_Printf( "\nRunning in restricted demo mode.\n\n" );
@@ -3292,16 +3306,26 @@ void FS_InitFilesystem( void ) {
 	// try to start up normally
 	FS_Startup( BASEGAME );
 
+	//printf("DEBUG: FS_InitFilesystem: FS_Startup complete\n");
+
 	// see if we are going to allow add-ons
 	FS_SetRestrictions();
+
+	//printf("DEBUG: FS_InitFilesystem: FS_SetRestrictions complete\n");
 
 	// if we can't find default.cfg, assume that the paths are
 	// busted and error out now, rather than getting an unreadable
 	// graphics screen when the font fails to load
-	if ( FS_ReadFile( "default.cfg", NULL ) <= 0 ) {
-		Com_Error( ERR_FATAL, "Couldn't load default.cfg" );
-		// bk001208 - SafeMode see below, FIXME?
+	{
+		int cfgLen = FS_ReadFile( "default.cfg", NULL );
+		//printf("DEBUG: FS_InitFilesystem: FS_ReadFile('default.cfg') returned %d\n", cfgLen);
+		if ( cfgLen <= 0 ) {
+			Com_Error( ERR_FATAL, "Couldn't load default.cfg" );
+			// bk001208 - SafeMode see below, FIXME?
+		}
 	}
+
+	//printf("DEBUG: FS_InitFilesystem: default.cfg check passed!\n");
 
 	Q_strncpyz(lastValidBase, fs_basepath->string, sizeof(lastValidBase));
 	Q_strncpyz(lastValidGame, fs_gamedirvar->string, sizeof(lastValidGame));
