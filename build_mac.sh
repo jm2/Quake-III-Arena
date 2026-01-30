@@ -119,6 +119,15 @@ if [[ "$1" == "package" ]]; then
         echo "Found Base Game Data: $PAK0_PATH"
         cp "$PAK0_PATH" "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/"
         
+        # FIX: Copy menus.txt for older pak0 versions
+        if [ -f "ui/menus.txt" ]; then
+             mkdir -p "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/ui"
+             cp "ui/menus.txt" "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/ui/"
+             echo "Copied ui/menus.txt to baseq3/ui/"
+        fi
+        
+
+        
         if [ -n "$MP_PAK0_PATH" ]; then
              echo "Found Team Arena Data: $MP_PAK0_PATH"
              mkdir -p "$RELEASE_ROOT/content/Quake 3 Arena/missionpack"
@@ -355,6 +364,14 @@ EOF
              cp "$CONTENT_DIR/Quake 3 Arena/%Quake3_TeamArena" "$BIN_CONTENT_DIR/"
         fi
     fi
+
+    # FIX: Include ui/menus.txt in binaries image too
+    if [ -f "ui/menus.txt" ]; then
+         mkdir -p "$BIN_CONTENT_DIR/baseq3/ui"
+         cp "ui/menus.txt" "$BIN_CONTENT_DIR/baseq3/ui/"
+    fi
+
+
     
     if [[ "$MKISOFS" != "hdiutil" ]]; then
          $MKISOFS -hfs -double -map "$MAPPING_FILE" -o "$BIN_IMG_NAME" -V "Quake 3 Binaries" "$BIN_CONTENT_DIR"

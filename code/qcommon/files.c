@@ -283,6 +283,11 @@ typedef struct {
 	qboolean	zipFile;
 	qboolean	streamed;
 	char		name[MAX_ZPATH];
+    
+    // Antigravity: Buffered file support for Mac OS 9
+    byte        *buffer;
+    int         bufferLen;
+    int         bufferPos;
 } fileHandleData_t;
 
 static fileHandleData_t	fsh[MAX_FILE_HANDLES];
@@ -862,6 +867,14 @@ void FS_FCloseFile( fileHandle_t f ) {
 	if (fsh[f].streamed) {
 		Sys_EndStreamedFile(f);
 	}
+
+    // Antigravity: Buffered free
+    if (fsh[f].buffer) {
+        Z_Free(fsh[f].buffer);
+        fsh[f].buffer = NULL;
+        Com_Memset( &fsh[f], 0, sizeof( fsh[f] ) );
+        return;
+    }
 	if (fsh[f].zipFile == qtrue) {
 		unzCloseCurrentFile( fsh[f].handleFiles.file.z );
 		if ( fsh[f].handleFiles.unique ) {
@@ -962,8 +975,6 @@ fileHandle_t FS_FOpenFileAppend( const char *filename ) {
 /*
 ===========
 FS_FilenameCompare
-
-Ignore case and seprator char distinctions
 ===========
 */
 qboolean FS_FilenameCompare( const char *s1, const char *s2 ) {
@@ -1080,6 +1091,11 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 		Com_Error( ERR_FATAL, "FS_FOpenFileRead: NULL 'filename' parameter passed\n" );
 	}
 
+	if (strstr(filename, "menus.txt")) {
+		printf("FS_FOpenFileRead: Searching for '%s' (unique=%d)\n", filename, uniqueFILE);
+		fflush(stdout);
+	}
+
 	Com_sprintf (demoExt, sizeof(demoExt), ".dm_%d",PROTOCOL_VERSION );
 	// qpaths are not supposed to have a leading slash
 	if ( filename[0] == '/' || filename[0] == '\\' ) {
@@ -1112,6 +1128,10 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 		//
 		if ( search->pack ) {
 			hash = FS_HashFileName(filename, search->pack->hashSize);
+			if (strstr(filename, "menus.txt")) {
+				printf("FS_FOpenFileRead: Checking pack '%s', hash %ld\n", search->pack->pakFilename, hash);
+				fflush(stdout);
+			}
 		}
 		// is the element a pak file?
 		if ( search->pack && search->pack->hashTable[hash] ) {
@@ -1124,6 +1144,10 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 			pak = search->pack;
 			pakFile = pak->hashTable[hash];
 			do {
+				if (strstr(filename, "menus.txt")) {
+					printf("FS_FOpenFileRead: Comparing '%s' with pack file '%s'\n", filename, pakFile->name);
+					fflush(stdout);
+				}
 				// case and separator insensitive comparisons
 				if ( !FS_FilenameCompare( pakFile->name, filename ) ) {
 					// found it!
@@ -1185,6 +1209,34 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 					// open the file in the zip
 					unzOpenCurrentFile( fsh[*file].handleFiles.file.z );
 					fsh[*file].zipFilePos = pakFile->pos;
+
+                    // Antigravity: Buffer small files to allow recursive access without unzReOpen
+                    // and to minimize seek conflicts. 
+                    {
+                        int size = zfi->cur_file_info.uncompressed_size;
+                        qboolean doBuffer = qfalse;
+                        
+                        // Increase limit to 32MB to cover Intro Videos and background music.
+                        // Ideally user has >64MB RAM allocated.
+                        if (size < 32*1024*1024) doBuffer = qtrue; 
+                        
+                        // Force for text-based recursive formats even if larger (unlikely)
+                        if (strstr(filename, ".menu") || strstr(filename, ".txt") || strstr(filename, ".cfg") || strstr(filename, ".def")) doBuffer = qtrue;
+                        
+                        // REMOVED Exclusion list. We want to buffer streams too because shared handle breaks them.
+                        // if (strstr(filename, ".roq")) doBuffer = qfalse; 
+
+                        if (doBuffer) {
+                            fsh[*file].buffer = Z_Malloc(size);
+                            fsh[*file].bufferLen = size;
+                            unzReadCurrentFile( fsh[*file].handleFiles.file.z, fsh[*file].buffer, size );
+                            fsh[*file].bufferPos = 0;
+                            
+                            // We consumed the file, so "Closing" it conceptually.
+                            // This ensures the ZIP state is 'clean' (no current file open) for the next user.
+                            unzCloseCurrentFile( fsh[*file].handleFiles.file.z );
+                        }
+                    }
 
 					if ( fs_debug->integer ) {
 						Com_Printf( "FS_FOpenFileRead: %s (found in '%s')\n", 
@@ -1259,6 +1311,9 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 	}
 #endif
 	*file = 0;
+	if ( strstr(filename, "menus.txt") || strstr(filename, "default.cfg") ) {
+		Com_Printf("FS_FOpenFileRead: '%s' NOT FOUND\n", filename);
+	}
 	return -1;
 }
 
@@ -1305,6 +1360,19 @@ int FS_Read( void *buffer, int len, fileHandle_t f ) {
 
 	buf = (byte *)buffer;
 	fs_readCount += len;
+
+    // Antigravity: Buffered read override
+    if (fsh[f].buffer) {
+        int copyLen = len;
+        if (fsh[f].bufferPos + copyLen > fsh[f].bufferLen) {
+            copyLen = fsh[f].bufferLen - fsh[f].bufferPos;
+        }
+        if (copyLen > 0) {
+            memcpy(buffer, fsh[f].buffer + fsh[f].bufferPos, copyLen);
+            fsh[f].bufferPos += copyLen;
+        }
+        return copyLen;
+    }
 
 	if (fsh[f].zipFile == qfalse) {
 		remaining = len;
@@ -1414,6 +1482,21 @@ int FS_Seek( fileHandle_t f, long offset, int origin ) {
 		return -1;
 	}
 
+    // Antigravity: Buffered seek
+    if (fsh[f].buffer) {
+        int newPos = 0;
+        switch( origin ) {
+        case FS_SEEK_SET: newPos = offset; break;
+        case FS_SEEK_CUR: newPos = fsh[f].bufferPos + offset; break;
+        case FS_SEEK_END: newPos = fsh[f].bufferLen + offset; break;
+        default: return -1;
+        }
+        if (newPos < 0) newPos = 0;
+        if (newPos > fsh[f].bufferLen) newPos = fsh[f].bufferLen;
+        fsh[f].bufferPos = newPos;
+        return 0;
+    }
+
 	if (fsh[f].streamed) {
 		fsh[f].streamed = qfalse;
 		Sys_StreamSeek( f, offset, origin );
@@ -1494,9 +1577,13 @@ int	FS_FileIsInPAK(const char *filename, int *pChecksum ) {
 
 	//
 	// search through the path, one element at a time
-	//
+	search = fs_searchpaths;
+	if ( strstr(filename, "menus.txt") ) {
+		printf("FS_FOpenFileRead: Opening '%s'...\n", filename);
+		fflush(stdout);
+	}
 
-	for ( search = fs_searchpaths ; search ; search = search->next ) {
+	for ( ; search ; search = search->next ) {
 		//
 		if (search->pack) {
 			hash = FS_HashFileName(filename, search->pack->hashSize);
@@ -1791,6 +1878,10 @@ static pack_t *FS_LoadZipFile( char *zipfile, const char *basename )
 		}
 		Q_strlwr( filename_inzip );
 		hash = FS_HashFileName(filename_inzip, pack->hashSize);
+		if (strstr(filename_inzip, "menus.txt")) {
+			printf("FS_LoadZipFile: Loaded '%s' in '%s', hash %ld\n", filename_inzip, pack->pakFilename, hash);
+			fflush(stdout);
+		}
 		buildBuffer[i].name = namePtr;
 		strcpy( buildBuffer[i].name, filename_inzip );
 		namePtr += strlen(filename_inzip) + 1;
@@ -3419,7 +3510,9 @@ int		FS_FOpenFileByMode( const char *qpath, fileHandle_t *f, fsMode_t mode ) {
 
 	switch( mode ) {
 	case FS_READ:
-		r = FS_FOpenFileRead( qpath, f, qtrue );
+        // HACK: Use qfalse (shared handle) generally to avoid unzReOpen failures on Mac OS 9
+        // This forces FS_Read to seek before reading, but avoids needing multiple file handles to the same PK3.
+        r = FS_FOpenFileRead( qpath, f, qfalse );
 		break;
 	case FS_WRITE:
 		*f = FS_FOpenFileWrite( qpath );
@@ -3438,6 +3531,8 @@ int		FS_FOpenFileByMode( const char *qpath, fileHandle_t *f, fsMode_t mode ) {
 		}
 		break;
 	default:
+		printf("FS_FOpenFileByMode: Bad mode %i for '%s'\n", mode, qpath);
+		fflush(stdout);
 		Com_Error( ERR_FATAL, "FSH_FOpenFile: bad mode" );
 		return -1;
 	}
@@ -3467,6 +3562,10 @@ int		FS_FOpenFileByMode( const char *qpath, fileHandle_t *f, fsMode_t mode ) {
 
 int		FS_FTell( fileHandle_t f ) {
 	int pos;
+    // Antigravity: Buffered tell
+    if (fsh[f].buffer) {
+        return fsh[f].bufferPos;
+    }
 	if (fsh[f].zipFile == qtrue) {
 		pos = unztell(fsh[f].handleFiles.file.z);
 	} else {

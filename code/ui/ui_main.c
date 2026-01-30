@@ -611,6 +611,11 @@ int startTime;
 #define	UI_FPS_FRAMES	4
 void _UI_Refresh( int realtime )
 {
+    static int debug_refresh_count = 0;
+    if ((debug_refresh_count++) % 100 == 0) {
+        printf("_UI_Refresh: %d (Realtime: %d)\n", debug_refresh_count, realtime);
+        fflush(stdout);
+    }
 	static int index;
 	static int	previousTimes[UI_FPS_FRAMES];
 
@@ -5161,14 +5166,19 @@ void _UI_Init( qboolean inGameLoad ) {
 	UI_LoadMenus(menuSet, qtrue);
 	UI_LoadMenus("ui/ingame.txt", qfalse);
 #endif
+    printf("_UI_Init: UI_LoadMenus done\n"); fflush(stdout);
 	
 	Menus_CloseAll();
 
 	trap_LAN_LoadCachedServers();
 	UI_LoadBestScores(uiInfo.mapList[ui_currentMap.integer].mapLoadName, uiInfo.gameTypes[ui_gameType.integer].gtEnum);
 
+    printf("_UI_Init: UI_LoadBestScores done\n"); fflush(stdout);
+
 	UI_BuildQ3Model_List();
+    printf("_UI_Init: UI_BuildQ3Model_List done\n"); fflush(stdout);
 	UI_LoadBots();
+    printf("_UI_Init: UI_LoadBots done\n"); fflush(stdout);
 
 	// sets defaults for ui temp cvars
 	uiInfo.effectsColor = gamecodetoui[(int)trap_Cvar_VariableValue("color1")-1];

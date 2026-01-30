@@ -374,30 +374,22 @@ S_BeginRegistration
 =====================
 */
 void S_BeginRegistration( void ) {
-	printf("S_BeginRegistration Entry\n");
-	
 	// Early return if sound is disabled
 	if (!s_soundStarted) {
-		printf("S_BeginRegistration SKIP\n");
 		return;
 	}
 	
 	s_soundMuted = qfalse;		// we can play again
 
 	if (s_numSfx == 0) {
-		printf("Calling SND_setup\n");
 		SND_setup();
-		printf("SND_setup OK\n");
 
 		s_numSfx = 0;
 		Com_Memset( s_knownSfx, 0, sizeof( s_knownSfx ) );
 		Com_Memset(sfxHash, 0, sizeof(sfx_t *)*LOOP_HASH);
 
-		printf("RegisterDefaultSound\n");
 		S_RegisterSound("sound/feedback/hit.wav", qfalse);		// changed to a sound in baseq3
-		printf("RegisterDefaultSound OK\n");
 	}
-	printf("S_BeginRegistration DONE\n");
 }
 
 

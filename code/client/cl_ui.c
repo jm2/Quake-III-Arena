@@ -688,14 +688,18 @@ CLUI_GetCDKey
 */
 static void CLUI_GetCDKey( char *buf, int buflen ) {
 	cvar_t	*fs;
+    printf("CLUI_GetCDKey: Start\n"); fflush(stdout);
 	fs = Cvar_Get ("fs_game", "", CVAR_INIT|CVAR_SYSTEMINFO );
 	if (UI_usesUniqueCDKey() && fs && fs->string[0] != 0) {
+        printf("CLUI_GetCDKey: Using unique key\n"); fflush(stdout);
 		Com_Memcpy( buf, &cl_cdkey[16], 16);
 		buf[16] = 0;
 	} else {
+        printf("CLUI_GetCDKey: Using base key\n"); fflush(stdout);
 		Com_Memcpy( buf, cl_cdkey, 16);
 		buf[16] = 0;
 	}
+    printf("CLUI_GetCDKey: End\n"); fflush(stdout);
 }
 
 
@@ -1066,6 +1070,8 @@ int CL_UISystemCalls( int *args ) {
 	case UI_PC_ADD_GLOBAL_DEFINE:
 		return botlib_export->PC_AddGlobalDefine( VMA(1) );
 	case UI_PC_LOAD_SOURCE:
+		printf("UI_PC_LOAD_SOURCE: Loading '%s'...\n", (char *)VMA(1));
+		fflush(stdout);
 		return botlib_export->PC_LoadSourceHandle( VMA(1) );
 	case UI_PC_FREE_SOURCE:
 		return botlib_export->PC_FreeSourceHandle( args[1] );

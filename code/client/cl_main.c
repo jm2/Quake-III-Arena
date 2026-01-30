@@ -2134,48 +2134,35 @@ This is the only place that any of these functions are called from
 ============================
 */
 void CL_StartHunkUsers( void ) {
-	printf("StartHunkUsers\n");
 	//Sys_SendKeyEvents();
 
 	if (!com_cl_running) {
-		printf("!com_cl_running\n");
 		return;
 	}
 
 	if ( !com_cl_running->integer ) {
-		printf("cl_running=0\n");
 		return;
 	}
 
 	if ( !cls.rendererStarted ) {
-		printf("InitRenderer\n");
 		cls.rendererStarted = qtrue;
 		CL_InitRenderer();
-		printf("InitRenderer OK\n");
 	}
 
 	if ( !cls.soundStarted ) {
-		printf("S_Init\n");
 		cls.soundStarted = qtrue;
 		S_Init();
-		printf("S_Init OK\n");
 	}
 
 	if ( !cls.soundRegistered ) {
-		printf("S_BeginRegistration\n");
 		cls.soundRegistered = qtrue;
 		S_BeginRegistration();
-		printf("S_BeginRegistration OK\n");
 	}
 
 	if ( !cls.uiStarted ) {
-		printf("CL_InitUI\n");
 		cls.uiStarted = qtrue;
 		CL_InitUI();
-		printf("CL_InitUI OK\n");
 	}
-
-	printf("StartHunkUsers DONE\n");
 }
 
 /*
@@ -3326,8 +3313,8 @@ qboolean CL_CDKeyValidate( const char *key, const char *checksum ) {
 	sprintf(chs, "%02x", sum);
 	
 	if (checksum && !Q_stricmp(chs, checksum)) {
-		return qtrue;
-	}
+	return qtrue;
+}
 
 	if (!checksum) {
 		return qtrue;
