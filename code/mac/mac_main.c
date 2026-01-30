@@ -696,21 +696,28 @@ void Sys_FreeFileList( char **list ) {
 // Game_vmMain and UI_vmMain are declared at the top of the file, but CGame_vmMain is missing
 extern int CGame_vmMain( int command, int arg0, int arg1, int arg2, int arg3, int arg4, int arg5, int arg6, int arg7, int arg8, int arg9, int arg10, int arg11 );
 
+extern void UI_dllEntry( int (QDECL *syscallptr)( int arg,... ) );
+extern void CGame_dllEntry( int (QDECL *syscallptr)( int arg,... ) );
+extern void Game_dllEntry( int (QDECL *syscallptr)( int arg,... ) );
+
 void *Sys_LoadDll( const char *name, char *fqpath, int (QDECL **entryPoint)(int, ...), int (*systemcalls)(int, ...) ) { 
 	printf("Sys_LoadDll('%s')\n", name);
 	
 	if ( !Q_stricmp( name, "ui" ) ) {
 		*entryPoint = (int (QDECL *)(int, ...))UI_vmMain;
+		UI_dllEntry( (int (QDECL *)( int, ...))systemcalls );
 		printf("Sys_LoadDll: Assigned UI_vmMain address: %p\n", (void *)UI_vmMain);
 		fflush(stdout);
 		return (void *)UI_vmMain;
 	}
 	if ( !Q_stricmp( name, "cgame" ) ) {
 		*entryPoint = (int (QDECL *)(int, ...))CGame_vmMain;
+		CGame_dllEntry( (int (QDECL *)( int, ...))systemcalls );
 		return (void *)CGame_vmMain;
 	}
 	if ( !Q_stricmp( name, "qagame" ) ) {
 		*entryPoint = (int (QDECL *)(int, ...))Game_vmMain;
+		Game_dllEntry( (int (QDECL *)( int, ...))systemcalls );
 		return (void *)Game_vmMain;
 	}
 

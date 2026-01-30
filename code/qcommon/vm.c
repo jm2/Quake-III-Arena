@@ -325,7 +325,6 @@ Dlls will call this directly
 ============
 */
 int QDECL VM_DllSyscall( int arg, ... ) {
-#if ((defined __linux__) && (defined __powerpc__))
   // rcg010206 - see commentary above
   int args[16];
   int i;
@@ -339,9 +338,6 @@ int QDECL VM_DllSyscall( int arg, ... ) {
   va_end(ap);
   
   return currentVM->systemCall( args );
-#else // original id code
-	return currentVM->systemCall( &arg );
-#endif
 }
 
 /*

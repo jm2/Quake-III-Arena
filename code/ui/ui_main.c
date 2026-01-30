@@ -952,7 +952,7 @@ void UI_LoadMenus(const char *menuFile, qboolean reset) {
 
 	handle = trap_PC_LoadSource( menuFile );
 	if (!handle) {
-		trap_Error( va( S_COLOR_YELLOW "menu file not found: %s, using default\n", menuFile ) );
+		trap_Print( va( S_COLOR_YELLOW "menu file not found: %s, using default\n", menuFile ) );
 		handle = trap_PC_LoadSource( "ui/menus.txt" );
 		if (!handle) {
 			trap_Error( va( S_COLOR_RED "default menu file not found: ui/menus.txt, unable to continue!\n", menuFile ) );
@@ -5038,11 +5038,25 @@ void _UI_Init( qboolean inGameLoad ) {
 
 	//uiInfo.inGameLoad = inGameLoad;
 
+	printf("_UI_Init: Starting...\n");
+	fflush(stdout);
+
 	UI_RegisterCvars();
+	
+	printf("_UI_Init: UI_RegisterCvars done\n");
+	fflush(stdout);
+
 	UI_InitMemory();
 
+	printf("_UI_Init: UI_InitMemory done\n");
+	fflush(stdout);
+
 	// cache redundant calulations
+	printf("_UI_Init: Calling trap_GetGlconfig(&uiInfo.uiDC.glconfig=%p)\n", &uiInfo.uiDC.glconfig);
+	fflush(stdout);
 	trap_GetGlconfig( &uiInfo.uiDC.glconfig );
+	printf("_UI_Init: trap_GetGlconfig done\n");
+	fflush(stdout);
 
 	// for 640x480 virtualized screen
 	uiInfo.uiDC.yscale = uiInfo.uiDC.glconfig.vidHeight * (1.0/480.0);
@@ -5845,6 +5859,7 @@ void UI_RegisterCvars( void ) {
 	cvarTable_t	*cv;
 
 	for ( i = 0, cv = cvarTable ; i < cvarTableSize ; i++, cv++ ) {
+		// printf("UI_RegisterCvars: Registering %s\n", cv->cvarName);
 		trap_Cvar_Register( cv->vmCvar, cv->cvarName, cv->defaultString, cv->cvarFlags );
 	}
 }
