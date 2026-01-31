@@ -236,17 +236,15 @@ Quake3 Raw   IDQ3  APPL "Quake 3 App"
 Quake3_TeamArena Raw IDQ3 APPL "Quake 3 Team Arena"
 EOF
     
-    if command -v genisoimage &> /dev/null; then
+    if [ "$(uname)" == "Darwin" ] && command -v hdiutil &> /dev/null; then
+         MKISOFS="hdiutil"
+    elif command -v genisoimage &> /dev/null; then
         MKISOFS="genisoimage"
     elif command -v mkisofs &> /dev/null; then
         MKISOFS="mkisofs"
     else
-        if command -v hdiutil &> /dev/null; then
-             MKISOFS="hdiutil"
-        else
-             echo "Error: genisoimage/mkisofs/hdiutil not found."
-             exit 1
-        fi
+         echo "Error: genisoimage/mkisofs/hdiutil not found."
+         exit 1
     fi
     
     # Prepare Content:
@@ -315,13 +313,15 @@ EOF
          fi
          
          # hdiutil makehybrid
-         # -hfs -joliet -iso creates a hybrid. 
+         # -hfs creates a hybrid (or pure HFS+ if others omitted).
+         # We omit -joliet -iso to prevent the dual-disk issue (lowercase/uppercase volumes).
          # -hfs-volume-name sets the HFS volume name.
-         # -hfs-volume-name sets the HFS volume name.
-         hdiutil makehybrid -o "$IMAGE_NAME" -hfs -joliet -iso -default-volume-name "Quake 3 Arena" "$CONTENT_DIR"
+         hdiutil makehybrid -o "$IMAGE_NAME" -hfs -default-volume-name "Quake 3 Arena" "$CONTENT_DIR"
          
          if [ -f "${IMAGE_NAME}.iso" ]; then
              mv "${IMAGE_NAME}.iso" "$IMAGE_NAME"
+         elif [ -f "${IMAGE_NAME}.dmg" ]; then
+             mv "${IMAGE_NAME}.dmg" "$IMAGE_NAME"
          fi
          
     else
