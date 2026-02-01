@@ -702,13 +702,9 @@ extern void CGame_dllEntry( int (QDECL *syscallptr)( int arg,... ) );
 extern void Game_dllEntry( int (QDECL *syscallptr)( int arg,... ) );
 
 void *Sys_LoadDll( const char *name, char *fqpath, int (QDECL **entryPoint)(int, ...), int (*systemcalls)(int, ...) ) { 
-	printf("Sys_LoadDll('%s')\n", name);
-	
 	if ( !Q_stricmp( name, "ui" ) ) {
 		*entryPoint = (int (QDECL *)(int, ...))UI_vmMain;
 		UI_dllEntry( (int (QDECL *)( int, ...))systemcalls );
-		printf("Sys_LoadDll: Assigned UI_vmMain address: %p\n", (void *)UI_vmMain);
-		fflush(stdout);
 		return (void *)UI_vmMain;
 	}
 	if ( !Q_stricmp( name, "cgame" ) ) {
@@ -722,7 +718,6 @@ void *Sys_LoadDll( const char *name, char *fqpath, int (QDECL **entryPoint)(int,
 		return (void *)Game_vmMain;
 	}
 
-	printf("Sys_LoadDll FAILED for '%s'\n", name);
 	return NULL; 
 }
 void Sys_UnloadDll( void *dllHandle ) {}

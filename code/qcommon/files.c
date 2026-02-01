@@ -1091,11 +1091,6 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 		Com_Error( ERR_FATAL, "FS_FOpenFileRead: NULL 'filename' parameter passed\n" );
 	}
 
-	if (strstr(filename, "menus.txt")) {
-		printf("FS_FOpenFileRead: Searching for '%s' (unique=%d)\n", filename, uniqueFILE);
-		fflush(stdout);
-	}
-
 	Com_sprintf (demoExt, sizeof(demoExt), ".dm_%d",PROTOCOL_VERSION );
 	// qpaths are not supposed to have a leading slash
 	if ( filename[0] == '/' || filename[0] == '\\' ) {
@@ -1128,10 +1123,6 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 		//
 		if ( search->pack ) {
 			hash = FS_HashFileName(filename, search->pack->hashSize);
-			if (strstr(filename, "menus.txt")) {
-				printf("FS_FOpenFileRead: Checking pack '%s', hash %ld\n", search->pack->pakFilename, hash);
-				fflush(stdout);
-			}
 		}
 		// is the element a pak file?
 		if ( search->pack && search->pack->hashTable[hash] ) {
@@ -1144,10 +1135,6 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 			pak = search->pack;
 			pakFile = pak->hashTable[hash];
 			do {
-				if (strstr(filename, "menus.txt")) {
-					printf("FS_FOpenFileRead: Comparing '%s' with pack file '%s'\n", filename, pakFile->name);
-					fflush(stdout);
-				}
 				// case and separator insensitive comparisons
 				if ( !FS_FilenameCompare( pakFile->name, filename ) ) {
 					// found it!
@@ -1186,6 +1173,48 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 						pak->referenced |= FS_UI_REF;
 					}
 
+					// Antigravity: HANDLE REUSE OPTIMIZATION
+					// Determine if we can buffer this file using the shared handle
+					// to avoid opening a new file handle (limit 40 on Mac OS 9).
+					
+					// 1. Setup shared handle to look at this file
+					unzSetCurrentFileInfoPosition(pak->handle, pakFile->pos);
+					
+					// 2. Peek at size
+					{
+						unz_s *sharedZ = (unz_s *)pak->handle;
+						int size = sharedZ->cur_file_info.uncompressed_size;
+						qboolean doBuffer = qfalse;
+						
+						if (size < 32*1024*1024) doBuffer = qtrue;
+						if (strstr(filename, ".menu") || strstr(filename, ".txt") || strstr(filename, ".cfg") || strstr(filename, ".def")) doBuffer = qtrue;
+						
+						if (uniqueFILE && doBuffer) {
+							// OPTIMIZATION: Use shared handle, buffer, then forget handle.
+							// No unzReOpen needed!
+							fsh[*file].handleFiles.file.z = pak->handle;
+							fsh[*file].zipFile = qtrue;
+
+							// Open inside zip
+							unzOpenCurrentFile( pak->handle );
+							
+							// Buffer
+							fsh[*file].buffer = Z_Malloc(size);
+							fsh[*file].bufferLen = size;
+							unzReadCurrentFile( pak->handle, fsh[*file].buffer, size );
+							fsh[*file].bufferPos = 0;
+							
+							unzCloseCurrentFile( pak->handle );
+							
+							// Clear handle so FS_FCloseFile doesn't touch shared handle
+							fsh[*file].handleFiles.file.z = NULL;
+							
+							Q_strncpyz( fsh[*file].name, filename, sizeof( fsh[*file].name ) );
+							return size;
+						}
+					}
+
+					// Standard Path (Network streams or large files)
 					if ( uniqueFILE ) {
 						// open a new file on the pakfile
 						fsh[*file].handleFiles.file.z = unzReOpen (pak->pakFilename, pak->handle);
@@ -1210,37 +1239,18 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 					unzOpenCurrentFile( fsh[*file].handleFiles.file.z );
 					fsh[*file].zipFilePos = pakFile->pos;
 
-                    // Antigravity: Buffer small files to allow recursive access without unzReOpen
-                    // and to minimize seek conflicts. 
-                    {
+					// Antigravity: Buffer check for non-optimized path (e.g. shared handle usage)
+					{
                         int size = zfi->cur_file_info.uncompressed_size;
-                        qboolean doBuffer = qfalse;
-                        
-                        // Increase limit to 32MB to cover Intro Videos and background music.
-                        // Ideally user has >64MB RAM allocated.
-                        if (size < 32*1024*1024) doBuffer = qtrue; 
-                        
-                        // Force for text-based recursive formats even if larger (unlikely)
-                        if (strstr(filename, ".menu") || strstr(filename, ".txt") || strstr(filename, ".cfg") || strstr(filename, ".def")) doBuffer = qtrue;
-                        
-                        // REMOVED Exclusion list. We want to buffer streams too because shared handle breaks them.
-                        // if (strstr(filename, ".roq")) doBuffer = qfalse; 
-
-                        if (doBuffer) {
-                            fsh[*file].buffer = Z_Malloc(size);
-                            fsh[*file].bufferLen = size;
-                            unzReadCurrentFile( fsh[*file].handleFiles.file.z, fsh[*file].buffer, size );
-                            fsh[*file].bufferPos = 0;
-                            
-                            // We consumed the file, so "Closing" it conceptually.
-                            // This ensures the ZIP state is 'clean' (no current file open) for the next user.
-                            unzCloseCurrentFile( fsh[*file].handleFiles.file.z );
+                        if (fsh[*file].handleFiles.file.z && !uniqueFILE) {
+                            // If we didn't optimize above, but want to buffer...
+                            // (Logic similar to above but for !uniqueFILE case if needed)
                         }
-                    }
+					}
 
 					if ( fs_debug->integer ) {
-						Com_Printf( "FS_FOpenFileRead: %s (found in '%s')\n", 
-							filename, pak->pakFilename );
+						// Com_Printf( "FS_FOpenFileRead: %s (found in '%s')\n", 
+						// 	filename, pak->pakFilename );
 					}
 					return zfi->cur_file_info.uncompressed_size;
 				}
@@ -1287,8 +1297,8 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 			Q_strncpyz( fsh[*file].name, filename, sizeof( fsh[*file].name ) );
 			fsh[*file].zipFile = qfalse;
 			if ( fs_debug->integer ) {
-				Com_Printf( "FS_FOpenFileRead: %s (found in '%s/%s')\n", filename,
-					dir->path, dir->gamedir );
+				// Com_Printf( "FS_FOpenFileRead: %s (found in '%s/%s')\n", filename,
+				// 	dir->path, dir->gamedir );
 			}
 
 			// if we are getting it from the cdpath, optionally copy it
@@ -1311,9 +1321,6 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 	}
 #endif
 	*file = 0;
-	if ( strstr(filename, "menus.txt") || strstr(filename, "default.cfg") ) {
-		Com_Printf("FS_FOpenFileRead: '%s' NOT FOUND\n", filename);
-	}
 	return -1;
 }
 
@@ -1578,10 +1585,6 @@ int	FS_FileIsInPAK(const char *filename, int *pChecksum ) {
 	//
 	// search through the path, one element at a time
 	search = fs_searchpaths;
-	if ( strstr(filename, "menus.txt") ) {
-		printf("FS_FOpenFileRead: Opening '%s'...\n", filename);
-		fflush(stdout);
-	}
 
 	for ( ; search ; search = search->next ) {
 		//
@@ -1878,10 +1881,6 @@ static pack_t *FS_LoadZipFile( char *zipfile, const char *basename )
 		}
 		Q_strlwr( filename_inzip );
 		hash = FS_HashFileName(filename_inzip, pack->hashSize);
-		if (strstr(filename_inzip, "menus.txt")) {
-			printf("FS_LoadZipFile: Loaded '%s' in '%s', hash %ld\n", filename_inzip, pack->pakFilename, hash);
-			fflush(stdout);
-		}
 		buildBuffer[i].name = namePtr;
 		strcpy( buildBuffer[i].name, filename_inzip );
 		namePtr += strlen(filename_inzip) + 1;
@@ -2623,8 +2622,6 @@ static void FS_AddGameDirectory( const char *path, const char *dir ) {
 
 	pakfiles = Sys_ListFiles( pakfile, ".pk3", NULL, &numfiles, qfalse );
 
-	//printf("DEBUG: FS_AddGameDirectory: Found %d pk3 files in '%s'\n", numfiles, pakfile);
-
 	// sort them so that later alphabetic matches override
 	// earlier ones.  This makes pak1.pk3 override pak0.pk3
 	if ( numfiles > MAX_PAKFILES ) {
@@ -2638,12 +2635,9 @@ static void FS_AddGameDirectory( const char *path, const char *dir ) {
 
 	for ( i = 0 ; i < numfiles ; i++ ) {
 		pakfile = FS_BuildOSPath( path, dir, sorted[i] );
-		//printf("DEBUG: FS_AddGameDirectory: Loading pak '%s'\n", pakfile);
 		if ( ( pak = FS_LoadZipFile( pakfile, sorted[i] ) ) == 0 ) {
-			//printf("DEBUG: FS_AddGameDirectory: FAILED to load '%s'\n", sorted[i]);
 			continue;
 		}
-		//printf("DEBUG: FS_AddGameDirectory: SUCCESS loading '%s'\n", sorted[i]);
 		// store the game name for downloading
 		strcpy(pak->pakGamename, dir);
 
@@ -3397,26 +3391,19 @@ void FS_InitFilesystem( void ) {
 	// try to start up normally
 	FS_Startup( BASEGAME );
 
-	//printf("DEBUG: FS_InitFilesystem: FS_Startup complete\n");
-
 	// see if we are going to allow add-ons
 	FS_SetRestrictions();
-
-	//printf("DEBUG: FS_InitFilesystem: FS_SetRestrictions complete\n");
 
 	// if we can't find default.cfg, assume that the paths are
 	// busted and error out now, rather than getting an unreadable
 	// graphics screen when the font fails to load
 	{
 		int cfgLen = FS_ReadFile( "default.cfg", NULL );
-		//printf("DEBUG: FS_InitFilesystem: FS_ReadFile('default.cfg') returned %d\n", cfgLen);
 		if ( cfgLen <= 0 ) {
 			Com_Error( ERR_FATAL, "Couldn't load default.cfg" );
 			// bk001208 - SafeMode see below, FIXME?
 		}
 	}
-
-	//printf("DEBUG: FS_InitFilesystem: default.cfg check passed!\n");
 
 	Q_strncpyz(lastValidBase, fs_basepath->string, sizeof(lastValidBase));
 	Q_strncpyz(lastValidGame, fs_gamedirvar->string, sizeof(lastValidGame));
@@ -3531,8 +3518,6 @@ int		FS_FOpenFileByMode( const char *qpath, fileHandle_t *f, fsMode_t mode ) {
 		}
 		break;
 	default:
-		printf("FS_FOpenFileByMode: Bad mode %i for '%s'\n", mode, qpath);
-		fflush(stdout);
 		Com_Error( ERR_FATAL, "FSH_FOpenFile: bad mode" );
 		return -1;
 	}

@@ -33,9 +33,6 @@ USER INTERFACE MAIN
 
 #include "ui_local.h"
 
-// Prototype for va() if needed, but it's usually in q_shared.h included by ui_local.h
-
-
 uiInfo_t uiInfo;
 
 static const char *MonthAbbrev[] = {
@@ -173,7 +170,6 @@ int vmMain( int command, int arg0, int arg1, int arg2, int arg3, int arg4, int a
     // We use trap_Print if initialized, otherwise printf might be safer or vice versa depending on stage.
     // Since this is static link, printf should appear in stdout.
 	printf("UI_vmMain: Entered with command %i\n", command);
-	fflush(stdout);
 
   switch ( command ) {
 	  case UI_GETAPIVERSION:
@@ -611,11 +607,6 @@ int startTime;
 #define	UI_FPS_FRAMES	4
 void _UI_Refresh( int realtime )
 {
-    static int debug_refresh_count = 0;
-    if ((debug_refresh_count++) % 100 == 0) {
-        printf("_UI_Refresh: %d (Realtime: %d)\n", debug_refresh_count, realtime);
-        fflush(stdout);
-    }
 	static int index;
 	static int	previousTimes[UI_FPS_FRAMES];
 
@@ -5043,25 +5034,11 @@ void _UI_Init( qboolean inGameLoad ) {
 
 	//uiInfo.inGameLoad = inGameLoad;
 
-	printf("_UI_Init: Starting...\n");
-	fflush(stdout);
-
 	UI_RegisterCvars();
-	
-	printf("_UI_Init: UI_RegisterCvars done\n");
-	fflush(stdout);
-
 	UI_InitMemory();
 
-	printf("_UI_Init: UI_InitMemory done\n");
-	fflush(stdout);
-
 	// cache redundant calulations
-	printf("_UI_Init: Calling trap_GetGlconfig(&uiInfo.uiDC.glconfig=%p)\n", &uiInfo.uiDC.glconfig);
-	fflush(stdout);
 	trap_GetGlconfig( &uiInfo.uiDC.glconfig );
-	printf("_UI_Init: trap_GetGlconfig done\n");
-	fflush(stdout);
 
 	// for 640x480 virtualized screen
 	uiInfo.uiDC.yscale = uiInfo.uiDC.glconfig.vidHeight * (1.0/480.0);
@@ -5166,19 +5143,14 @@ void _UI_Init( qboolean inGameLoad ) {
 	UI_LoadMenus(menuSet, qtrue);
 	UI_LoadMenus("ui/ingame.txt", qfalse);
 #endif
-    printf("_UI_Init: UI_LoadMenus done\n"); fflush(stdout);
 	
 	Menus_CloseAll();
 
 	trap_LAN_LoadCachedServers();
 	UI_LoadBestScores(uiInfo.mapList[ui_currentMap.integer].mapLoadName, uiInfo.gameTypes[ui_gameType.integer].gtEnum);
 
-    printf("_UI_Init: UI_LoadBestScores done\n"); fflush(stdout);
-
 	UI_BuildQ3Model_List();
-    printf("_UI_Init: UI_BuildQ3Model_List done\n"); fflush(stdout);
 	UI_LoadBots();
-    printf("_UI_Init: UI_LoadBots done\n"); fflush(stdout);
 
 	// sets defaults for ui temp cvars
 	uiInfo.effectsColor = gamecodetoui[(int)trap_Cvar_VariableValue("color1")-1];
@@ -5869,7 +5841,6 @@ void UI_RegisterCvars( void ) {
 	cvarTable_t	*cv;
 
 	for ( i = 0, cv = cvarTable ; i < cvarTableSize ; i++, cv++ ) {
-		// printf("UI_RegisterCvars: Registering %s\n", cv->cvarName);
 		trap_Cvar_Register( cv->vmCvar, cv->cvarName, cv->defaultString, cv->cvarFlags );
 	}
 }
