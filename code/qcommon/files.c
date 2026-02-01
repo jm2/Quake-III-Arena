@@ -432,6 +432,9 @@ size of the file.
 ================
 */
 int FS_filelength( fileHandle_t f ) {
+    if (fsh[f].buffer) {
+        return fsh[f].bufferLen;
+    }
 	int		pos;
 	int		end;
 	FILE*	h;

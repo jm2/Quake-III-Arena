@@ -164,12 +164,13 @@ void Sys_Input( void ) {
 	}
 	
 	// temporarily deactivate if not in the game and
-	if ( cls.keyCatchers || cls.state != CA_ACTIVE ) {
-		if ( !glConfig.isFullscreen ) {
-			Sys_SuspendInput();
-			return;
-		}
-	}
+    // Antigravity: Input suspension disabled for Mac OS 9 compatibility
+	// if ( cls.keyCatchers || cls.state != CA_ACTIVE ) {
+	// 	if ( !glConfig.isFullscreen ) {
+	// 		Sys_SuspendInput();
+	// 		return;
+	// 	}
+	// }
 
 	Sys_ResumeInput();
 
@@ -202,6 +203,7 @@ void Sys_Input( void ) {
 		ymove = (int)state2 / -MAC_MOUSE_SCALE;
 		
 		if ( xmove || ymove ) {
+			// printf("Sys_Input: Mouse Delta %d %d\n", xmove, ymove); // Uncomment if needed, but heartbeat is safer first
 			xtotal += xmove;
 			ytotal += ymove;
 	//Com_Printf("%i %i = %i %i\n", state, state2, xtotal, ytotal );

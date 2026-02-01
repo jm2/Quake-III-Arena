@@ -579,6 +579,7 @@ static qboolean CreateGameWindow( void ) {
 	ShowWindow((GrafPort *) sys_gl.drawable);
 	SetPort((GrafPort *) sys_gl.drawable);
 	HiliteWindow((GrafPort *) sys_gl.drawable, 1);
+	SelectWindow((WindowPtr)sys_gl.drawable);
 	
 	//printf("DEBUG: CreateGameWindow: Window setup complete\n");
 	
@@ -768,33 +769,21 @@ void GLimp_Init( void ) {
 	glConfig.deviceSupportsGamma = qtrue;
 	
 	// FIXME: try for a voodoo first
-	//printf("DEBUG: GLimp_Init: Getting system gammas\n");
 	sys_gl.systemGammas = GetSystemGammas();
-	
-	// FORCE windowed mode for Mac OS 9 debugging to prevent system freeze
-	ri.Cvar_Set( "r_fullscreen", "0" );
-	//printf("DEBUG: GLimp_Init: Forced r_fullscreen=0 for safe debugging\n");
-	
-	//printf("DEBUG: GLimp_Init: Calling GLimp_SetMode (first attempt)\n");
+
 	if ( GLimp_SetMode() ) {
-		//printf("DEBUG: GLimp_Init: GLimp_SetMode succeeded!\n");
 		ri.Printf( PRINT_ALL, "------------------\n" );
 		return;
 	}
-	
-	//printf("DEBUG: GLimp_Init: First GLimp_SetMode failed, trying fallback\n");
-	
-	// fall back to the known-good mode - use windowed for Mac OS 9 debugging
-	ri.Cvar_Set( "r_fullscreen", "0" );  // Windowed mode to avoid freezing Mac OS 9
+
+	// fall back to the known-good mode
 	ri.Cvar_Set( "r_mode", "3" );
 	ri.Cvar_Set( "r_stereo", "0" );
 	ri.Cvar_Set( "r_depthBits", "16" );
 	ri.Cvar_Set( "r_colorBits", "16" );
 	ri.Cvar_Set( "r_stencilBits", "0" );
-	
-	//printf("DEBUG: GLimp_Init: Calling GLimp_SetMode (second attempt with fallback)\n");
+
 	if ( GLimp_SetMode() ) {
-		//printf("DEBUG: GLimp_Init: Fallback GLimp_SetMode succeeded!\n");
 		ri.Printf( PRINT_ALL, "------------------\n" );
 		return;
 	}

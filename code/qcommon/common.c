@@ -2666,10 +2666,11 @@ Com_Frame
 */
 void Com_Frame( void ) {
 
+	static int frameCount = 0;
 	int		msec, minMsec;
 	static int	lastTime;
 	int key;
- 
+	int		com_frameTime;
 	int		timeBeforeFirstEvents;
 	int           timeBeforeServer;
 	int           timeBeforeEvents;

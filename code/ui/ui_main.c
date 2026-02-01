@@ -169,7 +169,6 @@ int vmMain( int command, int arg0, int arg1, int arg2, int arg3, int arg4, int a
 	// Debug logging
     // We use trap_Print if initialized, otherwise printf might be safer or vice versa depending on stage.
     // Since this is static link, printf should appear in stdout.
-	printf("UI_vmMain: Entered with command %i\n", command);
 
   switch ( command ) {
 	  case UI_GETAPIVERSION:
