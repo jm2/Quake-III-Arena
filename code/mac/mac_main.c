@@ -98,6 +98,7 @@ sysEvent_t Sys_GetEvent( void ) {
     if (eventHead == eventTail) {
         memset( &ev, 0, sizeof(ev) );
         ev.evType = SE_NONE;
+        ev.evTime = Sys_Milliseconds();
         return ev;
     }
     
