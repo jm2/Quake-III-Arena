@@ -92,9 +92,19 @@ void Sys_QueEvent( int time, sysEventType_t type, int value, int value2, int ptr
     eventHead = next;
 }
 
+// mac_event.c
+void Sys_SendKeyEvents( void );
+// mac_input.c
+void Sys_Input( void );
+
 sysEvent_t Sys_GetEvent( void ) {
     sysEvent_t ev;
     
+    // Pump Mac OS events (keyboard via WaitNextEvent)
+    Sys_SendKeyEvents();
+    // Pump InputSprocket events (mouse)
+    Sys_Input();
+
     if (eventHead == eventTail) {
         memset( &ev, 0, sizeof(ev) );
         ev.evType = SE_NONE;

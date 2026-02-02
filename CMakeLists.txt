@@ -5,6 +5,10 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# Optimization flags to reduce binary size and help linker stability
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Os -ffunction-sections -fdata-sections -g0")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections -Wl,-s")
+
 # Global definitions
 add_definitions(-D__MACOS__ -D__POWERPC__ -DBOTLIB -DQ3_STATIC)
 add_definitions(-DQUAKEDATA="/Quake3/") # Default path, adjustable
@@ -92,6 +96,24 @@ target_compile_definitions(ui_obj PRIVATE
     -DUI_MODULE
 )
 
+# Q3 UI (Original Quake 3 Arena - hardcoded menus)
+# Using STATIC library to work around Retro68 linker crash with OBJECT libraries
+file(GLOB Q3UI_SRCS code/q3_ui/*.c)
+# Exclude removed ranking system files
+list(REMOVE_ITEM Q3UI_SRCS 
+    "${CMAKE_SOURCE_DIR}/code/q3_ui/ui_rankings.c"
+    "${CMAKE_SOURCE_DIR}/code/q3_ui/ui_rankstatus.c"
+    "${CMAKE_SOURCE_DIR}/code/q3_ui/ui_signup.c"
+    "${CMAKE_SOURCE_DIR}/code/q3_ui/ui_login.c"
+    "${CMAKE_SOURCE_DIR}/code/q3_ui/ui_specifyleague.c"
+)
+add_library(q3ui_lib STATIC ${Q3UI_SRCS})
+target_compile_definitions(q3ui_lib PRIVATE 
+    -DvmMain=UI_vmMain 
+    -DdllEntry=UI_dllEntry
+    -DUI_MODULE
+)
+
 # Mission Pack (Team Arena) Modules
 add_library(game_mp_obj OBJECT ${GAME_SRCS})
 target_compile_definitions(game_mp_obj PRIVATE 
@@ -123,7 +145,7 @@ link_directories(
     "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/SharedLibraries"
 )
 
-# Main Executable
+# Main Executable (Original Quake 3 Arena - uses q3_ui)
 add_executable(Quake3
     ${COMMON_SRCS}
     ${SERVER_SRCS}
@@ -134,7 +156,6 @@ add_executable(Quake3
     ${JPEG_SRCS}
     $<TARGET_OBJECTS:game_obj>
     $<TARGET_OBJECTS:cgame_obj>
-    $<TARGET_OBJECTS:ui_obj>
 )
 
 # Team Arena Executable
@@ -159,6 +180,7 @@ set(MPW_LIB_DIR "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Li
 set(OGL_LIB_DIR "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Libraries")
 
 target_link_libraries(Quake3 PUBLIC
+    q3ui_lib
     -lm
     -lInterfaceLib
     -lOpenTransportLib

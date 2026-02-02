@@ -755,6 +755,10 @@ void GLimp_Init( void ) {
 	r_device = ri.Cvar_Get( "r_device", "0", CVAR_LATCH | CVAR_ARCHIVE );
 	r_ext_transform_hint = ri.Cvar_Get( "r_ext_transform_hint", "1", CVAR_LATCH | CVAR_ARCHIVE );
 	
+	// DEBUG: Force windowed mode for console visibility
+	ri.Cvar_Set( "r_fullscreen", "0" );
+	ri.Printf( PRINT_ALL, "^3DEBUG: Forced windowed mode for debugging\n" );
+	
 	if ( !registered ) {
 		ri.Cmd_AddCommand( "aglDescribe", GLimp_AglDescribe_f );
 		ri.Cmd_AddCommand( "aglState", GLimp_AglState_f );

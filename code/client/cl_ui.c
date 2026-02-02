@@ -30,6 +30,107 @@ vm_t *uivm;
 
 /*
 ====================
+Simple Script Parser
+Bypasses botlib PC_* functions which are broken on Mac OS 9
+====================
+*/
+#define MAX_SCRIPT_HANDLES 16
+#define MAX_SCRIPT_SIZE 65536
+
+typedef struct {
+	char *buffer;
+	char *pos;
+	int length;
+	qboolean inUse;
+} scriptHandle_t;
+
+static scriptHandle_t scriptHandles[MAX_SCRIPT_HANDLES];
+
+static int Script_LoadSource(const char *filename) {
+	fileHandle_t f;
+	int len;
+	int i;
+	
+	// Find free handle (start at 1 to avoid returning 0 on success)
+	for (i = 1; i < MAX_SCRIPT_HANDLES; i++) {
+		if (!scriptHandles[i].inUse) break;
+	}
+	if (i >= MAX_SCRIPT_HANDLES) {
+		printf("Script_LoadSource: No free handles!\n"); fflush(stdout);
+		return 0;
+	}
+	
+	len = FS_FOpenFileByMode(filename, &f, FS_READ);
+	if (len <= 0) {
+		printf("Script_LoadSource: Failed to open '%s' (len=%d)\n", filename, len); fflush(stdout);
+		return 0;
+	}
+	
+	if (len >= MAX_SCRIPT_SIZE) {
+		printf("Script_LoadSource: File too large '%s' (%d bytes)\n", filename, len); fflush(stdout);
+		FS_FCloseFile(f);
+		return 0;
+	}
+	
+	scriptHandles[i].buffer = Z_Malloc(len + 1);
+	if (!scriptHandles[i].buffer) {
+		printf("Script_LoadSource: Failed to allocate %d bytes\n", len + 1); fflush(stdout);
+		FS_FCloseFile(f);
+		return 0;
+	}
+	
+	FS_Read(scriptHandles[i].buffer, len, f);
+	scriptHandles[i].buffer[len] = '\0';
+	scriptHandles[i].pos = scriptHandles[i].buffer;
+	scriptHandles[i].length = len;
+	scriptHandles[i].inUse = qtrue;
+	FS_FCloseFile(f);
+	
+	printf("Script_LoadSource: Loaded '%s' (%d bytes) as handle %d\n", filename, len, i); fflush(stdout);
+	return i;
+}
+
+static int Script_ReadToken(int handle, pc_token_t *token) {
+	char *tok;
+	
+	if (handle <= 0 || handle >= MAX_SCRIPT_HANDLES || !scriptHandles[handle].inUse) {
+		return 0;
+	}
+	
+	memset(token, 0, sizeof(pc_token_t));
+	
+	tok = COM_ParseExt(&scriptHandles[handle].pos, qtrue);
+	if (!tok || !tok[0]) {
+		return 0;
+	}
+	
+	Q_strncpyz(token->string, tok, sizeof(token->string));
+	token->type = TT_STRING;  // Simplified - all tokens are strings
+	return 1;
+}
+
+static int Script_FreeSource(int handle) {
+	if (handle <= 0 || handle >= MAX_SCRIPT_HANDLES || !scriptHandles[handle].inUse) {
+		return 0;
+	}
+	
+	if (scriptHandles[handle].buffer) {
+		Z_Free(scriptHandles[handle].buffer);
+		scriptHandles[handle].buffer = NULL;
+	}
+	scriptHandles[handle].pos = NULL;
+	scriptHandles[handle].length = 0;
+	scriptHandles[handle].inUse = qfalse;
+	
+	return 1;
+}
+
+// Use our simple parser instead of botlib? Set to 1 to bypass botlib
+#define USE_SIMPLE_SCRIPT_PARSER 1
+
+
+/*
+====================
 GetClientState
 ====================
 */
@@ -1068,17 +1169,80 @@ int CL_UISystemCalls( int *args ) {
 		return FloatAsInt( ceil( VMF(1) ) );
 
 	case UI_PC_ADD_GLOBAL_DEFINE:
+		// Global defines not needed for simple parser
+#if USE_SIMPLE_SCRIPT_PARSER
+		return 0;  // Ignore
+#else
 		return botlib_export->PC_AddGlobalDefine( VMA(1) );
+#endif
 	case UI_PC_LOAD_SOURCE:
 		printf("UI_PC_LOAD_SOURCE: Loading '%s'...\n", (char *)VMA(1));
 		fflush(stdout);
-		return botlib_export->PC_LoadSourceHandle( VMA(1) );
+#if USE_SIMPLE_SCRIPT_PARSER
+		{
+			int handle = Script_LoadSource( VMA(1) );
+			printf("UI_PC_LOAD_SOURCE: Simple parser handle=%d\n", handle);
+			fflush(stdout);
+			return handle;
+		}
+#else
+		if (!botlib_export) {
+			printf("UI_PC_LOAD_SOURCE: ERROR - botlib_export is NULL!\n");
+			fflush(stdout);
+			return 0;
+		}
+		{
+			int handle = botlib_export->PC_LoadSourceHandle( VMA(1) );
+			printf("UI_PC_LOAD_SOURCE: Got handle=%d\n", handle);
+			fflush(stdout);
+			return handle;
+		}
+#endif
 	case UI_PC_FREE_SOURCE:
+#if USE_SIMPLE_SCRIPT_PARSER
+		return Script_FreeSource( args[1] );
+#else
 		return botlib_export->PC_FreeSourceHandle( args[1] );
+#endif
 	case UI_PC_READ_TOKEN:
-		return botlib_export->PC_ReadTokenHandle( args[1], VMA(2) );
+#if USE_SIMPLE_SCRIPT_PARSER
+		{
+			int result = Script_ReadToken( args[1], VMA(2) );
+			// Only log first few to avoid spam
+			static int readCount = 0;
+			if (readCount < 20) {
+				pc_token_t *tok = (pc_token_t *)VMA(2);
+				printf("UI_PC_READ_TOKEN: handle=%d result=%d token='%s'\n", 
+					(int)args[1], result, result ? tok->string : "");
+				fflush(stdout);
+				readCount++;
+			}
+			return result;
+		}
+#else
+		if (!botlib_export) {
+			printf("UI_PC_READ_TOKEN: ERROR - botlib_export is NULL!\n");
+			fflush(stdout);
+			return 0;
+		}
+		{
+			int result = botlib_export->PC_ReadTokenHandle( args[1], VMA(2) );
+			// Only log first few to avoid spam
+			static int readCount = 0;
+			if (readCount < 5) {
+				printf("UI_PC_READ_TOKEN: handle=%d result=%d\n", (int)args[1], result);
+				fflush(stdout);
+				readCount++;
+			}
+			return result;
+		}
+#endif
 	case UI_PC_SOURCE_FILE_AND_LINE:
+#if USE_SIMPLE_SCRIPT_PARSER
+		return 0;  // Not implemented for simple parser
+#else
 		return botlib_export->PC_SourceFileAndLine( args[1], VMA(2), VMA(3) );
+#endif
 
 	case UI_S_STOPBACKGROUNDTRACK:
 		S_StopBackgroundTrack();
