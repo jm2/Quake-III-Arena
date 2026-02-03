@@ -210,6 +210,7 @@ void	DoOSEvent(EventRecord	*event)
 void DoUpdate(WindowPtr	myWindow)
 { 
 	GrafPtr		origPort;
+	AGLContext	ctx;
 	
 	GetPort(&origPort);
 	SetPort(myWindow);
@@ -217,7 +218,11 @@ void DoUpdate(WindowPtr	myWindow)
 	BeginUpdate(myWindow);	
 	EndUpdate(myWindow);
 	
-	aglUpdateContext(aglGetCurrentContext());
+	// Only update context if one exists (may not during early init)
+	ctx = aglGetCurrentContext();
+	if (ctx != NULL) {
+		aglUpdateContext(ctx);
+	}
 	
 	SetPort(origPort);
 }

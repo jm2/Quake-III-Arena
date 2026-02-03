@@ -1067,14 +1067,12 @@ UI_Init
 void UI_Init( void ) {
 	printf("UI_Init: START\n"); fflush(stdout);
 	UI_RegisterCvars();
-	printf("UI_Init: UI_RegisterCvars done\n"); fflush(stdout);
 
 	UI_InitGameinfo();
-	printf("UI_Init: UI_InitGameinfo done\n"); fflush(stdout);
+	printf("UI_Init: Gameinfo loaded\n"); fflush(stdout);
 
 	// cache redundant calulations
 	trap_GetGlconfig( &uis.glconfig );
-	printf("UI_Init: trap_GetGlconfig done\n"); fflush(stdout);
 
 	// for 640x480 virtualized screen
 	uis.scale = uis.glconfig.vidHeight * (1.0/480.0);
@@ -1089,7 +1087,7 @@ void UI_Init( void ) {
 
 	// initialize the menu system
 	Menu_Cache();
-	printf("UI_Init: Menu_Cache done\n"); fflush(stdout);
+	printf("UI_Init: Menus cached\n"); fflush(stdout);
 
 	uis.activemenu = NULL;
 	uis.menusp     = 0;

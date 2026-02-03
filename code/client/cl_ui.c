@@ -1334,16 +1334,12 @@ void CL_InitUI( void ) {
 	}
 
 	// sanity check
-	printf("CL_InitUI: calling VM_Call(uivm, UI_GETAPIVERSION)\n");
-	fflush(stdout);
 	v = VM_Call( uivm, UI_GETAPIVERSION );
-	printf("CL_InitUI: UI_GETAPIVERSION returned %d\n", v);
-	fflush(stdout);
+	printf("CL_InitUI: API version %d\n", v); fflush(stdout);
 	if (v == UI_OLD_API_VERSION) {
 //		Com_Printf(S_COLOR_YELLOW "WARNING: loading old Quake III Arena User Interface version %d\n", v );
 		// init for this gamestate
 		VM_Call( uivm, UI_INIT, (cls.state >= CA_AUTHORIZING && cls.state < CA_ACTIVE));
-		printf("CL_InitUI: UI_INIT (old API) completed\n"); fflush(stdout);
 	}
 	else if (v != UI_API_VERSION) {
 		Com_Error( ERR_DROP, "User Interface is version %d, expected %d", v, UI_API_VERSION );
@@ -1352,9 +1348,8 @@ void CL_InitUI( void ) {
 	else {
 		// init for this gamestate
 		VM_Call( uivm, UI_INIT, (cls.state >= CA_AUTHORIZING && cls.state < CA_ACTIVE) );
-		printf("CL_InitUI: UI_INIT (new API) completed\n"); fflush(stdout);
 	}
-	printf("CL_InitUI: COMPLETE - returning to caller\n"); fflush(stdout);
+	printf("CL_InitUI: done\n"); fflush(stdout);
 }
 
 qboolean UI_usesUniqueCDKey() {

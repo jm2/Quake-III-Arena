@@ -100,8 +100,13 @@ void Sys_Input( void );
 sysEvent_t Sys_GetEvent( void ) {
     sysEvent_t ev;
     
+    // Small yield to prevent timing race condition (replaces printf/fflush timing)
+    // This allows Mac OS to complete any pending operations
+    SystemTask();
+    
     // Pump Mac OS events (keyboard via WaitNextEvent)
     Sys_SendKeyEvents();
+    
     // Pump InputSprocket events (mouse)
     Sys_Input();
 

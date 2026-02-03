@@ -179,9 +179,15 @@ void Sys_Input( void ) {
 		// mouse buttons
 		
 		for ( button = 2 ; button < numElements[device] ; button++ ) {
+			int eventCount = 0;
 			while ( 1 ) {
 				ISpElement_GetNextEvent( elements[device][button], sizeof( event ), &event, &wasEvent );
 				if ( !wasEvent ) {
+					break;
+				}
+				eventCount++;
+				// Safety break to prevent infinite loop
+				if (eventCount > 50) {
 					break;
 				}
 				if ( event.data ) {
@@ -203,10 +209,8 @@ void Sys_Input( void ) {
 		ymove = (int)state2 / -MAC_MOUSE_SCALE;
 		
 		if ( xmove || ymove ) {
-			// printf("Sys_Input: Mouse Delta %d %d\n", xmove, ymove); // Uncomment if needed, but heartbeat is safer first
 			xtotal += xmove;
 			ytotal += ymove;
-	//Com_Printf("%i %i = %i %i\n", state, state2, xtotal, ytotal );
 			Sys_QueEvent( 0, SE_MOUSE, xmove, ymove, 0, NULL );
 		}
 	}

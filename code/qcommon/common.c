@@ -2067,11 +2067,18 @@ int Com_EventLoop( void ) {
 	netadr_t	evFrom;
 	byte		bufData[MAX_MSGLEN];
 	msg_t		buf;
+	int eventLoopIter = 0;
 
 	MSG_Init( &buf, bufData, sizeof( bufData ) );
 
 	while ( 1 ) {
+		eventLoopIter++;
 		ev = Com_GetEvent();
+		
+		// Safety break to prevent stuck loops
+		if (eventLoopIter > 100) {
+			return Sys_Milliseconds();
+		}
 
 		// if no more events are available
 		if ( ev.evType == SE_NONE ) {
@@ -2384,11 +2391,7 @@ void Com_Init( char *commandLine ) {
 
 	FS_InitFilesystem ();
 
-	//printf("DEBUG: Com_Init: FS_InitFilesystem complete\n");
-
 	Com_InitJournaling();
-
-	//printf("DEBUG: Com_Init: Com_InitJournaling complete\n");
 
 	Cbuf_AddText ("exec default.cfg\n");
 
@@ -2399,11 +2402,7 @@ void Com_Init( char *commandLine ) {
 
 	Cbuf_AddText ("exec autoexec.cfg\n");
 
-	//printf("DEBUG: Com_Init: About to execute config files\n");
-
 	Cbuf_Execute ();
-
-	//printf("DEBUG: Com_Init: Cbuf_Execute complete\n");
 
 	// override anything from the config files with command line args
 	Com_StartupVariable( NULL );
@@ -2520,18 +2519,15 @@ void Com_Init( char *commandLine ) {
 	// start in full screen ui mode
 	Cvar_Set("r_uiFullScreen", "1");
 
-	printf("Com_Init: About to call CL_StartHunkUsers\n"); fflush(stdout);
-
+	printf("Com_Init: CL_StartHunkUsers\n"); fflush(stdout);
 	CL_StartHunkUsers();
-
-	printf("Com_Init: CL_StartHunkUsers complete\n"); fflush(stdout);
+	printf("Com_Init: CL_StartHunkUsers done\n"); fflush(stdout);
 
 	// make sure single player is off by default
 	Cvar_Set("ui_singlePlayerActive", "0");
 
-	printf("Com_Init: About to set com_fullyInitialized\n"); fflush(stdout);
 	com_fullyInitialized = qtrue;
-	printf("Com_Init: COMPLETE - entering main loop\n"); fflush(stdout);
+	printf("Com_Init: COMPLETE\n"); fflush(stdout);
 	Com_Printf ("--- Common Initialization Complete ---\n");	
 }
 
@@ -2668,7 +2664,6 @@ Com_Frame
 */
 void Com_Frame( void ) {
 
-	static int frameCount = 0;
 	int		msec, minMsec;
 	static int	lastTime;
 	int key;
@@ -2678,13 +2673,6 @@ void Com_Frame( void ) {
 	int           timeBeforeEvents;
 	int           timeBeforeClient;
 	int           timeAfter;
-  
-	// Debug first few frames
-	if (frameCount < 5) {
-		printf("Com_Frame: START frame %d\n", frameCount); fflush(stdout);
-	}
-	frameCount++;
-
 
 
 	if ( setjmp (abortframe) ) {
@@ -2703,7 +2691,6 @@ void Com_Frame( void ) {
 	// old net chan encryption key
 	key = 0x87243987;
 
-	if (frameCount < 6) { printf("Com_Frame[%d]: WriteConfiguration\n", frameCount-1); fflush(stdout); }
 
 	// write config file if anything changed
 	Com_WriteConfiguration(); 
@@ -2723,7 +2710,7 @@ void Com_Frame( void ) {
 		timeBeforeFirstEvents = Sys_Milliseconds ();
 	}
 
-	if (frameCount < 6) { printf("Com_Frame[%d]: Starting event loop\n", frameCount-1); fflush(stdout); }
+
 
 	// we may want to spin here if things are going too fast
 	if ( !com_dedicated->integer && com_maxfps->integer > 0 && !com_timedemo->integer ) {
@@ -2733,24 +2720,26 @@ void Com_Frame( void ) {
 	}
 	{
 		int loopIter = 0;
+
 		do {
+
 			com_frameTime = Com_EventLoop();
+
 			if ( lastTime > com_frameTime ) {
 				lastTime = com_frameTime;		// possible on first frame
 			}
 			msec = com_frameTime - lastTime;
 			loopIter++;
-			if (frameCount < 6 && loopIter <= 3) {
-				printf("Com_Frame[%d]: EventLoop iter %d: msec=%d minMsec=%d\n", frameCount-1, loopIter, msec, minMsec); fflush(stdout);
-			}
+			// Safety break for stuck timing loop
 			if (loopIter > 1000) {
-				printf("Com_Frame[%d]: EventLoop appears stuck! Breaking.\n", frameCount-1); fflush(stdout);
+
 				break;
 			}
 		} while ( msec < minMsec );
 	}
+
 	
-	if (frameCount < 6) { printf("Com_Frame[%d]: Cbuf_Execute\n", frameCount-1); fflush(stdout); }
+
 	Cbuf_Execute ();
 
 	lastTime = com_frameTime;
@@ -2759,7 +2748,7 @@ void Com_Frame( void ) {
 	com_frameMsec = msec;
 	msec = Com_ModifyMsec( msec );
 
-	if (frameCount < 6) { printf("Com_Frame[%d]: SV_Frame\n", frameCount-1); fflush(stdout); }
+
 
 	//
 	// server side
@@ -2769,6 +2758,7 @@ void Com_Frame( void ) {
 	}
 
 	SV_Frame( msec );
+
 
 	// if "dedicated" has been modified, start up
 	// or shut down the client system.
@@ -2798,7 +2788,7 @@ void Com_Frame( void ) {
 		if ( com_speeds->integer ) {
 			timeBeforeEvents = Sys_Milliseconds ();
 		}
-		if (frameCount < 6) { printf("Com_Frame[%d]: Client EventLoop\n", frameCount-1); fflush(stdout); }
+
 		Com_EventLoop();
 		Cbuf_Execute ();
 
@@ -2810,9 +2800,8 @@ void Com_Frame( void ) {
 			timeBeforeClient = Sys_Milliseconds ();
 		}
 
-		if (frameCount < 6) { printf("Com_Frame[%d]: CL_Frame\n", frameCount-1); fflush(stdout); }
 		CL_Frame( msec );
-		if (frameCount < 6) { printf("Com_Frame[%d]: CL_Frame DONE\n", frameCount-1); fflush(stdout); }
+
 
 		if ( com_speeds->integer ) {
 			timeAfter = Sys_Milliseconds ();
