@@ -1948,7 +1948,9 @@ sysEvent_t	Com_GetRealEvent( void ) {
 			}
 		}
 	} else {
+		Sys_Yield();  // Timing yield before Sys_GetEvent
 		ev = Sys_GetEvent();
+		Sys_Yield();  // Timing yield after Sys_GetEvent
 
 		// write the journal value out if needed
 		if ( com_journal->integer == 1 ) {
@@ -2073,7 +2075,14 @@ int Com_EventLoop( void ) {
 
 	while ( 1 ) {
 		eventLoopIter++;
+		
+		// Timing yield before getting event (replaces printf timing)
+		Sys_Yield();
+		
 		ev = Com_GetEvent();
+		
+		// Timing yield after getting event
+		Sys_Yield();
 		
 		// Safety break to prevent stuck loops
 		if (eventLoopIter > 100) {
@@ -2082,10 +2091,14 @@ int Com_EventLoop( void ) {
 
 		// if no more events are available
 		if ( ev.evType == SE_NONE ) {
+			Sys_Yield();  // Yield before packet processing
+			
 			// manually send packet events for the loopback channel
 			while ( NET_GetLoopPacket( NS_CLIENT, &evFrom, &buf ) ) {
 				CL_PacketEvent( evFrom, &buf );
 			}
+			
+			Sys_Yield();  // Yield between client/server packets
 
 			while ( NET_GetLoopPacket( NS_SERVER, &evFrom, &buf ) ) {
 				// if the server just shut down, flush the events
@@ -2093,6 +2106,8 @@ int Com_EventLoop( void ) {
 					Com_RunAndTimeServerPacket( &evFrom, &buf );
 				}
 			}
+			
+			Sys_Yield();  // Yield after packet processing
 
 			return ev.evTime;
 		}
@@ -2358,40 +2373,53 @@ Com_Init
 void Com_Init( char *commandLine ) {
 	char	*s;
 
+	Sys_Yield();  // Timing yield at start
 	Com_Printf( "%s %s %s\n", Q3_VERSION, CPUSTRING, __DATE__ );
 
 	if ( setjmp (abortframe) ) {
 		Sys_Error ("Error during initialization");
 	}
 
+	Sys_Yield();  // Timing yield before push event init
   // bk001129 - do this before anything else decides to push events
   Com_InitPushEvent();
 
+	Sys_Yield();  // Timing yield before memory init
 	Com_InitSmallZoneMemory();
+	Sys_Yield();
 	Cvar_Init ();
 
 	// prepare enough of the subsystems to handle
 	// cvar and command buffer management
+	Sys_Yield();
 	Com_ParseCommandLine( commandLine );
 
 //	Swap_Init ();
+	Sys_Yield();
 	Cbuf_Init ();
 
+	Sys_Yield();
 	Com_InitZoneMemory();
+	Sys_Yield();
 	Cmd_Init ();
 
 	// override anything from the config files with command line args
+	Sys_Yield();
 	Com_StartupVariable( NULL );
 
 	// get the developer cvar set as early as possible
 	Com_StartupVariable( "developer" );
 
 	// done early so bind command exists
+	Sys_Yield();
 	CL_InitKeyCommands();
 
+	Sys_Yield();  // Timing yield before filesystem init
 	FS_InitFilesystem ();
+	Sys_Yield();  // Timing yield after filesystem init
 
 	Com_InitJournaling();
+	Sys_Yield();
 
 	Cbuf_AddText ("exec default.cfg\n");
 
@@ -2402,6 +2430,7 @@ void Com_Init( char *commandLine ) {
 
 	Cbuf_AddText ("exec autoexec.cfg\n");
 
+	Sys_Yield();  // Timing yield before Cbuf_Execute
 	Cbuf_Execute ();
 
 	// override anything from the config files with command line args
@@ -2720,10 +2749,12 @@ void Com_Frame( void ) {
 	}
 	{
 		int loopIter = 0;
-
+		
+		Sys_Yield();  // Yield at start of timing loop
 		do {
-
+			Sys_Yield();  // Yield before event loop
 			com_frameTime = Com_EventLoop();
+			Sys_Yield();  // Yield after event loop
 
 			if ( lastTime > com_frameTime ) {
 				lastTime = com_frameTime;		// possible on first frame
@@ -2758,6 +2789,7 @@ void Com_Frame( void ) {
 	}
 
 	SV_Frame( msec );
+	Sys_Yield();  // Timing yield after SV_Frame
 
 
 	// if "dedicated" has been modified, start up
@@ -2801,6 +2833,7 @@ void Com_Frame( void ) {
 		}
 
 		CL_Frame( msec );
+		Sys_Yield();  // Timing yield after CL_Frame
 
 
 		if ( com_speeds->integer ) {

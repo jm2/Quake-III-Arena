@@ -100,15 +100,17 @@ void Sys_Input( void );
 sysEvent_t Sys_GetEvent( void ) {
     sysEvent_t ev;
     
-    // Small yield to prevent timing race condition (replaces printf/fflush timing)
-    // This allows Mac OS to complete any pending operations
+    // Timing yields to prevent race condition
+    // These replicate the timing effect of printf/fflush calls that prevented freezes
     SystemTask();
     
     // Pump Mac OS events (keyboard via WaitNextEvent)
     Sys_SendKeyEvents();
+    SystemTask();  // Yield after keyboard events
     
     // Pump InputSprocket events (mouse)
     Sys_Input();
+    SystemTask();  // Yield after mouse events
 
     if (eventHead == eventTail) {
         memset( &ev, 0, sizeof(ev) );
@@ -174,6 +176,12 @@ int Sys_Milliseconds( void ) {
 void Sys_PumpEvents( void ) {
     // Basic event loop pump if needed here
     // Usually handled in Sys_GetEvent or main loop
+}
+
+// Yield to system to prevent timing race conditions
+// This provides the timing delay that printf/fflush used to provide
+void Sys_Yield( void ) {
+    SystemTask();
 }
 
 // Return path to executable or useful dir
@@ -754,15 +762,23 @@ int main( int argc, char **argv ) {
     int i;
     char commandLine[1024];
 
+    SystemTask();  // Initial yield
+    
     commandLine[0] = 0;
     for (i = 1; i < argc; i++) {
         strcat(commandLine, argv[i]);
         if (i < argc - 1) strcat(commandLine, " ");
     }
 
+    SystemTask();  // Yield before Sys_Init
     Sys_Init();
+    SystemTask();  // Yield after Sys_Init
+    
+    SystemTask();  // Yield before Com_Init
     Com_Init( commandLine );
+    SystemTask();  // Yield after Com_Init
 
+    SystemTask();  // Yield before entering main loop
     while ( 1 ) {
         Com_Frame();
     }

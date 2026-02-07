@@ -241,6 +241,7 @@ static inline float LittleFloat (const float l) { return FloatSwap(&l); }
 #define	PATH_SEP ':'
 
 void Sys_PumpEvents( void );
+void Sys_Yield( void );  // Timing yield to prevent race conditions
 
 #define BigShort
 static inline short LittleShort(short l) { return ShortSwap(l); }
