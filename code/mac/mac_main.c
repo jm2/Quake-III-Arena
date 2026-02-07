@@ -100,17 +100,17 @@ void Sys_Input( void );
 sysEvent_t Sys_GetEvent( void ) {
     sysEvent_t ev;
     
-    // Timing yields to prevent race condition
-    // These replicate the timing effect of printf/fflush calls that prevented freezes
-    SystemTask();
+    // Timing yields to prevent race condition - heavier implementation
+    // These replicate the timing effect of printf/fflush calls
+    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
     
     // Pump Mac OS events (keyboard via WaitNextEvent)
     Sys_SendKeyEvents();
-    SystemTask();  // Yield after keyboard events
+    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
     
     // Pump InputSprocket events (mouse)
     Sys_Input();
-    SystemTask();  // Yield after mouse events
+    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
 
     if (eventHead == eventTail) {
         memset( &ev, 0, sizeof(ev) );
@@ -179,8 +179,15 @@ void Sys_PumpEvents( void ) {
 }
 
 // Yield to system to prevent timing race conditions
-// This provides the timing delay that printf/fflush used to provide
+// This must provide timing equivalent to printf("...") + fflush(stdout)
+// A single SystemTask() is too fast - we need heavier operations
 void Sys_Yield( void ) {
+    // Multiple system tasks to approximate printf timing
+    SystemTask();
+    SystemTask();
+    SystemTask();
+    // Force I/O like fflush does - this is key to the timing
+    fflush(stdout);
     SystemTask();
 }
 
@@ -762,7 +769,8 @@ int main( int argc, char **argv ) {
     int i;
     char commandLine[1024];
 
-    SystemTask();  // Initial yield
+    // Heavier timing yields - match printf/fflush timing
+    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
     
     commandLine[0] = 0;
     for (i = 1; i < argc; i++) {
@@ -770,15 +778,15 @@ int main( int argc, char **argv ) {
         if (i < argc - 1) strcat(commandLine, " ");
     }
 
-    SystemTask();  // Yield before Sys_Init
+    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
     Sys_Init();
-    SystemTask();  // Yield after Sys_Init
+    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
     
-    SystemTask();  // Yield before Com_Init
+    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
     Com_Init( commandLine );
-    SystemTask();  // Yield after Com_Init
+    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
 
-    SystemTask();  // Yield before entering main loop
+    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
     while ( 1 ) {
         Com_Frame();
     }
