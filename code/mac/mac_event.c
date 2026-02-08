@@ -207,17 +207,33 @@ void	DoOSEvent(EventRecord	*event)
 
 }
 
+// mac_event.c
+
+static qboolean ignoreUpdateEvents = qfalse;
+
 void DoUpdate(WindowPtr	myWindow)
 { 
 	GrafPtr		origPort;
 	AGLContext	ctx;
+    static int logCount = 0;
 	
-    Sys_LogPrintf("DoUpdate: Start, WindowPtr=0x%p\n", myWindow);
+    // Fix 0x%p typo -> %p usually adds 0x, but let's stick to %p
+    Sys_LogPrintf("DoUpdate: Start, WindowPtr=%p\n", myWindow);
     
     // Safety check against global window
     if ( myWindow != (WindowPtr)sys_gl.drawable ) {
-        Sys_LogPrintf("DoUpdate: Window Mismatch! myWindow=0x%p, sys_gl.drawable=0x%p. Aborting update.\n", 
-            myWindow, sys_gl.drawable);
+        if (logCount < 50) {
+             Sys_LogPrintf("DoUpdate: Window Mismatch! myWindow=%p, sys_gl.drawable=%p. Suppressing future updates.\n", 
+                myWindow, sys_gl.drawable);
+             logCount++;
+        }
+        
+        // CRITICAL FIX:
+        // We cannot touch this window (crashes).
+        // We cannot ignore it (infinite loop).
+        // So we tell the event system to STOP ASKING for update events via mask.
+        ignoreUpdateEvents = qtrue;
+
         return;
     }
     
@@ -227,7 +243,7 @@ void DoUpdate(WindowPtr	myWindow)
     }
 
 	GetPort(&origPort);
-    Sys_LogPrintf("DoUpdate: GetPort done, origPort=0x%p\n", origPort);
+    Sys_LogPrintf("DoUpdate: GetPort done, origPort=%p\n", origPort);
     
 	SetPort(myWindow);
     Sys_LogPrintf("DoUpdate: SetPort done\n");
@@ -240,7 +256,7 @@ void DoUpdate(WindowPtr	myWindow)
 	// Only update context if one exists (may not during early init)
     Sys_LogPrintf("DoUpdate: aglGetCurrentContext\n");
 	ctx = aglGetCurrentContext();
-    Sys_LogPrintf("DoUpdate: ctx = 0x%p\n", ctx);
+    Sys_LogPrintf("DoUpdate: ctx = %p\n", ctx);
 
 	if (ctx != NULL) {
         Sys_LogPrintf("DoUpdate: aglUpdateContext\n");
@@ -331,15 +347,20 @@ Sys_SendKeyEvents
 void Sys_SendKeyEvents (void) {
 	Boolean		   gotEvent;
 	EventRecord	   event;
+    EventMask      mask = everyEvent;
+
+    if (ignoreUpdateEvents) {
+        mask &= ~updateMask;
+    }
 	
 	//Sys_LogPrintf("Sys_SendKeyEvents: Start\n");
 	if ( !glConfig.isFullscreen || sys_waitNextEvent->value ) {
 		// this call involves 68k code and task switching.
 		// do it on the desktop, or if they explicitly ask for
 		// it when fullscreen
-		gotEvent = WaitNextEvent(everyEvent, &event, 0, nil);
+		gotEvent = WaitNextEvent(mask, &event, 0, nil);
 	} else {
-		gotEvent = GetOSEvent( everyEvent, &event );
+		gotEvent = GetOSEvent( mask, &event );
 	}
 	//Sys_LogPrintf( "Sys_SendKeyEvents: Event check done, gotEvent=%d what=%d\n", gotEvent, event.what );
 	
