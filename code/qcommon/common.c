@@ -1933,6 +1933,8 @@ Com_GetRealEvent
 sysEvent_t	Com_GetRealEvent( void ) {
 	int			r;
 	sysEvent_t	ev;
+	static int callNum = 0;
+	callNum++;
 
 	// either get an event from the system or the journal file
 	if ( com_journal->integer == 2 ) {
@@ -1948,9 +1950,9 @@ sysEvent_t	Com_GetRealEvent( void ) {
 			}
 		}
 	} else {
-		Sys_Yield();  // Timing yield before Sys_GetEvent
+		if (callNum == 1) { printf("Com_GetRealEvent: Sys_GetEvent\n"); fflush(stdout); }
 		ev = Sys_GetEvent();
-		Sys_Yield();  // Timing yield after Sys_GetEvent
+		if (callNum == 1) { printf("Com_GetRealEvent: done\n"); fflush(stdout); }
 
 		// write the journal value out if needed
 		if ( com_journal->integer == 1 ) {
@@ -2070,35 +2072,31 @@ int Com_EventLoop( void ) {
 	byte		bufData[MAX_MSGLEN];
 	msg_t		buf;
 	int eventLoopIter = 0;
+	static int firstCall = 1;
 
 	MSG_Init( &buf, bufData, sizeof( bufData ) );
 
 	while ( 1 ) {
 		eventLoopIter++;
-		
-		// Timing yield before getting event (replaces printf timing)
-		Sys_Yield();
-		
+		if (firstCall && eventLoopIter <= 3) { printf("EventLoop: iter %d GetEvent\n", eventLoopIter); fflush(stdout); }
 		ev = Com_GetEvent();
+		if (firstCall && eventLoopIter <= 3) { printf("EventLoop: iter %d type=%d\n", eventLoopIter, ev.evType); fflush(stdout); }
 		
-		// Timing yield after getting event
-		Sys_Yield();
-		
-		// Safety break to prevent stuck loops
+		// Safety break for debugging
 		if (eventLoopIter > 100) {
+			if (firstCall) { printf("EventLoop: SAFETY BREAK at 100\n"); fflush(stdout); }
+			firstCall = 0;
 			return Sys_Milliseconds();
 		}
 
 		// if no more events are available
 		if ( ev.evType == SE_NONE ) {
-			Sys_Yield();  // Yield before packet processing
-			
+			if (firstCall) { printf("EventLoop: SE_NONE, packets\n"); fflush(stdout); }
 			// manually send packet events for the loopback channel
 			while ( NET_GetLoopPacket( NS_CLIENT, &evFrom, &buf ) ) {
 				CL_PacketEvent( evFrom, &buf );
 			}
-			
-			Sys_Yield();  // Yield between client/server packets
+			if (firstCall) { printf("EventLoop: client packets done\n"); fflush(stdout); }
 
 			while ( NET_GetLoopPacket( NS_SERVER, &evFrom, &buf ) ) {
 				// if the server just shut down, flush the events
@@ -2106,8 +2104,7 @@ int Com_EventLoop( void ) {
 					Com_RunAndTimeServerPacket( &evFrom, &buf );
 				}
 			}
-			
-			Sys_Yield();  // Yield after packet processing
+			if (firstCall) { printf("EventLoop: server packets done\n"); fflush(stdout); firstCall = 0; }
 
 			return ev.evTime;
 		}
@@ -2373,53 +2370,53 @@ Com_Init
 void Com_Init( char *commandLine ) {
 	char	*s;
 
-	Sys_Yield();  // Timing yield at start
+	printf("Com_Init: START\n"); fflush(stdout);
 	Com_Printf( "%s %s %s\n", Q3_VERSION, CPUSTRING, __DATE__ );
 
 	if ( setjmp (abortframe) ) {
 		Sys_Error ("Error during initialization");
 	}
 
-	Sys_Yield();  // Timing yield before push event init
+	printf("Com_Init: InitPushEvent\n"); fflush(stdout);
   // bk001129 - do this before anything else decides to push events
   Com_InitPushEvent();
 
-	Sys_Yield();  // Timing yield before memory init
+	printf("Com_Init: SmallZone\n"); fflush(stdout);
 	Com_InitSmallZoneMemory();
-	Sys_Yield();
+	printf("Com_Init: Cvar_Init\n"); fflush(stdout);
 	Cvar_Init ();
 
 	// prepare enough of the subsystems to handle
 	// cvar and command buffer management
-	Sys_Yield();
+	printf("Com_Init: ParseCommandLine\n"); fflush(stdout);
 	Com_ParseCommandLine( commandLine );
 
 //	Swap_Init ();
-	Sys_Yield();
+	printf("Com_Init: Cbuf_Init\n"); fflush(stdout);
 	Cbuf_Init ();
 
-	Sys_Yield();
+	printf("Com_Init: ZoneMemory\n"); fflush(stdout);
 	Com_InitZoneMemory();
-	Sys_Yield();
+	printf("Com_Init: Cmd_Init\n"); fflush(stdout);
 	Cmd_Init ();
 
 	// override anything from the config files with command line args
-	Sys_Yield();
+	printf("Com_Init: StartupVariable\n"); fflush(stdout);
 	Com_StartupVariable( NULL );
 
 	// get the developer cvar set as early as possible
 	Com_StartupVariable( "developer" );
 
 	// done early so bind command exists
-	Sys_Yield();
+	printf("Com_Init: CL_InitKeyCommands\n"); fflush(stdout);
 	CL_InitKeyCommands();
 
-	Sys_Yield();  // Timing yield before filesystem init
+	printf("Com_Init: FS_InitFilesystem\n"); fflush(stdout);
 	FS_InitFilesystem ();
-	Sys_Yield();  // Timing yield after filesystem init
+	printf("Com_Init: FS done\n"); fflush(stdout);
 
 	Com_InitJournaling();
-	Sys_Yield();
+	printf("Com_Init: Journaling done\n"); fflush(stdout);
 
 	Cbuf_AddText ("exec default.cfg\n");
 
@@ -2430,8 +2427,9 @@ void Com_Init( char *commandLine ) {
 
 	Cbuf_AddText ("exec autoexec.cfg\n");
 
-	Sys_Yield();  // Timing yield before Cbuf_Execute
+	printf("Com_Init: About to Cbuf_Execute\n"); fflush(stdout);
 	Cbuf_Execute ();
+	printf("Com_Init: Cbuf_Execute done\n"); fflush(stdout);
 
 	// override anything from the config files with command line args
 	Com_StartupVariable( NULL );
@@ -2693,6 +2691,7 @@ Com_Frame
 */
 void Com_Frame( void ) {
 
+	static int frameNum = 0;
 	int		msec, minMsec;
 	static int	lastTime;
 	int key;
@@ -2703,6 +2702,14 @@ void Com_Frame( void ) {
 	int           timeBeforeClient;
 	int           timeAfter;
 
+	frameNum++;
+	if (frameNum <= 5) { printf("Com_Frame: frame %d\n", frameNum); fflush(stdout); }
+	
+	// DEBUG SAFETY: Exit after 20 frames to prevent hard freeze
+	if (frameNum > 20) {
+		printf("SAFETY EXIT: 20 frames completed, exiting cleanly\n"); fflush(stdout);
+		Sys_Quit();
+	}
 
 	if ( setjmp (abortframe) ) {
 		return;			// an ERR_DROP was thrown
@@ -2749,13 +2756,11 @@ void Com_Frame( void ) {
 	}
 	{
 		int loopIter = 0;
-		
-		Sys_Yield();  // Yield at start of timing loop
+		if (frameNum == 1) { printf("Com_Frame: timing loop start minMsec=%d\n", minMsec); fflush(stdout); }
 		do {
-			Sys_Yield();  // Yield before event loop
+			if (frameNum == 1 && loopIter < 3) { printf("Com_Frame: EventLoop iter %d\n", loopIter); fflush(stdout); }
 			com_frameTime = Com_EventLoop();
-			Sys_Yield();  // Yield after event loop
-
+			if (frameNum == 1 && loopIter < 3) { printf("Com_Frame: EventLoop returned %d\n", com_frameTime); fflush(stdout); }
 			if ( lastTime > com_frameTime ) {
 				lastTime = com_frameTime;		// possible on first frame
 			}
@@ -2763,12 +2768,12 @@ void Com_Frame( void ) {
 			loopIter++;
 			// Safety break for stuck timing loop
 			if (loopIter > 1000) {
-
+				if (frameNum == 1) { printf("Com_Frame: timing loop stuck, breaking\n"); fflush(stdout); }
 				break;
 			}
 		} while ( msec < minMsec );
 	}
-
+	if (frameNum == 1) { printf("Com_Frame: events done\n"); fflush(stdout); }
 	
 
 	Cbuf_Execute ();
@@ -2789,7 +2794,7 @@ void Com_Frame( void ) {
 	}
 
 	SV_Frame( msec );
-	Sys_Yield();  // Timing yield after SV_Frame
+	if (frameNum == 1) { printf("Com_Frame: SV_Frame done\n"); fflush(stdout); }
 
 
 	// if "dedicated" has been modified, start up
@@ -2833,7 +2838,7 @@ void Com_Frame( void ) {
 		}
 
 		CL_Frame( msec );
-		Sys_Yield();  // Timing yield after CL_Frame
+		if (frameNum == 1) { printf("Com_Frame: CL_Frame done\n"); fflush(stdout); }
 
 
 		if ( com_speeds->integer ) {

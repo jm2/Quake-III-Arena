@@ -2134,35 +2134,47 @@ This is the only place that any of these functions are called from
 ============================
 */
 void CL_StartHunkUsers( void ) {
+	printf("CL_StartHunkUsers: START\n"); fflush(stdout);
 	//Sys_SendKeyEvents();
 
 	if (!com_cl_running) {
+		printf("CL_StartHunkUsers: com_cl_running is NULL\n"); fflush(stdout);
 		return;
 	}
 
 	if ( !com_cl_running->integer ) {
+		printf("CL_StartHunkUsers: com_cl_running->integer is 0\n"); fflush(stdout);
 		return;
 	}
 
 	if ( !cls.rendererStarted ) {
+		printf("CL_StartHunkUsers: CL_InitRenderer\n"); fflush(stdout);
 		cls.rendererStarted = qtrue;
 		CL_InitRenderer();
+		printf("CL_StartHunkUsers: CL_InitRenderer done\n"); fflush(stdout);
 	}
 
 	if ( !cls.soundStarted ) {
+		printf("CL_StartHunkUsers: S_Init\n"); fflush(stdout);
 		cls.soundStarted = qtrue;
 		S_Init();
+		printf("CL_StartHunkUsers: S_Init done\n"); fflush(stdout);
 	}
 
 	if ( !cls.soundRegistered ) {
+		printf("CL_StartHunkUsers: S_BeginRegistration\n"); fflush(stdout);
 		cls.soundRegistered = qtrue;
 		S_BeginRegistration();
+		printf("CL_StartHunkUsers: S_BeginRegistration done\n"); fflush(stdout);
 	}
 
 	if ( !cls.uiStarted ) {
+		printf("CL_StartHunkUsers: CL_InitUI\n"); fflush(stdout);
 		cls.uiStarted = qtrue;
 		CL_InitUI();
+		printf("CL_StartHunkUsers: CL_InitUI done\n"); fflush(stdout);
 	}
+	printf("CL_StartHunkUsers: COMPLETE\n"); fflush(stdout);
 }
 
 /*

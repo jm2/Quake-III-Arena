@@ -100,17 +100,15 @@ void Sys_Input( void );
 sysEvent_t Sys_GetEvent( void ) {
     sysEvent_t ev;
     
-    // Timing yields to prevent race condition - heavier implementation
-    // These replicate the timing effect of printf/fflush calls
-    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
-    
+    //printf("Sys_GetEvent: SendKeyEvents\n"); fflush(stdout);
     // Pump Mac OS events (keyboard via WaitNextEvent)
     Sys_SendKeyEvents();
-    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
+    //printf("Sys_GetEvent: SendKeyEvents done\n"); fflush(stdout);
     
+    //printf("Sys_GetEvent: Sys_Input\n"); fflush(stdout);
     // Pump InputSprocket events (mouse)
     Sys_Input();
-    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
+    //printf("Sys_GetEvent: Sys_Input done\n"); fflush(stdout);
 
     if (eventHead == eventTail) {
         memset( &ev, 0, sizeof(ev) );
@@ -180,13 +178,11 @@ void Sys_PumpEvents( void ) {
 
 // Yield to system to prevent timing race conditions
 // This must provide timing equivalent to printf("...") + fflush(stdout)
-// A single SystemTask() is too fast - we need heavier operations
+// Key: We must actually WRITE to stdout to trigger I/O, not just flush empty buffer
 void Sys_Yield( void ) {
-    // Multiple system tasks to approximate printf timing
     SystemTask();
-    SystemTask();
-    SystemTask();
-    // Force I/O like fflush does - this is key to the timing
+    // Actually write to stdout like printf does - use space+backspace to be invisible
+    printf(" \b");
     fflush(stdout);
     SystemTask();
 }
@@ -769,24 +765,23 @@ int main( int argc, char **argv ) {
     int i;
     char commandLine[1024];
 
-    // Heavier timing yields - match printf/fflush timing
-    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
-    
+    printf("main: START\n"); fflush(stdout);
+
     commandLine[0] = 0;
     for (i = 1; i < argc; i++) {
         strcat(commandLine, argv[i]);
         if (i < argc - 1) strcat(commandLine, " ");
     }
 
-    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
+    printf("main: Sys_Init\n"); fflush(stdout);
     Sys_Init();
-    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
+    printf("main: Sys_Init done\n"); fflush(stdout);
     
-    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
+    printf("main: Com_Init\n"); fflush(stdout);
     Com_Init( commandLine );
-    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
+    printf("main: Com_Init done\n"); fflush(stdout);
 
-    SystemTask(); SystemTask(); SystemTask(); fflush(stdout); SystemTask();
+    printf("main: entering main loop\n"); fflush(stdout);
     while ( 1 ) {
         Com_Frame();
     }

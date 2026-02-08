@@ -508,7 +508,7 @@ static qboolean CreateGameWindow( void ) {
 	Str255    	pstr;
 	Rect		windowRect;
 	
-	//printf("DEBUG: CreateGameWindow: Starting\n");
+	printf("DEBUG: CreateGameWindow: Starting\n"); fflush(stdout);
 	
 	vid_xpos = ri.Cvar_Get( "vid_xpos", "30", 0 );
 	vid_ypos = ri.Cvar_Get( "vid_ypos", "30", 0 );
@@ -516,21 +516,21 @@ static qboolean CreateGameWindow( void ) {
 	// get mode info
 	mode = r_mode->integer;
     ri.Printf( PRINT_ALL, "...setting mode %d:", mode );
-	//printf("DEBUG: CreateGameWindow: mode=%d\n", mode);
+	printf("DEBUG: CreateGameWindow: mode=%d\n", mode); fflush(stdout);
 
     if ( !R_GetModeInfo( &glConfig.vidWidth, &glConfig.vidHeight, &glConfig.windowAspect, mode ) )  {
         ri.Printf( PRINT_ALL, " invalid mode\n" );
-		//printf("DEBUG: CreateGameWindow: R_GetModeInfo failed (invalid mode)\n");
+		printf("DEBUG: CreateGameWindow: R_GetModeInfo failed (invalid mode)\n"); fflush(stdout);
         return false;
     }
     ri.Printf( PRINT_ALL, " %d %d\n", glConfig.vidWidth, glConfig.vidHeight );
-	//printf("DEBUG: CreateGameWindow: vidWidth=%d, vidHeight=%d\n", glConfig.vidWidth, glConfig.vidHeight);
+	printf("DEBUG: CreateGameWindow: vidWidth=%d, vidHeight=%d\n", glConfig.vidWidth, glConfig.vidHeight); fflush(stdout);
 
 	/* Create window - using NewCWindow instead of GetNewCWindow (no resources needed) */
 	if ( r_fullscreen->integer ) {
 		int		actualWidth, actualHeight;
 		
-		//printf("DEBUG: CreateGameWindow: Fullscreen mode, calling GLimp_ChangeDisplay\n");
+		printf("DEBUG: CreateGameWindow: Fullscreen mode, calling GLimp_ChangeDisplay\n"); fflush(stdout);
 		
 		// change display resolution
 		GLimp_ChangeDisplay( &actualWidth, &actualHeight );
@@ -538,7 +538,7 @@ static qboolean CreateGameWindow( void ) {
 		x = ( actualWidth - glConfig.vidWidth ) / 2;
 		y = ( actualHeight - glConfig.vidHeight ) / 2;
 		
-		//printf("DEBUG: CreateGameWindow: actualWidth=%d, actualHeight=%d, x=%d, y=%d\n", actualWidth, actualHeight, x, y);
+		printf("DEBUG: CreateGameWindow: actualWidth=%d, actualHeight=%d, x=%d, y=%d\n", actualWidth, actualHeight, x, y); fflush(stdout);
 	} else {
 		// Position window in upper-right corner to keep console visible
 		x = 320;  // Right side of screen
@@ -546,7 +546,7 @@ static qboolean CreateGameWindow( void ) {
 		// Force smaller size for debugging
 		glConfig.vidWidth = 320;
 		glConfig.vidHeight = 240;
-		//printf("DEBUG: Windowed mode, FORCED small window at x=%d, y=%d, size=%dx%d\n", x, y, glConfig.vidWidth, glConfig.vidHeight);
+		printf("DEBUG: Windowed mode, FORCED small window at x=%d, y=%d, size=%dx%d\n", x, y, glConfig.vidWidth, glConfig.vidHeight); fflush(stdout);
 	}
 	
 	// Create window rect
@@ -555,8 +555,8 @@ static qboolean CreateGameWindow( void ) {
 	windowRect.right = x + glConfig.vidWidth;
 	windowRect.bottom = y + glConfig.vidHeight;
 	
-	//printf("DEBUG: CreateGameWindow: Calling NewCWindow, rect=(%d,%d,%d,%d)\n", 
-	//	   windowRect.left, windowRect.top, windowRect.right, windowRect.bottom);
+	printf("DEBUG: CreateGameWindow: Calling NewCWindow, rect=(%d,%d,%d,%d)\n", 
+		   windowRect.left, windowRect.top, windowRect.right, windowRect.bottom); fflush(stdout);
 	
 	// Use NewCWindow instead of GetNewCWindow to avoid resource dependency
 	// Window style: 5 = noGrowDocProc (standard document window without grow box)
@@ -568,11 +568,11 @@ static qboolean CreateGameWindow( void ) {
 	}
 	
 	if( !sys_gl.drawable ) {
-		//printf("DEBUG: CreateGameWindow: NewCWindow FAILED!\n");
+		printf("DEBUG: CreateGameWindow: NewCWindow FAILED!\n"); fflush(stdout);
 		return qfalse;
 	}
 	
-	//printf("DEBUG: CreateGameWindow: NewCWindow succeeded, drawable=%p\n", sys_gl.drawable);
+	printf("DEBUG: CreateGameWindow: NewCWindow succeeded, drawable=%p\n", sys_gl.drawable); fflush(stdout);
 	
 	SizeWindow((GrafPort *) sys_gl.drawable, glConfig.vidWidth, glConfig.vidHeight,GL_FALSE);
 	MoveWindow((GrafPort *) sys_gl.drawable,x, y, GL_FALSE);
@@ -581,7 +581,7 @@ static qboolean CreateGameWindow( void ) {
 	HiliteWindow((GrafPort *) sys_gl.drawable, 1);
 	SelectWindow((WindowPtr)sys_gl.drawable);
 	
-	//printf("DEBUG: CreateGameWindow: Window setup complete\n");
+	printf("DEBUG: CreateGameWindow: Window setup complete\n"); fflush(stdout);
 	
 	return qtrue;
 }
@@ -600,22 +600,22 @@ qboolean GLimp_SetMode( void ) {
 	GLint		attrib[64];
 	int			i;
 
-	//printf("DEBUG: GLimp_SetMode: Starting\n");
+	printf("DEBUG: GLimp_SetMode: Starting\n"); fflush(stdout);
 
 	if ( !CreateGameWindow() ) {
-		//printf("DEBUG: GLimp_SetMode: CreateGameWindow FAILED\n");
+		printf("DEBUG: GLimp_SetMode: CreateGameWindow FAILED\n"); fflush(stdout);
 		ri.Printf( PRINT_ALL, "GLimp_Init: window could not be created" );
 		return qfalse;
 	}
 	
-	//printf("DEBUG: GLimp_SetMode: CreateGameWindow succeeded\n");
+	printf("DEBUG: GLimp_SetMode: CreateGameWindow succeeded\n"); fflush(stdout);
 	
 	// check devices now that the game has set the display mode,
 	// because RAVE devices don't get reported if in an 8 bit desktop
-	//printf("DEBUG: GLimp_SetMode: Calling CheckDevices\n");
+	printf("DEBUG: GLimp_SetMode: Calling CheckDevices\n"); fflush(stdout);
 	CheckDevices();
 	
-	//printf("DEBUG: GLimp_SetMode: CheckDevices complete, numDevices=%d\n", sys_gl.numDevices);
+	printf("DEBUG: GLimp_SetMode: CheckDevices complete, numDevices=%d\n", sys_gl.numDevices); fflush(stdout);
 	
 	// set up the attribute list
 	i = 0;
@@ -661,18 +661,18 @@ qboolean GLimp_SetMode( void ) {
 	attrib[i++] = 0;
 	
 	/* Choose pixel format */
-	//printf("DEBUG: GLimp_SetMode: Calling aglChoosePixelFormat\n");
+	printf("DEBUG: GLimp_SetMode: Calling aglChoosePixelFormat\n"); fflush(stdout);
 	ri.Printf( PRINT_ALL, "aglChoosePixelFormat\n" );
 	if ( r_device->integer < 0 || r_device->integer >= sys_gl.numDevices ) {
 		ri.Cvar_Set( "r_device", "0" );
 	}
 	sys_gl.fmt = aglChoosePixelFormat( &sys_gl.devices[ r_device->integer ], 1, attrib);
 	if(!sys_gl.fmt) {
-		//printf("DEBUG: GLimp_SetMode: aglChoosePixelFormat FAILED\n");
+		printf("DEBUG: GLimp_SetMode: aglChoosePixelFormat FAILED\n"); fflush(stdout);
 		ri.Printf( PRINT_ALL, "GLimp_Init: Pixel format could not be achieved\n");
 		return qfalse;
 	}
-	//printf("DEBUG: GLimp_SetMode: aglChoosePixelFormat succeeded, fmt=0x%x\n", (int)sys_gl.fmt);
+	printf("DEBUG: GLimp_SetMode: aglChoosePixelFormat succeeded, fmt=0x%x\n", (int)sys_gl.fmt); fflush(stdout);
 	ri.Printf( PRINT_ALL, "Selected pixel format 0x%x\n", (int)sys_gl.fmt );
 	
 	aglDescribePixelFormat(sys_gl.fmt, AGL_RED_SIZE, &value);
@@ -746,11 +746,11 @@ void GLimp_Init( void ) {
 	static		qboolean	registered;
 	
 	ri.Printf( PRINT_ALL, "--- GLimp_Init ---\n" );
-	//printf("DEBUG: GLimp_Init: Starting\n");
+	printf("DEBUG: GLimp_Init: Starting\n"); fflush(stdout);
 
 	aglGetVersion( &major, &minor );
 	ri.Printf( PRINT_ALL, "aglVersion: %i.%i\n", (int)major, (int)minor );
-	//printf("DEBUG: GLimp_Init: aglVersion %d.%d\n", (int)major, (int)minor);
+	printf("DEBUG: GLimp_Init: aglVersion %d.%d\n", (int)major, (int)minor); fflush(stdout);
 	
 	r_device = ri.Cvar_Get( "r_device", "0", CVAR_LATCH | CVAR_ARCHIVE );
 	r_ext_transform_hint = ri.Cvar_Get( "r_ext_transform_hint", "1", CVAR_LATCH | CVAR_ARCHIVE );
@@ -792,7 +792,7 @@ void GLimp_Init( void ) {
 		return;
 	}
 
-	//printf("DEBUG: GLimp_Init: Both GLimp_SetMode attempts failed!\n");
+	printf("DEBUG: GLimp_Init: Both GLimp_SetMode attempts failed!\n"); fflush(stdout);
 	ri.Error( ERR_FATAL, "Could not initialize OpenGL" );
 }
 
