@@ -95,20 +95,129 @@ void Sys_QueEvent( int time, sysEventType_t type, int value, int value2, int ptr
 // mac_event.c
 void Sys_SendKeyEvents( void );
 // mac_input.c
+// mac_input.c
 void Sys_Input( void );
+
+// Retro68 Console Log Buffer
+#define RETRO_LOG_SIZE (256 * 1024)
+static char retroLogBuffer[RETRO_LOG_SIZE];
+static int retroLogHead = 0;
+static int retroLogTotal = 0;
+
+void Sys_LogPrintf( const char *fmt, ... ) {
+    va_list argptr;
+    char text[1024];
+    int len;
+    int i;
+
+    va_start( argptr, fmt );
+    len = vsprintf( text, fmt, argptr );
+    va_end( argptr );
+
+    // 1. Output to actual console
+    printf("%s", text);
+
+    // 2. Log to buffer
+    if ( len < 0 ) return;
+    if ( len > sizeof(text)-1 ) len = sizeof(text)-1;
+
+    for ( i = 0; i < len; i++ ) {
+        retroLogBuffer[retroLogHead] = text[i];
+        retroLogHead = (retroLogHead + 1) % RETRO_LOG_SIZE;
+        if (retroLogTotal < RETRO_LOG_SIZE) retroLogTotal++;
+    }
+
+    // 3. SYNCHRONOUS FILE APPEND (Performance hit accepted for debug)
+    {
+        FILE *fp = fopen("retro68_console.log", "a");
+        if (fp) {
+            fwrite(text, 1, len, fp);
+            fclose(fp);
+        }
+    }
+}
+
+void Sys_DumpRetroLogs( const char *fileName ) {
+    FILE *fp;
+    int i, idx, count;
+
+    fp = fopen( fileName, "wb" );
+    if ( !fp ) {
+        printf( "Sys_DumpRetroLogs: Failed to open %s\n", fileName );
+        return;
+    }
+
+    if (retroLogTotal < RETRO_LOG_SIZE) {
+        idx = 0;
+        count = retroLogTotal;
+    } else {
+        idx = retroLogHead;
+        count = RETRO_LOG_SIZE;
+    }
+
+    for ( i = 0; i < count; i++ ) {
+        fwrite( &retroLogBuffer[idx], 1, 1, fp );
+        idx = (idx + 1) % RETRO_LOG_SIZE;
+    }
+
+    fclose( fp );
+    printf( "Sys_DumpRetroLogs: Dumped %d bytes to %s\n", count, fileName );
+}
+
+// Debug Breadcrumb
+void Debug_Breadcrumb( int color ) {
+    Rect r;
+    // Draw a small square in the top-left corner
+    SetRect(&r, 0, 0, 10, 10);
+    ForeColor(color);
+    PaintRect(&r);
+    ForeColor(blackColor);
+}
 
 sysEvent_t Sys_GetEvent( void ) {
     sysEvent_t ev;
+    KeyMap keys;
+    unsigned char *k;
     
-    //printf("Sys_GetEvent: SendKeyEvents\n"); fflush(stdout);
+    // Panic Key Dump: Command (55) + D (2)
+    GetKeys(keys);
+    k = (unsigned char *)keys;
+    // Command is key 55. 55/8=6, 55%8=7. Bit check: (1<<(55%8)) = 0x80
+    // D is key 2. 2/8=0, 2%8=2. Bit check: (1<<2) = 0x04
+    if ( (k[6] & 0x80) && (k[0] & 0x04) ) {
+        static int lastDump = 0;
+        int now = Sys_Milliseconds();
+        if (now - lastDump > 2000) {
+            Com_Printf("PANIC KEY DETECTED - DUMPING FLIGHT RECORD\n");
+            Com_DumpFlightRecord("flight_record.txt");
+            Sys_DumpRetroLogs("retro68_console.txt");
+            SysBeep(30); 
+            lastDump = now;
+        }
+    }
+    
+    /*
+    // Auto Dump loop disabled - using synchronous append logging instead
+    {
+        static int lastAutoDump = 0;
+        int now = Sys_Milliseconds();
+        if (now - lastAutoDump > 100) {
+           Com_DumpFlightRecord("flight_record_auto.txt"); 
+           Sys_DumpRetroLogs("retro68_console_auto.txt");
+           lastAutoDump = now;
+        }
+    }
+    */
+
+    //Sys_LogPrintf("Sys_GetEvent: SendKeyEvents\n"); fflush(stdout);
     // Pump Mac OS events (keyboard via WaitNextEvent)
     Sys_SendKeyEvents();
-    //printf("Sys_GetEvent: SendKeyEvents done\n"); fflush(stdout);
+    //Sys_LogPrintf("Sys_GetEvent: SendKeyEvents done\n"); fflush(stdout);
     
-    //printf("Sys_GetEvent: Sys_Input\n"); fflush(stdout);
+    //Sys_LogPrintf("Sys_GetEvent: Sys_Input\n"); fflush(stdout);
     // Pump InputSprocket events (mouse)
     Sys_Input();
-    //printf("Sys_GetEvent: Sys_Input done\n"); fflush(stdout);
+    //Sys_LogPrintf("Sys_GetEvent: Sys_Input done\n"); fflush(stdout);
 
     if (eventHead == eventTail) {
         memset( &ev, 0, sizeof(ev) );
@@ -132,7 +241,10 @@ int		sys_msecBase;
 int		sys_lastEventTic;
 
 void Sys_Init( void ) {
+    Com_FlightRecord("Sys_Init: Is this on? Flight Recorder Start.\n");
+    Debug_Breadcrumb(205); // redColor
     Sys_InitConsole();
+    Com_FlightRecord("Sys_Init: Console initialized.\n");
     Sys_InitNetworking();
     Sys_InitInput();
 }
@@ -145,7 +257,7 @@ void Sys_Quit( void ) {
     // Use implicit declaration for SysBeep as we are lazy with includes for this debug hack
     // SysBeep(30); 
     
-    printf("\nSys_Quit called. Waiting for input (press Return) to exit...\n");
+    Sys_LogPrintf("\nSys_Quit called. Waiting for input (press Return) to exit...\n");
     getchar();
     
     exit( 0 );
@@ -159,7 +271,12 @@ void Sys_Error( const char *error, ... ) {
     vsprintf( text, error, argptr );
     va_end( argptr );
 
+    Com_FlightRecord("Sys_Error: %s\n", text);
+    Com_DumpFlightRecord("crashdump.txt");
+
     fprintf( stderr, "Sys_Error: %s\n", text );
+    Sys_LogPrintf("Sys_Error: %s\n", text);
+    Sys_DumpRetroLogs("retro68_console_crash.txt");
     Sys_Quit();
 }
 
@@ -765,7 +882,7 @@ int main( int argc, char **argv ) {
     int i;
     char commandLine[1024];
 
-    printf("main: START\n"); fflush(stdout);
+    Sys_LogPrintf("main: START\n");
 
     commandLine[0] = 0;
     for (i = 1; i < argc; i++) {
@@ -773,15 +890,17 @@ int main( int argc, char **argv ) {
         if (i < argc - 1) strcat(commandLine, " ");
     }
 
-    printf("main: Sys_Init\n"); fflush(stdout);
+    Sys_LogPrintf("main: Sys_Init\n");
     Sys_Init();
-    printf("main: Sys_Init done\n"); fflush(stdout);
+    Sys_LogPrintf("main: Sys_Init done\n");
     
-    printf("main: Com_Init\n"); fflush(stdout);
+    Sys_LogPrintf("main: Com_Init\n");
     Com_Init( commandLine );
-    printf("main: Com_Init done\n"); fflush(stdout);
+    Sys_LogPrintf("main: Com_Init done\n");
+    Debug_Breadcrumb(341); // greenColor
 
-    printf("main: entering main loop\n"); fflush(stdout);
+    Sys_LogPrintf("main: entering main loop\n");
+    Com_FlightRecord("main: Entering Com_Frame loop.\n");
     while ( 1 ) {
         Com_Frame();
     }

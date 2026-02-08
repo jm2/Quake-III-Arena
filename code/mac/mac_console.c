@@ -45,7 +45,7 @@ void	Sys_Print( const char *text ) {
 	if ( !consoleDisplayed ) {
 		return;
 	}
-	printf( "%s", text );
+	Sys_LogPrintf( "%s", text );
 }
 
 

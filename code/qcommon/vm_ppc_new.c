@@ -603,7 +603,7 @@ static void makeInteger(int depth)
 		unsigned instruction;
 		assert(opStackLoadInstructionAddr[depth]);
 		
-		printf("patching float load at %p to int load\n",opStackLoadInstructionAddr[depth]);
+		Com_Printf("patching float load at %p to int load\n",opStackLoadInstructionAddr[depth]);
 		// Repatch load instruction to use LFS instead of LWZ
 		instruction = *opStackLoadInstructionAddr[depth];
 		instruction &= ~PPC_LFSX;
@@ -1784,7 +1784,7 @@ void VM_Compile( vm_t *vm, vmHeader_t *header ) {
     if(0)
     {
 	char buf[256];
-	printf("wait..\n");
+	//Sys_LogPrintf("wait..\n");
 	gets(buf);
     }
     Z_Free( jused );

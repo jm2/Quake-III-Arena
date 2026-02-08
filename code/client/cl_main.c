@@ -2276,24 +2276,34 @@ void CL_SetModel_f( void ) {
 CL_Init
 ====================
 */
+/*
+====================
+CL_Init
+====================
+*/
 void CL_Init( void ) {
 	Com_Printf( "----- Client Initialization -----\n" );
+    Debug_Breadcrumb(260); // CL_Init Start
 
 	Con_Init ();	
+    Debug_Breadcrumb(205); // Red: Con_Init done
 
 	CL_ClearState ();
+    Debug_Breadcrumb(340); // Green: ClearState done
 
 	cls.state = CA_DISCONNECTED;	// no longer CA_UNINITIALIZED
 
 	cls.realtime = 0;
 
 	CL_InitInput ();
+    Debug_Breadcrumb(409); // Blue: InitInput done
 
 	//
 	// register our variables
 	//
 	cl_noprint = Cvar_Get( "cl_noprint", "0", 0 );
 	cl_motd = Cvar_Get ("cl_motd", "1", 0);
+    Debug_Breadcrumb(137); // Magenta: Cvars 1 done
 
 	cl_timeout = Cvar_Get ("cl_timeout", "200", 0);
 
@@ -2328,6 +2338,8 @@ void CL_Init( void ) {
 	cl_allowDownload = Cvar_Get ("cl_allowDownload", "0", CVAR_ARCHIVE);
 
 	cl_conXOffset = Cvar_Get ("cl_conXOffset", "0", 0);
+    Debug_Breadcrumb(400); // Yellow: Cvars 2 done
+
 #ifdef MACOS_X
         // In game video is REALLY slow in Mac OS X right now due to driver slowness
 	cl_inGameVideo = Cvar_Get ("r_inGameVideo", "0", CVAR_ARCHIVE);
@@ -2377,9 +2389,9 @@ void CL_Init( void ) {
 	Cvar_Get ("password", "", CVAR_USERINFO);
 	Cvar_Get ("cg_predictItems", "1", CVAR_USERINFO | CVAR_ARCHIVE );
 
-
 	// cgame might not be initialized before menu is used
 	Cvar_Get ("cg_viewsize", "100", CVAR_ARCHIVE );
+    Debug_Breadcrumb(262); // CL_Init Cvars Done
 
 	//
 	// register our commands
@@ -2406,11 +2418,22 @@ void CL_Init( void ) {
 	Cmd_AddCommand ("fs_openedList", CL_OpenedPK3List_f );
 	Cmd_AddCommand ("fs_referencedList", CL_ReferencedPK3List_f );
 	Cmd_AddCommand ("model", CL_SetModel_f );
+    Debug_Breadcrumb(263); // CL_Init Cmds Done
+
+	Com_Printf("CL_Init: CL_InitRef\n");
 	CL_InitRef();
+	Com_Printf("CL_Init: CL_InitRef done\n");
+    Debug_Breadcrumb(264); // CL_Init InitRef Done
 
+	Com_Printf("CL_Init: SCR_Init\n");
 	SCR_Init ();
+	Com_Printf("CL_Init: SCR_Init done\n");
+    Debug_Breadcrumb(265); // CL_Init SCR_Init Done
 
+	Com_Printf("CL_Init: Cbuf_Execute\n");
 	Cbuf_Execute ();
+	Com_Printf("CL_Init: Cbuf_Execute done\n");
+    Debug_Breadcrumb(266); // CL_Init Cbuf Done
 
 	Cvar_Set( "cl_running", "1" );
 

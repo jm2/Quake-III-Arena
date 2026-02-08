@@ -409,21 +409,34 @@ CheckDeviceRenderers
 
 ========================
 */
+/*
+=======================
+CheckDeviceRenderers
+
+========================
+*/
 static void CheckDeviceRenderers( GDHandle device ) {
 	AGLRendererInfo info, head_info;
 	GLint inum;
 	GLint	accelerated;
 	GLint	textureMemory, videoMemory;
 	
+    Com_FlightRecord("CheckDeviceRenderers: Start\n");
+    Debug_Breadcrumb(410); // CheckDeviceRenderers Entry
+
 	head_info =  aglQueryRendererInfo(&device, 1);
 	if( !head_info ) {
 		ri.Printf( PRINT_ALL, "aglQueryRendererInfo : Info Error\n");
+        Com_FlightRecord("CheckDeviceRenderers: aglQueryRendererInfo failed\n");
 		return;
 	}
 	
 	info = head_info;
 	inum = 0;
 	while( info ) {
+        Com_FlightRecord("CheckDeviceRenderers: Loop inum=%d\n", inum);
+        Debug_Breadcrumb(411); // CheckDeviceRenderers Loop start
+
 		ri.Printf( PRINT_ALL, "  Renderer : %d\n", inum);
 		
 		aglDescribeRenderer( info, AGL_ACCELERATED, &accelerated );
@@ -445,9 +458,17 @@ static void CheckDeviceRenderers( GDHandle device ) {
 
 		info = aglNextRendererInfo(info);
 		inum++;
+        
+        // Safety Break
+        if (inum > 100) {
+            Com_FlightRecord("CheckDeviceRenderers: Loop runaway! Breaking.\n");
+            break;
+        }
 	}
 	
 	aglDestroyRendererInfo(head_info);
+    Com_FlightRecord("CheckDeviceRenderers: End\n");
+    Debug_Breadcrumb(412); // CheckDeviceRenderers Exit
 }
 
 
@@ -462,6 +483,9 @@ static void CheckDevices( void ) {
 	GDHandle device;
 	static	qboolean	checkedFullscreen;
 	
+    Com_FlightRecord("CheckDevices: Start\n");
+    Debug_Breadcrumb(400); // CheckDevices Entry
+
 	if ( checkedFullscreen ) {
 		return;
 	}
@@ -471,7 +495,12 @@ static void CheckDevices( void ) {
 
 	device = GetDeviceList();
 	sys_gl.numDevices = 0;
+    Com_FlightRecord("CheckDevices: GetDeviceList returned %p\n", device);
+
 	while( device && sys_gl.numDevices < MAX_DEVICES ) {
+        Com_FlightRecord("CheckDevices: Loop device=%p numDevices=%d\n", device, sys_gl.numDevices);
+        Debug_Breadcrumb(401); // CheckDevices Loop
+
 		sys_gl.devices[ sys_gl.numDevices ] = device;
 
 		ri.Printf( PRINT_ALL, "Device : %d\n", sys_gl.numDevices);
@@ -481,6 +510,9 @@ static void CheckDevices( void ) {
 		
 		sys_gl.numDevices++;
 	}
+
+    Com_FlightRecord("CheckDevices: Loop finished/Devices checked.\n");
+    Debug_Breadcrumb(402); // CheckDevices Loop End
 
 	CheckErrors();		
 	
@@ -493,6 +525,7 @@ static void CheckDevices( void ) {
 	} else {
 		sys_hardwareType = GLHW_GENERIC;
 	}
+    Com_FlightRecord("CheckDevices: End\n");
 }
 
 /*
@@ -506,9 +539,10 @@ static qboolean CreateGameWindow( void ) {
 	int			mode;
 	int			x, y;
 	Str255    	pstr;
+
 	Rect		windowRect;
 	
-	printf("DEBUG: CreateGameWindow: Starting\n"); fflush(stdout);
+	Sys_LogPrintf("DEBUG: CreateGameWindow: Starting\n");
 	
 	vid_xpos = ri.Cvar_Get( "vid_xpos", "30", 0 );
 	vid_ypos = ri.Cvar_Get( "vid_ypos", "30", 0 );
@@ -516,21 +550,21 @@ static qboolean CreateGameWindow( void ) {
 	// get mode info
 	mode = r_mode->integer;
     ri.Printf( PRINT_ALL, "...setting mode %d:", mode );
-	printf("DEBUG: CreateGameWindow: mode=%d\n", mode); fflush(stdout);
+	Sys_LogPrintf("DEBUG: CreateGameWindow: mode=%d\n", mode);
 
     if ( !R_GetModeInfo( &glConfig.vidWidth, &glConfig.vidHeight, &glConfig.windowAspect, mode ) )  {
         ri.Printf( PRINT_ALL, " invalid mode\n" );
-		printf("DEBUG: CreateGameWindow: R_GetModeInfo failed (invalid mode)\n"); fflush(stdout);
+		Sys_LogPrintf("DEBUG: CreateGameWindow: R_GetModeInfo failed (invalid mode)\n");
         return false;
     }
     ri.Printf( PRINT_ALL, " %d %d\n", glConfig.vidWidth, glConfig.vidHeight );
-	printf("DEBUG: CreateGameWindow: vidWidth=%d, vidHeight=%d\n", glConfig.vidWidth, glConfig.vidHeight); fflush(stdout);
+	Sys_LogPrintf("DEBUG: CreateGameWindow: vidWidth=%d, vidHeight=%d\n", glConfig.vidWidth, glConfig.vidHeight);
 
 	/* Create window - using NewCWindow instead of GetNewCWindow (no resources needed) */
 	if ( r_fullscreen->integer ) {
 		int		actualWidth, actualHeight;
 		
-		printf("DEBUG: CreateGameWindow: Fullscreen mode, calling GLimp_ChangeDisplay\n"); fflush(stdout);
+		Sys_LogPrintf("DEBUG: CreateGameWindow: Fullscreen mode, calling GLimp_ChangeDisplay\n");
 		
 		// change display resolution
 		GLimp_ChangeDisplay( &actualWidth, &actualHeight );
@@ -538,7 +572,7 @@ static qboolean CreateGameWindow( void ) {
 		x = ( actualWidth - glConfig.vidWidth ) / 2;
 		y = ( actualHeight - glConfig.vidHeight ) / 2;
 		
-		printf("DEBUG: CreateGameWindow: actualWidth=%d, actualHeight=%d, x=%d, y=%d\n", actualWidth, actualHeight, x, y); fflush(stdout);
+		Sys_LogPrintf("DEBUG: CreateGameWindow: actualWidth=%d, actualHeight=%d, x=%d, y=%d\n", actualWidth, actualHeight, x, y);
 	} else {
 		// Position window in upper-right corner to keep console visible
 		x = 320;  // Right side of screen
@@ -546,7 +580,7 @@ static qboolean CreateGameWindow( void ) {
 		// Force smaller size for debugging
 		glConfig.vidWidth = 320;
 		glConfig.vidHeight = 240;
-		printf("DEBUG: Windowed mode, FORCED small window at x=%d, y=%d, size=%dx%d\n", x, y, glConfig.vidWidth, glConfig.vidHeight); fflush(stdout);
+		Sys_LogPrintf("DEBUG: Windowed mode, FORCED small window at x=%d, y=%d, size=%dx%d\n", x, y, glConfig.vidWidth, glConfig.vidHeight);
 	}
 	
 	// Create window rect
@@ -555,8 +589,8 @@ static qboolean CreateGameWindow( void ) {
 	windowRect.right = x + glConfig.vidWidth;
 	windowRect.bottom = y + glConfig.vidHeight;
 	
-	printf("DEBUG: CreateGameWindow: Calling NewCWindow, rect=(%d,%d,%d,%d)\n", 
-		   windowRect.left, windowRect.top, windowRect.right, windowRect.bottom); fflush(stdout);
+	Sys_LogPrintf("DEBUG: CreateGameWindow: Calling NewCWindow, rect=(%d,%d,%d,%d)\n", 
+		   windowRect.left, windowRect.top, windowRect.right, windowRect.bottom);
 	
 	// Use NewCWindow instead of GetNewCWindow to avoid resource dependency
 	// Window style: 5 = noGrowDocProc (standard document window without grow box)

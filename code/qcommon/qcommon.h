@@ -961,6 +961,12 @@ char	*Sys_GetClipboardData( void );	// note that this isn't journaled...
 
 void	Sys_Print( const char *msg );
 
+#ifdef macintosh
+void Sys_LogPrintf( const char *fmt, ... );
+#else
+#define Sys_LogPrintf Com_Printf
+#endif
+
 // Sys_Milliseconds should only be used for profiling purposes,
 // any game related timing information should come from event timestamps
 int		Sys_Milliseconds (void);

@@ -488,6 +488,11 @@ void Com_Memcpy (void* dest, const void* src, const size_t count);
 #define CIN_silent	8
 #define CIN_shader	16
 
+void QDECL Com_FlightRecord( const char *fmt, ... );
+void Com_DumpFlightRecord( const char *fileName );
+void Debug_Breadcrumb( int color );
+
+
 /*
 ==============================================================
 

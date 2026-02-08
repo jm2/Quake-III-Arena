@@ -318,4 +318,10 @@ void	Sys_Print( const char *text );
 char	*Sys_ConsoleInput( void );
 qboolean Sys_ConsoleEvent( EventRecord *event );
 
+void Debug_Breadcrumb( int color );
+
+void Sys_LogPrintf( const char *fmt, ... );
+void Sys_DumpRetroLogs( const char *fileName );
+
+
 

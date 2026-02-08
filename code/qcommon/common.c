@@ -99,6 +99,69 @@ qboolean	com_fullyInitialized;
 
 char	com_errorMessage[MAXPRINTMSG];
 
+// Flight Recorder
+#define FLIGHT_RECORDER_SIZE (256 * 1024)
+static char flightRecorderBuffer[FLIGHT_RECORDER_SIZE];
+static int flightRecorderHead = 0;
+static int flightRecorderTotal = 0;
+
+void QDECL Com_FlightRecord( const char *fmt, ... ) {
+    va_list argptr;
+    char text[1024];
+    int len;
+    int i;
+
+    va_start( argptr, fmt );
+    len = vsprintf( text, fmt, argptr );
+    va_end( argptr );
+
+    if ( len < 0 ) return;
+    if ( len > sizeof(text)-1 ) len = sizeof(text)-1;
+
+    for ( i = 0; i < len; i++ ) {
+        flightRecorderBuffer[flightRecorderHead] = text[i];
+        flightRecorderHead = (flightRecorderHead + 1) % FLIGHT_RECORDER_SIZE;
+        if (flightRecorderTotal < FLIGHT_RECORDER_SIZE) flightRecorderTotal++;
+    }
+
+    // SYNCHRONOUS FILE APPEND
+    {
+        FILE *fp = fopen("flight_record.log", "a");
+        if (fp) {
+            fwrite(text, 1, len, fp);
+            fclose(fp);
+        }
+    }
+}
+
+void Com_DumpFlightRecord( const char *fileName ) {
+    FILE *fp;
+    int i, idx, count;
+
+    fp = fopen( fileName, "wb" );
+    if ( !fp ) {
+        Com_Printf( "Com_DumpFlightRecord: Failed to open %s\n", fileName );
+        return;
+    }
+
+    if (flightRecorderTotal < FLIGHT_RECORDER_SIZE) {
+        idx = 0;
+        count = flightRecorderTotal;
+    } else {
+        idx = flightRecorderHead;
+        count = FLIGHT_RECORDER_SIZE;
+    }
+
+    for ( i = 0; i < count; i++ ) {
+        fwrite( &flightRecorderBuffer[idx], 1, 1, fp );
+        idx = (idx + 1) % FLIGHT_RECORDER_SIZE;
+    }
+
+    fclose( fp );
+    Com_Printf( "Com_DumpFlightRecord: Dumped %d bytes to %s\n", count, fileName );
+}
+
+
 void Com_WriteConfig_f( void );
 void CIN_CloseAllVideos();
 
@@ -1950,9 +2013,9 @@ sysEvent_t	Com_GetRealEvent( void ) {
 			}
 		}
 	} else {
-		if (callNum == 1) { printf("Com_GetRealEvent: Sys_GetEvent\n"); fflush(stdout); }
+		if (callNum == 1) { Sys_LogPrintf("Com_GetRealEvent: Sys_GetEvent\n");  }
 		ev = Sys_GetEvent();
-		if (callNum == 1) { printf("Com_GetRealEvent: done\n"); fflush(stdout); }
+		if (callNum == 1) { Sys_LogPrintf("Com_GetRealEvent: done\n");  }
 
 		// write the journal value out if needed
 		if ( com_journal->integer == 1 ) {
@@ -2078,25 +2141,25 @@ int Com_EventLoop( void ) {
 
 	while ( 1 ) {
 		eventLoopIter++;
-		if (firstCall && eventLoopIter <= 3) { printf("EventLoop: iter %d GetEvent\n", eventLoopIter); fflush(stdout); }
+		if (firstCall && eventLoopIter <= 3) { Sys_LogPrintf("EventLoop: iter %d GetEvent\n", eventLoopIter);  }
 		ev = Com_GetEvent();
-		if (firstCall && eventLoopIter <= 3) { printf("EventLoop: iter %d type=%d\n", eventLoopIter, ev.evType); fflush(stdout); }
+		if (firstCall && eventLoopIter <= 3) { Sys_LogPrintf("EventLoop: iter %d type=%d\n", eventLoopIter, ev.evType);  }
 		
 		// Safety break for debugging
 		if (eventLoopIter > 100) {
-			if (firstCall) { printf("EventLoop: SAFETY BREAK at 100\n"); fflush(stdout); }
+			if (firstCall) { Sys_LogPrintf("EventLoop: SAFETY BREAK at 100\n");  }
 			firstCall = 0;
 			return Sys_Milliseconds();
 		}
 
 		// if no more events are available
 		if ( ev.evType == SE_NONE ) {
-			if (firstCall) { printf("EventLoop: SE_NONE, packets\n"); fflush(stdout); }
+			if (firstCall) { Sys_LogPrintf("EventLoop: SE_NONE, packets\n");  }
 			// manually send packet events for the loopback channel
 			while ( NET_GetLoopPacket( NS_CLIENT, &evFrom, &buf ) ) {
 				CL_PacketEvent( evFrom, &buf );
 			}
-			if (firstCall) { printf("EventLoop: client packets done\n"); fflush(stdout); }
+			if (firstCall) { Sys_LogPrintf("EventLoop: client packets done\n");  }
 
 			while ( NET_GetLoopPacket( NS_SERVER, &evFrom, &buf ) ) {
 				// if the server just shut down, flush the events
@@ -2104,7 +2167,7 @@ int Com_EventLoop( void ) {
 					Com_RunAndTimeServerPacket( &evFrom, &buf );
 				}
 			}
-			if (firstCall) { printf("EventLoop: server packets done\n"); fflush(stdout); firstCall = 0; }
+			if (firstCall) { Sys_LogPrintf("EventLoop: server packets done\n");  firstCall = 0; }
 
 			return ev.evTime;
 		}
@@ -2183,9 +2246,15 @@ Can be used for profiling, but will be journaled accurately
 */
 int Com_Milliseconds (void) {
 	sysEvent_t	ev;
+	int loopCount = 0;
 
 	// get events and push them until we get a null event with the current time
 	do {
+		loopCount++;
+		if (loopCount > 200) {
+			Sys_LogPrintf("Com_Milliseconds: Infinite loop detected! Breaking.\n");
+			return ev.evTime; // Return last valid time
+		}
 
 		ev = Com_GetRealEvent();
 		if ( ev.evType != SE_NONE ) {
@@ -2370,53 +2439,53 @@ Com_Init
 void Com_Init( char *commandLine ) {
 	char	*s;
 
-	printf("Com_Init: START\n"); fflush(stdout);
+	Sys_LogPrintf("Com_Init: START\n"); 
 	Com_Printf( "%s %s %s\n", Q3_VERSION, CPUSTRING, __DATE__ );
 
 	if ( setjmp (abortframe) ) {
 		Sys_Error ("Error during initialization");
 	}
 
-	printf("Com_Init: InitPushEvent\n"); fflush(stdout);
+	Sys_LogPrintf("Com_Init: InitPushEvent\n"); 
   // bk001129 - do this before anything else decides to push events
   Com_InitPushEvent();
 
-	printf("Com_Init: SmallZone\n"); fflush(stdout);
+	Sys_LogPrintf("Com_Init: SmallZone\n"); 
 	Com_InitSmallZoneMemory();
-	printf("Com_Init: Cvar_Init\n"); fflush(stdout);
+	Sys_LogPrintf("Com_Init: Cvar_Init\n"); 
 	Cvar_Init ();
 
 	// prepare enough of the subsystems to handle
 	// cvar and command buffer management
-	printf("Com_Init: ParseCommandLine\n"); fflush(stdout);
+	Sys_LogPrintf("Com_Init: ParseCommandLine\n"); 
 	Com_ParseCommandLine( commandLine );
 
 //	Swap_Init ();
-	printf("Com_Init: Cbuf_Init\n"); fflush(stdout);
+	Sys_LogPrintf("Com_Init: Cbuf_Init\n"); 
 	Cbuf_Init ();
 
-	printf("Com_Init: ZoneMemory\n"); fflush(stdout);
+	Sys_LogPrintf("Com_Init: ZoneMemory\n"); 
 	Com_InitZoneMemory();
-	printf("Com_Init: Cmd_Init\n"); fflush(stdout);
+	Sys_LogPrintf("Com_Init: Cmd_Init\n"); 
 	Cmd_Init ();
 
 	// override anything from the config files with command line args
-	printf("Com_Init: StartupVariable\n"); fflush(stdout);
+	Sys_LogPrintf("Com_Init: StartupVariable\n"); 
 	Com_StartupVariable( NULL );
 
 	// get the developer cvar set as early as possible
 	Com_StartupVariable( "developer" );
 
 	// done early so bind command exists
-	printf("Com_Init: CL_InitKeyCommands\n"); fflush(stdout);
+	Sys_LogPrintf("Com_Init: CL_InitKeyCommands\n"); 
 	CL_InitKeyCommands();
 
-	printf("Com_Init: FS_InitFilesystem\n"); fflush(stdout);
+	Sys_LogPrintf("Com_Init: FS_InitFilesystem\n"); 
 	FS_InitFilesystem ();
-	printf("Com_Init: FS done\n"); fflush(stdout);
+	Sys_LogPrintf("Com_Init: FS done\n"); 
 
 	Com_InitJournaling();
-	printf("Com_Init: Journaling done\n"); fflush(stdout);
+	Sys_LogPrintf("Com_Init: Journaling done\n"); 
 
 	Cbuf_AddText ("exec default.cfg\n");
 
@@ -2427,12 +2496,14 @@ void Com_Init( char *commandLine ) {
 
 	Cbuf_AddText ("exec autoexec.cfg\n");
 
-	printf("Com_Init: About to Cbuf_Execute\n"); fflush(stdout);
+	Sys_LogPrintf("Com_Init: About to Cbuf_Execute\n"); 
 	Cbuf_Execute ();
-	printf("Com_Init: Cbuf_Execute done\n"); fflush(stdout);
+	Sys_LogPrintf("Com_Init: Cbuf_Execute done\n"); 
 
 	// override anything from the config files with command line args
+	Sys_LogPrintf("Com_Init: Com_StartupVariable(NULL)\n"); 
 	Com_StartupVariable( NULL );
+	Sys_LogPrintf("Com_Init: Com_StartupVariable(NULL) done\n"); 
 
   // get dedicated here for proper hunk megs initialization
 #ifdef DEDICATED
@@ -2441,12 +2512,12 @@ void Com_Init( char *commandLine ) {
 	com_dedicated = Cvar_Get ("dedicated", "0", CVAR_LATCH);
 #endif
 
-	//printf("DEBUG: Com_Init: About to init hunk memory\n");
+	//Sys_LogPrintf("DEBUG: Com_Init: About to init hunk memory\n");
 
 	// allocate the stack based hunk allocator
+	Sys_LogPrintf("Com_Init: Com_InitHunkMemory\n"); 
 	Com_InitHunkMemory();
-
-	//printf("DEBUG: Com_Init: Com_InitHunkMemory complete\n");
+	Sys_LogPrintf("Com_Init: Com_InitHunkMemory done\n"); 
 
 	// if any archived cvars are modified after this, we will trigger a writing
 	// of the config file
@@ -2455,6 +2526,7 @@ void Com_Init( char *commandLine ) {
 	//
 	// init commands and vars
 	//
+	Sys_LogPrintf("Com_Init: Cvar_Gets\n"); 
 	com_maxfps = Cvar_Get ("com_maxfps", "85", CVAR_ARCHIVE);
 	com_blood = Cvar_Get ("com_blood", "1", CVAR_ARCHIVE);
 
@@ -2500,29 +2572,39 @@ void Com_Init( char *commandLine ) {
 	s = va("%s %s %s", Q3_VERSION, CPUSTRING, __DATE__ );
 	com_version = Cvar_Get ("version", s, CVAR_ROM | CVAR_SERVERINFO );
 
-	//printf("DEBUG: Com_Init: About to call Sys_Init\n");
+	Sys_LogPrintf("Com_Init: Sys_Init\n"); 
 
 	Sys_Init();
 
-	//printf("DEBUG: Com_Init: Sys_Init complete\n");
+	Sys_LogPrintf("Com_Init: Sys_Init complete\n"); 
+    Debug_Breadcrumb(210); // Post Sys_Init
 
+	Sys_LogPrintf("Com_Init: Netchan_Init\n"); 
 	Netchan_Init( Com_Milliseconds() & 0xffff );	// pick a port value that should be nice and random
+    Debug_Breadcrumb(211); // Post Netchan_Init
+	Sys_LogPrintf("Com_Init: Netchan_Init done\n"); 
 
-	//printf("DEBUG: Com_Init: Netchan_Init complete\n");
-
+	Sys_LogPrintf("Com_Init: VM_Init\n"); 
 	VM_Init();
+    Debug_Breadcrumb(212); // Post VM_Init
+	Sys_LogPrintf("Com_Init: VM_Init done\n"); 
 
-	//printf("DEBUG: Com_Init: VM_Init complete\n");
-
+	Sys_LogPrintf("Com_Init: SV_Init\n"); 
 	SV_Init();
-
-	//printf("DEBUG: Com_Init: SV_Init complete\n");
+    Debug_Breadcrumb(213); // Post SV_Init
+	Sys_LogPrintf("Com_Init: SV_Init done\n"); 
 
 	com_dedicated->modified = qfalse;
 	if ( !com_dedicated->integer ) {
-		//printf("DEBUG: Com_Init: About to call CL_Init\n");
+		Sys_LogPrintf("Com_Init: About to call CL_Init\n"); 
+        Com_FlightRecord("Com_Init: Calling CL_Init\n");
+        Debug_Breadcrumb(250); // Com_Init pre-CL_Init
+
 		CL_Init();
-		//printf("DEBUG: Com_Init: CL_Init complete\n");
+        Debug_Breadcrumb(251); // Com_Init post-CL_Init
+		Sys_LogPrintf("Com_Init: CL_Init done\n"); 
+        Com_FlightRecord("Com_Init: CL_Init returned\n");
+
 		Sys_ShowConsole( com_viewlog->integer, qfalse );
 	}
 
@@ -2546,16 +2628,22 @@ void Com_Init( char *commandLine ) {
 	// start in full screen ui mode
 	Cvar_Set("r_uiFullScreen", "1");
 
-	printf("Com_Init: CL_StartHunkUsers\n"); fflush(stdout);
+    Com_FlightRecord("Com_Init: Calling CL_StartHunkUsers\n");
+	Sys_LogPrintf("Com_Init: CL_StartHunkUsers\n"); 
+    Debug_Breadcrumb(252); // Com_Init pre-StartHunkUsers
 	CL_StartHunkUsers();
-	printf("Com_Init: CL_StartHunkUsers done\n"); fflush(stdout);
+    Debug_Breadcrumb(253); // Com_Init post-StartHunkUsers
+    Com_FlightRecord("Com_Init: CL_StartHunkUsers returned\n");
+	Sys_LogPrintf("Com_Init: CL_StartHunkUsers done\n"); 
 
 	// make sure single player is off by default
 	Cvar_Set("ui_singlePlayerActive", "0");
 
 	com_fullyInitialized = qtrue;
-	printf("Com_Init: COMPLETE\n"); fflush(stdout);
-	Com_Printf ("--- Common Initialization Complete ---\n");	
+	Sys_LogPrintf("Com_Init: COMPLETE\n"); 
+	Com_Printf ("--- Common Initialization Complete ---\n");
+    Com_DumpFlightRecord("flight_record_init.txt"); // Checkpoint dump
+	
 }
 
 //==================================================================
@@ -2703,11 +2791,11 @@ void Com_Frame( void ) {
 	int           timeAfter;
 
 	frameNum++;
-	if (frameNum <= 5) { printf("Com_Frame: frame %d\n", frameNum); fflush(stdout); }
+	if (frameNum <= 5) { Sys_LogPrintf("Com_Frame: frame %d\n", frameNum); }
 	
 	// DEBUG SAFETY: Exit after 20 frames to prevent hard freeze
 	if (frameNum > 20) {
-		printf("SAFETY EXIT: 20 frames completed, exiting cleanly\n"); fflush(stdout);
+		Sys_LogPrintf("SAFETY EXIT: 20 frames completed, exiting cleanly\n");
 		Sys_Quit();
 	}
 
@@ -2756,11 +2844,11 @@ void Com_Frame( void ) {
 	}
 	{
 		int loopIter = 0;
-		if (frameNum == 1) { printf("Com_Frame: timing loop start minMsec=%d\n", minMsec); fflush(stdout); }
+		if (frameNum == 1) { Sys_LogPrintf("Com_Frame: timing loop start minMsec=%d\n", minMsec); }
 		do {
-			if (frameNum == 1 && loopIter < 3) { printf("Com_Frame: EventLoop iter %d\n", loopIter); fflush(stdout); }
+			if (frameNum == 1 && loopIter < 3) { Sys_LogPrintf("Com_Frame: EventLoop iter %d\n", loopIter); }
 			com_frameTime = Com_EventLoop();
-			if (frameNum == 1 && loopIter < 3) { printf("Com_Frame: EventLoop returned %d\n", com_frameTime); fflush(stdout); }
+			if (frameNum == 1 && loopIter < 3) { Sys_LogPrintf("Com_Frame: EventLoop returned %d\n", com_frameTime); }
 			if ( lastTime > com_frameTime ) {
 				lastTime = com_frameTime;		// possible on first frame
 			}
@@ -2768,12 +2856,12 @@ void Com_Frame( void ) {
 			loopIter++;
 			// Safety break for stuck timing loop
 			if (loopIter > 1000) {
-				if (frameNum == 1) { printf("Com_Frame: timing loop stuck, breaking\n"); fflush(stdout); }
+				if (frameNum == 1) { Sys_LogPrintf("Com_Frame: timing loop stuck, breaking\n");  }
 				break;
 			}
 		} while ( msec < minMsec );
 	}
-	if (frameNum == 1) { printf("Com_Frame: events done\n"); fflush(stdout); }
+	if (frameNum == 1) { Sys_LogPrintf("Com_Frame: events done\n");  }
 	
 
 	Cbuf_Execute ();
@@ -2794,7 +2882,7 @@ void Com_Frame( void ) {
 	}
 
 	SV_Frame( msec );
-	if (frameNum == 1) { printf("Com_Frame: SV_Frame done\n"); fflush(stdout); }
+	if (frameNum == 1) { Sys_LogPrintf("Com_Frame: SV_Frame done\n");  }
 
 
 	// if "dedicated" has been modified, start up
@@ -2838,7 +2926,7 @@ void Com_Frame( void ) {
 		}
 
 		CL_Frame( msec );
-		if (frameNum == 1) { printf("Com_Frame: CL_Frame done\n"); fflush(stdout); }
+		if (frameNum == 1) { Sys_LogPrintf("Com_Frame: CL_Frame done\n");  }
 
 
 		if ( com_speeds->integer ) {
