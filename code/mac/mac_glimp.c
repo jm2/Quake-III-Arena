@@ -3,28 +3,11 @@
 #include "../renderer/tr_local.h"
 #include "mac_local.h"
 #include <glm.h>
-#include <DrawSprocket.h>
 #include "MacGamma.h"
 
-#define	MAX_DEVICES	32
+// MAX_DEVICES and macGlInfo moved to mac_local.h
 
-typedef struct {
-	GDHandle		devices[MAX_DEVICES];
-	int				numDevices;
-	
-	Ptr				systemGammas;
-	
-	GDHandle		device;
-
-	AGLContext      context;
-	AGLDrawable     drawable;
-	AGLPixelFormat  fmt;
-	
-	GLint			textureMemory;
-	GLint			videoMemory;
-	
-	DSpContextReference DSpContext;
-} macGlInfo;
+cvar_t			*r_device;
 
 
 cvar_t			*r_device;

@@ -288,9 +288,39 @@ extern	int		sys_lastEventTic;
 
 extern	cvar_t	*sys_waitNextEvent;
 
+//	#include <Drag.h>
+	#include <DrawSprocket.h>
+//	#include <DriverSynchronization.h>
+	#include <DriverFamilyMatching.h>
+
+// ... (existing includes)
+
 void Sys_QueEvent( int time, sysEventType_t type, int value, int value2, int ptrLength, void *ptr );
 int PStringToCString( char *s );
 int CStringToPString( char *s );
+
+// mac_glimp.c globals
+#define	MAX_DEVICES	32
+
+typedef struct {
+	GDHandle		devices[MAX_DEVICES];
+	int				numDevices;
+	
+	Ptr				systemGammas;
+	
+	GDHandle		device;
+
+	AGLContext      context;
+	AGLDrawable     drawable;
+	AGLPixelFormat  fmt;
+	
+	GLint			textureMemory;
+	GLint			videoMemory;
+	
+	DSpContextReference DSpContext;
+} macGlInfo;
+
+extern macGlInfo sys_gl;
 
 // mac_event.c
 extern	int	vkeyToQuakeKey[256];

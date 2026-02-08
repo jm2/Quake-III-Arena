@@ -212,19 +212,44 @@ void DoUpdate(WindowPtr	myWindow)
 	GrafPtr		origPort;
 	AGLContext	ctx;
 	
+    Sys_LogPrintf("DoUpdate: Start, WindowPtr=0x%p\n", myWindow);
+    
+    // Safety check against global window
+    if ( myWindow != (WindowPtr)sys_gl.drawable ) {
+        Sys_LogPrintf("DoUpdate: Window Mismatch! myWindow=0x%p, sys_gl.drawable=0x%p. Aborting update.\n", 
+            myWindow, sys_gl.drawable);
+        return;
+    }
+    
+    if ( !myWindow ) {
+        Sys_LogPrintf("DoUpdate: Window is NULL! Aborting.\n");
+        return;
+    }
+
 	GetPort(&origPort);
+    Sys_LogPrintf("DoUpdate: GetPort done, origPort=0x%p\n", origPort);
+    
 	SetPort(myWindow);
+    Sys_LogPrintf("DoUpdate: SetPort done\n");
 		
+    Sys_LogPrintf("DoUpdate: BeginUpdate\n");
 	BeginUpdate(myWindow);	
+    Sys_LogPrintf("DoUpdate: EndUpdate\n");
 	EndUpdate(myWindow);
 	
 	// Only update context if one exists (may not during early init)
+    Sys_LogPrintf("DoUpdate: aglGetCurrentContext\n");
 	ctx = aglGetCurrentContext();
+    Sys_LogPrintf("DoUpdate: ctx = 0x%p\n", ctx);
+
 	if (ctx != NULL) {
+        Sys_LogPrintf("DoUpdate: aglUpdateContext\n");
 		aglUpdateContext(ctx);
+        Sys_LogPrintf("DoUpdate: aglUpdateContext done\n");
 	}
 	
 	SetPort(origPort);
+    Sys_LogPrintf("DoUpdate: End\n");
 }
 
 void DoActivate( WindowPtr myWindow, int myModifiers) {
@@ -307,6 +332,7 @@ void Sys_SendKeyEvents (void) {
 	Boolean		   gotEvent;
 	EventRecord	   event;
 	
+	//Sys_LogPrintf("Sys_SendKeyEvents: Start\n");
 	if ( !glConfig.isFullscreen || sys_waitNextEvent->value ) {
 		// this call involves 68k code and task switching.
 		// do it on the desktop, or if they explicitly ask for
@@ -315,6 +341,7 @@ void Sys_SendKeyEvents (void) {
 	} else {
 		gotEvent = GetOSEvent( everyEvent, &event );
 	}
+	//Sys_LogPrintf( "Sys_SendKeyEvents: Event check done, gotEvent=%d what=%d\n", gotEvent, event.what );
 	
 	// generate faked events from modifer changes
 	Sys_ModifierEvents( event.modifiers );
@@ -324,39 +351,56 @@ void Sys_SendKeyEvents (void) {
 	if ( !gotEvent ) {
 		return;
 	}
+    
+    //Sys_LogPrintf("Sys_SendKeyEvents: Processing event types=%d\n", event.what);
+
 	if ( Sys_ConsoleEvent(&event) ) {
 		return;
 	}
 	switch(event.what)
 	{
 		case mouseDown:
+            //Sys_LogPrintf("Sys_SendKeyEvents: mouseDown\n");
 			DoMouseDown(&event);
 		break;
 		case mouseUp:
+            //Sys_LogPrintf("Sys_SendKeyEvents: mouseUp\n");
 			DoMouseUp(&event);
 		break;
 		case keyDown:
+            //Sys_LogPrintf("Sys_SendKeyEvents: keyDown\n");
 			DoKeyDown(&event);
 		break;
 		case keyUp:
+            //Sys_LogPrintf("Sys_SendKeyEvents: keyUp\n");
 			DoKeyUp(&event);
 		break;
 		case autoKey:
+            //Sys_LogPrintf("Sys_SendKeyEvents: autoKey\n");
 			DoKeyDown(&event);
 		break;
 		case updateEvt:
+            Sys_LogPrintf("Sys_SendKeyEvents: updateEvt\n");
 			DoUpdate((WindowPtr) event.message);
+            Sys_LogPrintf("Sys_SendKeyEvents: updateEvt done\n");
 		break;
 		case diskEvt:
+            //Sys_LogPrintf("Sys_SendKeyEvents: diskEvt\n");
 			DoDiskEvent(&event);
 		break;
 		case activateEvt:
+            Sys_LogPrintf("Sys_SendKeyEvents: activateEvt\n");
 			DoActivate((WindowPtr) event.message, event.modifiers);
+            Sys_LogPrintf("Sys_SendKeyEvents: activateEvt done\n");
 		break;
 		case osEvt:
+            Sys_LogPrintf("Sys_SendKeyEvents: osEvt\n");
 			DoOSEvent(&event);
+            Sys_LogPrintf("Sys_SendKeyEvents: osEvt done\n");
 		break;
 		default:
+            //Sys_LogPrintf("Sys_SendKeyEvents: default %d\n", event.what);
 		break;
 	}
+    //Sys_LogPrintf("Sys_SendKeyEvents: Done\n");
 }

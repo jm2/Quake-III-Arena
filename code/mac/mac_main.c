@@ -209,15 +209,15 @@ sysEvent_t Sys_GetEvent( void ) {
     }
     */
 
-    //Sys_LogPrintf("Sys_GetEvent: SendKeyEvents\n"); fflush(stdout);
+    Sys_LogPrintf("Sys_GetEvent: SendKeyEvents\n");
     // Pump Mac OS events (keyboard via WaitNextEvent)
     Sys_SendKeyEvents();
-    //Sys_LogPrintf("Sys_GetEvent: SendKeyEvents done\n"); fflush(stdout);
+    Sys_LogPrintf("Sys_GetEvent: SendKeyEvents done\n");
     
-    //Sys_LogPrintf("Sys_GetEvent: Sys_Input\n"); fflush(stdout);
+    Sys_LogPrintf("Sys_GetEvent: Sys_Input\n");
     // Pump InputSprocket events (mouse)
     Sys_Input();
-    //Sys_LogPrintf("Sys_GetEvent: Sys_Input done\n"); fflush(stdout);
+    Sys_LogPrintf("Sys_GetEvent: Sys_Input done\n");
 
     if (eventHead == eventTail) {
         memset( &ev, 0, sizeof(ev) );
