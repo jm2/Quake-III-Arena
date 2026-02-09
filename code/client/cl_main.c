@@ -1994,7 +1994,9 @@ CL_Frame
 
 ==================
 */
+// CL_Frame
 void CL_Frame ( int msec ) {
+    static int logCount = 0;
 
 	if ( !com_cl_running->integer ) {
 		return;
@@ -2004,11 +2006,26 @@ void CL_Frame ( int msec ) {
 		// bring up the cd error dialog if needed
 		cls.cddialog = qfalse;
 		VM_Call( uivm, UI_SET_ACTIVE_MENU, UIMENU_NEED_CD );
-	} else	if ( cls.state == CA_DISCONNECTED && !( cls.keyCatchers & KEYCATCH_UI )
+	} else if ( cls.state == CA_DISCONNECTED && ! ( cls.keyCatchers & KEYCATCH_UI )
 		&& !com_sv_running->integer ) {
-		// if disconnected, bring up the menu
-		S_StopAllSounds();
-		VM_Call( uivm, UI_SET_ACTIVE_MENU, UIMENU_MAIN );
+		// if we have just been disconnected, fall back to the main menu
+		// this can happen if the client is kicked from a server
+		// or the server crashes
+        // Sys_LogPrintf("CL_Frame: Disconnected, forcing UI_SET_ACTIVE_MENU\n");
+		if ( uivm ) {
+			VM_Call( uivm, UI_SET_ACTIVE_MENU, UIMENU_MAIN );
+		}
+	} else if ( cls.state == CA_DISCONNECTED && !uivm ) {
+        if (logCount < 50) {
+            Com_Printf("CL_Frame: CA_DISCONNECTED and NO UIVM! cls.state=%d\n", cls.state);
+            logCount++;
+        }
+    }
+
+	// if recording a demo and the console is up, don't advance the demo
+	// time, so the console doesn't seem to have valid info
+	if ( clc.demorecording && (cls.keyCatchers & KEYCATCH_CONSOLE) ) {
+		msec = 0;
 	}
 
 	// if recording an avi, lock to a fixed fps

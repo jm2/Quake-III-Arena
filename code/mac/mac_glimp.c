@@ -712,10 +712,14 @@ qboolean GLimp_SetMode( void ) {
 	
 	/* Make context current */
 
+    Sys_LogPrintf("DEBUG: GLimp_SetMode: Calling aglSetDrawable, context=%p, drawable=%p\n", sys_gl.context, sys_gl.drawable);
 	if(!aglSetDrawable(sys_gl.context, sys_gl.drawable)) {
+		GLenum err = aglGetError();
+        Sys_LogPrintf("DEBUG: GLimp_SetMode: aglSetDrawable FAILED, err=%d\n", err);
 		ri.Printf( PRINT_ALL, "GLimp_Init: Could not attach to context\n" );
 		return qfalse;
 	}
+    Sys_LogPrintf("DEBUG: GLimp_SetMode: aglSetDrawable succeeded. drawable=%p\n", sys_gl.drawable);
 	
 	CheckErrors();
 	
@@ -723,6 +727,7 @@ qboolean GLimp_SetMode( void ) {
 		ri.Printf( PRINT_ALL, "GLimp_Init: Could not attach to context");
 		return qfalse;
 	}
+    Sys_LogPrintf("DEBUG: GLimp_SetMode: aglSetCurrentContext succeeded. drawable=%p\n", sys_gl.drawable);
 
 	CheckErrors();
 	
@@ -737,7 +742,10 @@ qboolean GLimp_SetMode( void ) {
 	// draw something to show that GL is alive	
 	qglClearColor( 1, 0.5, 0.2, 0 );
 	qglClear( GL_COLOR_BUFFER_BIT );
+    
+    Sys_LogPrintf("DEBUG: GLimp_SetMode: Calling GLimp_EndFrame. drawable=%p\n", sys_gl.drawable);
 	GLimp_EndFrame();
+    Sys_LogPrintf("DEBUG: GLimp_SetMode: Returned from GLimp_EndFrame. drawable=%p\n", sys_gl.drawable);
 
 	CheckErrors();
 

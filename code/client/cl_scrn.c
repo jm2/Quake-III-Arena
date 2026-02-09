@@ -442,6 +442,7 @@ This will be called twice if rendering in stereo mode
 ==================
 */
 void SCR_DrawScreenField( stereoFrame_t stereoFrame ) {
+    static int logCount = 0;
 	re.BeginFrame( stereoFrame );
 
 	// wide aspect ratio screens need to have the sides cleared
@@ -455,9 +456,14 @@ void SCR_DrawScreenField( stereoFrame_t stereoFrame ) {
 	}
 
 	if ( !uivm ) {
-		Com_DPrintf("draw screen without UI loaded\n");
+        if (logCount < 50) {
+            Com_Printf("SCR_DrawScreenField: draw screen without UI loaded\n");
+            logCount++;
+        }
 		return;
 	}
+    
+    // Com_Printf("SCR_DrawScreenField: uivm valid, cls.state=%d\n", cls.state);
 
 	// if the menu is going to cover the entire screen, we
 	// don't need to render anything under it

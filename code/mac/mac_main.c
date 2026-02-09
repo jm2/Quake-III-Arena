@@ -104,6 +104,7 @@ static char retroLogBuffer[RETRO_LOG_SIZE];
 static int retroLogHead = 0;
 static int retroLogTotal = 0;
 
+// Sys_LogPrintf implementation
 void Sys_LogPrintf( const char *fmt, ... ) {
     va_list argptr;
     char text[1024];

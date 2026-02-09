@@ -206,7 +206,6 @@ void	DoOSEvent(EventRecord	*event)
 {
 
 }
-
 // mac_event.c
 
 static qboolean ignoreUpdateEvents = qfalse;
@@ -215,17 +214,13 @@ void DoUpdate(WindowPtr	myWindow)
 { 
 	GrafPtr		origPort;
 	AGLContext	ctx;
-    static int logCount = 0;
-	
-    // Fix 0x%p typo -> %p usually adds 0x, but let's stick to %p
-    Sys_LogPrintf("DoUpdate: Start, WindowPtr=%p\n", myWindow);
     
     // Safety check against global window
     if ( myWindow != (WindowPtr)sys_gl.drawable ) {
-        if (logCount < 50) {
-             Sys_LogPrintf("DoUpdate: Window Mismatch! myWindow=%p, sys_gl.drawable=%p. Suppressing future updates.\n", 
-                myWindow, sys_gl.drawable);
-             logCount++;
+        static int mismatchCount = 0;
+        if (mismatchCount < 10) {
+            Sys_LogPrintf("DoUpdate: Window Mismatch! myWindow=%p, sys_gl.drawable=%p. Suppressing future updates.\n", myWindow, sys_gl.drawable);
+            mismatchCount++;
         }
         
         // CRITICAL FIX:
@@ -238,34 +233,22 @@ void DoUpdate(WindowPtr	myWindow)
     }
     
     if ( !myWindow ) {
-        Sys_LogPrintf("DoUpdate: Window is NULL! Aborting.\n");
         return;
     }
 
 	GetPort(&origPort);
-    Sys_LogPrintf("DoUpdate: GetPort done, origPort=%p\n", origPort);
-    
 	SetPort(myWindow);
-    Sys_LogPrintf("DoUpdate: SetPort done\n");
-		
-    Sys_LogPrintf("DoUpdate: BeginUpdate\n");
 	BeginUpdate(myWindow);	
-    Sys_LogPrintf("DoUpdate: EndUpdate\n");
 	EndUpdate(myWindow);
 	
 	// Only update context if one exists (may not during early init)
-    Sys_LogPrintf("DoUpdate: aglGetCurrentContext\n");
 	ctx = aglGetCurrentContext();
-    Sys_LogPrintf("DoUpdate: ctx = %p\n", ctx);
 
 	if (ctx != NULL) {
-        Sys_LogPrintf("DoUpdate: aglUpdateContext\n");
 		aglUpdateContext(ctx);
-        Sys_LogPrintf("DoUpdate: aglUpdateContext done\n");
 	}
 	
 	SetPort(origPort);
-    Sys_LogPrintf("DoUpdate: End\n");
 }
 
 void DoActivate( WindowPtr myWindow, int myModifiers) {
