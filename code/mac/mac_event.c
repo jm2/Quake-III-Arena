@@ -210,32 +210,25 @@ void	DoOSEvent(EventRecord	*event)
 
 static qboolean ignoreUpdateEvents = qfalse;
 
+/*
 void DoUpdate(WindowPtr	myWindow)
 { 
 	GrafPtr		origPort;
 	AGLContext	ctx;
     
-    // Safety check against global window
-    if ( myWindow != (WindowPtr)sys_gl.drawable ) {
-        static qboolean mismatchLogged = qfalse;
-        if (!mismatchLogged) {
-            Sys_LogPrintf("DoUpdate: Window Mismatch! myWindow=%p, sys_gl.drawable=%p. Suppressing future updates (LogOnce).\n", myWindow, sys_gl.drawable);
-            mismatchLogged = qtrue;
-        }
-        
-        // CRITICAL FIX:
-        ignoreUpdateEvents = qtrue; 
-        return;
-    }
-    
-    if ( !myWindow ) {
+    // DEBUG: Always act on the main window.
+    // The event.message seems to contain garbage or a different handle on Mac OS 9?
+    // "mismatch 0x3d700001 vs 0x4aa53d70"
+    WindowPtr targetWindow = (WindowPtr)sys_gl.drawable;
+
+    if ( !targetWindow ) {
         return;
     }
 
 	GetPort(&origPort);
-	SetPort(myWindow);
-	BeginUpdate(myWindow);	
-	EndUpdate(myWindow);
+	SetPort(targetWindow);
+	BeginUpdate(targetWindow);	
+    EndUpdate(targetWindow);
 	
 	// Only update context if one exists (may not during early init)
 	ctx = aglGetCurrentContext();
@@ -243,6 +236,39 @@ void DoUpdate(WindowPtr	myWindow)
 	if (ctx != NULL) {
 		aglUpdateContext(ctx);
 	}
+	
+	SetPort(origPort);
+}
+*/
+//
+// DoUpdate
+//
+void DoUpdate(WindowPtr	myWindow)
+{ 
+	GrafPtr		origPort;
+	AGLContext	ctx;
+    
+    if ( !myWindow ) {
+        return;
+    }
+
+    // DEBUG: Identify who is requesting updates
+    // Sys_LogPrintf("DoUpdate: myWindow=%p, sys_gl.drawable=%p\n", myWindow, sys_gl.drawable);
+
+	GetPort(&origPort);
+	SetPort(myWindow);
+	BeginUpdate(myWindow);	
+	EndUpdate(myWindow);
+	
+    /*
+	// Only update context if one exists and we are updating the game window
+	ctx = aglGetCurrentContext();
+
+	// If we just updated the game window, we might need to update the AGL context
+	if (ctx != NULL && (void*)myWindow == (void*)sys_gl.drawable) {
+		aglUpdateContext(ctx);
+	}
+    */
 	
 	SetPort(origPort);
 }

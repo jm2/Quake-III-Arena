@@ -452,12 +452,6 @@ This will be called twice if rendering in stereo mode
 ==================
 */
 void SCR_DrawScreenField( stereoFrame_t stereoFrame ) {
-    static int fieldLogCount = 0;
-    if (fieldLogCount < 20) {
-        Sys_LogPrintf("SCR_DrawScreenField: Entry (frame=%d)\n", cls.framecount);
-        fieldLogCount++;
-    }
-
 	re.BeginFrame( stereoFrame );
 
 	// wide aspect ratio screens need to have the sides cleared
@@ -471,9 +465,6 @@ void SCR_DrawScreenField( stereoFrame_t stereoFrame ) {
 	}
 
 	if ( !uivm ) {
-        if (fieldLogCount < 50) { // Reusing counter
-            Sys_LogPrintf("SCR_DrawScreenField: draw screen without UI loaded\n");
-        }
 		return;
 	}
     
@@ -494,14 +485,7 @@ void SCR_UpdateScreen( void ) {
 
     int isFullscreen = (uivm ? VM_Call( uivm, UI_IS_FULLSCREEN ) : 0);
 
-    if (updateLogCount < 20) {
-        Sys_LogPrintf("SCR_UpdateScreen: Entry initialized=%d state=%d keyCatchers=%d isFullscreen=%d\n", 
-            scr_initialized, cls.state, cls.keyCatchers, isFullscreen);
-        updateLogCount++;
-    }
-
 	if ( !scr_initialized ) {
-        if (updateLogCount < 20) Sys_LogPrintf("SCR_UpdateScreen: !scr_initialized, returning\n");
 		return;				// not initialized yet
 	}
 
