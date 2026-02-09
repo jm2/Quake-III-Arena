@@ -217,18 +217,14 @@ void DoUpdate(WindowPtr	myWindow)
     
     // Safety check against global window
     if ( myWindow != (WindowPtr)sys_gl.drawable ) {
-        static int mismatchCount = 0;
-        if (mismatchCount < 10) {
-            Sys_LogPrintf("DoUpdate: Window Mismatch! myWindow=%p, sys_gl.drawable=%p. Suppressing future updates.\n", myWindow, sys_gl.drawable);
-            mismatchCount++;
+        static qboolean mismatchLogged = qfalse;
+        if (!mismatchLogged) {
+            Sys_LogPrintf("DoUpdate: Window Mismatch! myWindow=%p, sys_gl.drawable=%p. Suppressing future updates (LogOnce).\n", myWindow, sys_gl.drawable);
+            mismatchLogged = qtrue;
         }
         
         // CRITICAL FIX:
-        // We cannot touch this window (crashes).
-        // We cannot ignore it (infinite loop).
-        // So we tell the event system to STOP ASKING for update events via mask.
-        ignoreUpdateEvents = qtrue;
-
+        ignoreUpdateEvents = qtrue; 
         return;
     }
     

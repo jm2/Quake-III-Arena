@@ -1015,6 +1015,7 @@ qboolean Sys_LowPhysicalMemory();
 unsigned int Sys_ProcessorCount();
 
 int Sys_MonkeyShouldBeSpanked( void );
+void Sys_LogPrintf( const char *fmt, ... ); // Direct synchronous logging
 
 /* This is based on the Adaptive Huffman algorithm described in Sayood's Data
  * Compression book.  The ranks are not actually stored, but implicitly defined

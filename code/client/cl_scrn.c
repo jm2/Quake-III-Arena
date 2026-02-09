@@ -43,6 +43,9 @@ void SCR_DrawNamedPic( float x, float y, float width, float height, const char *
 
 	assert( width != 0 );
 
+    // Log what we are trying to draw
+    Com_Printf("SCR_DrawNamedPic: loading '%s'\n", picname);
+
 	hShader = re.RegisterShader( picname );
 	SCR_AdjustFrom640( &x, &y, &width, &height );
 	re.DrawStretchPic( x, y, width, height, 0, 0, 1, 1, hShader );
@@ -441,8 +444,20 @@ SCR_DrawScreenField
 This will be called twice if rendering in stereo mode
 ==================
 */
+/*
+==================
+SCR_DrawScreenField
+
+This will be called twice if rendering in stereo mode
+==================
+*/
 void SCR_DrawScreenField( stereoFrame_t stereoFrame ) {
-    static int logCount = 0;
+    static int fieldLogCount = 0;
+    if (fieldLogCount < 20) {
+        Sys_LogPrintf("SCR_DrawScreenField: Entry (frame=%d)\n", cls.framecount);
+        fieldLogCount++;
+    }
+
 	re.BeginFrame( stereoFrame );
 
 	// wide aspect ratio screens need to have the sides cleared
@@ -456,16 +471,54 @@ void SCR_DrawScreenField( stereoFrame_t stereoFrame ) {
 	}
 
 	if ( !uivm ) {
-        if (logCount < 50) {
-            Com_Printf("SCR_DrawScreenField: draw screen without UI loaded\n");
-            logCount++;
+        if (fieldLogCount < 50) { // Reusing counter
+            Sys_LogPrintf("SCR_DrawScreenField: draw screen without UI loaded\n");
         }
 		return;
 	}
     
-    // Com_Printf("SCR_DrawScreenField: uivm valid, cls.state=%d\n", cls.state);
+    // ...
+}
 
-	// if the menu is going to cover the entire screen, we
+/*
+==================
+SCR_UpdateScreen
+
+This is called every frame, and can also be called explicitly to flush
+text to the screen.
+==================
+*/
+void SCR_UpdateScreen( void ) {
+	static int	recursive;
+    static int updateLogCount = 0;
+
+    int isFullscreen = (uivm ? VM_Call( uivm, UI_IS_FULLSCREEN ) : 0);
+
+    if (updateLogCount < 20) {
+        Sys_LogPrintf("SCR_UpdateScreen: Entry initialized=%d state=%d keyCatchers=%d isFullscreen=%d\n", 
+            scr_initialized, cls.state, cls.keyCatchers, isFullscreen);
+        updateLogCount++;
+    }
+
+	if ( !scr_initialized ) {
+        if (updateLogCount < 20) Sys_LogPrintf("SCR_UpdateScreen: !scr_initialized, returning\n");
+		return;				// not initialized yet
+	}
+
+	if ( ++recursive > 2 ) {
+		Com_Error( ERR_FATAL, "SCR_UpdateScreen: recursively called" );
+	}
+	recursive = 1;
+
+	// if running in stereo, we need to draw the frame twice
+	if ( cls.glconfig.stereoEnabled ) {
+		SCR_DrawScreenField( STEREO_LEFT );
+		SCR_DrawScreenField( STEREO_RIGHT );
+	} else {
+		SCR_DrawScreenField( STEREO_CENTER );
+	}
+    
+    // if the menu is going to cover the entire screen, we
 	// don't need to render anything under it
 	if ( !VM_Call( uivm, UI_IS_FULLSCREEN )) {
 		switch( cls.state ) {
@@ -491,7 +544,7 @@ void SCR_DrawScreenField( stereoFrame_t stereoFrame ) {
 		case CA_LOADING:
 		case CA_PRIMED:
 			// draw the game information screen and loading progress
-			CL_CGameRendering( stereoFrame );
+			CL_CGameRendering( STEREO_CENTER ); // Fix: Use STEREO_CENTER instead of undefined stereoFrame
 
 			// also draw the connection information, so it doesn't
 			// flash away too briefly on local or lan games
@@ -500,7 +553,7 @@ void SCR_DrawScreenField( stereoFrame_t stereoFrame ) {
 			VM_Call( uivm, UI_DRAW_CONNECT_SCREEN, qtrue );
 			break;
 		case CA_ACTIVE:
-			CL_CGameRendering( stereoFrame );
+			CL_CGameRendering( STEREO_CENTER ); // Fix: Use STEREO_CENTER
 			SCR_DrawDemoRecording();
 			break;
 		}
@@ -517,35 +570,6 @@ void SCR_DrawScreenField( stereoFrame_t stereoFrame ) {
 	// debug graph can be drawn on top of anything
 	if ( cl_debuggraph->integer || cl_timegraph->integer || cl_debugMove->integer ) {
 		SCR_DrawDebugGraph ();
-	}
-}
-
-/*
-==================
-SCR_UpdateScreen
-
-This is called every frame, and can also be called explicitly to flush
-text to the screen.
-==================
-*/
-void SCR_UpdateScreen( void ) {
-	static int	recursive;
-
-	if ( !scr_initialized ) {
-		return;				// not initialized yet
-	}
-
-	if ( ++recursive > 2 ) {
-		Com_Error( ERR_FATAL, "SCR_UpdateScreen: recursively called" );
-	}
-	recursive = 1;
-
-	// if running in stereo, we need to draw the frame twice
-	if ( cls.glconfig.stereoEnabled ) {
-		SCR_DrawScreenField( STEREO_LEFT );
-		SCR_DrawScreenField( STEREO_RIGHT );
-	} else {
-		SCR_DrawScreenField( STEREO_CENTER );
 	}
 
 	if ( com_speeds->integer ) {

@@ -585,11 +585,11 @@ static qboolean CreateGameWindow( void ) {
 	}
 	
 	if( !sys_gl.drawable ) {
-		printf("DEBUG: CreateGameWindow: NewCWindow FAILED!\n"); fflush(stdout);
+		Sys_LogPrintf("DEBUG: CreateGameWindow: NewCWindow FAILED!\n");
 		return qfalse;
 	}
 	
-	printf("DEBUG: CreateGameWindow: NewCWindow succeeded, drawable=%p\n", sys_gl.drawable); fflush(stdout);
+	Sys_LogPrintf("DEBUG: CreateGameWindow: NewCWindow succeeded, drawable=%p\n", sys_gl.drawable);
 	
 	SizeWindow((GrafPort *) sys_gl.drawable, glConfig.vidWidth, glConfig.vidHeight,GL_FALSE);
 	MoveWindow((GrafPort *) sys_gl.drawable,x, y, GL_FALSE);
@@ -598,7 +598,7 @@ static qboolean CreateGameWindow( void ) {
 	HiliteWindow((GrafPort *) sys_gl.drawable, 1);
 	SelectWindow((WindowPtr)sys_gl.drawable);
 	
-	printf("DEBUG: CreateGameWindow: Window setup complete\n"); fflush(stdout);
+	Sys_LogPrintf("DEBUG: CreateGameWindow: Window setup complete\n");
 	
 	return qtrue;
 }
@@ -617,22 +617,22 @@ qboolean GLimp_SetMode( void ) {
 	GLint		attrib[64];
 	int			i;
 
-	printf("DEBUG: GLimp_SetMode: Starting\n"); fflush(stdout);
+	Sys_LogPrintf("DEBUG: GLimp_SetMode: Starting\n");
 
 	if ( !CreateGameWindow() ) {
-		printf("DEBUG: GLimp_SetMode: CreateGameWindow FAILED\n"); fflush(stdout);
+		Sys_LogPrintf("DEBUG: GLimp_SetMode: CreateGameWindow FAILED\n");
 		ri.Printf( PRINT_ALL, "GLimp_Init: window could not be created" );
 		return qfalse;
 	}
 	
-	printf("DEBUG: GLimp_SetMode: CreateGameWindow succeeded\n"); fflush(stdout);
+	Sys_LogPrintf("DEBUG: GLimp_SetMode: CreateGameWindow succeeded\n");
 	
 	// check devices now that the game has set the display mode,
 	// because RAVE devices don't get reported if in an 8 bit desktop
-	printf("DEBUG: GLimp_SetMode: Calling CheckDevices\n"); fflush(stdout);
+	Sys_LogPrintf("DEBUG: GLimp_SetMode: Calling CheckDevices\n");
 	CheckDevices();
 	
-	printf("DEBUG: GLimp_SetMode: CheckDevices complete, numDevices=%d\n", sys_gl.numDevices); fflush(stdout);
+	Sys_LogPrintf("DEBUG: GLimp_SetMode: CheckDevices complete, numDevices=%d\n", sys_gl.numDevices);
 	
 	// set up the attribute list
 	i = 0;
@@ -678,18 +678,18 @@ qboolean GLimp_SetMode( void ) {
 	attrib[i++] = 0;
 	
 	/* Choose pixel format */
-	printf("DEBUG: GLimp_SetMode: Calling aglChoosePixelFormat\n"); fflush(stdout);
+	Sys_LogPrintf("DEBUG: GLimp_SetMode: Calling aglChoosePixelFormat\n");
 	ri.Printf( PRINT_ALL, "aglChoosePixelFormat\n" );
 	if ( r_device->integer < 0 || r_device->integer >= sys_gl.numDevices ) {
 		ri.Cvar_Set( "r_device", "0" );
 	}
 	sys_gl.fmt = aglChoosePixelFormat( &sys_gl.devices[ r_device->integer ], 1, attrib);
 	if(!sys_gl.fmt) {
-		printf("DEBUG: GLimp_SetMode: aglChoosePixelFormat FAILED\n"); fflush(stdout);
+		Sys_LogPrintf("DEBUG: GLimp_SetMode: aglChoosePixelFormat FAILED\n");
 		ri.Printf( PRINT_ALL, "GLimp_Init: Pixel format could not be achieved\n");
 		return qfalse;
 	}
-	printf("DEBUG: GLimp_SetMode: aglChoosePixelFormat succeeded, fmt=0x%x\n", (int)sys_gl.fmt); fflush(stdout);
+	Sys_LogPrintf("DEBUG: GLimp_SetMode: aglChoosePixelFormat succeeded, fmt=0x%x\n", (int)sys_gl.fmt);
 	ri.Printf( PRINT_ALL, "Selected pixel format 0x%x\n", (int)sys_gl.fmt );
 	
 	aglDescribePixelFormat(sys_gl.fmt, AGL_RED_SIZE, &value);
