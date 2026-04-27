@@ -5,9 +5,16 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# Optimization flags to reduce binary size and help linker stability
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Os -ffunction-sections -fdata-sections -g0")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections -Wl,-s")
+# Debug-friendly flags. We deliberately do NOT use:
+#   -ffunction-sections / -fdata-sections / -Wl,--gc-sections : section GC can
+#       drop XCOFF sections (TOC entries, init/fini glue, weak refs) that
+#       MakePEF needs to emit a valid PEF, producing a binary that loads but
+#       executes garbage.
+#   -Wl,-s : strip-before-MakePEF removes symbol info MakePEF uses to resolve
+#       relocations. Strip after MakePEF if at all.
+# Q3 type-puns aggressively, so -fno-strict-aliasing is required for correctness
+# under any optimization level.
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -g -fno-strict-aliasing")
 
 # Global definitions
 add_definitions(-D__MACOS__ -D__POWERPC__ -DBOTLIB -DQ3_STATIC)
