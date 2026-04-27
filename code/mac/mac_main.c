@@ -105,6 +105,13 @@ static int retroLogHead = 0;
 static int retroLogTotal = 0;
 
 // Sys_LogPrintf implementation
+//
+// Writes to the on-screen Retro68 console and the in-memory ring buffer.
+// Intentionally does NOT touch the disk per call: on Mac OS 9 each
+// fopen/fwrite/fclose triplet traps into the File Manager and yields
+// cooperatively, and Sys_LogPrintf is called many times per frame from
+// Sys_GetEvent. The ring is flushed to disk by Sys_DumpRetroLogs, which
+// is called from Sys_Quit, Sys_Error, and the Cmd-D panic-key handler.
 void Sys_LogPrintf( const char *fmt, ... ) {
     va_list argptr;
     char text[1024];
@@ -115,10 +122,8 @@ void Sys_LogPrintf( const char *fmt, ... ) {
     len = vsprintf( text, fmt, argptr );
     va_end( argptr );
 
-    // 1. Output to actual console
     printf("%s", text);
 
-    // 2. Log to buffer
     if ( len < 0 ) return;
     if ( len > sizeof(text)-1 ) len = sizeof(text)-1;
 
@@ -126,15 +131,6 @@ void Sys_LogPrintf( const char *fmt, ... ) {
         retroLogBuffer[retroLogHead] = text[i];
         retroLogHead = (retroLogHead + 1) % RETRO_LOG_SIZE;
         if (retroLogTotal < RETRO_LOG_SIZE) retroLogTotal++;
-    }
-
-    // 3. SYNCHRONOUS FILE APPEND (Performance hit accepted for debug)
-    {
-        FILE *fp = fopen("retro68_console.log", "a");
-        if (fp) {
-            fwrite(text, 1, len, fp);
-            fclose(fp);
-        }
     }
 }
 
@@ -210,15 +206,10 @@ sysEvent_t Sys_GetEvent( void ) {
     }
     */
 
-    Sys_LogPrintf("Sys_GetEvent: SendKeyEvents\n");
     // Pump Mac OS events (keyboard via WaitNextEvent)
     Sys_SendKeyEvents();
-    Sys_LogPrintf("Sys_GetEvent: SendKeyEvents done\n");
-    
-    Sys_LogPrintf("Sys_GetEvent: Sys_Input\n");
     // Pump InputSprocket events (mouse)
     Sys_Input();
-    Sys_LogPrintf("Sys_GetEvent: Sys_Input done\n");
 
     if (eventHead == eventTail) {
         memset( &ev, 0, sizeof(ev) );
