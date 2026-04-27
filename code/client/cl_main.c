@@ -511,7 +511,16 @@ void CL_PlayDemo_f( void ) {
 
 	// open the demo file
 	arg = Cmd_Argv(1);
-	
+
+	// Reject parent-directory traversal in the demo name. Without this,
+	// `demo ../../some/file` resolves through FS_FOpenFileRead to whatever
+	// the engine has read access to, leaking arbitrary files via the demo
+	// playback path.
+	if ( strstr( arg, ".." ) || strstr( arg, "::" ) ) {
+		Com_Printf( "Refusing to play demo with traversal in name: %s\n", arg );
+		return;
+	}
+
 	// check for an extension .dm_?? (?? is protocol)
 	ext_test = arg + strlen(arg) - 6;
 	if ((strlen(arg) > 6) && (ext_test[0] == '.') && ((ext_test[1] == 'd') || (ext_test[1] == 'D')) && ((ext_test[2] == 'm') || (ext_test[2] == 'M')) && (ext_test[3] == '_'))
