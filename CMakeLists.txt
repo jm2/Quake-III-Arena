@@ -5,6 +5,8 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+option(BUILD_TEAM_ARENA "Build the Quake3_TeamArena (mission pack) executable" ON)
+
 # Debug-friendly flags. We deliberately do NOT use:
 #   -ffunction-sections / -fdata-sections / -Wl,--gc-sections : section GC can
 #       drop XCOFF sections (TOC entries, init/fini glue, weak refs) that
@@ -122,29 +124,31 @@ target_compile_definitions(q3ui_lib PRIVATE
 )
 
 # Mission Pack (Team Arena) Modules
-add_library(game_mp_obj OBJECT ${GAME_SRCS})
-target_compile_definitions(game_mp_obj PRIVATE 
-    -DvmMain=Game_vmMain 
-    -DdllEntry=Game_dllEntry
-    -DGAME_MODULE
-    -DMISSIONPACK
-)
+if(BUILD_TEAM_ARENA)
+    add_library(game_mp_obj OBJECT ${GAME_SRCS})
+    target_compile_definitions(game_mp_obj PRIVATE
+        -DvmMain=Game_vmMain
+        -DdllEntry=Game_dllEntry
+        -DGAME_MODULE
+        -DMISSIONPACK
+    )
 
-add_library(cgame_mp_obj OBJECT ${CGAME_MP_SRCS})
-target_compile_definitions(cgame_mp_obj PRIVATE 
-    -DvmMain=CGame_vmMain 
-    -DdllEntry=CGame_dllEntry
-    -DCGAME_MODULE
-    -DMISSIONPACK
-)
+    add_library(cgame_mp_obj OBJECT ${CGAME_MP_SRCS})
+    target_compile_definitions(cgame_mp_obj PRIVATE
+        -DvmMain=CGame_vmMain
+        -DdllEntry=CGame_dllEntry
+        -DCGAME_MODULE
+        -DMISSIONPACK
+    )
 
-add_library(ui_mp_obj OBJECT ${UI_SRCS})
-target_compile_definitions(ui_mp_obj PRIVATE 
-    -DvmMain=UI_vmMain 
-    -DdllEntry=UI_dllEntry
-    -DUI_MODULE
-    -DMISSIONPACK
-)
+    add_library(ui_mp_obj OBJECT ${UI_SRCS})
+    target_compile_definitions(ui_mp_obj PRIVATE
+        -DvmMain=UI_vmMain
+        -DdllEntry=UI_dllEntry
+        -DUI_MODULE
+        -DMISSIONPACK
+    )
+endif()
 
 # Link directories (Must be before add_executable)
 link_directories(
@@ -166,18 +170,20 @@ add_executable(Quake3
 )
 
 # Team Arena Executable
-add_executable(Quake3_TeamArena
-    ${COMMON_SRCS}
-    ${SERVER_SRCS}
-    ${CLIENT_SRCS}
-    ${RENDERER_SRCS}
-    ${MAC_SRCS}
-    ${BOTLIB_SRCS}
-    ${JPEG_SRCS}
-    $<TARGET_OBJECTS:game_mp_obj>
-    $<TARGET_OBJECTS:cgame_mp_obj>
-    $<TARGET_OBJECTS:ui_mp_obj>
-)
+if(BUILD_TEAM_ARENA)
+    add_executable(Quake3_TeamArena
+        ${COMMON_SRCS}
+        ${SERVER_SRCS}
+        ${CLIENT_SRCS}
+        ${RENDERER_SRCS}
+        ${MAC_SRCS}
+        ${BOTLIB_SRCS}
+        ${JPEG_SRCS}
+        $<TARGET_OBJECTS:game_mp_obj>
+        $<TARGET_OBJECTS:cgame_mp_obj>
+        $<TARGET_OBJECTS:ui_mp_obj>
+    )
+endif()
 
 
 # Link Libraries
@@ -202,25 +208,29 @@ target_link_libraries(Quake3 PUBLIC
     -lstdc++
 )
 
-target_link_libraries(Quake3_TeamArena PUBLIC
-    -lm
-    -lInterfaceLib
-    -lOpenTransportLib
-    -lOpenTransportAppPPC
-    -lOpenTptUtilsAppPPC
-    -lOpenTptInternetLib
-    -lInputSprocketLib
-    -lDrawSprocketLib
-    -lOpenGLLibraryStub
-    -lSoundLib
-    -lRetroConsole
-    -lstdc++
-)
+if(BUILD_TEAM_ARENA)
+    target_link_libraries(Quake3_TeamArena PUBLIC
+        -lm
+        -lInterfaceLib
+        -lOpenTransportLib
+        -lOpenTransportAppPPC
+        -lOpenTptUtilsAppPPC
+        -lOpenTptInternetLib
+        -lInputSprocketLib
+        -lDrawSprocketLib
+        -lOpenGLLibraryStub
+        -lSoundLib
+        -lRetroConsole
+        -lstdc++
+    )
+endif()
 
 
 # Output name
 set_target_properties(Quake3 PROPERTIES OUTPUT_NAME "Quake3")
-set_target_properties(Quake3_TeamArena PROPERTIES OUTPUT_NAME "Quake3_TeamArena")
+if(BUILD_TEAM_ARENA)
+    set_target_properties(Quake3_TeamArena PROPERTIES OUTPUT_NAME "Quake3_TeamArena")
+endif()
 
 
 # Bundle creation (Retro68 specific helpers if available, or just the bin)
