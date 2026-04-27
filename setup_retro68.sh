@@ -84,11 +84,13 @@ mkdir -p "$SDK_DEST"
 # download. The repo-root fallback is the friendly path for offline setups
 # when macintoshgarden is down — drop the file alongside the script and re-run.
 locate_or_fetch_sit() {
+    # Status messages go to stderr; only the resolved path goes to stdout, so
+    # `VAR=$(locate_or_fetch_sit ...)` captures just the path.
     local fname="$1"
     local url="$2"
 
     if [ -s "tools/$fname" ]; then
-        echo "  Using cached tools/$fname"
+        echo "  Using cached tools/$fname" >&2
         echo "tools/$fname"
         return 0
     fi
