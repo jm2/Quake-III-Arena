@@ -296,101 +296,91 @@ void Sys_Yield( void ) {
     SystemTask();
 }
 
-// Return path to executable or useful dir
+// Return the HFS path of the directory containing the running application.
+//
+// Returns "Volume:Folder1:Folder2" with no trailing colon, because
+// FS_BuildOSPath glues ":qpath" onto the result and a double colon is
+// interpreted as parent-directory.
+//
+// FS_BuildOSPath normalizes any forward slashes a caller might use, so the
+// engine's gamedir-relative paths (e.g. "/baseq3/q3key/") concatenate
+// correctly with this result.
 char *Sys_GetCwd( void ) {
-    short vRefNum;
-    Str255 volName;
-    OSErr err;
+    static char     cached[512];
+    ProcessSerialNumber psn;
+    ProcessInfoRec  pinfo;
+    FSSpec          appSpec;
+    CInfoPBRec      cipb;
+    Str63           name;
+    char            segment[64];
+    char            scratch[512];
+    OSErr           err;
+    long            dirID;
+    short           vRefNum;
+    int             segLen;
 
-    // Probe Default Volume
-    err = GetVol(volName, &vRefNum);
-    if (err == noErr) {
-        // Convert Pascal String to C String
-        char cVolName[256];
-        int len = volName[0];
-        memcpy(cVolName, &volName[1], len);
-        cVolName[len] = 0;
-        //printf("DEBUG: GetVol success! vRefNum=%d, VolName='%s'\n", vRefNum, cVolName);
-        
-        // === DIAGNOSTIC: Direct File Access Test ===
-        // Try to open a file using an absolute HFS path
-        // This tests if file I/O works AT ALL, independent of directory listing.
-        
-        FSSpec testSpec;
-        short testRefNum;
-        
-        // Test 1: Try FSMakeFSSpec with full absolute path
-        {
-            const char *testPath = "Macintosh HD:Desktop Folder:Quake 3 Arena:baseq3:pak0.pk3";
-            Str255 pPath;
-            int pathLen = strlen(testPath);
-            if (pathLen > 255) pathLen = 255;
-            pPath[0] = pathLen;
-            memcpy(&pPath[1], testPath, pathLen);
-            
-            err = FSMakeFSSpec(0, 0, pPath, &testSpec);
-            //printf("DEBUG: DIAG Test1: FSMakeFSSpec('%s') -> err=%d\n", testPath, err);
-            if (err == noErr) {
-                //printf("DEBUG: DIAG Test1: SUCCESS! vRefNum=%d, parID=%ld, name='%.*s'\n", 
-                //       testSpec.vRefNum, testSpec.parID, testSpec.name[0], &testSpec.name[1]);
-                
-                // Try to open the file
-                err = FSpOpenDF(&testSpec, fsRdPerm, &testRefNum);
-                //printf("DEBUG: DIAG Test1: FSpOpenDF -> err=%d\n", err);
-                if (err == noErr) {
-                    //printf("DEBUG: DIAG Test1: FILE OPENED SUCCESSFULLY! refNum=%d\n", testRefNum);
-                    FSClose(testRefNum);
-                }
-            }
-        }
-        
-        // Test 2: Try with vRefNum from GetVol (the WDRefNum) + relative path
-        {
-            const char *relPath = ":baseq3:pak0.pk3";
-            Str255 pPath;
-            int pathLen = strlen(relPath);
-            if (pathLen > 255) pathLen = 255;
-            pPath[0] = pathLen;
-            memcpy(&pPath[1], relPath, pathLen);
-            
-            err = FSMakeFSSpec(vRefNum, 0, pPath, &testSpec);
-            //printf("DEBUG: DIAG Test2: FSMakeFSSpec(vRef=%d, '%s') -> err=%d\n", vRefNum, relPath, err);
-            if (err == noErr || err == fnfErr) {
-                //printf("DEBUG: DIAG Test2: vRefNum=%d, parID=%ld\n", testSpec.vRefNum, testSpec.parID);
-            }
-        }
-        
-        // Test 3: Try with vRefNum=-1 (boot volume) + absolute partial path
-        {
-            const char *partPath = ":Desktop Folder:Quake 3 Arena:baseq3:pak0.pk3";
-            Str255 pPath;
-            int pathLen = strlen(partPath);
-            if (pathLen > 255) pathLen = 255;
-            pPath[0] = pathLen;
-            memcpy(&pPath[1], partPath, pathLen);
-            
-            err = FSMakeFSSpec(-1, 0, pPath, &testSpec);
-            //printf("DEBUG: DIAG Test3: FSMakeFSSpec(vRef=-1, '%s') -> err=%d\n", partPath, err);
-            if (err == noErr) {
-                 //printf("DEBUG: DIAG Test3: SUCCESS! vRefNum=%d, parID=%ld\n", testSpec.vRefNum, testSpec.parID);
-            }
-        }
-        
-        // Test 4: Try POSIX-style open (if Retro68 supports it)
-        {
-            FILE *fp = fopen(":baseq3:pak0.pk3", "rb");
-            //printf("DEBUG: DIAG Test4: fopen(':baseq3:pak0.pk3') -> %s\n", fp ? "SUCCESS" : "FAILED");
-            if (fp) fclose(fp);
-        }
-        
-        //printf("DEBUG: === END DIAGNOSTIC ===\n");
-        
-    } else {
-        //printf("DEBUG: GetVol failed, err=%d\n", err);
+    if ( cached[0] != 0 ) {
+        return cached;
     }
-    
-    //printf("DEBUG: Sys_GetCwd returning '' (Empty for Relative Path)\n");
-    return "";
+
+    err = GetCurrentProcess( &psn );
+    if ( err != noErr ) {
+        Sys_Error( "Sys_GetCwd: GetCurrentProcess failed: %d", err );
+    }
+
+    pinfo.processInfoLength = sizeof( pinfo );
+    pinfo.processName       = NULL;
+    pinfo.processAppSpec    = &appSpec;
+
+    err = GetProcessInformation( &psn, &pinfo );
+    if ( err != noErr ) {
+        Sys_Error( "Sys_GetCwd: GetProcessInformation failed: %d", err );
+    }
+
+    // Walk from the application's parent directory up to the volume root,
+    // prepending each directory name. PBGetCatInfoSync with ioFDirIndex = -1
+    // and ioDrDirID set asks for the directory's own catalog entry, which
+    // gives us its name and its parent's dirID.
+    cached[0] = 0;
+    vRefNum = appSpec.vRefNum;
+    dirID   = appSpec.parID;
+
+    while ( dirID != fsRtParID ) {
+        memset( &cipb, 0, sizeof( cipb ) );
+        cipb.dirInfo.ioNamePtr   = name;
+        cipb.dirInfo.ioVRefNum   = vRefNum;
+        cipb.dirInfo.ioDrDirID   = dirID;
+        cipb.dirInfo.ioFDirIndex = -1;
+
+        err = PBGetCatInfoSync( &cipb );
+        if ( err != noErr ) {
+            Sys_Error( "Sys_GetCwd: PBGetCatInfoSync(dirID=%ld) failed: %d",
+                       dirID, err );
+        }
+
+        segLen = name[0];
+        if ( segLen > (int)sizeof( segment ) - 1 ) {
+            segLen = sizeof( segment ) - 1;
+        }
+        memcpy( segment, &name[1], segLen );
+        segment[segLen] = 0;
+
+        if ( cached[0] == 0 ) {
+            Q_strncpyz( cached, segment, sizeof( cached ) );
+        } else {
+            Com_sprintf( scratch, sizeof( scratch ), "%s:%s", segment, cached );
+            Q_strncpyz( cached, scratch, sizeof( cached ) );
+        }
+
+        dirID = cipb.dirInfo.ioDrParID;
+    }
+
+    if ( cached[0] == 0 ) {
+        Sys_Error( "Sys_GetCwd: produced empty path (vRefNum=%d, parID=%ld)",
+                   appSpec.vRefNum, appSpec.parID );
+    }
+
+    return cached;
 }
 
 char *Sys_DefaultCDPath( void ) {
