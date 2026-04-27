@@ -42,11 +42,58 @@ cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/Retro68.toolchain.cmake -DCMAKE_BUILD_T
 # Build
 make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
+# Validate that a converted PEF is plausibly well-formed. Catches the case
+# where MakePEF succeeds on a corrupt XCOFF input (e.g. when --gc-sections
+# dropped sections it needs) and produces a PEF that loads but executes
+# garbage. We cannot fully validate without running on Mac OS, but we can:
+#   - confirm the PEF magic ("Joy!peff") in the first 8 bytes
+#   - confirm the architecture tag is "pwpc"
+#   - confirm the file is at least MIN_PEF_BYTES (an XCOFF for a Q3-sized
+#     codebase with section-GC stripped produces a PEF well under this).
+# Fail the build on any of these — silent corrupt PEFs are exactly the
+# debugging tax we are trying to avoid.
+validate_pef() {
+    local pef_file="$1"
+    local MIN_PEF_BYTES=1048576  # 1 MiB; Q3 PEFs are ~4-6 MiB in practice
+
+    if [ ! -f "$pef_file" ]; then
+        echo "PEF validation: $pef_file not found"
+        return 1
+    fi
+
+    local magic1 magic2 arch size
+    magic1=$(xxd -s 0 -l 4 -p "$pef_file" 2>/dev/null)
+    magic2=$(xxd -s 4 -l 4 -p "$pef_file" 2>/dev/null)
+    arch=$(xxd -s 8 -l 4 -p "$pef_file" 2>/dev/null)
+    size=$(wc -c < "$pef_file")
+
+    if [[ "$magic1" != "4a6f7921" ]]; then
+        echo "PEF validation FAILED: $pef_file magic1='$magic1' (want 'Joy!' = 4a6f7921)"
+        return 1
+    fi
+    if [[ "$magic2" != "70656666" ]]; then
+        echo "PEF validation FAILED: $pef_file magic2='$magic2' (want 'peff' = 70656666)"
+        return 1
+    fi
+    if [[ "$arch" != "70777063" ]]; then
+        echo "PEF validation FAILED: $pef_file arch='$arch' (want 'pwpc' = 70777063)"
+        return 1
+    fi
+    if [ "$size" -lt "$MIN_PEF_BYTES" ]; then
+        echo "PEF validation FAILED: $pef_file is $size bytes (want >= $MIN_PEF_BYTES)"
+        echo "  This usually means the XCOFF was missing sections MakePEF needs."
+        return 1
+    fi
+
+    echo "PEF validation OK: $pef_file ($size bytes)"
+    return 0
+}
+
 # Convert to PEF (Fix for XCOFF output)
 MAKEPEF="../tools/Retro68-build/bin/MakePEF"
 if [ -f "$MAKEPEF" ]; then
     echo "Checking binaries for PEF conversion..."
-    
+
     if [ -f "Quake3" ]; then
         # Check if already PEF (Joy! header) using xxd
         MAGIC=$(xxd -l 4 -p Quake3 2>/dev/null || echo "00000000")
@@ -58,8 +105,9 @@ if [ -f "$MAKEPEF" ]; then
         else
              echo "Quake3 is already PEF."
         fi
+        validate_pef Quake3 || exit 1
     fi
-    
+
     if [ -f "Quake3_TeamArena" ]; then
         MAGIC=$(xxd -l 4 -p Quake3_TeamArena 2>/dev/null || echo "00000000")
         if [[ "$MAGIC" != "4a6f7921" ]]; then
@@ -70,6 +118,7 @@ if [ -f "$MAKEPEF" ]; then
         else
              echo "Quake3_TeamArena is already PEF."
         fi
+        validate_pef Quake3_TeamArena || exit 1
     fi
 else
     echo "Warning: MakePEF not found. Binaries might be invalid XCOFF."
