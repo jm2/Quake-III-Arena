@@ -37,7 +37,11 @@ echo "Press Ctrl+C to cancel in 5 seconds..."
 sleep 5
 
 # Dependency Checking
-REQUIRED_CMDS="cmake git wget bison flex makeinfo unar"
+# Note: ruby is required by Retro68's build-toolchain.bash to generate the
+# Multiversal Interfaces (it runs make-multiverse.rb even when Universal
+# Interfaces are present). Failing late in the toolchain build for a missing
+# ruby is painful, so check up front.
+REQUIRED_CMDS="cmake git wget bison flex makeinfo unar ruby"
 MISSING_DEPS=0
 
 for cmd in $REQUIRED_CMDS; do
@@ -175,10 +179,22 @@ else
     find "$SOURCE_DIR" -name "CMakeLists.txt" -exec sed -i '/find_package(Boost/s/ system//g' {} +
 fi
 
-# 4. Clean Build
-echo "Step 4: Cleaning previous builds..."
-[ -d "$INSTALL_DIR" ]    && rm -rf "$INSTALL_DIR"
-[ -d "$BUILD_WORK_DIR" ] && rm -rf "$BUILD_WORK_DIR"
+# 4. Clean / resume.
+#
+# A full Retro68 build takes 30+ minutes; if we already have the host tools
+# (ConvertDiskImage is the last one built and installed), keep the existing
+# binutils/gcc/host-tool artifacts and pass --skip-thirdparty to
+# build-toolchain.bash so it just runs the I&L + multiversal + target-lib
+# steps. To force a full rebuild, delete tools/Retro68-build manually.
+SKIP_FLAGS=()
+if [ -x "$INSTALL_DIR/bin/ConvertDiskImage" ] && [ -d "$BUILD_WORK_DIR" ]; then
+    echo "Step 4: Existing toolchain detected — resuming with --skip-thirdparty."
+    SKIP_FLAGS=(--skip-thirdparty)
+else
+    echo "Step 4: Cleaning previous builds..."
+    [ -d "$INSTALL_DIR" ]    && rm -rf "$INSTALL_DIR"
+    [ -d "$BUILD_WORK_DIR" ] && rm -rf "$BUILD_WORK_DIR"
+fi
 
 # 5. Build
 echo "Step 5: Building Retro68..."
@@ -193,7 +209,7 @@ elif [ "$OS_NAME" = "Linux" ]; then
     echo "Using system Boost."
 fi
 
-bash "$SOURCE_DIR/build-toolchain.bash" --prefix="$INSTALL_DIR"
+bash "$SOURCE_DIR/build-toolchain.bash" --prefix="$INSTALL_DIR" "${SKIP_FLAGS[@]}"
 
 # 6. Post-Build Fixes
 echo "Step 6: Post-Build Fixes..."
