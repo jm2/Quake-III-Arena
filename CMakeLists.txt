@@ -74,9 +74,14 @@ list(REMOVE_ITEM SERVER_SRCS "${CMAKE_SOURCE_DIR}/code/server/sv_rankings.c")
 file(GLOB GAME_SRCS code/game/*.c)
 list(REMOVE_ITEM GAME_SRCS "${CMAKE_SOURCE_DIR}/code/game/g_rankings.c")
 
-add_library(game_obj OBJECT ${GAME_SRCS})
-target_compile_definitions(game_obj PRIVATE 
-    -DvmMain=Game_vmMain 
+# All module libraries are STATIC, not OBJECT. Retro68's binutils has a known
+# crash when consuming OBJECT libraries at link time (see q3ui_lib comment
+# below); even when it doesn't crash outright, OBJECT libraries with this many
+# cross-symbol references are a known source of silent symbol corruption on
+# this toolchain.
+add_library(game_obj STATIC ${GAME_SRCS})
+target_compile_definitions(game_obj PRIVATE
+    -DvmMain=Game_vmMain
     -DdllEntry=Game_dllEntry
     -DGAME_MODULE
 )
@@ -90,17 +95,17 @@ list(REMOVE_ITEM CGAME_SRCS "${CMAKE_SOURCE_DIR}/code/cgame/cg_newdraw.c")
 # Mission Pack CGame (includes everything)
 set(CGAME_MP_SRCS ${ALL_CGAME_SRCS})
 
-add_library(cgame_obj OBJECT ${CGAME_SRCS})
-target_compile_definitions(cgame_obj PRIVATE 
-    -DvmMain=CGame_vmMain 
+add_library(cgame_obj STATIC ${CGAME_SRCS})
+target_compile_definitions(cgame_obj PRIVATE
+    -DvmMain=CGame_vmMain
     -DdllEntry=CGame_dllEntry
     -DCGAME_MODULE
 )
 
 file(GLOB UI_SRCS code/ui/*.c)
-add_library(ui_obj OBJECT ${UI_SRCS})
-target_compile_definitions(ui_obj PRIVATE 
-    -DvmMain=UI_vmMain 
+add_library(ui_obj STATIC ${UI_SRCS})
+target_compile_definitions(ui_obj PRIVATE
+    -DvmMain=UI_vmMain
     -DdllEntry=UI_dllEntry
     -DUI_MODULE
 )
@@ -125,7 +130,7 @@ target_compile_definitions(q3ui_lib PRIVATE
 
 # Mission Pack (Team Arena) Modules
 if(BUILD_TEAM_ARENA)
-    add_library(game_mp_obj OBJECT ${GAME_SRCS})
+    add_library(game_mp_obj STATIC ${GAME_SRCS})
     target_compile_definitions(game_mp_obj PRIVATE
         -DvmMain=Game_vmMain
         -DdllEntry=Game_dllEntry
@@ -133,7 +138,7 @@ if(BUILD_TEAM_ARENA)
         -DMISSIONPACK
     )
 
-    add_library(cgame_mp_obj OBJECT ${CGAME_MP_SRCS})
+    add_library(cgame_mp_obj STATIC ${CGAME_MP_SRCS})
     target_compile_definitions(cgame_mp_obj PRIVATE
         -DvmMain=CGame_vmMain
         -DdllEntry=CGame_dllEntry
@@ -141,7 +146,7 @@ if(BUILD_TEAM_ARENA)
         -DMISSIONPACK
     )
 
-    add_library(ui_mp_obj OBJECT ${UI_SRCS})
+    add_library(ui_mp_obj STATIC ${UI_SRCS})
     target_compile_definitions(ui_mp_obj PRIVATE
         -DvmMain=UI_vmMain
         -DdllEntry=UI_dllEntry
@@ -165,8 +170,6 @@ add_executable(Quake3
     ${MAC_SRCS}
     ${BOTLIB_SRCS}
     ${JPEG_SRCS}
-    $<TARGET_OBJECTS:game_obj>
-    $<TARGET_OBJECTS:cgame_obj>
 )
 
 # Team Arena Executable
@@ -179,9 +182,6 @@ if(BUILD_TEAM_ARENA)
         ${MAC_SRCS}
         ${BOTLIB_SRCS}
         ${JPEG_SRCS}
-        $<TARGET_OBJECTS:game_mp_obj>
-        $<TARGET_OBJECTS:cgame_mp_obj>
-        $<TARGET_OBJECTS:ui_mp_obj>
     )
 endif()
 
@@ -192,8 +192,18 @@ endif()
 set(MPW_LIB_DIR "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Libraries/SharedLibraries")
 set(OGL_LIB_DIR "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Libraries")
 
+# --whole-archive forces every .o in game_obj/cgame_obj into the link, so
+# game/cgame functions only reachable via VM_Call dispatch (rather than direct
+# link-time references) aren't dropped. q3ui_lib uses the same pattern; even
+# though its top-level symbols are referenced from the client, missing a
+# rarely-used menu would manifest as a half-working UI rather than a clean
+# link failure.
 target_link_libraries(Quake3 PUBLIC
+    "-Wl,--whole-archive"
+    game_obj
+    cgame_obj
     q3ui_lib
+    "-Wl,--no-whole-archive"
     -lm
     -lInterfaceLib
     -lOpenTransportLib
@@ -210,6 +220,11 @@ target_link_libraries(Quake3 PUBLIC
 
 if(BUILD_TEAM_ARENA)
     target_link_libraries(Quake3_TeamArena PUBLIC
+        "-Wl,--whole-archive"
+        game_mp_obj
+        cgame_mp_obj
+        ui_mp_obj
+        "-Wl,--no-whole-archive"
         -lm
         -lInterfaceLib
         -lOpenTransportLib
