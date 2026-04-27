@@ -58,9 +58,17 @@ Parses deltas from the given base and adds the resulting entity
 to the current frame
 ==================
 */
-void CL_DeltaEntity (msg_t *msg, clSnapshot_t *frame, int newnum, entityState_t *old, 
+void CL_DeltaEntity (msg_t *msg, clSnapshot_t *frame, int newnum, entityState_t *old,
 					 qboolean unchanged) {
 	entityState_t	*state;
+
+	// CVE-2018-12100 family: a malicious server can stuff so many entities
+	// into a single snapshot that the parseEntities ring wraps mid-frame
+	// and corrupts later delta lookups. MAX_PARSE_ENTITIES is the absolute
+	// ring size; a single frame has no legitimate reason to exceed it.
+	if ( frame->numEntities >= MAX_PARSE_ENTITIES ) {
+		Com_Error( ERR_DROP, "CL_DeltaEntity: too many entities in snapshot" );
+	}
 
 	// save the parsed entity state into the big circular buffer so
 	// it can be used as the source for a later delta
