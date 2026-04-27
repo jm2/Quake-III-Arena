@@ -1390,6 +1390,17 @@ void CL_BeginDownload( const char *localName, const char *remoteName ) {
 				"Remotename: %s\n"
 				"****************************\n", localName, remoteName);
 
+	// Server-supplied path; reject parent-directory traversal before it
+	// reaches FS_SV_FOpenFileWrite. The .dll/.so/.qvm extension filter in
+	// files.c covers what gets executed, but doesn't stop the server from
+	// writing into ../../foo/bar.cfg.
+	if ( strstr( localName, ".." ) || strstr( localName, "::" ) ) {
+		Com_Printf( "Refusing download with traversal in path: %s\n", localName );
+		*clc.downloadTempName = *clc.downloadName = 0;
+		Cvar_Set( "cl_downloadName", "" );
+		return;
+	}
+
 	Q_strncpyz ( clc.downloadName, localName, sizeof(clc.downloadName) );
 	Com_sprintf( clc.downloadTempName, sizeof(clc.downloadTempName), "%s.tmp", localName );
 
