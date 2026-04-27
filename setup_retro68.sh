@@ -65,16 +65,14 @@ fi
 
 mkdir -p tools
 
-# 1. Clone/Update Retro68
-echo "Step 1: Cloning/Updating Retro68..."
+# 1. Clone Retro68 if missing. We do NOT auto-pull here: this script makes
+# in-tree edits (Boost patch, InterfacesAndLibraries population) that block
+# rebases, and the user can `git pull` manually if they want fresh upstream.
+echo "Step 1: Ensuring Retro68 source is present..."
 if [ ! -d "$SOURCE_DIR" ]; then
     git clone --recursive "$RETRO68_URL" "$SOURCE_DIR"
 else
-    echo "Source directory exists, pulling updates..."
-    cd "$SOURCE_DIR"
-    git pull
-    git submodule update --init --recursive
-    cd -
+    echo "Retro68 source already present at $SOURCE_DIR (not pulling)."
 fi
 
 # 2. Prepare InterfacesAndLibraries
