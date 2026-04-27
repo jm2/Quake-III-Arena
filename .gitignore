@@ -3,3 +3,8 @@ build_mac/
 release_mac/
 baseq3/
 missionpack/
+*.sit
+*.hqx
+*.img
+*.dmg
+*.bin
