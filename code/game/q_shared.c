@@ -1157,6 +1157,30 @@ qboolean Info_Validate( const char *s ) {
 
 /*
 ==================
+Info_ValidateKeyValue
+
+CVE-2017-11721. Reject individual info-string keys or values that contain
+characters which would break the parser: '\\' is the field separator, ';' is
+a console command separator, and '"' confuses quoted-token parsing. Strict
+counterpart to Info_Validate (which inspects a fully assembled info string,
+where '\\' is *expected* between fields).
+==================
+*/
+qboolean Info_ValidateKeyValue( const char *s ) {
+	if ( strchr( s, '\\' ) ) {
+		return qfalse;
+	}
+	if ( strchr( s, '\"' ) ) {
+		return qfalse;
+	}
+	if ( strchr( s, ';' ) ) {
+		return qfalse;
+	}
+	return qtrue;
+}
+
+/*
+==================
 Info_SetValueForKey
 
 Changes or adds a key/value pair
@@ -1169,21 +1193,13 @@ void Info_SetValueForKey( char *s, const char *key, const char *value ) {
 		Com_Error( ERR_DROP, "Info_SetValueForKey: oversize infostring" );
 	}
 
-	if (strchr (key, '\\') || strchr (value, '\\'))
-	{
-		Com_Printf ("Can't use keys or values with a \\\n");
+	if ( !Info_ValidateKeyValue( key ) || !Info_ValidateKeyValue( value ) ) {
+		Com_Printf( "Can't use keys or values with \\, \", or ;\n" );
 		return;
 	}
 
-	if (strchr (key, ';') || strchr (value, ';'))
-	{
-		Com_Printf ("Can't use keys or values with a semicolon\n");
-		return;
-	}
-
-	if (strchr (key, '\"') || strchr (value, '\"'))
-	{
-		Com_Printf ("Can't use keys or values with a \"\n");
+	if ( strlen( key ) >= MAX_INFO_KEY || strlen( value ) >= MAX_INFO_VALUE ) {
+		Com_Printf( "Info_SetValueForKey: key/value too long\n" );
 		return;
 	}
 
@@ -1217,21 +1233,13 @@ void Info_SetValueForKey_Big( char *s, const char *key, const char *value ) {
 		Com_Error( ERR_DROP, "Info_SetValueForKey: oversize infostring" );
 	}
 
-	if (strchr (key, '\\') || strchr (value, '\\'))
-	{
-		Com_Printf ("Can't use keys or values with a \\\n");
+	if ( !Info_ValidateKeyValue( key ) || !Info_ValidateKeyValue( value ) ) {
+		Com_Printf( "Can't use keys or values with \\, \", or ;\n" );
 		return;
 	}
 
-	if (strchr (key, ';') || strchr (value, ';'))
-	{
-		Com_Printf ("Can't use keys or values with a semicolon\n");
-		return;
-	}
-
-	if (strchr (key, '\"') || strchr (value, '\"'))
-	{
-		Com_Printf ("Can't use keys or values with a \"\n");
+	if ( strlen( key ) >= MAX_INFO_KEY || strlen( value ) >= MAX_INFO_VALUE ) {
+		Com_Printf( "Info_SetValueForKey_Big: key/value too long\n" );
 		return;
 	}
 
