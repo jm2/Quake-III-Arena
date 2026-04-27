@@ -1184,7 +1184,17 @@ SV_UpdateUserinfo_f
 ==================
 */
 static void SV_UpdateUserinfo_f( client_t *cl ) {
-	Q_strncpyz( cl->userinfo, Cmd_Argv(1), sizeof(cl->userinfo) );
+	const char *userinfo = Cmd_Argv(1);
+
+	// CVE-2017-11722: reject malformed info strings before they reach the
+	// engine's info parser. A client that smuggles unbalanced \\ pairs or
+	// embedded ; / " characters can trick later Info_ValueForKey lookups
+	// into reading attacker-chosen bytes.
+	if ( !Info_Validate( userinfo ) ) {
+		return;
+	}
+
+	Q_strncpyz( cl->userinfo, userinfo, sizeof(cl->userinfo) );
 
 	SV_UserinfoChanged( cl );
 	// call prog code to allow overrides
