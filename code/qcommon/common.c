@@ -2387,7 +2387,12 @@ void Com_AppendCDKey( const char *filename ) {
 	FS_FCloseFile( f );
 
 	if (CL_CDKeyValidate(buffer, NULL)) {
-		strcat( &cl_cdkey[16], buffer );
+		// Was strcat(&cl_cdkey[16], buffer) — dangerous: cl_cdkey is 34
+		// bytes, &cl_cdkey[16] leaves 18 bytes of space (including the
+		// terminator), and strcat seeks past the existing 16 chars in
+		// the second half, writing past the end of the buffer when the
+		// read produces a 16-char value.
+		Q_strncpyz( &cl_cdkey[16], buffer, 17 );
 	} else {
 		Q_strncpyz( &cl_cdkey[16], "                ", 17 );
 	}
