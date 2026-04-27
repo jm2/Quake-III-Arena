@@ -1,6 +1,37 @@
 #!/bin/bash
 set -e
 
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [package|--package] [-h|--help]
+
+  (no args)            Configure, build, and PEF-validate Quake3 (and
+                       Quake3_TeamArena unless BUILD_TEAM_ARENA was set OFF
+                       at CMake time).
+  package, --package   Build, then assemble a Mac OS 9 install image
+                       (.img.bin) under release_mac/.
+  -h, --help           Show this message.
+EOF
+}
+
+# Argument parsing. We accept exactly one positional/flag arg.
+PACKAGE_MODE=0
+if [ "$#" -gt 1 ]; then
+    echo "Error: too many arguments." >&2
+    usage >&2
+    exit 2
+fi
+case "${1:-}" in
+    "")               ;;
+    package|--package) PACKAGE_MODE=1 ;;
+    -h|--help)        usage; exit 0 ;;
+    *)
+        echo "Error: unknown argument '$1'." >&2
+        usage >&2
+        exit 2
+        ;;
+esac
+
 function download_file() {
     local url="$1"
     local output="$2"
@@ -127,7 +158,7 @@ fi
 echo "Build complete. Check build_mac/Quake3 or similar."
 
 # Packaging Subcommand
-if [[ "$1" == "package" ]]; then
+if [ "$PACKAGE_MODE" -eq 1 ]; then
     cd .. # Return to project root
     echo "=========================================="
     echo "Packaging for Mac OS 9..."
