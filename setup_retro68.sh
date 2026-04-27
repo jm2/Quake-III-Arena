@@ -143,8 +143,12 @@ echo "Injecting OpenGL headers/libs..."
 mkdir -p "$SDK_DEST/Libraries"
 mkdir -p "$SDK_DEST/Interfaces/CIncludes"
 
-# OpenGL SDK lays out 'Libraries' (PEF stubs) and 'Headers' (gl.h, glu.h, agl.h, glm.h, ...)
-OGL_LIBS=$(find tools/temp_opengl -type d -name "Libraries" | head -n 1)
+# OpenGL SDK lays out 'Libraries' (PEF stubs) and 'Headers' (gl.h, glu.h,
+# agl.h, glm.h, ...) at the top level. -maxdepth 2 because the SDK also
+# contains nested e.g. Source/Libraries/ that we do not want; without the
+# constraint, find's traversal order is filesystem-dependent and we
+# silently picked the wrong one on some runs.
+OGL_LIBS=$(find tools/temp_opengl -maxdepth 2 -type d -name "Libraries" | head -n 1)
 if [ -n "$OGL_LIBS" ]; then
     echo "Copying OpenGL Libs from $OGL_LIBS..."
     mkdir -p "$SDK_DEST/SharedLibraries"
@@ -153,7 +157,7 @@ else
     echo "Warning: Could not find Libraries in OpenGL SDK"
 fi
 
-OGL_HEADERS=$(find tools/temp_opengl -type d -name "Headers" | head -n 1)
+OGL_HEADERS=$(find tools/temp_opengl -maxdepth 2 -type d -name "Headers" | head -n 1)
 if [ -n "$OGL_HEADERS" ]; then
     echo "Copying OpenGL Headers from $OGL_HEADERS..."
     cp -r "$OGL_HEADERS/"* "$SDK_DEST/Interfaces/CIncludes/"
