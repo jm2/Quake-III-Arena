@@ -355,9 +355,9 @@ char *Sys_GetCwd( void ) {
     // If either is bogus, GetProcessInformation didn't actually populate
     // the spec; fall back to GetVol.
     if ( appSpec.vRefNum == 0 || appSpec.parID <= 0 ) {
-        Com_Printf( "Sys_GetCwd: Process Manager returned empty FSSpec "
-                    "(vRefNum=%d parID=%ld); falling back to GetVol\n",
-                    appSpec.vRefNum, appSpec.parID );
+        Com_FlightRecord( "Sys_GetCwd: Process Manager returned empty FSSpec "
+                          "(vRefNum=%d parID=%ld); falling back to GetVol\n",
+                          appSpec.vRefNum, appSpec.parID );
         err = GetVol( volName, &vRefNum );
         if ( err != noErr ) {
             Sys_Error( "Sys_GetCwd: GetVol fallback failed: %d", err );
@@ -368,6 +368,7 @@ char *Sys_GetCwd( void ) {
         }
         memcpy( cached, &volName[1], segLen );
         cached[segLen] = 0;
+        Com_FlightRecord( "Sys_GetCwd (GetVol fallback): '%s'\n", cached );
         return cached;
     }
 
@@ -414,6 +415,7 @@ char *Sys_GetCwd( void ) {
                    appSpec.vRefNum, appSpec.parID );
     }
 
+    Com_FlightRecord( "Sys_GetCwd (FSSpec walk): '%s'\n", cached );
     return cached;
 }
 

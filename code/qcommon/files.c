@@ -2623,7 +2623,12 @@ static void FS_AddGameDirectory( const char *path, const char *dir ) {
 	pakfile = FS_BuildOSPath( path, dir, "" );
 	pakfile[ strlen(pakfile) - 1 ] = 0;	// strip the trailing slash
 
+	Com_FlightRecord( "FS_AddGameDirectory: scanning '%s' for .pk3\n", pakfile );
+
 	pakfiles = Sys_ListFiles( pakfile, ".pk3", NULL, &numfiles, qfalse );
+
+	Com_FlightRecord( "FS_AddGameDirectory: found %d .pk3 file(s) in '%s'\n",
+	                  numfiles, pakfile );
 
 	// sort them so that later alphabetic matches override
 	// earlier ones.  This makes pak1.pk3 override pak0.pk3
