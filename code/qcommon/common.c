@@ -105,6 +105,11 @@ static char flightRecorderBuffer[FLIGHT_RECORDER_SIZE];
 static int flightRecorderHead = 0;
 static int flightRecorderTotal = 0;
 
+// Append to the in-memory flight-recorder ring only. Intentionally does NOT
+// touch the disk per call: on Mac OS 9 each fopen/fwrite/fclose triplet traps
+// into the File Manager and yields cooperatively, and Com_FlightRecord fires
+// from many points in startup. The ring is flushed by Com_DumpFlightRecord,
+// which Sys_Error and the Cmd-D panic-key handler call.
 void QDECL Com_FlightRecord( const char *fmt, ... ) {
     va_list argptr;
     char text[1024];
@@ -122,15 +127,6 @@ void QDECL Com_FlightRecord( const char *fmt, ... ) {
         flightRecorderBuffer[flightRecorderHead] = text[i];
         flightRecorderHead = (flightRecorderHead + 1) % FLIGHT_RECORDER_SIZE;
         if (flightRecorderTotal < FLIGHT_RECORDER_SIZE) flightRecorderTotal++;
-    }
-
-    // SYNCHRONOUS FILE APPEND
-    {
-        FILE *fp = fopen("flight_record.log", "a");
-        if (fp) {
-            fwrite(text, 1, len, fp);
-            fclose(fp);
-        }
     }
 }
 
