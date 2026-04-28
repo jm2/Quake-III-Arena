@@ -298,13 +298,20 @@ void Sys_Yield( void ) {
 
 // Return the HFS path of the directory containing the running application.
 //
-// Returns "Volume:Folder1:Folder2" with no trailing colon, because
-// FS_BuildOSPath glues ":qpath" onto the result and a double colon is
-// interpreted as parent-directory.
+// Primary path: GetCurrentProcess + GetProcessInformation gives us an FSSpec
+// for the running app, then we walk the dirID chain to the volume root and
+// build "Volume:Folder1:Folder2" with no trailing colon (FS_BuildOSPath glues
+// ":qpath" onto the result and a double colon is parent-directory).
 //
-// FS_BuildOSPath normalizes any forward slashes a caller might use, so the
-// engine's gamedir-relative paths (e.g. "/baseq3/q3key/") concatenate
-// correctly with this result.
+// Fallback: some Process Manager configurations (debuggers, certain
+// emulator paths, very early call sites before the app is fully registered)
+// hand back noErr from GetProcessInformation but never populate the FSSpec.
+// We detect that with a sanity check on (vRefNum, parID) and fall back to
+// GetVol, which is always correct for "the volume the app is running from"
+// even if it loses the per-folder structure.
+//
+// FS_BuildOSPath normalizes forward slashes, so caller paths like
+// "/baseq3/q3key/" concatenate correctly with the result either way.
 char *Sys_GetCwd( void ) {
     static char     cached[512];
     ProcessSerialNumber psn;
@@ -312,6 +319,7 @@ char *Sys_GetCwd( void ) {
     FSSpec          appSpec;
     CInfoPBRec      cipb;
     Str63           name;
+    Str255          volName;
     char            segment[64];
     char            scratch[512];
     OSErr           err;
@@ -328,6 +336,10 @@ char *Sys_GetCwd( void ) {
         Sys_Error( "Sys_GetCwd: GetCurrentProcess failed: %d", err );
     }
 
+    // Zero before the call. The Toolbox documents most fields as outputs but
+    // some Process Manager versions trip if input fields are uninitialized.
+    memset( &pinfo,   0, sizeof( pinfo ) );
+    memset( &appSpec, 0, sizeof( appSpec ) );
     pinfo.processInfoLength = sizeof( pinfo );
     pinfo.processName       = NULL;
     pinfo.processAppSpec    = &appSpec;
@@ -335,6 +347,28 @@ char *Sys_GetCwd( void ) {
     err = GetProcessInformation( &psn, &pinfo );
     if ( err != noErr ) {
         Sys_Error( "Sys_GetCwd: GetProcessInformation failed: %d", err );
+    }
+
+    // Sanity check the FSSpec. A real spec has vRefNum != 0 (volumes are
+    // numbered with negative shorts on Mac OS Classic) and parID > 0
+    // (fsRtParID = 1, fsRtDirID = 2; legitimate parIDs grow from there).
+    // If either is bogus, GetProcessInformation didn't actually populate
+    // the spec; fall back to GetVol.
+    if ( appSpec.vRefNum == 0 || appSpec.parID <= 0 ) {
+        Com_Printf( "Sys_GetCwd: Process Manager returned empty FSSpec "
+                    "(vRefNum=%d parID=%ld); falling back to GetVol\n",
+                    appSpec.vRefNum, appSpec.parID );
+        err = GetVol( volName, &vRefNum );
+        if ( err != noErr ) {
+            Sys_Error( "Sys_GetCwd: GetVol fallback failed: %d", err );
+        }
+        segLen = volName[0];
+        if ( segLen >= (int)sizeof( cached ) ) {
+            segLen = sizeof( cached ) - 1;
+        }
+        memcpy( cached, &volName[1], segLen );
+        cached[segLen] = 0;
+        return cached;
     }
 
     // Walk from the application's parent directory up to the volume root,
@@ -354,8 +388,8 @@ char *Sys_GetCwd( void ) {
 
         err = PBGetCatInfoSync( &cipb );
         if ( err != noErr ) {
-            Sys_Error( "Sys_GetCwd: PBGetCatInfoSync(dirID=%ld) failed: %d",
-                       dirID, err );
+            Sys_Error( "Sys_GetCwd: PBGetCatInfoSync(vRefNum=%d dirID=%ld) "
+                       "failed: %d", vRefNum, dirID, err );
         }
 
         segLen = name[0];
