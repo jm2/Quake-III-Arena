@@ -898,7 +898,14 @@ void *Sys_LoadDll( const char *name, char *fqpath, int (QDECL **entryPoint)(int,
 }
 void Sys_UnloadDll( void *dllHandle ) {}
 
-void Sys_SnapVector( float *v ) {}
+// Round velocity vectors for network determinism (trap_SnapVector from
+// bg_pmove). A no-op here causes client prediction to disagree with the
+// server. Matches the generic unix implementation (rint per component).
+void Sys_SnapVector( float *v ) {
+    v[0] = rint( v[0] );
+    v[1] = rint( v[1] );
+    v[2] = rint( v[2] );
+}
 void Sys_BeginProfiling( void ) {}
 qboolean Sys_CheckCD( void ) { return qfalse; }
 
