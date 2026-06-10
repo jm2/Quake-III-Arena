@@ -337,6 +337,7 @@ void Sys_SendKeyEvents (void);
 // mac_net.c
 void Sys_InitNetworking( void );
 void Sys_ShutdownNetworking( void );
+qboolean Sys_GetPacket( netadr_t *net_from, msg_t *net_message );
 
 // mac_input.c
 void Sys_InitInput( void );
@@ -344,6 +345,9 @@ void Sys_ShutdownInput( void );
 void Sys_Input( void );
 
 extern	qboolean			inputActive;
+extern	qboolean			inputSystemSuspended;
+void Sys_SuspendInput( void );
+void Sys_ResumeInput( void );
 
 // mac_glimp.c
 extern glconfig_t glConfig;
@@ -359,6 +363,7 @@ qboolean Sys_ConsoleEvent( EventRecord *event );
 void Debug_Breadcrumb( int color );
 
 void Sys_LogPrintf( const char *fmt, ... );
+void Sys_LogRecord( const char *text );
 void Sys_DumpRetroLogs( const char *fileName );
 
 

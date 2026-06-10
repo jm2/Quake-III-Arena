@@ -76,11 +76,17 @@ static int eventTail = 0;
 void Sys_QueEvent( int time, sysEventType_t type, int value, int value2, int ptrLength, void *ptr ) {
     sysEvent_t *ev;
     int next = (eventHead + 1) % MAX_MAC_EVENTS;
-    
+
     if (next == eventTail) {
         return; // Overflow
     }
-    
+
+    // time == 0 means "now" (contract from the other ports); InputSprocket
+    // mouse/button events are queued with 0 and were getting timestamp 0.
+    if ( !time ) {
+        time = Sys_Milliseconds();
+    }
+
     ev = &eventQue[eventHead];
     ev->evTime = time;
     ev->evType = type;
@@ -112,20 +118,12 @@ static int retroLogTotal = 0;
 // cooperatively, and Sys_LogPrintf is called many times per frame from
 // Sys_GetEvent. The ring is flushed to disk by Sys_DumpRetroLogs, which
 // is called from Sys_Quit, Sys_Error, and the Cmd-D panic-key handler.
-void Sys_LogPrintf( const char *fmt, ... ) {
-    va_list argptr;
-    char text[1024];
-    int len;
+// Append raw text to the in-memory ring only (no console output). Used by
+// Sys_Print so that ALL engine console output reaches the crash-dump ring
+// even when the on-screen console is hidden (viewlog 0).
+void Sys_LogRecord( const char *text ) {
+    int len = strlen( text );
     int i;
-
-    va_start( argptr, fmt );
-    len = vsprintf( text, fmt, argptr );
-    va_end( argptr );
-
-    printf("%s", text);
-
-    if ( len < 0 ) return;
-    if ( len > sizeof(text)-1 ) len = sizeof(text)-1;
 
     for ( i = 0; i < len; i++ ) {
         retroLogBuffer[retroLogHead] = text[i];
@@ -134,9 +132,21 @@ void Sys_LogPrintf( const char *fmt, ... ) {
     }
 }
 
+void Sys_LogPrintf( const char *fmt, ... ) {
+    va_list argptr;
+    char text[1024];
+
+    va_start( argptr, fmt );
+    vsnprintf( text, sizeof(text), fmt, argptr );
+    va_end( argptr );
+
+    printf("%s", text);
+    Sys_LogRecord( text );
+}
+
 void Sys_DumpRetroLogs( const char *fileName ) {
     FILE *fp;
-    int i, idx, count;
+    int idx, count;
 
     fp = fopen( fileName, "wb" );
     if ( !fp ) {
@@ -144,17 +154,17 @@ void Sys_DumpRetroLogs( const char *fileName ) {
         return;
     }
 
+    // Write the ring in at most two contiguous spans (per-byte fwrite took
+    // a File Manager trap per character).
     if (retroLogTotal < RETRO_LOG_SIZE) {
         idx = 0;
         count = retroLogTotal;
+        fwrite( &retroLogBuffer[idx], 1, count, fp );
     } else {
         idx = retroLogHead;
         count = RETRO_LOG_SIZE;
-    }
-
-    for ( i = 0; i < count; i++ ) {
-        fwrite( &retroLogBuffer[idx], 1, 1, fp );
-        idx = (idx + 1) % RETRO_LOG_SIZE;
+        fwrite( &retroLogBuffer[idx], 1, RETRO_LOG_SIZE - idx, fp );
+        fwrite( &retroLogBuffer[0], 1, idx, fp );
     }
 
     fclose( fp );
@@ -211,6 +221,28 @@ sysEvent_t Sys_GetEvent( void ) {
     // Pump InputSprocket events (mouse)
     Sys_Input();
 
+    // Check for network packets and queue them as SE_PACKET (same pattern
+    // as unix_main.c). Without this, Sys_GetPacket had no caller at all and
+    // the engine could never receive UDP traffic.
+    {
+        static byte sys_packetReceived[MAX_MSGLEN];
+        msg_t       netmsg;
+        netadr_t    adr;
+
+        MSG_Init( &netmsg, sys_packetReceived, sizeof( sys_packetReceived ) );
+        if ( Sys_GetPacket( &adr, &netmsg ) ) {
+            netadr_t  *buf;
+            int       len;
+
+            // copy out to a separate buffer for queuing; freed by Com_EventLoop
+            len = sizeof( netadr_t ) + netmsg.cursize;
+            buf = Z_Malloc( len );
+            *buf = adr;
+            memcpy( buf+1, netmsg.data, netmsg.cursize );
+            Sys_QueEvent( 0, SE_PACKET, 0, 0, len, buf );
+        }
+    }
+
     if (eventHead == eventTail) {
         memset( &ev, 0, sizeof(ev) );
         ev.evType = SE_NONE;
@@ -238,10 +270,18 @@ int		sys_msecBase;
 int		sys_lastEventTic;
 
 void Sys_Init( void ) {
-    Com_FlightRecord("Sys_Init: Is this on? Flight Recorder Start.\n");
-    Debug_Breadcrumb(205); // redColor
+    Com_FlightRecord("Sys_Init: Flight Recorder Start.\n");
     Sys_InitConsole();
-    Com_FlightRecord("Sys_Init: Console initialized.\n");
+
+    // The system event mask excludes key-up events by default on classic
+    // Mac OS; without this, DoKeyUp never fires and every key/+action
+    // latches down permanently.
+    SetEventMask( everyEvent );
+
+    // Read every frame in Sys_SendKeyEvents once DSp fullscreen is active;
+    // was declared but never registered (NULL deref in fullscreen).
+    sys_waitNextEvent = Cvar_Get( "sys_waitNextEvent", "0", CVAR_ARCHIVE );
+
     Sys_InitNetworking();
     Sys_InitInput();
 }
@@ -249,14 +289,13 @@ void Sys_Init( void ) {
 void Sys_Quit( void ) {
     Sys_ShutdownInput();
     Sys_ShutdownNetworking();
-    
-    // DEBUG: Hook to catch startup errors
-    // Use implicit declaration for SysBeep as we are lazy with includes for this debug hack
-    // SysBeep(30); 
-    
-    Sys_LogPrintf("\nSys_Quit called. Waiting for input (press Return) to exit...\n");
-    getchar();
-    
+
+    // Persist the session log instead of blocking in getchar(): under a
+    // captured DSp display (or with the console hidden) the old prompt
+    // could never be seen or answered, so every quit and fatal error
+    // presented as a machine hang.
+    Sys_DumpRetroLogs( "retro68_console.txt" );
+
     exit( 0 );
 }
 
@@ -265,7 +304,7 @@ void Sys_Error( const char *error, ... ) {
     char    text[1024];
 
     va_start( argptr, error );
-    vsprintf( text, error, argptr );
+    vsnprintf( text, sizeof(text), error, argptr );
     va_end( argptr );
 
     Com_FlightRecord("Sys_Error: %s\n", text);
@@ -443,9 +482,14 @@ char *Sys_DefaultBasePath( void ) {
 }
 
 // Stubs for missing symbols
+// Streamed-file shims: same synchronous fallback the unix port uses (no
+// background reader thread). The old stubs returned 0 from StreamedRead,
+// which broke every RoQ cinematic and streamed-music read.
 void Sys_BeginStreamedFile( int handle, int readAhead ) {}
 void Sys_EndStreamedFile( int handle ) {}
-int Sys_StreamedRead( void *buffer, int size, int count, int handle ) { return 0; }
+int Sys_StreamedRead( void *buffer, int size, int count, int handle ) {
+    return FS_Read( buffer, size * count, handle );
+}
 void Sys_ShowIP( void ) {}
 char *Sys_GetClipboardData( void ) { return NULL; }
 qboolean Sys_LowPhysicalMemory( void ) { return qfalse; }
@@ -950,7 +994,9 @@ void Sys_Mkdir( const char *path ) {
 }
 char *Sys_DefaultInstallPath( void ) { return Sys_GetCwd(); }
 char *Sys_DefaultHomePath( void ) { return Sys_GetCwd(); }
-void Sys_StreamSeek( int handle, int offset, int origin ) {}
+void Sys_StreamSeek( int handle, int offset, int origin ) {
+    FS_Seek( handle, offset, origin );
+}
 
 // VM Stubs
 void VM_Compile( void *vm, void *header ) {}
@@ -968,10 +1014,12 @@ int main( int argc, char **argv ) {
         if (i < argc - 1) strcat(commandLine, " ");
     }
 
-    Sys_LogPrintf("main: Sys_Init\n");
-    Sys_Init();
-    Sys_LogPrintf("main: Sys_Init done\n");
-    
+    // Note: Sys_Init() is called by Com_Init() after the cvar/zone systems
+    // exist. Calling it here too (as this port once did) dereferenced the
+    // NULL com_dedicated cvar in Sys_InitInput and double-initialized Open
+    // Transport, leaking an endpoint and shifting the UDP port to 27961.
+
+
     Sys_LogPrintf("main: Com_Init\n");
     Com_Init( commandLine );
     Sys_LogPrintf("main: Com_Init done\n");

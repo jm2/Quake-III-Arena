@@ -42,10 +42,15 @@ full screen and the dedicated console window is hidden.
 ================
 */
 void	Sys_Print( const char *text ) {
+	// Always record into the crash-dump ring buffer, even with the
+	// on-screen console hidden (viewlog 0) — otherwise the post-mortem
+	// dumps contain none of the engine's console output.
+	Sys_LogRecord( text );
+
 	if ( !consoleDisplayed ) {
 		return;
 	}
-	Sys_LogPrintf( "%s", text );
+	printf( "%s", text );
 }
 
 
