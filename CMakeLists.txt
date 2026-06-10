@@ -18,6 +18,14 @@ option(BUILD_TEAM_ARENA "Build the Quake3_TeamArena (mission pack) executable" O
 # under any optimization level.
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -g -fno-strict-aliasing")
 
+# CMake appends CMAKE_C_FLAGS_<CONFIG> *after* CMAKE_C_FLAGS on the compile
+# line, and the Release defaults are "-O3 -DNDEBUG" — which silently overrode
+# the -O0 -g above (the last -O flag wins). Clear the per-config flags so the
+# debug-friendly flags actually take effect; build_mac.sh passes
+# -DCMAKE_BUILD_TYPE=Release.
+set(CMAKE_C_FLAGS_RELEASE "")
+set(CMAKE_CXX_FLAGS_RELEASE "")
+
 # Global definitions
 add_definitions(-D__MACOS__ -D__POWERPC__ -DBOTLIB -DQ3_STATIC)
 add_definitions(-DQUAKEDATA="/Quake3/") # Default path, adjustable
