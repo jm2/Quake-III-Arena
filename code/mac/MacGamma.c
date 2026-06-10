@@ -198,6 +198,8 @@ Ptr GetSystemGammas (void)
 	GDHandle hGDevice;
 	
 	pSysGammaOut = (precSystemGamma) NewPtr (sizeof (recSystemGamma)); // allocate for structure
+	if (!pSysGammaOut)												// was only checked after the deref below
+		return NULL;
 	
 	hGDevice = GetDeviceList ();							// top of device list
 	do																// iterate
@@ -207,7 +209,7 @@ Ptr GetSystemGammas (void)
 	} while (hGDevice);
 	
 	pSysGammaOut->devGamma = (precDeviceGamma *) NewPtr (sizeof (precDeviceGamma) * devCount); // allocate for array of pointers to device records
-	if (pSysGammaOut)
+	if (pSysGammaOut->devGamma)
 	{
 		pSysGammaOut->numDevices = devCount;						// stuff count
 		
