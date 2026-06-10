@@ -5,6 +5,7 @@
 
 qboolean			inputActive;
 qboolean			inputSuspended;
+qboolean			inputSystemSuspended;	// set by DoOSEvent on suspend/resume
 
 #define	MAX_DEVICES		100
 ISpDeviceReference	devices[MAX_DEVICES];
@@ -172,6 +173,11 @@ void Sys_Input( void ) {
 	// 	}
 	// }
 
+	// while the app is suspended (cmd-tab away), leave ISp released
+	if ( inputSystemSuspended ) {
+		return;
+	}
+
 	Sys_ResumeInput();
 
 	// send all button events
@@ -185,15 +191,17 @@ void Sys_Input( void ) {
 				if ( !wasEvent ) {
 					break;
 				}
-				eventCount++;
-				// Safety break to prevent infinite loop
-				if (eventCount > 50) {
-					break;
-				}
 				if ( event.data ) {
 					Sys_QueEvent( 0, SE_KEY, K_MOUSE1 + button - 2, 1, 0, NULL );
 				} else {
 					Sys_QueEvent( 0, SE_KEY, K_MOUSE1 + button - 2, 0, 0, NULL );
+				}
+				// Safety break to prevent infinite loop. Checked AFTER
+				// queueing: the old order discarded the event it had just
+				// fetched, which could permanently latch a mouse button.
+				eventCount++;
+				if (eventCount > 50) {
+					break;
 				}
 			}
 		}

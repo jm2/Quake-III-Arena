@@ -111,46 +111,54 @@ void DoMenuAdjust(void)
 {
 }
 
+// 0 = no Quake key for this virtual key (previously the literal '?', which
+// made unmapped keys type/bind a question mark).
 int	vkeyToQuakeKey[256] = {
 /*0x00*/	'a', 's', 'd', 'f', 'h', 'g', 'z', 'x',
-/*0x08*/	'c', 'v', '?', 'b', 'q', 'w', 'e', 'r',
+/*0x08*/	'c', 'v', 0, 'b', 'q', 'w', 'e', 'r',
 /*0x10*/	'y', 't', '1', '2', '3', '4', '6', '5',
 /*0x18*/	'=', '9', '7', '-', '8', '0', ']', 'o',
 /*0x20*/	'u', '[', 'i', 'p', K_ENTER, 'l', 'j', '\'',
 /*0x28*/	'k', ';', '\\', ',', '/', 'n', 'm', '.',
-/*0x30*/	K_TAB, K_SPACE, '`', K_BACKSPACE, '?', K_ESCAPE, '?', K_COMMAND,
-/*0x38*/	K_SHIFT, K_CAPSLOCK, K_ALT, K_CTRL, '?', '?', '?', '?',
-/*0x40*/	'?', K_KP_DEL, '?', K_KP_STAR, '?', K_KP_PLUS, '?', K_KP_NUMLOCK,
-/*0x48*/	'?', '?', '?', K_KP_SLASH, K_KP_ENTER, '?', K_KP_MINUS, '?',
-/*0x50*/	'?', K_KP_EQUALS, K_KP_INS, K_KP_END, K_KP_DOWNARROW, K_KP_PGDN, K_KP_LEFTARROW, K_KP_5,
-/*0x58*/	K_KP_RIGHTARROW, K_KP_HOME, '?', K_KP_UPARROW, K_KP_PGUP, '?', '?', '?',
-/*0x60*/	K_F5, K_F6, K_F7, K_F3, K_F8, K_F9, '?', K_F11,
-/*0x68*/	'?', K_F13, '?', K_F14, '?', K_F10, '?', K_F12,
-/*0x70*/	'?', K_F15, K_INS, K_HOME, K_PGUP, K_DEL, K_F4, K_END,	
+/*0x30*/	K_TAB, K_SPACE, '`', K_BACKSPACE, 0, K_ESCAPE, 0, K_COMMAND,
+/*0x38*/	K_SHIFT, K_CAPSLOCK, K_ALT, K_CTRL, 0, 0, 0, 0,
+/*0x40*/	0, K_KP_DEL, 0, K_KP_STAR, 0, K_KP_PLUS, 0, K_KP_NUMLOCK,
+/*0x48*/	0, 0, 0, K_KP_SLASH, K_KP_ENTER, 0, K_KP_MINUS, 0,
+/*0x50*/	0, K_KP_EQUALS, K_KP_INS, K_KP_END, K_KP_DOWNARROW, K_KP_PGDN, K_KP_LEFTARROW, K_KP_5,
+/*0x58*/	K_KP_RIGHTARROW, K_KP_HOME, 0, K_KP_UPARROW, K_KP_PGUP, 0, 0, 0,
+/*0x60*/	K_F5, K_F6, K_F7, K_F3, K_F8, K_F9, 0, K_F11,
+/*0x68*/	0, K_F13, 0, K_F14, 0, K_F10, 0, K_F12,
+/*0x70*/	0, K_F15, K_INS, K_HOME, K_PGUP, K_DEL, K_F4, K_END,
 /*0x78*/	K_F2, K_PGDN, K_F1, K_LEFTARROW, K_RIGHTARROW, K_DOWNARROW, K_UPARROW, K_POWER
 };
 
 void DoKeyDown(EventRecord *event)
-{ 
+{
 	int		myCharCode;
 	int		myKeyCode;
-	
+	int		quakeKey;
+
 	myCharCode	= BitAnd(event->message,charCodeMask);
 	myKeyCode = ( event->message & keyCodeMask ) >> 8;
 
-	Sys_QueEvent( Sys_MsecForMacEvent(), SE_KEY, vkeyToQuakeKey[ myKeyCode ], 1, 0, NULL );
+	quakeKey = vkeyToQuakeKey[ myKeyCode ];
+	if ( quakeKey ) {
+		Sys_QueEvent( Sys_MsecForMacEvent(), SE_KEY, quakeKey, 1, 0, NULL );
+	}
 	Sys_QueEvent( Sys_MsecForMacEvent(), SE_CHAR, myCharCode, 0, 0, NULL );
 }
 
 void DoKeyUp(EventRecord *event)
-{ 
-	int		myCharCode;
+{
 	int		myKeyCode;
-	
-	myCharCode	= BitAnd(event->message,charCodeMask);
+	int		quakeKey;
+
 	myKeyCode = ( event->message & keyCodeMask ) >> 8;
 
-	Sys_QueEvent( Sys_MsecForMacEvent(), SE_KEY, vkeyToQuakeKey[ myKeyCode ], 0, 0, NULL );
+	quakeKey = vkeyToQuakeKey[ myKeyCode ];
+	if ( quakeKey ) {
+		Sys_QueEvent( Sys_MsecForMacEvent(), SE_KEY, quakeKey, 0, 0, NULL );
+	}
 }
 
 /*
@@ -179,7 +187,7 @@ void Sys_ModifierEvents( int modifiers ) {
 	};
 	
 	changed = modifiers ^ oldModifiers;
-	
+
 	for ( i = 0 ; keys[i].bit != -1 ; i++ ) {
 		// if we have input sprockets running, ignore mouse events we
 		// get from the debug passthrough driver
@@ -188,11 +196,17 @@ void Sys_ModifierEvents( int modifiers ) {
 		}
 
 		if ( changed & keys[i].bit ) {
-			Sys_QueEvent( Sys_MsecForMacEvent(), 
-			SE_KEY, keys[i].keyCode, !!( modifiers & keys[i].bit ), 0, NULL );	
+			int down = !!( modifiers & keys[i].bit );
+			// btnState (bit 0x80) is SET when the mouse button is UP,
+			// opposite to the modifier-key bits.
+			if ( keys[i].bit == 128 ) {
+				down = !down;
+			}
+			Sys_QueEvent( Sys_MsecForMacEvent(),
+			SE_KEY, keys[i].keyCode, down, 0, NULL );
 		}
 	}
-	
+
 	oldModifiers = modifiers;
 }
 
@@ -204,7 +218,19 @@ void DoDiskEvent(EventRecord	*event)
 
 void	DoOSEvent(EventRecord	*event)
 {
-
+	// Suspend/resume: release InputSprocket and show the cursor when the
+	// user switches away (cmd-tab to Finder/console), re-grab on return.
+	// Previously empty, which left the cursor hidden and ISp capturing
+	// input while the game was in the background.
+	if ( ( ( event->message >> 24 ) & 0xFF ) == suspendResumeMessage ) {
+		if ( event->message & resumeFlag ) {
+			inputSystemSuspended = qfalse;
+			Sys_ResumeInput();
+		} else {
+			inputSystemSuspended = qtrue;
+			Sys_SuspendInput();
+		}
+	}
 }
 // mac_event.c
 
@@ -244,32 +270,27 @@ void DoUpdate(WindowPtr	myWindow)
 // DoUpdate
 //
 void DoUpdate(WindowPtr	myWindow)
-{ 
+{
 	GrafPtr		origPort;
 	AGLContext	ctx;
-    
+
     if ( !myWindow ) {
         return;
     }
 
-    // DEBUG: Identify who is requesting updates
-    // Sys_LogPrintf("DoUpdate: myWindow=%p, sys_gl.drawable=%p\n", myWindow, sys_gl.drawable);
-
 	GetPort(&origPort);
 	SetPort(myWindow);
-	BeginUpdate(myWindow);	
+	BeginUpdate(myWindow);
 	EndUpdate(myWindow);
-	
-    /*
-	// Only update context if one exists and we are updating the game window
-	ctx = aglGetCurrentContext();
 
-	// If we just updated the game window, we might need to update the AGL context
+	// Keep AGL in sync when the game window itself took the update. This
+	// was disabled while event.message held garbage window pointers; that
+	// was the mac68k struct-packing bug, fixed at the header level now.
+	ctx = aglGetCurrentContext();
 	if (ctx != NULL && (void*)myWindow == (void*)sys_gl.drawable) {
 		aglUpdateContext(ctx);
 	}
-    */
-	
+
 	SetPort(origPort);
 }
 
