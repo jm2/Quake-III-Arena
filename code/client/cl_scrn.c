@@ -43,9 +43,6 @@ void SCR_DrawNamedPic( float x, float y, float width, float height, const char *
 
 	assert( width != 0 );
 
-    // Log what we are trying to draw
-    Com_Printf("SCR_DrawNamedPic: loading '%s'\n", picname);
-
 	hShader = re.RegisterShader( picname );
 	SCR_AdjustFrom640( &x, &y, &width, &height );
 	re.DrawStretchPic( x, y, width, height, 0, 0, 1, 1, hShader );
@@ -481,9 +478,6 @@ text to the screen.
 */
 void SCR_UpdateScreen( void ) {
 	static int	recursive;
-    static int updateLogCount = 0;
-
-    int isFullscreen = (uivm ? VM_Call( uivm, UI_IS_FULLSCREEN ) : 0);
 
 	if ( !scr_initialized ) {
 		return;				// not initialized yet
@@ -502,9 +496,12 @@ void SCR_UpdateScreen( void ) {
 		SCR_DrawScreenField( STEREO_CENTER );
 	}
     
-    // if the menu is going to cover the entire screen, we
-	// don't need to render anything under it
-	if ( !VM_Call( uivm, UI_IS_FULLSCREEN )) {
+	// if the menu is going to cover the entire screen, we
+	// don't need to render anything under it.
+	// uivm can be NULL during startup / vid_restart; stock code had this
+	// block behind SCR_DrawScreenField's !uivm early-return, which the
+	// restructure lost — VM_Call(NULL) is a fatal error.
+	if ( uivm && !VM_Call( uivm, UI_IS_FULLSCREEN )) {
 		switch( cls.state ) {
 		default:
 			Com_Error( ERR_FATAL, "SCR_DrawScreenField: bad cls.state" );

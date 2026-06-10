@@ -789,18 +789,14 @@ CLUI_GetCDKey
 */
 static void CLUI_GetCDKey( char *buf, int buflen ) {
 	cvar_t	*fs;
-    printf("CLUI_GetCDKey: Start\n"); fflush(stdout);
 	fs = Cvar_Get ("fs_game", "", CVAR_INIT|CVAR_SYSTEMINFO );
 	if (UI_usesUniqueCDKey() && fs && fs->string[0] != 0) {
-        printf("CLUI_GetCDKey: Using unique key\n"); fflush(stdout);
 		Com_Memcpy( buf, &cl_cdkey[16], 16);
 		buf[16] = 0;
 	} else {
-        printf("CLUI_GetCDKey: Using base key\n"); fflush(stdout);
 		Com_Memcpy( buf, cl_cdkey, 16);
 		buf[16] = 0;
 	}
-    printf("CLUI_GetCDKey: End\n"); fflush(stdout);
 }
 
 
@@ -960,11 +956,7 @@ int CL_UISystemCalls( int *args ) {
 		return re.RegisterSkin( VMA(1) );
 
 	case UI_R_REGISTERSHADERNOMIP:
-        {
-            qhandle_t h = re.RegisterShaderNoMip( VMA(1) );
-            Sys_LogPrintf("UI_R_RegisterShaderNoMip: '%s' -> %d\n", (char*)VMA(1), h);
-            return h;
-        }
+		return re.RegisterShaderNoMip( VMA(1) );
 
 	case UI_R_CLEARSCENE:
 		re.ClearScene();
@@ -991,14 +983,8 @@ int CL_UISystemCalls( int *args ) {
 		return 0;
 
 	case UI_R_DRAWSTRETCHPIC:
-        {
-            float x=VMF(1), y=VMF(2), w=VMF(3), h=VMF(4);
-            qhandle_t shader = args[9];
-            // Log ALL draw calls for now to see if ANYTHING is drawing
-            Sys_LogPrintf("UI_R_DrawStretchPic: %.0fx%.0f at (%.0f,%.0f) shader=%d\n", w, h, x, y, shader);
-            re.DrawStretchPic( x, y, w, h, VMF(5), VMF(6), VMF(7), VMF(8), shader );
-            return 0;
-        }
+		re.DrawStretchPic( VMF(1), VMF(2), VMF(3), VMF(4), VMF(5), VMF(6), VMF(7), VMF(8), args[9] );
+		return 0;
 
   case UI_R_MODELBOUNDS:
 		re.ModelBounds( args[1], VMA(2), VMA(3) );
