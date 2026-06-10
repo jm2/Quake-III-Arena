@@ -21,36 +21,40 @@ static	InetInterfaceInfo	sys_inetInfo[MAX_IPS];
 
 static	TUDErr	uderr;
 
-void RcvUDErr( void ) {
+void RcvUDErr( EndpointRef ep ) {
 	memset( &uderr, 0, sizeof( uderr ) );
 	uderr.addr.maxlen = 0;
 	uderr.opt.maxlen = 0;
-	OTRcvUDErr( endpoint, &uderr );
+	OTRcvUDErr( ep, &uderr );
 }
 
-void HandleOTError( int err, const char *func ) {
+// Takes the endpoint the error happened on: previously this always ran
+// OTLook on the main game endpoint, so look events latched on the resolver
+// endpoint were never cleared and DNS could wedge permanently after its
+// first error.
+void HandleOTError( EndpointRef ep, int err, const char *func ) {
 	int		r;
 	static int lastErr;
 
 	if ( err != lastErr ) {
 		Com_Printf( "%s: error %i\n", func, err );
 	}
-	
+
 	// if we don't call OTLook, things wedge
-	r = OTLook( endpoint );
+	r = OTLook( ep );
 	if ( err != lastErr ) {
 		Com_DPrintf( "%s: OTLook %i\n", func, r );
 	}
 
 	switch( r ) {
 	case T_UDERR:
-		RcvUDErr();
+		RcvUDErr( ep );
 		if ( err != lastErr ) {
-			Com_DPrintf( "%s: OTRcvUDErr %i\n", func, uderr.error );				
+			Com_DPrintf( "%s: OTRcvUDErr %i\n", func, uderr.error );
 		}
 		break;
 	default:
-//		Com_Printf( "%s: Unknown OTLook error %i\n", func, r );				
+//		Com_Printf( "%s: Unknown OTLook error %i\n", func, r );
 		break;
 	}
 	lastErr = err;	// don't spew tons of messages
@@ -68,7 +72,7 @@ pascal void NotifyProc(void* contextPtr, OTEventCode code,
 		endpoint = cookie;
 		break;
 	case T_UDERR:
-		RcvUDErr();
+		RcvUDErr( endpoint );
 		break;
 	}
 }
@@ -385,7 +389,7 @@ qboolean	Sys_StringToAdr( const char *s, netadr_t *a ) {
 	                           
 	err = OTResolveAddress( resolverEndpoint, &in, &out, 10000 );
 	if ( err ) {
-		HandleOTError( err, "Sys_StringToAdr" );
+		HandleOTError( resolverEndpoint, err, "Sys_StringToAdr" );
 		return qfalse;
 	}
 	
@@ -438,7 +442,7 @@ void Sys_SendPacket( int length, const void *data, netadr_t to ) {
 	
 	err = OTSndUData( endpoint, &d );
 	if ( err ) {
-		HandleOTError( err, "Sys_SendPacket" );
+		HandleOTError( endpoint, err, "Sys_SendPacket" );
 	}
 }
 
@@ -482,7 +486,7 @@ qboolean	Sys_GetPacket ( netadr_t *net_from, msg_t *net_message ) {
 		if ( err == kOTNoDataErr ) {
 			return false;
 		}
-		HandleOTError( err, "Sys_GetPacket" );
+		HandleOTError( endpoint, err, "Sys_GetPacket" );
 		return qfalse;
 	}
 
