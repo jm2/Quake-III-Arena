@@ -902,7 +902,45 @@ void Sys_SnapVector( float *v ) {}
 void Sys_BeginProfiling( void ) {}
 qboolean Sys_CheckCD( void ) { return qfalse; }
 
-void Sys_Mkdir( const char *path ) {}
+// Create a directory from an HFS path ("Disk:Folder:NewDir", no trailing
+// colon). Called by FS_CreatePath with successively longer path prefixes;
+// the first prefix is the bare volume name ("Disk", no colon), which must
+// not be created — FSMakeFSSpec would treat it as a leaf name relative to
+// the current directory and we would create a stray folder named after
+// the volume. Was a no-op, which silently broke q3config.cfg / q3key
+// persistence whenever a directory was missing.
+void Sys_Mkdir( const char *path ) {
+    FSSpec  spec;
+    Str255  ppath;
+    long    createdDirID;
+    OSErr   err;
+    int     len;
+
+    if ( !strchr( path, ':' ) ) {
+        return;     // bare volume name from FS_CreatePath; nothing to create
+    }
+
+    len = strlen( path );
+    if ( len > 255 ) {
+        len = 255;
+    }
+    ppath[0] = len;
+    memcpy( &ppath[1], path, len );
+
+    err = FSMakeFSSpec( 0, 0, ppath, &spec );
+    if ( err == noErr ) {
+        return;     // already exists
+    }
+    if ( err != fnfErr ) {
+        Com_FlightRecord( "Sys_Mkdir: FSMakeFSSpec('%s') failed: %d\n", path, err );
+        return;
+    }
+
+    err = FSpDirCreate( &spec, smSystemScript, &createdDirID );
+    if ( err != noErr && err != dupFNErr ) {
+        Com_FlightRecord( "Sys_Mkdir: FSpDirCreate('%s') failed: %d\n", path, err );
+    }
+}
 char *Sys_DefaultInstallPath( void ) { return Sys_GetCwd(); }
 char *Sys_DefaultHomePath( void ) { return Sys_GetCwd(); }
 void Sys_StreamSeek( int handle, int offset, int origin ) {}
