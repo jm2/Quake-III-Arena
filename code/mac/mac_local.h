@@ -281,6 +281,14 @@
 	#define kAboutDialog	128
 
 
+// Compile-time guard: these sizes are only correct when the 68k-packed
+// (#pragma pack(2)) Universal Interfaces are in effect. If this fails to
+// compile, a natural-alignment copy of the headers (e.g. the raw MPW
+// CIncludes, whose '#pragma options align=mac68k' GCC ignores) has crept
+// into the include path, and every Toolbox call would corrupt memory.
+typedef char assert_EventRecord_packed[ (sizeof(EventRecord) == 16) ? 1 : -1 ];
+typedef char assert_FSSpec_packed[ (sizeof(FSSpec) == 70) ? 1 : -1 ];
+
 // mac_main.c
 extern	int		sys_ticBase;
 extern	int		sys_msecBase;

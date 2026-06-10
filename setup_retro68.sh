@@ -218,6 +218,23 @@ bash "$SOURCE_DIR/build-toolchain.bash" --prefix="$INSTALL_DIR" "${SKIP_FLAGS[@]
 # 6. Post-Build Fixes
 echo "Step 6: Post-Build Fixes..."
 SDK_DEST="$SOURCE_DIR/InterfacesAndLibraries"
+
+# Copy the OpenGL SDK headers into the PREPARED toolchain include dir.
+# The project must compile ONLY against prepared headers: the raw CIncludes
+# use '#pragma options align=mac68k', which powerpc-apple-macos GCC silently
+# ignores, so every Toolbox struct (EventRecord, FSSpec, ...) gets natural
+# alignment instead of the 68k packing InterfaceLib expects — corrupting all
+# Toolbox calls. Retro68's prepare-headers rewrites Apple interfaces to
+# '#pragma pack(push,2)' but does not know about the injected OpenGL SDK, so
+# we copy those (pragma-free, alignment-safe) headers in here ourselves.
+echo "Installing OpenGL headers into prepared include dir..."
+PPC_INC="$INSTALL_DIR/powerpc-apple-macos/include"
+if [ -d "$PPC_INC" ]; then
+    for h in gl.h glu.h glm.h agl.h aglContext.h aglMacro.h aglRenderers.h \
+             glext.h GL_gl.h GL_glext.h GL_glut.h gliContext.h gliDispatch.h glut.h; do
+        [ -f "$SDK_DEST/Interfaces/CIncludes/$h" ] && cp "$SDK_DEST/Interfaces/CIncludes/$h" "$PPC_INC/"
+    done
+fi
 STUB_SRC="$SDK_DEST/SharedLibraries/OpenGLLibraryStub"
 STUB_RSRC="$SDK_DEST/SharedLibraries/OpenGLLibraryStub.rsrc"
 STUB_AD="$SDK_DEST/SharedLibraries/%OpenGLLibraryStub"

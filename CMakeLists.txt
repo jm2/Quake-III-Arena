@@ -50,11 +50,16 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/code/botlib
     ${CMAKE_SOURCE_DIR}/code/mac
     ${CMAKE_SOURCE_DIR}/code
-    "${CMAKE_SOURCE_DIR}/OpenGL SDK 1.2/Headers"
-    "${CMAKE_SOURCE_DIR}/tools/MPW/Interfaces&Libraries/Interfaces/CIncludes"
-    "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Interfaces/CIncludes"
     ${CMAKE_SOURCE_DIR}/code/game
 )
+# Deliberately NO include path into tools/Retro68-src/InterfacesAndLibraries:
+# those raw MPW headers rely on '#pragma options align=mac68k', which this
+# GCC silently ignores — Toolbox structs (EventRecord 20 vs 16 bytes, FSSpec
+# 72 vs 70) compile misaligned and every Toolbox call corrupts memory. The
+# toolchain's prepared headers (powerpc-apple-macos/include, '#pragma
+# pack(push,2)') are on the default search path and are the only safe set;
+# setup_retro68.sh step 6 copies the OpenGL SDK headers in there too.
+# mac_local.h carries compile-time sizeof() guards against regressions.
 
 # Source lists
 file(GLOB COMMON_SRCS code/qcommon/*.c)
