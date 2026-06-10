@@ -20,7 +20,12 @@ option(BUILD_TEAM_ARENA "Build the Quake3_TeamArena (mission pack) executable" O
 #       relocations. Strip after MakePEF if at all.
 # Q3 type-puns aggressively, so -fno-strict-aliasing is required for correctness
 # under any optimization level.
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -g -fno-strict-aliasing")
+# -std=gnu99: GCC 16 defaults to C23, where 'false'/'true' are keywords
+# (colliding with the enum in Universal Interfaces MacTypes.h) and limits.h
+# defines CHAR_WIDTH (colliding with ui_shared.h). Q3 is C89/GNU89-era code.
+# -fgnu89-inline: ID_INLINE is plain 'inline'; C99 inline semantics emit no
+# external definition (undefined refs to AAS_*_inline at -O0), GNU89 does.
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -fgnu89-inline -O0 -g -fno-strict-aliasing")
 
 # CMake appends CMAKE_C_FLAGS_<CONFIG> *after* CMAKE_C_FLAGS on the compile
 # line, and the Release defaults are "-O3 -DNDEBUG" — which silently overrode
