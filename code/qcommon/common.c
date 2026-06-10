@@ -2784,7 +2784,6 @@ void Com_Frame( void ) {
 	int		msec, minMsec;
 	static int	lastTime;
 	int key;
-	int		com_frameTime;
 	int		timeBeforeFirstEvents;
 	int           timeBeforeServer;
 	int           timeBeforeEvents;
@@ -2793,12 +2792,6 @@ void Com_Frame( void ) {
 
 	frameNum++;
 	if (frameNum <= 5) { Sys_LogPrintf("Com_Frame: frame %d\n", frameNum); }
-	
-	// DEBUG SAFETY: Exit after 20 frames to prevent hard freeze
-	if (frameNum > 20) {
-		Sys_LogPrintf("SAFETY EXIT: 20 frames completed, exiting cleanly\n");
-		Sys_Quit();
-	}
 
 	if ( setjmp (abortframe) ) {
 		return;			// an ERR_DROP was thrown
