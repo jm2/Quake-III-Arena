@@ -2031,7 +2031,7 @@ void CL_Frame ( int msec ) {
 		// if we have just been disconnected, fall back to the main menu
 		// this can happen if the client is kicked from a server
 		// or the server crashes
-        // Sys_LogPrintf("CL_Frame: Disconnected, forcing UI_SET_ACTIVE_MENU\n");
+		S_StopAllSounds();	// stock behavior; no-ops while sound is disabled
 		if ( uivm ) {
 			VM_Call( uivm, UI_SET_ACTIVE_MENU, UIMENU_MAIN );
 		}
