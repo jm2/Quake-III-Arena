@@ -8,3 +8,5 @@ missionpack/
 *.img
 *.dmg
 *.bin
+build_mac.log
+package_mac.log
