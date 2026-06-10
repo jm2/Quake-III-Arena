@@ -1831,7 +1831,20 @@ PmoveSingle
 
 ================
 */
+#ifdef Q3_STATIC
+// In the monolithic static build, bg_pmove.o exists only in the game
+// module but is also executed by cgame prediction. trap_SnapVector here
+// expands (via q_static_linked.h) to G_trap_SnapVector, which dispatches
+// the GAME trap number through the GAME syscall pointer — wrong table when
+// called from cgame, and a jump through -1 on remote servers where no game
+// module is registered. Call the engine's Sys_SnapVector directly instead;
+// every module in this build is linked against the engine anyway.
+void Sys_SnapVector( float *v );
+#undef trap_SnapVector
+#define trap_SnapVector Sys_SnapVector
+#else
 void trap_SnapVector( float *v );
+#endif
 
 void PmoveSingle (pmove_t *pmove) {
 	pm = pmove;
