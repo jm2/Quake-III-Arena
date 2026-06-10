@@ -537,6 +537,16 @@ vm_t *VM_Create( const char *module, int (*systemCalls)(int *),
 	// copy or compile the instructions
 	vm->codeLength = header->codeLength;
 
+#ifdef __MACOS__
+	// VM_Compile / VM_CallCompiled are empty stubs on Mac OS 9; a
+	// "compiled" VM would silently return 0 from every vmMain call
+	// (this path is reachable via fs_restrict / pure servers / mods
+	// shipping only QVMs). Always use the interpreter instead.
+	if ( interpret >= VMI_COMPILED ) {
+		Com_Printf( "Forcing interpreted VM for %s (no compiler on Mac OS 9).\n", vm->name );
+		interpret = VMI_BYTECODE;
+	}
+#endif
 	if ( interpret >= VMI_COMPILED ) {
 		vm->compiled = qtrue;
 		VM_Compile( vm, header );
