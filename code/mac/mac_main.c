@@ -215,6 +215,11 @@ sysEvent_t Sys_GetEvent( void ) {
         memset( &ev, 0, sizeof(ev) );
         ev.evType = SE_NONE;
         ev.evTime = Sys_Milliseconds();
+        // Keep the tick->msec conversion bases in sync. Sys_MsecForMacEvent
+        // extrapolates event timestamps from these; they were never updated,
+        // so event times and Sys_Milliseconds ran on two unrelated clocks.
+        sys_ticBase = TickCount();
+        sys_msecBase = ev.evTime;
         return ev;
     }
     
@@ -273,11 +278,21 @@ void Sys_Error( const char *error, ... ) {
 }
 
 // Time
+//
+// Use the full 64-bit Microseconds() value, based at first call. The old
+// implementation used only micros.lo, which wraps every ~71.6 minutes and
+// jumps backwards when it does; Q3 assumes a monotonic millisecond clock.
 int Sys_Milliseconds( void ) {
     UnsignedWide micros;
+    unsigned long long now;
+    static unsigned long long base;
+
     Microseconds(&micros);
-    return (int)((micros.lo / 1000) & 0x7FFFFFFF); // Simple implementation
-    // Or use TickCount() * (1000/60)
+    now = ((unsigned long long)micros.hi << 32) | micros.lo;
+    if (!base) {
+        base = now;
+    }
+    return (int)((now - base) / 1000);
 }
 
 void Sys_PumpEvents( void ) {
