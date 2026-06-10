@@ -2140,13 +2140,6 @@ int Com_EventLoop( void ) {
 		if (firstCall && eventLoopIter <= 3) { Sys_LogPrintf("EventLoop: iter %d GetEvent\n", eventLoopIter);  }
 		ev = Com_GetEvent();
 		if (firstCall && eventLoopIter <= 3) { Sys_LogPrintf("EventLoop: iter %d type=%d\n", eventLoopIter, ev.evType);  }
-		
-		// Safety break for debugging
-		if (eventLoopIter > 100) {
-			if (firstCall) { Sys_LogPrintf("EventLoop: SAFETY BREAK at 100\n");  }
-			firstCall = 0;
-			return Sys_Milliseconds();
-		}
 
 		// if no more events are available
 		if ( ev.evType == SE_NONE ) {
@@ -2242,22 +2235,16 @@ Can be used for profiling, but will be journaled accurately
 */
 int Com_Milliseconds (void) {
 	sysEvent_t	ev;
-	int loopCount = 0;
 
 	// get events and push them until we get a null event with the current time
 	do {
-		loopCount++;
-		if (loopCount > 200) {
-			Sys_LogPrintf("Com_Milliseconds: Infinite loop detected! Breaking.\n");
-			return ev.evTime; // Return last valid time
-		}
 
 		ev = Com_GetRealEvent();
 		if ( ev.evType != SE_NONE ) {
 			Com_PushEvent( &ev );
 		}
 	} while ( ev.evType != SE_NONE );
-	
+
 	return ev.evTime;
 }
 

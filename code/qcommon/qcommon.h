@@ -25,7 +25,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "../qcommon/cm_public.h"
 
-#define	PRE_RELEASE_DEMO  // Bypass product ID check for Mac OS 9 port
+// Note: do NOT define PRE_RELEASE_DEMO to "bypass the product ID check" —
+// it also compiles out the devmap/spmap/spdevmap commands (sv_ccmds.c),
+// which breaks single-player entirely. Retail paks contain productid.txt
+// and pass FS_SetRestrictions normally; demo paks run restricted, as stock.
 
 //============================================================================
 
