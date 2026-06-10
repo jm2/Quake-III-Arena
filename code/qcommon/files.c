@@ -1485,7 +1485,10 @@ FS_Seek
 */
 int FS_Seek( fileHandle_t f, long offset, int origin ) {
 	int		_origin;
-	char	foo[65536];
+	// static, not stack: classic Mac OS PPC apps get a small default stack
+	// (tens of KB) and a 64 KB stack frame here silently overflows into the
+	// heap. The engine is single-threaded, so a static scratch is safe.
+	static char	foo[65536];
 
 	if ( !fs_searchpaths ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
