@@ -557,13 +557,16 @@ static qboolean CreateGameWindow( void ) {
 		
 		Sys_LogPrintf("DEBUG: CreateGameWindow: actualWidth=%d, actualHeight=%d, x=%d, y=%d\n", actualWidth, actualHeight, x, y);
 	} else {
-		// Position window in upper-right corner to keep console visible
-		x = 320;  // Right side of screen
-		y = 30;   // Near top
-		// Force smaller size for debugging
-		glConfig.vidWidth = 320;
-		glConfig.vidHeight = 240;
-		Sys_LogPrintf("DEBUG: Windowed mode, FORCED small window at x=%d, y=%d, size=%dx%d\n", x, y, glConfig.vidWidth, glConfig.vidHeight);
+		// Windowed: honor r_mode (glConfig dims set by R_GetModeInfo above)
+		// and the vid_xpos/vid_ypos cvars. A debug override used to force
+		// 320x240 at a fixed position here.
+		x = vid_xpos->integer;
+		y = vid_ypos->integer;
+		if ( y < 40 ) {
+			y = 40;		// keep the title bar below the menu bar
+		}
+		Sys_LogPrintf("CreateGameWindow: windowed %dx%d at (%d,%d)\n",
+			glConfig.vidWidth, glConfig.vidHeight, x, y);
 	}
 	
 	// Create window rect
