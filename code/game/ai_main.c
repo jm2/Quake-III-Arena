@@ -97,7 +97,8 @@ void QDECL BotAI_Print(int type, char *fmt, ...) {
 	va_list ap;
 
 	va_start(ap, fmt);
-	vsprintf(str, fmt, ap);
+	Q_vsnprintf(str, sizeof(str), fmt, ap);
+	str[sizeof(str) - 1] = '\0';
 	va_end(ap);
 
 	switch(type) {
@@ -1692,4 +1693,3 @@ int BotAIShutdown( int restart ) {
 	}
 	return qtrue;
 }
-

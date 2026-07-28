@@ -319,6 +319,10 @@ int BotReachabilityArea(vec3_t origin, int client)
 		} //end if
 
 		modelnum = AAS_EntityModelindex(bsptrace.ent);
+		if (modelnum < 0 || modelnum >= MAX_MODELS)
+		{
+			return BotFuzzyPointReachabilityArea(origin);
+		}
 		modeltype = modeltypes[modelnum];
 
 		//if standing on a func_plat or func_bobbing then the bot is assumed to be
@@ -524,7 +528,7 @@ void BotSetBrushModelTypes(void)
 		if (model[0]) modelnum = atoi(model+1);
 		else modelnum = 0;
 
-		if (modelnum < 0 || modelnum > MAX_MODELS)
+		if (modelnum < 0 || modelnum >= MAX_MODELS)
 		{
 			botimport.Print(PRT_MESSAGE, "entity %s model number out of range\n", classname);
 			continue;
@@ -3549,7 +3553,7 @@ void BotResetLastAvoidReach(int movestate)
 	if (latesttime)
 	{
 		ms->avoidreachtimes[latest] = 0;
-		if (ms->avoidreachtries[i] > 0) ms->avoidreachtries[latest]--;
+		if (ms->avoidreachtries[latest] > 0) ms->avoidreachtries[latest]--;
 	} //end if
 } //end of the function BotResetLastAvoidReach
 //===========================================================================
@@ -3606,5 +3610,3 @@ void BotShutdownMoveAI(void)
 		} //end if
 	} //end for
 } //end of the function BotShutdownMoveAI
-
-

@@ -94,6 +94,21 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #endif
 
+/*
+ * Native modules use the bounded C99 formatter. The legacy QVM libc only
+ * exposes vsprintf, so retain its historical fallback until that formatter
+ * is upgraded as part of the QVM hardening work.
+ */
+#ifndef Q_vsnprintf
+#ifdef Q3_VM
+#define Q_vsnprintf(buffer, length, format, argptr) vsprintf(buffer, format, argptr)
+#elif defined(_WIN32)
+#define Q_vsnprintf _vsnprintf
+#else
+#define Q_vsnprintf vsnprintf
+#endif
+#endif
+
 #ifdef _WIN32
 
 //#pragma intrinsic( memset, memcpy )
@@ -806,7 +821,7 @@ void PerpendicularVector( vec3_t dst, const vec3_t src );
 float Com_Clamp( float min, float max, float value );
 
 char	*COM_SkipPath( char *pathname );
-void	COM_StripExtension( const char *in, char *out );
+void	COM_StripExtension( const char *in, char *out, int destsize );
 void	COM_DefaultExtension( char *path, int maxSize, const char *extension );
 
 void	COM_BeginParseSession( const char *name );

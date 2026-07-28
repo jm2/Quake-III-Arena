@@ -8,11 +8,8 @@
 // MAX_DEVICES and macGlInfo moved to mac_local.h
 
 cvar_t			*r_device;
-
-
-cvar_t			*r_device;
 cvar_t			*r_ext_transform_hint;
-cvar_t *r_ext_texture_filter_anisotropic;
+cvar_t			*r_ext_texture_filter_anisotropic;
 
 #ifndef GLM_PAGE_SIZE
 #define GLM_PAGE_SIZE 1
@@ -644,7 +641,7 @@ qboolean GLimp_SetMode( void ) {
 	attrib[i++] = AGL_NO_RECOVERY;
 	attrib[i++] = AGL_ACCELERATED;
 
-	if ( r_colorbits->integer >= 16 ) {
+	if ( r_colorbits->integer > 16 ) {
 		attrib[i++] = AGL_RED_SIZE;
 		attrib[i++] = 8;
 		attrib[i++] = AGL_GREEN_SIZE;
@@ -782,14 +779,13 @@ void GLimp_Init( void ) {
 	
 	r_device = ri.Cvar_Get( "r_device", "0", CVAR_LATCH | CVAR_ARCHIVE );
 	r_ext_transform_hint = ri.Cvar_Get( "r_ext_transform_hint", "1", CVAR_LATCH | CVAR_ARCHIVE );
-	
-	// DEBUG: Force windowed mode for console visibility
-	ri.Cvar_Set( "r_fullscreen", "0" );
-	ri.Printf( PRINT_ALL, "^3DEBUG: Forced windowed mode for debugging\n" );
+	r_ext_texture_filter_anisotropic = ri.Cvar_Get(
+		"r_ext_texture_filter_anisotropic", "0", CVAR_LATCH | CVAR_ARCHIVE );
 	
 	if ( !registered ) {
 		ri.Cmd_AddCommand( "aglDescribe", GLimp_AglDescribe_f );
 		ri.Cmd_AddCommand( "aglState", GLimp_AglState_f );
+		registered = qtrue;
 	}
 	
 	memset( &glConfig, 0, sizeof( glConfig ) );

@@ -1,6 +1,18 @@
 Quake III Arena GPL source release
 ==================================
 
+MAC OS 9 RETRO68 PORT
+=====================
+
+This fork contains an in-progress PowerPC Mac OS 9 re-port. It cross-builds,
+but it is not yet validated as playable or release-ready. Current build
+instructions, confirmed defects, and the durable review handoff are in:
+
+  docs/building-mac-os9.md
+  docs/ci.md
+  docs/review-findings.md
+  docs/task.md
+
 This file contains the following sections:
 
 LICENSE

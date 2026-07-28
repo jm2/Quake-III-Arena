@@ -1089,8 +1089,9 @@ void QDECL G_LogPrintf( const char *fmt, ... ) {
 	Com_sprintf( string, sizeof(string), "%3i:%i%i ", min, tens, sec );
 
 	va_start( argptr, fmt );
-	vsprintf( string +7 , fmt,argptr );
+	Q_vsnprintf( string + 7, sizeof(string) - 7, fmt, argptr );
 	va_end( argptr );
+	string[sizeof(string) - 1] = '\0';
 
 	if ( g_dedicated.integer ) {
 		G_Printf( "%s", string + 7 );

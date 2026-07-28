@@ -49,6 +49,7 @@ static scriptHandle_t scriptHandles[MAX_SCRIPT_HANDLES];
 static int Script_LoadSource(const char *filename) {
 	fileHandle_t f;
 	int len;
+	int bytesRead;
 	int i;
 	
 	// Find free handle (start at 1 to avoid returning 0 on success)
@@ -79,7 +80,16 @@ static int Script_LoadSource(const char *filename) {
 		return 0;
 	}
 	
-	FS_Read(scriptHandles[i].buffer, len, f);
+	bytesRead = FS_Read(scriptHandles[i].buffer, len, f);
+	if (bytesRead != len) {
+		printf("Script_LoadSource: Short read for '%s' (%d of %d bytes)\n",
+			filename, bytesRead, len);
+		fflush(stdout);
+		Z_Free(scriptHandles[i].buffer);
+		scriptHandles[i].buffer = NULL;
+		FS_FCloseFile(f);
+		return 0;
+	}
 	scriptHandles[i].buffer[len] = '\0';
 	scriptHandles[i].pos = scriptHandles[i].buffer;
 	scriptHandles[i].length = len;
@@ -92,6 +102,8 @@ static int Script_LoadSource(const char *filename) {
 
 static int Script_ReadToken(int handle, pc_token_t *token) {
 	char *tok;
+	char *numberEnd;
+	double numberValue;
 	
 	if (handle <= 0 || handle >= MAX_SCRIPT_HANDLES || !scriptHandles[handle].inUse) {
 		return 0;
@@ -105,7 +117,24 @@ static int Script_ReadToken(int handle, pc_token_t *token) {
 	}
 	
 	Q_strncpyz(token->string, tok, sizeof(token->string));
-	token->type = TT_STRING;  // Simplified - all tokens are strings
+	token->type = TT_STRING;
+
+	// Team Arena's menu readers reject numeric fields unless the precompiler
+	// supplies TT_NUMBER plus int/float values. COM_ParseExt deliberately
+	// returns a leading '-' as a separate token, which PC_Float_Parse and
+	// PC_Int_Parse already handle.
+	if ( (tok[0] >= '0' && tok[0] <= '9') ||
+	     (tok[0] == '.' && tok[1] >= '0' && tok[1] <= '9') ||
+	     ((tok[0] == '-' || tok[0] == '+') &&
+	      ((tok[1] >= '0' && tok[1] <= '9') ||
+	       (tok[1] == '.' && tok[2] >= '0' && tok[2] <= '9'))) ) {
+		numberValue = strtod(tok, &numberEnd);
+		if (numberEnd != tok && *numberEnd == '\0') {
+			token->type = TT_NUMBER;
+			token->floatvalue = (float)numberValue;
+			token->intvalue = atoi(tok);
+		}
+	}
 	return 1;
 }
 

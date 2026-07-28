@@ -936,7 +936,7 @@ void CL_RequestAuthorization( void ) {
 
 	fs = Cvar_Get ("cl_anonymous", "0", CVAR_INIT|CVAR_SYSTEMINFO );
 
-	NET_OutOfBandPrint(NS_CLIENT, cls.authorizeServer, va("getKeyAuthorize %i %s", fs->integer, nums) );
+	NET_OutOfBandPrint(NS_CLIENT, cls.authorizeServer, "getKeyAuthorize %i %s", fs->integer, nums );
 }
 
 /*
@@ -1100,6 +1100,8 @@ void CL_Connect_f( void ) {
 }
 
 
+#define MAX_RCON_MESSAGE 1024
+
 /*
 =====================
 CL_Rcon_f
@@ -1109,7 +1111,7 @@ CL_Rcon_f
 =====================
 */
 void CL_Rcon_f( void ) {
-	char	message[1024];
+	char	message[MAX_RCON_MESSAGE];
 	netadr_t	to;
 
 	if ( !rcon_client_password->string ) {
@@ -1124,13 +1126,13 @@ void CL_Rcon_f( void ) {
 	message[3] = -1;
 	message[4] = 0;
 
-	strcat (message, "rcon ");
+	Q_strcat (message, MAX_RCON_MESSAGE, "rcon ");
 
-	strcat (message, rcon_client_password->string);
-	strcat (message, " ");
+	Q_strcat (message, MAX_RCON_MESSAGE, rcon_client_password->string);
+	Q_strcat (message, MAX_RCON_MESSAGE, " ");
 
 	// https://zerowing.idsoftware.com/bugzilla/show_bug.cgi?id=543
-	strcat (message, Cmd_Cmd()+5);
+	Q_strcat (message, MAX_RCON_MESSAGE, Cmd_Cmd()+5);
 
 	if ( cls.state >= CA_CONNECTED ) {
 		to = clc.netchan.remoteAddress;
@@ -1383,22 +1385,39 @@ Requests a file to download from the server.  Stores it in the current
 game directory.
 =================
 */
-void CL_BeginDownload( const char *localName, const char *remoteName ) {
+static qboolean CL_BeginDownload( const char *localName, const char *remoteName ) {
+	int localLen;
+	int remoteLen;
 
 	Com_DPrintf("***** CL_BeginDownload *****\n"
 				"Localname: %s\n"
 				"Remotename: %s\n"
 				"****************************\n", localName, remoteName);
 
-	// Server-supplied path; reject parent-directory traversal before it
-	// reaches FS_SV_FOpenFileWrite. The .dll/.so/.qvm extension filter in
-	// files.c covers what gets executed, but doesn't stop the server from
-	// writing into ../../foo/bar.cfg.
-	if ( strstr( localName, ".." ) || strstr( localName, "::" ) ) {
-		Com_Printf( "Refusing download with traversal in path: %s\n", localName );
+	localLen = strlen(localName);
+	remoteLen = strlen(remoteName);
+
+	// Both names are server supplied. Require complete, relative pk3 paths
+	// before either one reaches the filesystem or command stream.
+	if ( !localLen || !remoteLen
+		|| localLen + 4 >= sizeof(clc.downloadTempName)
+		|| localLen >= sizeof(clc.downloadName)
+		|| remoteLen >= MAX_OSPATH
+		|| localLen < 4 || Q_stricmp(localName + localLen - 4, ".pk3")
+		|| remoteLen < 4 || Q_stricmp(remoteName + remoteLen - 4, ".pk3")
+		|| localName[0] == '/' || localName[0] == '\\'
+		|| remoteName[0] == '/' || remoteName[0] == '\\'
+		|| strstr(localName, "..") || strstr(localName, "::")
+		|| strstr(remoteName, "..") || strstr(remoteName, "::")
+		|| strchr(localName, ':') || strchr(localName, '\\') || strchr(localName, '@')
+		|| strchr(remoteName, ':') || strchr(remoteName, '\\') || strchr(remoteName, '@')
+		|| strchr(localName, '\n') || strchr(localName, '\r') || strchr(localName, ';')
+		|| strchr(remoteName, '\n') || strchr(remoteName, '\r') || strchr(remoteName, ';') ) {
+		Com_Printf( "Refusing invalid download pair: \"%s\" -> \"%s\"\n",
+			remoteName, localName );
 		*clc.downloadTempName = *clc.downloadName = 0;
 		Cvar_Set( "cl_downloadName", "" );
-		return;
+		return qfalse;
 	}
 
 	Q_strncpyz ( clc.downloadName, localName, sizeof(clc.downloadName) );
@@ -1414,6 +1433,7 @@ void CL_BeginDownload( const char *localName, const char *remoteName ) {
 	clc.downloadCount = 0;
 
 	CL_AddReliableCommand( va("download %s", remoteName) );
+	return qtrue;
 }
 
 /*
@@ -1426,6 +1446,7 @@ A download completed or failed
 void CL_NextDownload(void) {
 	char *s;
 	char *remoteName, *localName;
+	qboolean downloadStarted;
 
 	// We are looking to start a download here
 	if (*clc.downloadList) {
@@ -1450,12 +1471,17 @@ void CL_NextDownload(void) {
 		else
 			s = localName + strlen(localName); // point at the nul byte
 
-		CL_BeginDownload( localName, remoteName );
-
-		clc.downloadRestart = qtrue;
+		downloadStarted = CL_BeginDownload( localName, remoteName );
 
 		// move over the rest
 		memmove( clc.downloadList, s, strlen(s) + 1);
+
+		if ( !downloadStarted ) {
+			CL_NextDownload();
+			return;
+		}
+
+		clc.downloadRestart = qtrue;
 
 		return;
 	}
@@ -1511,9 +1537,9 @@ Resend a connect message if the last one has timed out
 =================
 */
 void CL_CheckForResend( void ) {
-	int		port, i;
+	int		port;
 	char	info[MAX_INFO_STRING];
-	char	data[MAX_INFO_STRING];
+	char	data[MAX_INFO_STRING + 10];
 
 	// don't send anything if playing back a demo
 	if ( clc.demoplaying ) {
@@ -1551,19 +1577,9 @@ void CL_CheckForResend( void ) {
 		Info_SetValueForKey( info, "qport", va("%i", port ) );
 		Info_SetValueForKey( info, "challenge", va("%i", clc.challenge ) );
 		
-		strcpy(data, "connect ");
-    // TTimo adding " " around the userinfo string to avoid truncated userinfo on the server
-    //   (Com_TokenizeString tokenizes around spaces)
-    data[8] = '"';
-
-		for(i=0;i<strlen(info);i++) {
-			data[9+i] = info[i];	// + (clc.challenge)&0x3;
-		}
-    data[9+i] = '"';
-		data[10+i] = 0;
-
-    // NOTE TTimo don't forget to set the right data length!
-		NET_OutOfBandData( NS_CLIENT, clc.serverAddress, &data[0], i+10 );
+		// Quotes keep userinfo spaces together during tokenization.
+		Com_sprintf( data, sizeof(data), "connect \"%s\"", info );
+		NET_OutOfBandData( NS_CLIENT, clc.serverAddress, (byte *)data, strlen(data) );
 		// the most current userinfo has been sent, so watch for any
 		// newer changes to userinfo variables
 		cvar_modifiedFlags &= ~CVAR_USERINFO;
@@ -2041,12 +2057,6 @@ void CL_Frame ( int msec ) {
             logCount++;
         }
     }
-
-	// if recording a demo and the console is up, don't advance the demo
-	// time, so the console doesn't seem to have valid info
-	if ( clc.demorecording && (cls.keyCatchers & KEYCATCH_CONSOLE) ) {
-		msec = 0;
-	}
 
 	// if recording an avi, lock to a fixed fps
 	if ( cl_avidemo->integer && msec) {
@@ -2931,7 +2941,6 @@ void CL_GlobalServers_f( void ) {
 	netadr_t	to;
 	int			i;
 	int			count;
-	char		*buffptr;
 	char		command[1024];
 	
 	if ( Cmd_Argc() < 3) {
@@ -2959,20 +2968,21 @@ void CL_GlobalServers_f( void ) {
 	to.type = NA_IP;
 	to.port = BigShort(PORT_MASTER);
 
-	sprintf( command, "getservers %s", Cmd_Argv(2) );
+	Com_sprintf( command, sizeof(command), "getservers %s", Cmd_Argv(2) );
 
 	// tack on keywords
-	buffptr = command + strlen( command );
 	count   = Cmd_Argc();
-	for (i=3; i<count; i++)
-		buffptr += sprintf( buffptr, " %s", Cmd_Argv(i) );
+	for (i=3; i<count; i++) {
+		Q_strcat( command, sizeof(command), " " );
+		Q_strcat( command, sizeof(command), Cmd_Argv(i) );
+	}
 
 	// if we are a demo, automatically add a "demo" keyword
 	if ( Cvar_VariableValue( "fs_restrict" ) ) {
-		buffptr += sprintf( buffptr, " demo" );
+		Q_strcat( command, sizeof(command), " demo" );
 	}
 
-	NET_OutOfBandPrint( NS_SERVER, to, command );
+	NET_OutOfBandPrint( NS_SERVER, to, "%s", command );
 }
 
 
@@ -3394,5 +3404,3 @@ qboolean CL_CDKeyValidate( const char *key, const char *checksum ) {
 
 	return qfalse;
 }
-
-

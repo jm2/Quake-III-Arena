@@ -149,7 +149,6 @@ void SV_AuthorizeIpPacket( netadr_t from ) {
 	int		i;
 	char	*s;
 	char	*r;
-	char	ret[1024];
 
 	if ( !NET_CompareBaseAdr( from, svs.authorizeAddress ) ) {
 		Com_Printf( "SV_AuthorizeIpPacket: not from authorize server\n" );
@@ -195,8 +194,7 @@ void SV_AuthorizeIpPacket( netadr_t from ) {
 		if (!r) {
 			NET_OutOfBandPrint( NS_SERVER, svs.challenges[i].adr, "print\nAwaiting CD key authorization\n" );
 		} else {
-			sprintf(ret, "print\n%s\n", r);
-			NET_OutOfBandPrint( NS_SERVER, svs.challenges[i].adr, ret );
+			NET_OutOfBandPrint( NS_SERVER, svs.challenges[i].adr, "print\n%s\n", r );
 		}
 		// clear the challenge record so it won't timeout and let them through
 		Com_Memset( &svs.challenges[i], 0, sizeof( svs.challenges[i] ) );
@@ -207,8 +205,7 @@ void SV_AuthorizeIpPacket( netadr_t from ) {
 	if (!r) {
 		NET_OutOfBandPrint( NS_SERVER, svs.challenges[i].adr, "print\nSomeone is using this CD Key\n" );
 	} else {
-		sprintf(ret, "print\n%s\n", r);
-		NET_OutOfBandPrint( NS_SERVER, svs.challenges[i].adr, ret );
+		NET_OutOfBandPrint( NS_SERVER, svs.challenges[i].adr, "print\n%s\n", r );
 	}
 
 	// clear the challenge record so it won't timeout and let them through
@@ -756,24 +753,53 @@ void SV_WriteDownloadToClient( client_t *cl , msg_t *msg )
 	int curindex;
 	int rate;
 	int blockspersnap;
-	int idPack, missionPack;
+	int idPack, missionPack, unreferenced;
+	int numRefPaks;
 	char errorMessage[1024];
+	char pakbuf[MAX_QPATH];
+	char *pakptr;
+	const char *referencedPaks;
 
 	if (!*cl->downloadName)
 		return;	// Nothing being downloaded
 
 	if (!cl->download) {
-		// We open the file here
+		idPack = qfalse;
+		missionPack = qfalse;
+		unreferenced = qtrue;
 
-		Com_Printf( "clientDownload: %d : begining \"%s\"\n", cl - svs.clients, cl->downloadName );
+		/*
+		 * Only loaded, referenced pk3 files may be downloaded.  Besides
+		 * preventing arbitrary server-side file reads, the exact reference
+		 * match rejects traversal and absolute path spellings.
+		 */
+		Q_strncpyz( pakbuf, cl->downloadName, sizeof(pakbuf) );
+		pakptr = Q_strrchr( pakbuf, '.' );
+		if ( pakptr && !Q_stricmp( pakptr + 1, "pk3" ) ) {
+			*pakptr = '\0';
+			referencedPaks = FS_ReferencedPakNames();
+			Cmd_TokenizeString( referencedPaks );
+			numRefPaks = Cmd_Argc();
 
-		missionPack = FS_idPak(cl->downloadName, "missionpack");
-		idPack = missionPack || FS_idPak(cl->downloadName, "baseq3");
+			for ( curindex = 0 ; curindex < numRefPaks ; curindex++ ) {
+				if ( !FS_FilenameCompare( Cmd_Argv(curindex), pakbuf ) ) {
+					unreferenced = qfalse;
+					missionPack = FS_idPak( pakbuf, "missionpack" );
+					idPack = missionPack || FS_idPak( pakbuf, BASEGAME );
+					break;
+				}
+			}
+		}
 
-		if ( !sv_allowDownload->integer || idPack ||
+		if ( !sv_allowDownload->integer || idPack || unreferenced ||
 			( cl->downloadSize = FS_SV_FOpenFileRead( cl->downloadName, &cl->download ) ) <= 0 ) {
 			// cannot auto-download file
-			if (idPack) {
+			if (unreferenced) {
+				Com_Printf("clientDownload: %d : \"%s\" is not referenced and cannot be downloaded.\n",
+					cl - svs.clients, cl->downloadName);
+				Com_sprintf(errorMessage, sizeof(errorMessage),
+					"File \"%s\" is not referenced and cannot be downloaded.", cl->downloadName);
+			} else if (idPack) {
 				Com_Printf("clientDownload: %d : \"%s\" cannot download id pk3 files\n", cl - svs.clients, cl->downloadName);
 				if (missionPack) {
 					Com_sprintf(errorMessage, sizeof(errorMessage), "Cannot autodownload Team Arena file \"%s\"\n"
@@ -808,6 +834,8 @@ void SV_WriteDownloadToClient( client_t *cl , msg_t *msg )
 			*cl->downloadName = 0;
 			return;
 		}
+
+		Com_Printf( "clientDownload: %d : beginning \"%s\"\n", cl - svs.clients, cl->downloadName );
  
 		// Init
 		cl->downloadCurrentBlock = cl->downloadClientBlock = cl->downloadXmitBlock = 0;
@@ -1244,6 +1272,7 @@ void SV_ExecuteClientCommand( client_t *cl, const char *s, qboolean clientOK ) {
 	if (clientOK) {
 		// pass unknown strings to the game
 		if (!u->name && sv.state == SS_GAME) {
+			Cmd_Args_Sanitize();
 			VM_Call( gvm, GAME_CLIENT_COMMAND, cl - svs.clients );
 		}
 	}
@@ -1474,7 +1503,8 @@ void SV_ExecuteClientMessage( client_t *cl, msg_t *msg ) {
 	// NOTE: when the client message is fux0red the acknowledgement numbers
 	// can be out of range, this could cause the server to send thousands of server
 	// commands which the server thinks are not yet acknowledged in SV_UpdateServerCommandsToClient
-	if (cl->reliableAcknowledge < cl->reliableSequence - MAX_RELIABLE_COMMANDS) {
+	if ( cl->reliableSequence - cl->reliableAcknowledge >= MAX_RELIABLE_COMMANDS
+		|| cl->reliableSequence - cl->reliableAcknowledge < 0 ) {
 		// usually only hackers create messages like this
 		// it is more annoying for them to let them hanging
 #ifndef NDEBUG

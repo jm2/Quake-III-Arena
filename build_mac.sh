@@ -3,34 +3,58 @@ set -e
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [package|--package] [-h|--help]
+Usage: $(basename "$0") [package|--package] [--base-only|--team-arena] [-h|--help]
 
-  (no args)            Configure, build, and PEF-validate Quake3 (and
-                       Quake3_TeamArena unless BUILD_TEAM_ARENA was set OFF
-                       at CMake time).
+  (no args)            Configure, build, and PEF-validate Quake3 only.
   package, --package   Build, then assemble a Mac OS 9 install image
                        (.img.bin) under release_mac/.
+  --base-only          Build only Quake3 (the default).
+  --team-arena         Build Quake3 and Quake3_TeamArena.
   -h, --help           Show this message.
 EOF
 }
 
-# Argument parsing. We accept exactly one positional/flag arg.
 PACKAGE_MODE=0
-if [ "$#" -gt 1 ]; then
-    echo "Error: too many arguments." >&2
-    usage >&2
-    exit 2
-fi
-case "${1:-}" in
-    "")               ;;
-    package|--package) PACKAGE_MODE=1 ;;
-    -h|--help)        usage; exit 0 ;;
-    *)
-        echo "Error: unknown argument '$1'." >&2
-        usage >&2
-        exit 2
-        ;;
-esac
+TEAM_ARENA_MODE=OFF
+PACKAGE_MODE_SET=0
+TEAM_ARENA_MODE_SET=0
+for argument in "$@"; do
+    case "$argument" in
+        package|--package)
+            if [ "$PACKAGE_MODE_SET" -eq 1 ]; then
+                echo "Error: package mode was specified more than once." >&2
+                exit 2
+            fi
+            PACKAGE_MODE=1
+            PACKAGE_MODE_SET=1
+            ;;
+        --base-only)
+            if [ "$TEAM_ARENA_MODE_SET" -eq 1 ]; then
+                echo "Error: choose exactly one of --base-only or --team-arena." >&2
+                exit 2
+            fi
+            TEAM_ARENA_MODE=OFF
+            TEAM_ARENA_MODE_SET=1
+            ;;
+        --team-arena)
+            if [ "$TEAM_ARENA_MODE_SET" -eq 1 ]; then
+                echo "Error: choose exactly one of --base-only or --team-arena." >&2
+                exit 2
+            fi
+            TEAM_ARENA_MODE=ON
+            TEAM_ARENA_MODE_SET=1
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Error: unknown argument '$argument'." >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+done
 
 function download_file() {
     local url="$1"
@@ -52,23 +76,95 @@ function download_file() {
 mkdir -p build_mac
 cd build_mac
 
-# Check if compiler exists in PATH or local dir
+# Check that the local toolchain is complete. A compiler by itself is not
+# enough: renderer compilation needs the OpenGL SDK headers in Retro68's
+# prepared (correctly packed) include tree, and linking needs its import
+# library.
 COMPILER="powerpc-apple-macos-gcc"
 LOCAL_BIN="$(pwd)/../tools/Retro68-build/bin"
+PPC_INCLUDE_DIR="$(pwd)/../tools/Retro68-build/powerpc-apple-macos/include"
+RAW_OPENGL_INCLUDE_DIR="$(pwd)/../tools/Retro68-src/InterfacesAndLibraries/Interfaces/CIncludes"
+OPENGL_SHARED_DIR="$(pwd)/../tools/Retro68-src/InterfacesAndLibraries/SharedLibraries"
+OPENGL_STUB_LIB="$OPENGL_SHARED_DIR/libOpenGLLibraryStub.a"
 
-if ! command -v "$COMPILER" &> /dev/null && [ ! -x "$LOCAL_BIN/$COMPILER" ]; then
-    echo "Retro68 compiler not found."
+install_prepared_opengl_support() {
+    local header
+
+    if [ ! -x "$LOCAL_BIN/$COMPILER" ]; then
+        return 1
+    fi
+
+    if [ ! -f "$PPC_INCLUDE_DIR/gl.h" ] || [ ! -f "$PPC_INCLUDE_DIR/agl.h" ]; then
+        if [ ! -f "$RAW_OPENGL_INCLUDE_DIR/gl.h" ] ||
+           [ ! -f "$RAW_OPENGL_INCLUDE_DIR/agl.h" ]; then
+            return 1
+        fi
+
+        echo "Installing missing OpenGL SDK headers into the prepared toolchain..."
+        mkdir -p "$PPC_INCLUDE_DIR"
+        for header in gl.h glu.h glm.h agl.h aglContext.h aglMacro.h \
+                      aglRenderers.h glext.h GL_gl.h GL_glext.h GL_glut.h \
+                      gliContext.h gliDispatch.h glut.h; do
+            if [ -f "$RAW_OPENGL_INCLUDE_DIR/$header" ]; then
+                cp "$RAW_OPENGL_INCLUDE_DIR/$header" "$PPC_INCLUDE_DIR/$header"
+            fi
+        done
+    fi
+
+    if [ ! -f "$OPENGL_STUB_LIB" ]; then
+        if [ ! -x "$LOCAL_BIN/MakeImport" ] ||
+           [ ! -f "$OPENGL_SHARED_DIR/OpenGLLibraryStub" ] ||
+           [ ! -f "$OPENGL_SHARED_DIR/OpenGLLibraryStub.rsrc" ]; then
+            return 1
+        fi
+
+        echo "Generating missing OpenGL import library..."
+        cp "$OPENGL_SHARED_DIR/OpenGLLibraryStub.rsrc" \
+           "$OPENGL_SHARED_DIR/%OpenGLLibraryStub"
+        "$LOCAL_BIN/MakeImport" \
+            "$OPENGL_SHARED_DIR/OpenGLLibraryStub" "$OPENGL_STUB_LIB"
+    fi
+
+    [ -f "$PPC_INCLUDE_DIR/gl.h" ] &&
+        [ -f "$PPC_INCLUDE_DIR/agl.h" ] &&
+        [ -f "$OPENGL_STUB_LIB" ]
+}
+
+if ! install_prepared_opengl_support; then
+    echo "Retro68 compiler or prepared OpenGL SDK support not found."
     echo "Running setup_retro68.sh..."
     cd ..
     ./setup_retro68.sh
     cd build_mac
+
+    if ! install_prepared_opengl_support; then
+        echo "Error: Retro68 setup completed without the required compiler,"
+        echo "prepared gl.h/agl.h headers, and OpenGL import library."
+        exit 1
+    fi
 fi
 
 # Add local bin to PATH for this session
 export PATH="$LOCAL_BIN:$PATH"
 
 # Configure with CMake using Retro68 toolchain
-cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/Retro68.toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/Retro68.toolchain.cmake \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_TEAM_ARENA="$TEAM_ARENA_MODE"
+
+# CMake caches this option across runs. Gate every post-build/package action on
+# the configuration that produced this build, never on a possibly stale file.
+TEAM_ARENA_CACHE_VALUE=$(
+    sed -n 's/^BUILD_TEAM_ARENA:BOOL=//p' CMakeCache.txt | tail -n 1
+)
+case "$TEAM_ARENA_CACHE_VALUE" in
+    1|ON|TRUE|YES|Y)
+        BUILD_TEAM_ARENA_ENABLED=1
+        ;;
+    *)
+        BUILD_TEAM_ARENA_ENABLED=0
+        ;;
+esac
 
 # Build
 make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
@@ -139,7 +235,12 @@ if [ -f "$MAKEPEF" ]; then
         validate_pef Quake3 || exit 1
     fi
 
-    if [ -f "Quake3_TeamArena" ]; then
+    if [ "$BUILD_TEAM_ARENA_ENABLED" -eq 1 ]; then
+        if [ ! -f "Quake3_TeamArena" ]; then
+            echo "PEF validation FAILED: Team Arena is enabled but its binary is missing"
+            exit 1
+        fi
+
         MAGIC=$(xxd -l 4 -p Quake3_TeamArena 2>/dev/null || echo "00000000")
         if [[ "$MAGIC" != "4a6f7921" ]]; then
              echo "Converting Quake3_TeamArena to PEF..."
@@ -152,7 +253,8 @@ if [ -f "$MAKEPEF" ]; then
         validate_pef Quake3_TeamArena || exit 1
     fi
 else
-    echo "Warning: MakePEF not found. Binaries might be invalid XCOFF."
+    echo "Error: MakePEF not found; a Classic Mac application cannot be produced."
+    exit 1
 fi
 
 echo "Build complete. Check build_mac/Quake3 or similar."
@@ -173,7 +275,11 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
     RELEASE_ROOT="release_mac"
     CONTENT_DIR="$RELEASE_ROOT/content"
     TEMP_DIR="$RELEASE_ROOT/temp"
+    BIN_CONTENT_DIR="$RELEASE_ROOT/bin_content"
     
+    # These are generated staging trees. Reusing them can silently package
+    # binaries or assets left by a different CMake configuration.
+    rm -rf "$CONTENT_DIR" "$TEMP_DIR" "$BIN_CONTENT_DIR"
     mkdir -p "$CONTENT_DIR/Quake 3 Arena/baseq3"
     mkdir -p "$TEMP_DIR"
     chmod -R u+w "$RELEASE_ROOT" 2>/dev/null || true # Ensure we can overwrite
@@ -197,7 +303,9 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
     
     if [ -n "$PAK0_PATH" ]; then
         echo "Found Base Game Data: $PAK0_PATH"
-        cp "$PAK0_PATH" "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/"
+        PAK0_DIR=$(dirname "$PAK0_PATH")
+        find "$PAK0_DIR" -maxdepth 1 -type f -name "pak*.pk3" \
+            -exec cp {} "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/" \;
         
         # FIX: Copy menus.txt for older pak0 versions
         if [ -f "ui/menus.txt" ]; then
@@ -208,19 +316,26 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
         
 
         
-        if [ -n "$MP_PAK0_PATH" ]; then
+        if [ "$BUILD_TEAM_ARENA_ENABLED" -eq 1 ]; then
+             if [ -z "$MP_PAK0_PATH" ]; then
+                 echo "Error: Team Arena is enabled but missionpack/pak0.pk3 was not found."
+                 exit 1
+             fi
              echo "Found Team Arena Data: $MP_PAK0_PATH"
+             MP_PAK0_DIR=$(dirname "$MP_PAK0_PATH")
              mkdir -p "$RELEASE_ROOT/content/Quake 3 Arena/missionpack"
-             cp "$MP_PAK0_PATH" "$RELEASE_ROOT/content/Quake 3 Arena/missionpack/"
+             find "$MP_PAK0_DIR" -maxdepth 1 -type f -name "pak*.pk3" \
+                 -exec cp {} "$RELEASE_ROOT/content/Quake 3 Arena/missionpack/" \;
         fi
         
         # Check for Updates
         # Download if pak1 is missing in baseq3 OR if we have missionpack but missing its updates
         NEED_UPDATE=0
-        if [ ! -f "pak1.pk3" ] && [ ! -f "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/pak1.pk3" ]; then
+        if [ ! -f "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/pak1.pk3" ]; then
             NEED_UPDATE=1
         fi
-        if [ -n "$MP_PAK0_PATH" ] && [ ! -f "missionpack/pak1.pk3" ] && [ ! -f "$RELEASE_ROOT/content/Quake 3 Arena/missionpack/pak1.pk3" ]; then
+        if [ "$BUILD_TEAM_ARENA_ENABLED" -eq 1 ] &&
+           [ ! -f "$RELEASE_ROOT/content/Quake 3 Arena/missionpack/pak1.pk3" ]; then
              NEED_UPDATE=1
         fi
 
@@ -241,7 +356,7 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
                 echo "Copying BaseQ3 Updates..."
                 find "$TEMP_DIR/pr_extract" -path "*/baseq3/pak*.pk3" -exec cp {} "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/" \;
                 
-                if [ -n "$MP_PAK0_PATH" ]; then
+                if [ "$BUILD_TEAM_ARENA_ENABLED" -eq 1 ] && [ -n "$MP_PAK0_PATH" ]; then
                     echo "Copying MissionPack Updates..."
                     find "$TEMP_DIR/pr_extract" -path "*/missionpack/pak*.pk3" -exec cp {} "$RELEASE_ROOT/content/Quake 3 Arena/missionpack/" \;
                 fi
@@ -250,30 +365,10 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
             fi
         fi
     else
-        echo "Local pak0.pk3 (Full Game) not found. Falling back to Demo assets..."
-        DEMO_URL="https://ftp.gwdg.de/pub/misc/ftp.idsoftware.com/idstuff/quake3/linux/linuxq3ademo-1.11-6.x86.gz.sh"
-        DEMO_FILE="$TEMP_DIR/linuxq3ademo.sh"
-        
-        echo "Downloading Quake 3 Arena Demo..."
-        download_file "$DEMO_URL" "$DEMO_FILE"
-        
-        if [ -f "$DEMO_FILE" ]; then
-            echo "Extracting Demo Assets..."
-            # Manually extract to avoid issues with old makeself script on macOS
-            mkdir -p "$TEMP_DIR/demo_extract"
-            tail -n +165 "$DEMO_FILE" | gzip -cd | tar xf - -C "$TEMP_DIR/demo_extract"
-            
-            if [ -f "$TEMP_DIR/demo_extract/demoq3/pak0.pk3" ]; then
-                echo "Found Demo pak0.pk3"
-                cp "$TEMP_DIR/demo_extract/demoq3/pak0.pk3" "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/"
-            else
-                echo "Error: Could not extract demo pak0.pk3."
-                exit 1
-            fi
-        else
-            echo "Error: Demo download failed."
-            exit 1
-        fi
+        echo "Error: a retail baseq3/pak0.pk3 was not found." >&2
+        echo "The demo pak belongs to demoq3 and is not compatible with this full-game build." >&2
+        echo "Place legally obtained retail data under a baseq3 directory and retry." >&2
+        exit 1
     fi
 
     # Icon Generation
@@ -331,7 +426,11 @@ EOF
     # 1. Copy Binary
     cp build_mac/Quake3 "$RELEASE_ROOT/content/Quake 3 Arena/Quake3"
     
-    if [ -f "build_mac/Quake3_TeamArena" ]; then
+    if [ "$BUILD_TEAM_ARENA_ENABLED" -eq 1 ]; then
+         if [ ! -f "build_mac/Quake3_TeamArena" ]; then
+             echo "Error: Team Arena is enabled but build_mac/Quake3_TeamArena is missing."
+             exit 1
+         fi
          cp build_mac/Quake3_TeamArena "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena"
     fi
     
@@ -354,7 +453,8 @@ EOF
              cp "$RELEASE_ROOT/content/Quake 3 Arena/%Quake3" "$RELEASE_ROOT/content/Quake 3 Arena/%Quake3_TeamArena"
         fi
     else
-        echo "Warning: Quake3.rsrc not found or empty. Application icon/type/creator/cfrg might be missing."
+        echo "Error: Quake3.rsrc not found or empty; refusing an incomplete Classic app."
+        exit 1
     fi
 
     # 3. Copy all pak*.pk3 files recursively
@@ -379,7 +479,7 @@ EOF
              fi
              
              # Set Type/Creator Codes
-             # Quake3: APPL Q3A (0x51334120)
+             # Quake3: APPL/IDQ3, matching the BNDL signature.
              # We use python to set FinderInfo if SetFile is missing
              echo "Setting FinderInfo (Type/Creator)..."
              # Type: APPL (0x4150504C), Creator: IDQ3 (0x49445133) followed by 24 bytes of zeros
@@ -426,7 +526,6 @@ EOF
     # ---------------------------------------------------------
     echo "Creating Binaries-Only Image..."
     BIN_IMG_NAME="$RELEASE_ROOT/Quake3_Bin.img"
-    BIN_CONTENT_DIR="$RELEASE_ROOT/bin_content"
     mkdir -p "$BIN_CONTENT_DIR"
     
     # Copy Binaries and AppleDouble resource forks (for linux mkisofs)

@@ -131,8 +131,9 @@ void QDECL SourceError(source_t *source, char *str, ...)
 	va_list ap;
 
 	va_start(ap, str);
-	vsprintf(text, str, ap);
+	Q_vsnprintf(text, sizeof(text), str, ap);
 	va_end(ap);
+	text[sizeof(text) - 1] = '\0';
 #ifdef BOTLIB
 	botimport.Print(PRT_ERROR, "file %s, line %d: %s\n", source->scriptstack->filename, source->scriptstack->line, text);
 #endif	//BOTLIB
@@ -155,8 +156,9 @@ void QDECL SourceWarning(source_t *source, char *str, ...)
 	va_list ap;
 
 	va_start(ap, str);
-	vsprintf(text, str, ap);
+	Q_vsnprintf(text, sizeof(text), str, ap);
 	va_end(ap);
+	text[sizeof(text) - 1] = '\0';
 #ifdef BOTLIB
 	botimport.Print(PRT_WARNING, "file %s, line %d: %s\n", source->scriptstack->filename, source->scriptstack->line, text);
 #endif //BOTLIB
@@ -1332,7 +1334,7 @@ define_t *PC_DefineFromString(char *string)
 	script = LoadScriptMemory(string, strlen(string), "*extern");
 	//create a new source
 	Com_Memset(&src, 0, sizeof(source_t));
-	strncpy(src.filename, "*extern", MAX_PATH);
+	strncpy(src.filename, "*extern", sizeof(src.filename) - 1);
 	src.scriptstack = script;
 #if DEFINEHASHING
 	src.definehash = GetClearedMemory(DEFINEHASHSIZE * sizeof(define_t *));
@@ -3229,4 +3231,3 @@ void PC_CheckOpenSourceHandles(void)
 		} //end if
 	} //end for
 } //end of the function PC_CheckOpenSourceHandles
-

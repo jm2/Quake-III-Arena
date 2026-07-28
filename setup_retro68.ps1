@@ -163,8 +163,16 @@ if (-not (Get-Command "unar" -ErrorAction SilentlyContinue)) {
     }
 }
 
-# Check if Retro68 installed
-if (Test-Path "$INSTALL_DIR\bin\powerpc-apple-macos-gcc.exe") {
+# A compiler alone is not a complete install for this project. The renderer
+# also requires prepared OpenGL headers and the generated import library.
+$PreparedOpenGLDir = Join-Path $INSTALL_DIR "powerpc-apple-macos\include"
+$PreparedGl = Join-Path $PreparedOpenGLDir "gl.h"
+$PreparedAgl = Join-Path $PreparedOpenGLDir "agl.h"
+$OpenGLStubLib = Join-Path $SOURCE_DIR "InterfacesAndLibraries\SharedLibraries\libOpenGLLibraryStub.a"
+if ((Test-Path "$INSTALL_DIR\bin\powerpc-apple-macos-gcc.exe") -and
+    (Test-Path $PreparedGl) -and
+    (Test-Path $PreparedAgl) -and
+    (Test-Path $OpenGLStubLib)) {
     Write-Host "Retro68 appears to be installed in $INSTALL_DIR."
     exit 0
 }
@@ -309,6 +317,43 @@ $SourceDirUnix = $SOURCE_DIR -replace '\\', '/'
 bash -c "cd '$SourceDirUnix' && ./build-toolchain.bash --prefix='$InstallDirUnix' --clean-after-build"
 
 if ($LASTEXITCODE -eq 0) {
+    Write-Host "Installing OpenGL support into the prepared toolchain..." -ForegroundColor Green
+    $RawOpenGLDir = Join-Path $SOURCE_DIR "InterfacesAndLibraries\Interfaces\CIncludes"
+    New-Item -ItemType Directory -Path $PreparedOpenGLDir -Force | Out-Null
+    $OpenGLHeaders = @(
+        "gl.h", "glu.h", "glm.h", "agl.h", "aglContext.h",
+        "aglMacro.h", "aglRenderers.h", "glext.h", "GL_gl.h",
+        "GL_glext.h", "GL_glut.h", "gliContext.h", "gliDispatch.h",
+        "glut.h"
+    )
+    foreach ($Header in $OpenGLHeaders) {
+        $SourceHeader = Join-Path $RawOpenGLDir $Header
+        if (Test-Path $SourceHeader) {
+            Copy-Item $SourceHeader $PreparedOpenGLDir -Force
+        }
+    }
+
+    $OpenGLSharedDir = Join-Path $SOURCE_DIR "InterfacesAndLibraries\SharedLibraries"
+    $StubSource = Join-Path $OpenGLSharedDir "OpenGLLibraryStub"
+    $StubResource = Join-Path $OpenGLSharedDir "OpenGLLibraryStub.rsrc"
+    $StubAppleDouble = Join-Path $OpenGLSharedDir "%OpenGLLibraryStub"
+    $MakeImport = Join-Path $INSTALL_DIR "bin\MakeImport.exe"
+    if (-not (Test-Path $MakeImport)) {
+        $MakeImport = Join-Path $INSTALL_DIR "bin\MakeImport"
+    }
+    if ((Test-Path $StubSource) -and
+        (Test-Path $StubResource) -and
+        (Test-Path $MakeImport)) {
+        Copy-Item $StubResource $StubAppleDouble -Force
+        & $MakeImport $StubSource $OpenGLStubLib
+    }
+
+    if (-not (Test-Path $PreparedGl) -or
+        -not (Test-Path $PreparedAgl) -or
+        -not (Test-Path $OpenGLStubLib)) {
+        throw "Retro68 built, but prepared OpenGL headers/import library are incomplete."
+    }
+
     Write-Host "Retro68 installed to $INSTALL_DIR" -ForegroundColor Green
 }
 else {

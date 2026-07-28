@@ -393,6 +393,7 @@ char	*Cmd_Args (void);
 char	*Cmd_ArgsFrom( int arg );
 void	Cmd_ArgsBuffer( char *buffer, int bufferLength );
 char	*Cmd_Cmd (void);
+void	Cmd_Args_Sanitize( void );
 // The functions that execute commands get their parameters with these
 // functions. Cmd_Argv () will return an empty string, not a NULL
 // if arg > argc, so string operations are allways safe.
@@ -665,11 +666,13 @@ MISC
 // TTimo
 // vsnprintf is ISO/IEC 9899:1999
 // abstracting this to make it portable
+#ifndef Q_vsnprintf
 #ifdef WIN32
 #define Q_vsnprintf _vsnprintf
 #else
 // TODO: do we need Mac define?
 #define Q_vsnprintf vsnprintf
+#endif
 #endif
 
 // centralizing the declarations for cl_cdkey
@@ -1061,9 +1064,9 @@ void	Huff_Decompress(msg_t *buf, int offset);
 void	Huff_Init(huffman_t *huff);
 void	Huff_addRef(huff_t* huff, byte ch);
 int		Huff_Receive (node_t *node, int *ch, byte *fin);
-void	Huff_transmit (huff_t *huff, int ch, byte *fout);
-void	Huff_offsetReceive (node_t *node, int *ch, byte *fin, int *offset);
-void	Huff_offsetTransmit (huff_t *huff, int ch, byte *fout, int *offset);
+void	Huff_transmit (huff_t *huff, int ch, byte *fout, int maxoffset);
+void	Huff_offsetReceive (node_t *node, int *ch, byte *fin, int *offset, int maxoffset);
+void	Huff_offsetTransmit (huff_t *huff, int ch, byte *fout, int *offset, int maxoffset);
 void	Huff_putBit( int bit, byte *fout, int *offset);
 int		Huff_getBit( byte *fout, int *offset);
 

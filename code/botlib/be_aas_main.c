@@ -60,9 +60,10 @@ void QDECL AAS_Error(char *fmt, ...)
 	va_list arglist;
 
 	va_start(arglist, fmt);
-	vsprintf(str, fmt, arglist);
+	Q_vsnprintf(str, sizeof(str), fmt, arglist);
+	str[sizeof(str) - 1] = '\0';
 	va_end(arglist);
-	botimport.Print(PRT_FATAL, str);
+	botimport.Print(PRT_FATAL, "%s", str);
 } //end of the function AAS_Error
 //===========================================================================
 //

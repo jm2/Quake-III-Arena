@@ -7,8 +7,8 @@ qboolean			inputActive;
 qboolean			inputSuspended;
 qboolean			inputSystemSuspended;	// set by DoOSEvent on suspend/resume
 
-#define	MAX_DEVICES		100
-ISpDeviceReference	devices[MAX_DEVICES];
+#define	MAX_INPUT_DEVICES	100
+ISpDeviceReference	devices[MAX_INPUT_DEVICES];
 ISpElementListReference	elementList;
 
 #define	MAX_ELEMENTS	512
@@ -57,10 +57,10 @@ void Sys_InitInput( void ) {
 	}
 
 	// disable everything
-	ISpDevices_Extract( MAX_DEVICES, &numDevices, devices );
+	ISpDevices_Extract( MAX_INPUT_DEVICES, &numDevices, devices );
 	Com_Printf("%i total devices\n", numDevices);
-	if (numDevices > MAX_DEVICES) {
-		numDevices = MAX_DEVICES;
+	if (numDevices > MAX_INPUT_DEVICES) {
+		numDevices = MAX_INPUT_DEVICES;
 	}
 	err = ISpDevices_Deactivate(
 			numDevices,
@@ -69,7 +69,7 @@ void Sys_InitInput( void ) {
 	// enable mouse
 	err = ISpDevices_ExtractByClass(
 			kISpDeviceClass_Mouse,
-			MAX_DEVICES,
+			MAX_INPUT_DEVICES,
 			&numDevices,
 			devices);
 	Com_Printf("%i mouse devices\n", numDevices);
@@ -86,6 +86,10 @@ void Sys_InitInput( void ) {
 		// go through all the elements and asign them Quake key codes
 		ISpElementList_Extract( elementList, MAX_ELEMENTS, &numElements[i], elements[i] );
 		Com_Printf("%i elements in list\n", numElements[i] );
+		if ( numElements[i] > MAX_ELEMENTS ) {
+			Com_Printf( "clamping element list to %i entries\n", MAX_ELEMENTS );
+			numElements[i] = MAX_ELEMENTS;
+		}
 		
 		for ( j = 0 ; j	< numElements[i] ; j++ ) {
 			ISpElement_GetInfo( elements[i][j], &info );
@@ -182,6 +186,10 @@ void Sys_Input( void ) {
 
 	// send all button events
 	for ( device = 0 ; device < numDevices ; device++ ) {
+		if ( numElements[device] < 2 ) {
+			continue;
+		}
+
 		// mouse buttons
 		
 		for ( button = 2 ; button < numElements[device] ; button++ ) {

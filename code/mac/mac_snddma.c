@@ -12,6 +12,7 @@ static	short			s_mixedSamples[MAX_MIXED_SAMPLES];
 static	int				s_chunkCount;		// number of chunks submitted
 static	SndChannel		*s_sndChan;
 static	ExtSoundHeader	s_sndHeader;
+static	SndCallBackUPP	s_callbackUPP;
 
 /*
 ===============
@@ -82,8 +83,14 @@ qboolean SNDDMA_Init(void) {
 	
 	// create a sound channel
 	s_sndChan = NULL;
-	err = SndNewChannel( &s_sndChan, sampledSynth, initStereo, NewSndCallBackProc(S_Callback) );
+	s_callbackUPP = NewSndCallBackUPP( S_Callback );
+	if ( !s_callbackUPP ) {
+		return false;
+	}
+	err = SndNewChannel( &s_sndChan, sampledSynth, initStereo, s_callbackUPP );
 	if ( err ) {
+		DisposeSndCallBackUPP( s_callbackUPP );
+		s_callbackUPP = NULL;
 		return false;
 	}
 	
@@ -108,7 +115,7 @@ SNDDMA_GetDMAPos
 ===============
 */
 int	SNDDMA_GetDMAPos(void) {
-	return s_chunkCount * SUBMISSION_CHUNK;
+	return (s_chunkCount * SUBMISSION_CHUNK) & (dma.samples - 1);
 }
 
 /*
@@ -120,6 +127,10 @@ void SNDDMA_Shutdown(void) {
 	if ( s_sndChan ) {
 		SndDisposeChannel( s_sndChan, true );
 		s_sndChan = NULL;
+	}
+	if ( s_callbackUPP ) {
+		DisposeSndCallBackUPP( s_callbackUPP );
+		s_callbackUPP = NULL;
 	}
 }
 

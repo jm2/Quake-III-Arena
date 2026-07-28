@@ -155,6 +155,9 @@ static	void R_LoadLightmaps( lump_t *l ) {
 		//FIXME: HACK: maps with only one lightmap turn up fullbright for some reason.
 		//this avoids this, but isn't the correct solution.
 		tr.numLightmaps++;
+	} else if ( tr.numLightmaps >= MAX_LIGHTMAPS ) {
+		ri.Printf( PRINT_WARNING, "WARNING: number of lightmaps > MAX_LIGHTMAPS\n" );
+		tr.numLightmaps = MAX_LIGHTMAPS;
 	}
 
 	// if we are in r_vertexLight mode, we don't need the lightmaps at all
@@ -1820,7 +1823,7 @@ void RE_LoadWorldMap( const char *name ) {
 	Q_strncpyz( s_worldData.name, name, sizeof( s_worldData.name ) );
 
 	Q_strncpyz( s_worldData.baseName, COM_SkipPath( s_worldData.name ), sizeof( s_worldData.name ) );
-	COM_StripExtension( s_worldData.baseName, s_worldData.baseName );
+	COM_StripExtension( s_worldData.baseName, s_worldData.baseName, sizeof(s_worldData.baseName) );
 
 	startMarker = ri.Hunk_Alloc(0, h_low);
 	c_gridVerts = 0;
@@ -1859,4 +1862,3 @@ void RE_LoadWorldMap( const char *name ) {
 
     ri.FS_FreeFile( buffer );
 }
-

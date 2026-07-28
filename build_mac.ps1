@@ -3,6 +3,56 @@
 
 $ErrorActionPreference = "Stop"
 
+function Show-Usage {
+    Write-Host "Usage: .\build_mac.ps1 [package|--package] [--base-only|--team-arena] [-h|--help]"
+    Write-Host ""
+    Write-Host "  (no args)            Configure, build, and PEF-validate Quake3 only."
+    Write-Host "  package, --package   Build, then assemble a Mac OS 9 install image."
+    Write-Host "  --base-only          Build only Quake3 (the default)."
+    Write-Host "  --team-arena         Build Quake3 and Quake3_TeamArena."
+}
+
+$PackageMode = $false
+$TeamArenaMode = "OFF"
+$PackageModeSet = $false
+$TeamArenaModeSet = $false
+foreach ($Argument in $args) {
+    switch ($Argument) {
+        { $_ -in @("package", "--package") } {
+            if ($PackageModeSet) {
+                throw "Package mode was specified more than once."
+            }
+            $PackageMode = $true
+            $PackageModeSet = $true
+            break
+        }
+        "--base-only" {
+            if ($TeamArenaModeSet) {
+                throw "Choose exactly one of --base-only or --team-arena."
+            }
+            $TeamArenaMode = "OFF"
+            $TeamArenaModeSet = $true
+            break
+        }
+        "--team-arena" {
+            if ($TeamArenaModeSet) {
+                throw "Choose exactly one of --base-only or --team-arena."
+            }
+            $TeamArenaMode = "ON"
+            $TeamArenaModeSet = $true
+            break
+        }
+        { $_ -in @("-h", "--help") } {
+            Show-Usage
+            exit 0
+        }
+        default {
+            Show-Usage
+            throw "Unknown argument '$Argument'."
+        }
+    }
+}
+
 # Add default MSYS2 binary path if it exists
 if (Test-Path "C:\msys64\usr\bin") {
     $env:PATH = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;$env:PATH"
@@ -16,14 +66,74 @@ if (-not (Test-Path $BuildDir)) {
 $ToolsDir = Join-Path (Get-Location) "tools\Retro68-build\bin"
 $CompilerName = "powerpc-apple-macos-gcc.exe"
 $CompilerPath = Join-Path $ToolsDir $CompilerName
+$PreparedOpenGLDir = Join-Path (Get-Location) "tools\Retro68-build\powerpc-apple-macos\include"
+$RawOpenGLDir = Join-Path (Get-Location) "tools\Retro68-src\InterfacesAndLibraries\Interfaces\CIncludes"
+$OpenGLSharedDir = Join-Path (Get-Location) "tools\Retro68-src\InterfacesAndLibraries\SharedLibraries"
+$OpenGLStubLib = Join-Path $OpenGLSharedDir "libOpenGLLibraryStub.a"
 
-# Check if compiler exists
-if (-not (Test-Path $CompilerPath)) {
-    # Check PATH as well
-    if (-not (Get-Command "powerpc-apple-macos-gcc" -ErrorAction SilentlyContinue)) {
-        Write-Host "Retro68 compiler not found." -ForegroundColor Yellow
-        Write-Host "Running setup_retro68.ps1..."
-        .\setup_retro68.ps1
+function Install-PreparedOpenGLSupport {
+    if (-not (Test-Path $CompilerPath)) {
+        return $false
+    }
+
+    $PreparedGl = Join-Path $PreparedOpenGLDir "gl.h"
+    $PreparedAgl = Join-Path $PreparedOpenGLDir "agl.h"
+    if (-not (Test-Path $PreparedGl) -or -not (Test-Path $PreparedAgl)) {
+        $RawGl = Join-Path $RawOpenGLDir "gl.h"
+        $RawAgl = Join-Path $RawOpenGLDir "agl.h"
+        if (-not (Test-Path $RawGl) -or -not (Test-Path $RawAgl)) {
+            return $false
+        }
+
+        Write-Host "Installing missing OpenGL SDK headers into the prepared toolchain..."
+        New-Item -ItemType Directory -Path $PreparedOpenGLDir -Force | Out-Null
+        $OpenGLHeaders = @(
+            "gl.h", "glu.h", "glm.h", "agl.h", "aglContext.h",
+            "aglMacro.h", "aglRenderers.h", "glext.h", "GL_gl.h",
+            "GL_glext.h", "GL_glut.h", "gliContext.h", "gliDispatch.h",
+            "glut.h"
+        )
+        foreach ($Header in $OpenGLHeaders) {
+            $SourceHeader = Join-Path $RawOpenGLDir $Header
+            if (Test-Path $SourceHeader) {
+                Copy-Item $SourceHeader $PreparedOpenGLDir -Force
+            }
+        }
+    }
+
+    if (-not (Test-Path $OpenGLStubLib)) {
+        $StubSource = Join-Path $OpenGLSharedDir "OpenGLLibraryStub"
+        $StubResource = Join-Path $OpenGLSharedDir "OpenGLLibraryStub.rsrc"
+        $StubAppleDouble = Join-Path $OpenGLSharedDir "%OpenGLLibraryStub"
+        $MakeImport = Join-Path $ToolsDir "MakeImport.exe"
+        if (-not (Test-Path $MakeImport)) {
+            $MakeImport = Join-Path $ToolsDir "MakeImport"
+        }
+        if (-not (Test-Path $MakeImport) -or
+            -not (Test-Path $StubSource) -or
+            -not (Test-Path $StubResource)) {
+            return $false
+        }
+
+        Write-Host "Generating missing OpenGL import library..."
+        Copy-Item $StubResource $StubAppleDouble -Force
+        & $MakeImport $StubSource $OpenGLStubLib
+        if ($LASTEXITCODE -ne 0) {
+            return $false
+        }
+    }
+
+    return (Test-Path $PreparedGl) -and
+        (Test-Path $PreparedAgl) -and
+        (Test-Path $OpenGLStubLib)
+}
+
+if (-not (Install-PreparedOpenGLSupport)) {
+    Write-Host "Retro68 compiler or prepared OpenGL SDK support not found." -ForegroundColor Yellow
+    Write-Host "Running setup_retro68.ps1..."
+    .\setup_retro68.ps1
+    if (-not (Install-PreparedOpenGLSupport)) {
+        throw "Retro68 setup did not install the compiler, prepared gl.h/agl.h headers, and OpenGL import library."
     }
 }
 
@@ -38,12 +148,24 @@ Push-Location $BuildDir
 # Using -G "Unix Makefiles" or "MinGW Makefiles" usually requires MSYS/MinGW.
 # If bash is present (MinGW/Cygwin), it usually brings 'make'.
 Write-Host "Configuring CMake..." -ForegroundColor Green
-cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/Retro68.toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/Retro68.toolchain.cmake `
+    -DCMAKE_BUILD_TYPE=Release `
+    -DBUILD_TEAM_ARENA=$TeamArenaMode
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "CMake configuration failed." -ForegroundColor Red
     Pop-Location
     exit 1
+}
+
+# Gate post-build and package steps on the option that produced this build,
+# never on a possibly stale executable left in build_mac.
+$TeamArenaCacheLine = Get-Content "CMakeCache.txt" |
+    Where-Object { $_ -match "^BUILD_TEAM_ARENA:BOOL=" } |
+    Select-Object -Last 1
+$BuildTeamArena = $TeamArenaCacheLine -match "=(1|ON|TRUE|YES|Y)$"
+if ($BuildTeamArena -ne ($TeamArenaMode -eq "ON")) {
+    throw "CMake did not preserve the requested BUILD_TEAM_ARENA=$TeamArenaMode setting."
 }
 
 # Build
@@ -55,80 +177,88 @@ cmake --build . --parallel
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Build complete." -ForegroundColor Green
     
-    # Convert to PEF (Fix for XCOFF output)
+    # Convert the linked XCOFF image to a validated PowerPC PEF.
     $MakePEF = Join-Path $ToolsDir "MakePEF.exe"
-    if (Test-Path $MakePEF) {
-        Write-Host "Checking binaries for PEF conversion..."
-        
-        # Helper to check for Joy! header (0x4A 0x6F 0x79 0x21)
-        function Test-IsPEF {
-            param($Path)
-            try {
-                if (-not (Test-Path $Path)) { return $false }
-                # Read first 4 bytes
-                $stream = [System.IO.File]::OpenRead((Convert-Path $Path))
-                $buffer = New-Object byte[] 4
-                $count = $stream.Read($buffer, 0, 4)
-                $stream.Close()
-                
-                if ($count -lt 4) { return $false }
-                if ($buffer[0] -eq 0x4A -and $buffer[1] -eq 0x6F -and $buffer[2] -eq 0x79 -and $buffer[3] -eq 0x21) {
-                    return $true
-                }
-            }
-            catch { return $false }
+    if (-not (Test-Path $MakePEF)) {
+        $MakePEF = Join-Path $ToolsDir "MakePEF"
+    }
+    if (-not (Test-Path $MakePEF)) {
+        throw "MakePEF not found; a Classic Mac application cannot be produced."
+    }
+
+    function Test-IsPEF {
+        param([string]$Path)
+
+        if (-not (Test-Path $Path)) {
             return $false
         }
 
-        if (Test-Path "Quake3") {
-            if (-not (Test-IsPEF "Quake3")) {
-                Write-Host "Converting Quake3 to PEF..."
-                & $MakePEF "Quake3" -o "Quake3.pef"
-                Move-Item -Force "Quake3.pef" "Quake3"
-                Write-Host "Created Quake3 (PEF)"
+        $Stream = $null
+        try {
+            $Stream = [System.IO.File]::OpenRead((Convert-Path $Path))
+            if ($Stream.Length -lt 1MB) {
+                return $false
             }
-            else {
-                Write-Host "Quake3 is already PEF."
+            $Buffer = New-Object byte[] 12
+            if ($Stream.Read($Buffer, 0, 12) -ne 12) {
+                return $false
             }
+            return $Buffer[0] -eq 0x4A -and $Buffer[1] -eq 0x6F -and
+                $Buffer[2] -eq 0x79 -and $Buffer[3] -eq 0x21 -and
+                $Buffer[4] -eq 0x70 -and $Buffer[5] -eq 0x65 -and
+                $Buffer[6] -eq 0x66 -and $Buffer[7] -eq 0x66 -and
+                $Buffer[8] -eq 0x70 -and $Buffer[9] -eq 0x77 -and
+                $Buffer[10] -eq 0x70 -and $Buffer[11] -eq 0x63
         }
-        if (Test-Path "Quake3.exe") {
-            # On Windows sometimes output adds .exe
-            if (-not (Test-IsPEF "Quake3.exe")) {
-                Write-Host "Converting Quake3.exe to PEF..."
-                & $MakePEF "Quake3.exe" -o "Quake3.pef"
-                Move-Item -Force "Quake3.pef" "Quake3.exe"
-                Write-Host "Created Quake3.exe (PEF)"
-            }
-            else {
-                Write-Host "Quake3.exe is already PEF."
-            }
-        }
-        
-        if (Test-Path "Quake3_TeamArena") {
-            if (-not (Test-IsPEF "Quake3_TeamArena")) {
-                Write-Host "Converting Quake3_TeamArena to PEF..."
-                & $MakePEF "Quake3_TeamArena" -o "Quake3_TeamArena.pef"
-                Move-Item -Force "Quake3_TeamArena.pef" "Quake3_TeamArena"
-                Write-Host "Created Quake3_TeamArena (PEF)"
-            }
-            else {
-                Write-Host "Quake3_TeamArena is already PEF."
-            }
-        }
-        if (Test-Path "Quake3_TeamArena.exe") {
-            if (-not (Test-IsPEF "Quake3_TeamArena.exe")) {
-                Write-Host "Converting Quake3_TeamArena.exe to PEF..."
-                & $MakePEF "Quake3_TeamArena.exe" -o "Quake3_TeamArena.pef"
-                Move-Item -Force "Quake3_TeamArena.pef" "Quake3_TeamArena.exe"
-                Write-Host "Created Quake3_TeamArena.exe (PEF)"
-            }
-            else {
-                Write-Host "Quake3_TeamArena.exe is already PEF."
+        finally {
+            if ($null -ne $Stream) {
+                $Stream.Dispose()
             }
         }
     }
+
+    function Convert-ToPEF {
+        param(
+            [string]$InputPath,
+            [string]$TemporaryPath
+        )
+
+        if (-not (Test-IsPEF $InputPath)) {
+            Write-Host "Converting $InputPath to PEF..."
+            & $MakePEF $InputPath -o $TemporaryPath
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $TemporaryPath)) {
+                throw "MakePEF failed for $InputPath."
+            }
+            Move-Item -Force $TemporaryPath $InputPath
+        }
+        if (-not (Test-IsPEF $InputPath)) {
+            throw "PEF validation failed for $InputPath (need Joy!peff/pwpc and at least 1 MiB)."
+        }
+        Write-Host "PEF validation OK: $InputPath"
+    }
+
+    $Quake3Binary = if (Test-Path "Quake3") {
+        "Quake3"
+    }
+    elseif (Test-Path "Quake3.exe") {
+        "Quake3.exe"
+    }
     else {
-        Write-Host "Warning: MakePEF not found. Binaries might be invalid XCOFF." -ForegroundColor Yellow
+        throw "Base-game executable is missing."
+    }
+    Convert-ToPEF $Quake3Binary "Quake3.pef"
+
+    if ($BuildTeamArena) {
+        $TeamArenaBinary = if (Test-Path "Quake3_TeamArena") {
+            "Quake3_TeamArena"
+        }
+        elseif (Test-Path "Quake3_TeamArena.exe") {
+            "Quake3_TeamArena.exe"
+        }
+        else {
+            throw "Team Arena is enabled but its executable is missing."
+        }
+        Convert-ToPEF $TeamArenaBinary "Quake3_TeamArena.pef"
     }
 }
 else {
@@ -141,7 +271,7 @@ Pop-Location
 # Packaging Subcommand (Simple Switch)
 # PowerShell arguments aren't passed as $1 automatically if strictly defined params, 
 # but if script has no param block, $args[0] works.
-if ($args[0] -eq "package") {
+if ($PackageMode) {
     Write-Host "==========================================" -ForegroundColor Cyan
     Write-Host "Packaging for Mac OS 9..." -ForegroundColor Cyan
     Write-Host "=========================================="
@@ -154,7 +284,9 @@ if ($args[0] -eq "package") {
     $BaseQ3Dir = Join-Path $AppDir "baseq3"
     $MissionPackDir = Join-Path $AppDir "missionpack"
     
-    # Cleanup previous temp if exists
+    # These are generated staging trees. Reusing content can silently package
+    # binaries or assets left by a different CMake configuration.
+    if (Test-Path $ContentDir) { Remove-Item -Recurse -Force $ContentDir }
     if (Test-Path $TempDir) { Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue }
     if (-not (Test-Path $BaseQ3Dir)) { New-Item -ItemType Directory -Path $BaseQ3Dir -Force | Out-Null }
     if (-not (Test-Path $TempDir)) { New-Item -ItemType Directory -Path $TempDir -Force | Out-Null }
@@ -171,14 +303,19 @@ if ($args[0] -eq "package") {
         exit 1
     }
 
-    # 1b. Copy Binary (Team Arena) - Optional
-    if (Test-Path "build_mac\Quake3_TeamArena") {
-        Copy-Item "build_mac\Quake3_TeamArena" "$AppDir\Quake3_TeamArena" -Force
-        Write-Host "Found Team Arena Binary." -ForegroundColor Green
-    }
-    elseif (Test-Path "build_mac\Quake3_TeamArena.exe") {
-        Copy-Item "build_mac\Quake3_TeamArena.exe" "$AppDir\Quake3_TeamArena" -Force
-        Write-Host "Found Team Arena Binary." -ForegroundColor Green
+    # 1b. Copy Team Arena only when this configuration built it.
+    if ($BuildTeamArena) {
+        if (Test-Path "build_mac\Quake3_TeamArena") {
+            Copy-Item "build_mac\Quake3_TeamArena" "$AppDir\Quake3_TeamArena" -Force
+            Write-Host "Found Team Arena Binary." -ForegroundColor Green
+        }
+        elseif (Test-Path "build_mac\Quake3_TeamArena.exe") {
+            Copy-Item "build_mac\Quake3_TeamArena.exe" "$AppDir\Quake3_TeamArena" -Force
+            Write-Host "Found Team Arena Binary." -ForegroundColor Green
+        }
+        else {
+            throw "Team Arena is enabled but its executable is missing."
+        }
     }
 
     # 2. Asset Retrieval
@@ -190,19 +327,27 @@ if ($args[0] -eq "package") {
 
     if ($LocalPak) {
         Write-Host "Found Base Game Data at $($LocalPak.FullName)"
-        Copy-Item $LocalPak.FullName "$BaseQ3Dir\pak0.pk3" -Force
+        Get-ChildItem -Path $LocalPak.Directory.FullName -Filter "pak*.pk3" -File |
+            Copy-Item -Destination $BaseQ3Dir -Force
         
-        if ($MissionPak) {
+        if ($BuildTeamArena) {
+            if (-not $MissionPak) {
+                throw "Team Arena is enabled but missionpack\pak0.pk3 was not found."
+            }
             Write-Host "Found Team Arena Data at $($MissionPak.FullName)"
             if (-not (Test-Path $MissionPackDir)) { New-Item -ItemType Directory -Path $MissionPackDir -Force | Out-Null }
-            Copy-Item $MissionPak.FullName "$MissionPackDir\pak0.pk3" -Force
+            Get-ChildItem -Path $MissionPak.Directory.FullName -Filter "pak*.pk3" -File |
+                Copy-Item -Destination $MissionPackDir -Force
         }
 
         # Check for Updates (pak1-8)
         $NeedUpdate = $false
-        if (-not (Test-Path "pak1.pk3") -and -not (Test-Path "$BaseQ3Dir\pak1.pk3")) { $NeedUpdate = $true }
+        if (-not (Test-Path "$BaseQ3Dir\pak1.pk3")) { $NeedUpdate = $true }
         
-        if ($MissionPak -and -not (Test-Path "missionpack\pak1.pk3") -and -not (Test-Path "$MissionPackDir\pak1.pk3")) { $NeedUpdate = $true }
+        if ($BuildTeamArena -and
+            -not (Test-Path "$MissionPackDir\pak1.pk3")) {
+            $NeedUpdate = $true
+        }
 
         if ($NeedUpdate) {
             Write-Host "Downloading Updates (BaseQ3 / MissionPack)..." -ForegroundColor Yellow
@@ -221,7 +366,7 @@ if ($args[0] -eq "package") {
                     Copy-Item $_.FullName "$BaseQ3Dir" -Force
                 }
                 
-                if ($MissionPak) {
+                if ($BuildTeamArena -and $MissionPak) {
                     Write-Host "Copying MissionPack Updates..."
                     Get-ChildItem -Path $PrExtract -Recurse -Filter "pak*.pk3" | Where-Object { $_.FullName -match "missionpack" } | ForEach-Object {
                         Copy-Item $_.FullName "$MissionPackDir" -Force
@@ -234,62 +379,48 @@ if ($args[0] -eq "package") {
         }
     }
     else {
-        Write-Host "Local pak0.pk3 not found. Falling back to Demo assets..." -ForegroundColor Yellow
-        $DemoInstaller = Join-Path $TempDir "linuxq3ademo.sh"
-        $DemoUrl = "https://ftp.gwdg.de/pub/misc/ftp.idsoftware.com/idstuff/quake3/linux/linuxq3ademo-1.11-6.x86.gz.sh"
-        
-        if (-not (Test-Path $DemoInstaller)) {
-            Write-Host "Downloading Quake 3 Demo..."
-            try {
-                Invoke-WebRequest -Uri $DemoUrl -OutFile $DemoInstaller
-            }
-            catch {
-                Write-Host "Error downloading demo: $_" -ForegroundColor Red
-                exit 1
-            }
-        }
-        
-        Write-Host "Extracting Demo Assets..."
-        # Try unar or 7z if available
-        if (Get-Command "unar" -ErrorAction SilentlyContinue) {
-            # Extraction dir
-            $ExtractDir = Join-Path $TempDir "extracted"
-            if (Test-Path $ExtractDir) { Remove-Item -Recurse -Force $ExtractDir }
-             
-            & unar -f $DemoInstaller -o $ExtractDir | Out-Null
-            $DemoPak = Get-ChildItem -Path $ExtractDir -Recurse -Filter "pak0.pk3" | Select-Object -First 1
-            if ($DemoPak) {
-                Copy-Item $DemoPak.FullName "$BaseQ3Dir\pak0.pk3" -Force
-                Write-Host "Demo assets packaged." -ForegroundColor Green
-            }
-            else {
-                Write-Host "Error: pak0.pk3 not found in extraction." -ForegroundColor Red
-                exit 1
-            }
-        }
-        else {
-            Write-Host "Error: 'unar' not found. Cannot extract .sh installer on Windows easily without it." -ForegroundColor Red
-            Write-Host "Please run 'setup_retro68.ps1' to automatically build 'unar', or install it manually."
-            exit 1
-        }
+        throw ("A retail baseq3\pak0.pk3 was not found. The demo pak belongs " +
+            "to demoq3 and is not compatible with this full-game build. " +
+            "Place legally obtained retail data under a baseq3 directory and retry.")
     }
    
     # 3. Compile Mac Resources
     Write-Host "Compiling Mac Resources..."
     $RezTool = Join-Path $ToolsDir "Rez.exe"
-    $RIncludes = Join-Path $ToolsDir "..\RIncludes"
+    if (-not (Test-Path $RezTool)) {
+        $RezTool = Join-Path $ToolsDir "Rez"
+    }
+    $Retro68InstallRoot = Split-Path $ToolsDir -Parent
+    $RIncludeCandidates = @(
+        (Join-Path $Retro68InstallRoot "universal\RIncludes"),
+        (Join-Path (Get-Location) "tools\Retro68-src\InterfacesAndLibraries\Interfaces\RIncludes")
+    )
+    $RIncludes = $RIncludeCandidates |
+        Where-Object {
+            (Test-Path (Join-Path $_ "Types.r")) -and
+            (Test-Path (Join-Path $_ "CodeFragments.r"))
+        } |
+        Select-Object -First 1
+    if (-not $RIncludes) {
+        throw ("Retro68 Rez includes are incomplete. Expected Types.r and " +
+            "CodeFragments.r under the prepared or source RIncludes directory.")
+    }
     $RsrcFile = Join-Path $BuildDir "Quake3.rsrc"
    
-    # Ensure quake3_icons.r exists (create dummy if missing to avoid Rez error)
+    # An application without its BNDL/FREF/icon resources is not a complete
+    # Classic Mac release.
     if (-not (Test-Path "code\mac\quake3_icons.r")) {
-        Set-Content -Path "code\mac\quake3_icons.r" -Value "/* No icons */"
+        throw "code\mac\quake3_icons.r is missing."
     }
 
     if (Test-Path $RezTool) {
         & $RezTool -o $RsrcFile -I $RIncludes "code\mac\mac_resources.r"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Rez failed to compile the Classic Mac resources."
+        }
     }
     else {
-        Write-Host "Warning: Rez tool not found at $RezTool" -ForegroundColor Yellow
+        throw "Rez tool not found at $RezTool."
     }
 
     # 4. Generate AppleDouble
@@ -311,7 +442,7 @@ if ($args[0] -eq "package") {
         }
     }
     else {
-        Write-Host "Warning: Quake3.rsrc not found. Icons/Type/Creator will be missing." -ForegroundColor Yellow
+        throw "Quake3.rsrc not found; refusing an incomplete Classic application."
     }
 
     # 5. Create Image
@@ -323,11 +454,8 @@ if ($args[0] -eq "package") {
         $MkIsoFs = "mkisofs"
     }
     else {
-        Write-Host "Warning: HFS creation tool (genisoimage/mkisofs) not found." -ForegroundColor Yellow
-        Write-Host "Creating a standard ZIP archive instead." -ForegroundColor Yellow
-        $ZipName = Join-Path $ReleaseRoot "Quake3_Install_Win.zip"
-        Compress-Archive -Path "$ContentDir\*" -DestinationPath $ZipName -Force
-        exit 0
+        throw ("An HFS-capable genisoimage or mkisofs is required. A normal ZIP " +
+            "does not preserve this application's resource fork.")
     }
     
     Write-Host "Creating HFS Disk Image..."
@@ -335,36 +463,44 @@ if ($args[0] -eq "package") {
     # Mapping file
     $MappingFile = Join-Path $TempDir "hfs_mapping.txt"
     Set-Content -Path $MappingFile -Value (
-        ".pk3   Raw   Q3A  Stak 'Quake 3 Data'",
-        ".cfg   Ascii Q3A  TEXT 'Quake 3 Config'",
-        "Quake3 Raw   Q3A  APPL 'Quake 3 App'",
-        "Quake3_TeamArena Raw Q3A APPL 'Quake 3 Team Arena'"
+        ".pk3   Raw   IDQ3 Stak 'Quake 3 Data'",
+        ".cfg   Ascii IDQ3 TEXT 'Quake 3 Config'",
+        "Quake3 Raw   IDQ3 APPL 'Quake 3 App'",
+        "Quake3_TeamArena Raw IDQ3 APPL 'Quake 3 Team Arena'"
     )
     
     # Run mkisofs (Hybrid HFS)
     # Using 'iso ' type code later to identify it as ISO9660
     $ImageName = Join-Path $ReleaseRoot "Quake3_Install.img"
+    if (Test-Path $ImageName) { Remove-Item $ImageName -Force }
     & $MkIsoFs -hfs -double -map $MappingFile -o $ImageName -V "Quake 3 Arena" $ContentDir | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "HFS image creation failed for $ImageName."
+    }
     
-    if (Test-Path $ImageName) {
+    if ((Test-Path $ImageName) -and (Get-Item $ImageName).Length -gt 0) {
         Write-Host "Image created: $ImageName" -ForegroundColor Green
         
         # MacBinary Encode
         # Type: 'iso ' (ISO Image), Creator: dCpy (Disk Copy)
         Write-Host "Encoding as MacBinary II..."
         $BinName = Join-Path $ReleaseRoot "Quake3_Install.img.bin"
+        if (Test-Path $BinName) { Remove-Item $BinName -Force }
         python macbinary_encode.py $ImageName $BinName "iso " "dCpy"
+        if ($LASTEXITCODE -ne 0) {
+            throw "MacBinary encoding failed for $ImageName."
+        }
         
-        if (Test-Path $BinName) {
+        if ((Test-Path $BinName) -and (Get-Item $BinName).Length -gt 128) {
             Write-Host "Package created: $BinName" -ForegroundColor Green
             Remove-Item $ImageName -Force
         }
         else {
-            Write-Host "Error: MacBinary encoding failed." -ForegroundColor Red
+            throw "MacBinary output is missing or empty: $BinName"
         }
     }
     else {
-        Write-Host "Error creating image." -ForegroundColor Red
+        throw "HFS image output is missing or empty: $ImageName"
     }
     
     # ---------------------------------------------------------
@@ -372,6 +508,7 @@ if ($args[0] -eq "package") {
     # ---------------------------------------------------------
     Write-Host "Creating Binaries-Only Image..."
     $BinImgName = Join-Path $ReleaseRoot "Quake3_Bin.img"
+    if (Test-Path $BinImgName) { Remove-Item $BinImgName -Force }
     $BinContentDir = Join-Path $ReleaseRoot "bin_content"
     if (Test-Path $BinContentDir) { Remove-Item -Recurse -Force $BinContentDir }
     New-Item -ItemType Directory -Path $BinContentDir | Out-Null
@@ -383,15 +520,28 @@ if ($args[0] -eq "package") {
     if (Test-Path "$AppDir\%Quake3_TeamArena") { Copy-Item "$AppDir\%Quake3_TeamArena" $BinContentDir }
     
     & $MkIsoFs -hfs -double -map $MappingFile -o $BinImgName -V "Quake 3 Binaries" $BinContentDir | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "HFS image creation failed for $BinImgName."
+    }
     
-    if (Test-Path $BinImgName) {
+    if ((Test-Path $BinImgName) -and (Get-Item $BinImgName).Length -gt 0) {
         Write-Host "Encoding Binaries Image..."
         $BinBinName = Join-Path $ReleaseRoot "Quake3_Bin.img.bin"
+        if (Test-Path $BinBinName) { Remove-Item $BinBinName -Force }
         python macbinary_encode.py $BinImgName $BinBinName "iso " "dCpy"
-        if (Test-Path $BinBinName) {
+        if ($LASTEXITCODE -ne 0) {
+            throw "MacBinary encoding failed for $BinImgName."
+        }
+        if ((Test-Path $BinBinName) -and (Get-Item $BinBinName).Length -gt 128) {
             Write-Host "Package created: $BinBinName" -ForegroundColor Green
             Remove-Item $BinImgName -Force
         }
+        else {
+            throw "MacBinary output is missing or empty: $BinBinName"
+        }
+    }
+    else {
+        throw "HFS image output is missing or empty: $BinImgName"
     }
     
     # Cleanup

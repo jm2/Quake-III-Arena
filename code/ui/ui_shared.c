@@ -91,8 +91,15 @@ UI_Alloc
 */				  
 void *UI_Alloc( int size ) {
 	char	*p; 
+	int		alignedSize;
 
-	if ( allocPoint + size > MEM_POOL_SIZE ) {
+	if ( size <= 0 || size > MEM_POOL_SIZE ) {
+		outOfMemory = qtrue;
+		return NULL;
+	}
+
+	alignedSize = ( size + 15 ) & ~15;
+	if ( alignedSize > MEM_POOL_SIZE - allocPoint ) {
 		outOfMemory = qtrue;
 		if (DC->Print) {
 			DC->Print("UI_Alloc: Failure. Out of memory!\n");
@@ -103,7 +110,7 @@ void *UI_Alloc( int size ) {
 
 	p = &memoryPool[allocPoint];
 
-	allocPoint += ( size + 15 ) & ~15;
+	allocPoint += alignedSize;
 
 	return p;
 }
@@ -198,6 +205,9 @@ const char *String_Alloc(const char *p) {
 		}
 
 		str  = UI_Alloc(sizeof(stringDef_t));
+		if (!str) {
+			return NULL;
+		}
 		str->next = NULL;
 		str->str = &strPool[ph];
 		if (last) {
@@ -337,7 +347,7 @@ qboolean PC_Float_Parse(int handle, float *f) {
 
 	if (!trap_PC_ReadToken(handle, &token))
 		return qfalse;
-	if (token.string[0] == '-') {
+	if (token.string[0] == '-' && token.string[1] == '\0') {
 		if (!trap_PC_ReadToken(handle, &token))
 			return qfalse;
 		negative = qtrue;
@@ -417,7 +427,7 @@ qboolean PC_Int_Parse(int handle, int *i) {
 
 	if (!trap_PC_ReadToken(handle, &token))
 		return qfalse;
-	if (token.string[0] == '-') {
+	if (token.string[0] == '-' && token.string[1] == '\0') {
 		if (!trap_PC_ReadToken(handle, &token))
 			return qfalse;
 		negative = qtrue;
@@ -479,7 +489,7 @@ qboolean String_Parse(char **p, const char **out) {
 	token = COM_ParseExt(p, qfalse);
 	if (token && token[0] != 0) {
 		*(out) = String_Alloc(token);
-		return qtrue;
+		return *(out) != NULL;
 	}
 	return qfalse;
 }
@@ -496,7 +506,7 @@ qboolean PC_String_Parse(int handle, const char **out) {
 		return qfalse;
 	
 	*(out) = String_Alloc(token.string);
-    return qtrue;
+    return *(out) != NULL;
 }
 
 /*
@@ -524,7 +534,7 @@ qboolean PC_Script_Parse(int handle, const char **out) {
 
 		if (Q_stricmp(token.string, "}") == 0) {
 			*out = String_Alloc(script);
-			return qtrue;
+			return *out != NULL;
 		}
 
 		if (token.string[1] != '\0') {
@@ -4290,19 +4300,29 @@ void Item_ValidateTypeData(itemDef_t *item) {
 
 	if (item->type == ITEM_TYPE_LISTBOX) {
 		item->typeData = UI_Alloc(sizeof(listBoxDef_t));
-		memset(item->typeData, 0, sizeof(listBoxDef_t));
+		if (item->typeData) {
+			memset(item->typeData, 0, sizeof(listBoxDef_t));
+		}
 	} else if (item->type == ITEM_TYPE_EDITFIELD || item->type == ITEM_TYPE_NUMERICFIELD || item->type == ITEM_TYPE_YESNO || item->type == ITEM_TYPE_BIND || item->type == ITEM_TYPE_SLIDER || item->type == ITEM_TYPE_TEXT) {
 		item->typeData = UI_Alloc(sizeof(editFieldDef_t));
-		memset(item->typeData, 0, sizeof(editFieldDef_t));
-		if (item->type == ITEM_TYPE_EDITFIELD) {
+		if (item->typeData) {
+			memset(item->typeData, 0, sizeof(editFieldDef_t));
+		}
+		if (item->type == ITEM_TYPE_EDITFIELD && item->typeData) {
 			if (!((editFieldDef_t *) item->typeData)->maxPaintChars) {
 				((editFieldDef_t *) item->typeData)->maxPaintChars = MAX_EDITFIELD;
 			}
 		}
 	} else if (item->type == ITEM_TYPE_MULTI) {
 		item->typeData = UI_Alloc(sizeof(multiDef_t));
+		if (item->typeData) {
+			memset(item->typeData, 0, sizeof(multiDef_t));
+		}
 	} else if (item->type == ITEM_TYPE_MODEL) {
 		item->typeData = UI_Alloc(sizeof(modelDef_t));
+		if (item->typeData) {
+			memset(item->typeData, 0, sizeof(modelDef_t));
+		}
 	}
 }
 
@@ -4407,6 +4427,9 @@ qboolean ItemParse_asset_model( itemDef_t *item, int handle ) {
 	const char *temp;
 	modelDef_t *modelPtr;
 	Item_ValidateTypeData(item);
+	if (!item->typeData) {
+		return qfalse;
+	}
 	modelPtr = (modelDef_t*)item->typeData;
 
 	if (!PC_String_Parse(handle, &temp)) {
@@ -4432,6 +4455,9 @@ qboolean ItemParse_asset_shader( itemDef_t *item, int handle ) {
 qboolean ItemParse_model_origin( itemDef_t *item, int handle ) {
 	modelDef_t *modelPtr;
 	Item_ValidateTypeData(item);
+	if (!item->typeData) {
+		return qfalse;
+	}
 	modelPtr = (modelDef_t*)item->typeData;
 
 	if (PC_Float_Parse(handle, &modelPtr->origin[0])) {
@@ -4448,6 +4474,9 @@ qboolean ItemParse_model_origin( itemDef_t *item, int handle ) {
 qboolean ItemParse_model_fovx( itemDef_t *item, int handle ) {
 	modelDef_t *modelPtr;
 	Item_ValidateTypeData(item);
+	if (!item->typeData) {
+		return qfalse;
+	}
 	modelPtr = (modelDef_t*)item->typeData;
 
 	if (!PC_Float_Parse(handle, &modelPtr->fov_x)) {
@@ -4460,6 +4489,9 @@ qboolean ItemParse_model_fovx( itemDef_t *item, int handle ) {
 qboolean ItemParse_model_fovy( itemDef_t *item, int handle ) {
 	modelDef_t *modelPtr;
 	Item_ValidateTypeData(item);
+	if (!item->typeData) {
+		return qfalse;
+	}
 	modelPtr = (modelDef_t*)item->typeData;
 
 	if (!PC_Float_Parse(handle, &modelPtr->fov_y)) {
@@ -4472,6 +4504,9 @@ qboolean ItemParse_model_fovy( itemDef_t *item, int handle ) {
 qboolean ItemParse_model_rotation( itemDef_t *item, int handle ) {
 	modelDef_t *modelPtr;
 	Item_ValidateTypeData(item);
+	if (!item->typeData) {
+		return qfalse;
+	}
 	modelPtr = (modelDef_t*)item->typeData;
 
 	if (!PC_Int_Parse(handle, &modelPtr->rotationSpeed)) {
@@ -4484,6 +4519,9 @@ qboolean ItemParse_model_rotation( itemDef_t *item, int handle ) {
 qboolean ItemParse_model_angle( itemDef_t *item, int handle ) {
 	modelDef_t *modelPtr;
 	Item_ValidateTypeData(item);
+	if (!item->typeData) {
+		return qfalse;
+	}
 	modelPtr = (modelDef_t*)item->typeData;
 
 	if (!PC_Int_Parse(handle, &modelPtr->angle)) {
@@ -4518,6 +4556,9 @@ qboolean ItemParse_decoration( itemDef_t *item, int handle ) {
 qboolean ItemParse_notselectable( itemDef_t *item, int handle ) {
 	listBoxDef_t *listPtr;
 	Item_ValidateTypeData(item);
+	if (!item->typeData) {
+		return qfalse;
+	}
 	listPtr = (listBoxDef_t*)item->typeData;
 	if (item->type == ITEM_TYPE_LISTBOX && listPtr) {
 		listPtr->notselectable = qtrue;
@@ -4550,6 +4591,18 @@ qboolean ItemParse_type( itemDef_t *item, int handle ) {
 		return qfalse;
 	}
 	Item_ValidateTypeData(item);
+	if ((item->type == ITEM_TYPE_LISTBOX
+		|| item->type == ITEM_TYPE_EDITFIELD
+		|| item->type == ITEM_TYPE_NUMERICFIELD
+		|| item->type == ITEM_TYPE_YESNO
+		|| item->type == ITEM_TYPE_BIND
+		|| item->type == ITEM_TYPE_SLIDER
+		|| item->type == ITEM_TYPE_TEXT
+		|| item->type == ITEM_TYPE_MULTI
+		|| item->type == ITEM_TYPE_MODEL)
+		&& !item->typeData) {
+		return qfalse;
+	}
 	return qtrue;
 }
 
@@ -4559,6 +4612,9 @@ qboolean ItemParse_elementwidth( itemDef_t *item, int handle ) {
 	listBoxDef_t *listPtr;
 
 	Item_ValidateTypeData(item);
+	if (!item->typeData) {
+		return qfalse;
+	}
 	listPtr = (listBoxDef_t*)item->typeData;
 	if (!PC_Float_Parse(handle, &listPtr->elementWidth)) {
 		return qfalse;
@@ -4572,6 +4628,9 @@ qboolean ItemParse_elementheight( itemDef_t *item, int handle ) {
 	listBoxDef_t *listPtr;
 
 	Item_ValidateTypeData(item);
+	if (!item->typeData) {
+		return qfalse;
+	}
 	listPtr = (listBoxDef_t*)item->typeData;
 	if (!PC_Float_Parse(handle, &listPtr->elementHeight)) {
 		return qfalse;
@@ -4953,9 +5012,15 @@ qboolean ItemParse_cvarStrList( itemDef_t *item, int handle ) {
 
 		if (pass == 0) {
 			multiPtr->cvarList[multiPtr->count] = String_Alloc(token.string);
+			if (!multiPtr->cvarList[multiPtr->count]) {
+				return qfalse;
+			}
 			pass = 1;
 		} else {
 			multiPtr->cvarStr[multiPtr->count] = String_Alloc(token.string);
+			if (!multiPtr->cvarStr[multiPtr->count]) {
+				return qfalse;
+			}
 			pass = 0;
 			multiPtr->count++;
 			if (multiPtr->count >= MAX_MULTI_CVARS) {
@@ -4999,6 +5064,9 @@ qboolean ItemParse_cvarFloatList( itemDef_t *item, int handle ) {
 		}
 
 		multiPtr->cvarList[multiPtr->count] = String_Alloc(token.string);
+		if (!multiPtr->cvarList[multiPtr->count]) {
+			return qfalse;
+		}
 		if (!PC_Float_Parse(handle, &multiPtr->cvarValue[multiPtr->count])) {
 			return qfalse;
 		}
@@ -5496,6 +5564,9 @@ qboolean MenuParse_itemDef( itemDef_t *item, int handle ) {
 	menuDef_t *menu = (menuDef_t*)item;
 	if (menu->itemCount < MAX_MENUITEMS) {
 		menu->items[menu->itemCount] = UI_Alloc(sizeof(itemDef_t));
+		if (!menu->items[menu->itemCount]) {
+			return qfalse;
+		}
 		Item_Init(menu->items[menu->itemCount]);
 		if (!Item_Parse(handle, menu->items[menu->itemCount])) {
 			return qfalse;
@@ -5782,4 +5853,3 @@ static qboolean Menu_OverActiveItem(menuDef_t *menu, float x, float y) {
 	}
 	return qfalse;
 }
-

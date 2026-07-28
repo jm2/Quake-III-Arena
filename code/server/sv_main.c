@@ -171,6 +171,11 @@ void QDECL SV_SendServerCommand(client_t *cl, const char *fmt, ...) {
 	va_start (argptr,fmt);
 	Q_vsnprintf ((char *)message, sizeof(message), fmt,argptr);
 	va_end (argptr);
+	message[sizeof(message) - 1] = '\0';
+
+	if ( strlen ((char *)message) > 1022 ) {
+		return;
+	}
 
 	if ( cl != NULL ) {
 		SV_AddServerCommand( cl, (char *)message );
@@ -870,4 +875,3 @@ void SV_Frame( int msec ) {
 }
 
 //============================================================================
-

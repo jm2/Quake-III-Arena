@@ -1023,10 +1023,12 @@ void UI_LoadMenus(const char *menuFile, qboolean reset) {
 
 void UI_Load() {
 	char lastName[1024];
-  menuDef_t *menu = Menu_GetFocused();
+	menuDef_t *menu = Menu_GetFocused();
 	char *menuSet = UI_Cvar_VariableString("ui_menuFiles");
+
+	lastName[0] = '\0';
 	if (menu && menu->window.name) {
-		strcpy(lastName, menu->window.name);
+		Q_strncpyz(lastName, menu->window.name, sizeof(lastName));
 	}
 	if (menuSet == NULL || menuSet[0] == '\0') {
 		menuSet = "ui/menus.txt";
@@ -1043,7 +1045,9 @@ void UI_Load() {
 
 	UI_LoadMenus(menuSet, qtrue);
 	Menus_CloseAll();
-	Menus_ActivateByName(lastName);
+	if (lastName[0]) {
+		Menus_ActivateByName(lastName);
+	}
 
 }
 
@@ -1316,9 +1320,9 @@ static void UI_DrawPlayerModel(rectDef_t *rect) {
 	vec3_t	viewangles;
 	vec3_t	moveangles;
 
-	  if (trap_Cvar_VariableValue("ui_Q3Model")) {
-	  strcpy(model, UI_Cvar_VariableString("model"));
-		strcpy(head, UI_Cvar_VariableString("headmodel"));
+	if (trap_Cvar_VariableValue("ui_Q3Model")) {
+		Q_strncpyz(model, UI_Cvar_VariableString("model"), sizeof(model));
+		Q_strncpyz(head, UI_Cvar_VariableString("headmodel"), sizeof(head));
 		if (!q3Model) {
 			q3Model = qtrue;
 			updateModel = qtrue;
@@ -1326,9 +1330,9 @@ static void UI_DrawPlayerModel(rectDef_t *rect) {
 		team[0] = '\0';
 	} else {
 
-		strcpy(team, UI_Cvar_VariableString("ui_teamName"));
-		strcpy(model, UI_Cvar_VariableString("team_model"));
-		strcpy(head, UI_Cvar_VariableString("team_headmodel"));
+		Q_strncpyz(team, UI_Cvar_VariableString("ui_teamName"), sizeof(team));
+		Q_strncpyz(model, UI_Cvar_VariableString("team_model"), sizeof(model));
+		Q_strncpyz(head, UI_Cvar_VariableString("team_headmodel"), sizeof(head));
 		if (q3Model) {
 			q3Model = qfalse;
 			updateModel = qtrue;
@@ -1527,8 +1531,8 @@ static void UI_DrawOpponent(rectDef_t *rect) {
   
 	if (updateOpponentModel) {
 		
-		strcpy(model, UI_Cvar_VariableString("ui_opponentModel"));
-	  strcpy(headmodel, UI_Cvar_VariableString("ui_opponentModel"));
+		Q_strncpyz(model, UI_Cvar_VariableString("ui_opponentModel"), sizeof(model));
+		Q_strncpyz(headmodel, UI_Cvar_VariableString("ui_opponentModel"), sizeof(headmodel));
 		team[0] = '\0';
 
   	memset( &info2, 0, sizeof(playerInfo_t) );
@@ -5028,13 +5032,13 @@ static void UI_BuildQ3Model_List( void )
 		{
 			filelen = strlen(fileptr);
 
-			COM_StripExtension(fileptr,skinname);
+			COM_StripExtension(fileptr, skinname, sizeof(skinname));
 
 			// look for icon_????
 			if (Q_stricmpn(skinname, "icon_", 5) == 0 && !(Q_stricmp(skinname,"icon_blue") == 0 || Q_stricmp(skinname,"icon_red") == 0))
 			{
 				if (Q_stricmp(skinname, "icon_default") == 0) {
-					Com_sprintf( scratch, sizeof(scratch), dirptr);
+					Com_sprintf( scratch, sizeof(scratch), "%s", dirptr);
 				} else {
 					Com_sprintf( scratch, sizeof(scratch), "%s/%s",dirptr, skinname + 5);
 				}
@@ -5046,7 +5050,8 @@ static void UI_BuildQ3Model_List( void )
 					}
 				}
 				if (!dirty) {
-					Com_sprintf( uiInfo.q3HeadNames[uiInfo.q3HeadCount], sizeof(uiInfo.q3HeadNames[uiInfo.q3HeadCount]), scratch);
+					Com_sprintf( uiInfo.q3HeadNames[uiInfo.q3HeadCount],
+						sizeof(uiInfo.q3HeadNames[uiInfo.q3HeadCount]), "%s", scratch);
 					uiInfo.q3HeadIcons[uiInfo.q3HeadCount++] = trap_R_RegisterShaderNoMip(va("models/players/%s/%s",dirptr,skinname));
 				}
 			}
@@ -6076,4 +6081,3 @@ static void UI_StartServerRefresh(qboolean full)
 		}
 	}
 }
-

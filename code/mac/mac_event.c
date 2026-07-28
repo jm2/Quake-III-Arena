@@ -389,15 +389,15 @@ void Sys_SendKeyEvents (void) {
 		gotEvent = GetOSEvent( mask, &event );
 	}
 	//Sys_LogPrintf( "Sys_SendKeyEvents: Event check done, gotEvent=%d what=%d\n", gotEvent, event.what );
-	
-	// generate faked events from modifer changes
-	Sys_ModifierEvents( event.modifiers );
-
-	sys_lastEventTic = event.when;
 
 	if ( !gotEvent ) {
 		return;
 	}
+
+	// event is undefined when WaitNextEvent/GetOSEvent returns false.
+	// Consume its timestamp and modifiers only after a real event arrived.
+	Sys_ModifierEvents( event.modifiers );
+	sys_lastEventTic = event.when;
     
     //Sys_LogPrintf("Sys_SendKeyEvents: Processing event types=%d\n", event.what);
 

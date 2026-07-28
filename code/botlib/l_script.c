@@ -236,8 +236,9 @@ void QDECL ScriptError(script_t *script, char *str, ...)
 	if (script->flags & SCFL_NOERRORS) return;
 
 	va_start(ap, str);
-	vsprintf(text, str, ap);
+	Q_vsnprintf(text, sizeof(text), str, ap);
 	va_end(ap);
+	text[sizeof(text) - 1] = '\0';
 #ifdef BOTLIB
 	botimport.Print(PRT_ERROR, "file %s, line %d: %s\n", script->filename, script->line, text);
 #endif //BOTLIB
@@ -262,8 +263,9 @@ void QDECL ScriptWarning(script_t *script, char *str, ...)
 	if (script->flags & SCFL_NOWARNINGS) return;
 
 	va_start(ap, str);
-	vsprintf(text, str, ap);
+	Q_vsnprintf(text, sizeof(text), str, ap);
 	va_end(ap);
+	text[sizeof(text) - 1] = '\0';
 #ifdef BOTLIB
 	botimport.Print(PRT_WARNING, "file %s, line %d: %s\n", script->filename, script->line, text);
 #endif //BOTLIB
@@ -828,7 +830,7 @@ int PS_ReadPrimitive(script_t *script, token_t *token)
 	len = 0;
 	while(*script->script_p > ' ' && *script->script_p != ';')
 	{
-		if (len >= MAX_TOKEN)
+		if (len >= MAX_TOKEN - 1)
 		{
 			ScriptError(script, "primitive token longer than MAX_TOKEN = %d", MAX_TOKEN);
 			return 0;
@@ -1426,8 +1428,8 @@ void FreeScript(script_t *script)
 void PS_SetBaseFolder(char *path)
 {
 #ifdef BSPC
-	sprintf(basefolder, path);
+	Q_strncpyz(basefolder, path, sizeof(basefolder));
 #else
-	Com_sprintf(basefolder, sizeof(basefolder), path);
+	Com_sprintf(basefolder, sizeof(basefolder), "%s", path);
 #endif
 } //end of the function PS_SetBaseFolder

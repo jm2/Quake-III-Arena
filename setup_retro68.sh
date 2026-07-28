@@ -41,7 +41,7 @@ sleep 5
 # Multiversal Interfaces (it runs make-multiverse.rb even when Universal
 # Interfaces are present). Failing late in the toolchain build for a missing
 # ruby is painful, so check up front.
-REQUIRED_CMDS="cmake git wget bison flex makeinfo unar ruby"
+REQUIRED_CMDS="cmake git bison flex makeinfo unar ruby"
 MISSING_DEPS=0
 
 for cmd in $REQUIRED_CMDS; do
@@ -50,12 +50,6 @@ for cmd in $REQUIRED_CMDS; do
         MISSING_DEPS=1
     fi
 done
-
-# Check for hfsutils specific binaries
-if ! command -v hmount &> /dev/null; then
-     echo "Error: hfsutils (hmount) not found."
-     MISSING_DEPS=1
-fi
 
 if [ $MISSING_DEPS -eq 1 ]; then
     echo "--------------------------------------------------------"
@@ -101,6 +95,11 @@ locate_or_fetch_sit() {
         return 0
     fi
     echo "  No local copy of $fname; attempting download..." >&2
+    if ! command -v wget &> /dev/null; then
+        echo "Error: wget is required only when $fname is not cached." >&2
+        echo "Place it at the repo root or in tools/, or install wget." >&2
+        return 1
+    fi
     if wget --quiet --show-progress -O "tools/$fname" "$url"; then
         echo "tools/$fname"
         return 0
@@ -240,16 +239,24 @@ STUB_RSRC="$SDK_DEST/SharedLibraries/OpenGLLibraryStub.rsrc"
 STUB_AD="$SDK_DEST/SharedLibraries/%OpenGLLibraryStub"
 STUB_LIB="$SDK_DEST/SharedLibraries/libOpenGLLibraryStub.a"
 
-if [ -f "$STUB_SRC" ] && [ -f "$STUB_RSRC" ]; then
-    echo "Generating OpenGLLibraryStub import library..."
-    cp "$STUB_RSRC" "$STUB_AD"
-    export PATH="$INSTALL_DIR/bin:$PATH"
-    if command -v MakeImport &> /dev/null; then
-        MakeImport "$STUB_SRC" "$STUB_LIB"
-        echo "Created $STUB_LIB"
-    else
-        echo "Error: MakeImport not found in $INSTALL_DIR/bin"
-        echo "Warning: MakeImport failed. Linux build might fail linking OpenGL."
+if [ ! -f "$STUB_SRC" ] || [ ! -f "$STUB_RSRC" ]; then
+    echo "Error: OpenGL import-library inputs are incomplete in $SDK_DEST/SharedLibraries."
+    exit 1
+fi
+
+echo "Generating OpenGLLibraryStub import library..."
+cp "$STUB_RSRC" "$STUB_AD"
+export PATH="$INSTALL_DIR/bin:$PATH"
+if ! command -v MakeImport &> /dev/null; then
+    echo "Error: MakeImport not found in $INSTALL_DIR/bin"
+    exit 1
+fi
+MakeImport "$STUB_SRC" "$STUB_LIB"
+
+for required in "$PPC_INC/gl.h" "$PPC_INC/agl.h" "$STUB_LIB"; do
+    if [ ! -s "$required" ]; then
+        echo "Error: Retro68 setup is incomplete; missing $required"
+        exit 1
     fi
 fi
 

@@ -1,0 +1,89 @@
+name: Portable CI
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portable-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scripts-and-ledger:
+    name: Scripts and review ledger
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Check Bash syntax and help
+        run: |
+          bash -n build_mac.sh setup_retro68.sh tests/run_host_c_tests.sh
+          ./build_mac.sh --help
+
+      - name: Check PowerShell syntax and help
+        shell: pwsh
+        run: |
+          $tokens = $null
+          foreach ($path in @("build_mac.ps1", "setup_retro68.ps1")) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path), [ref]$tokens, [ref]$errors
+            ) > $null
+            if ($errors.Count -ne 0) {
+              $errors | ForEach-Object { Write-Error $_ }
+              throw "PowerShell parser rejected $path"
+            }
+          }
+          ./build_mac.ps1 --help
+
+      - name: Compile Python utilities
+        run: |
+          python -m py_compile \
+            create_appledouble.py \
+            generate_icon_r.py \
+            macbinary_encode.py
+
+      - name: Check prioritized issue ledger
+        run: python -m unittest tests.test_review_ledger -v
+
+  packaging-tools:
+    name: Packaging tools (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.14"]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Run packaging utility regressions
+        run: python -m unittest tests.test_packaging_tools -v
+
+  host-c-regressions:
+    name: Host C regressions (ASan/UBSan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build and run isolated q_shared checks
+        run: bash tests/run_host_c_tests.sh

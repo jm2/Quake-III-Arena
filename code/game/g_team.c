@@ -105,9 +105,12 @@ void QDECL PrintMsg( gentity_t *ent, const char *fmt, ... ) {
 	char		msg[1024];
 	va_list		argptr;
 	char		*p;
+	int		len;
 	
 	va_start (argptr,fmt);
-	if (vsprintf (msg, fmt, argptr) > sizeof(msg)) {
+	len = Q_vsnprintf (msg, sizeof(msg), fmt, argptr);
+	msg[sizeof(msg) - 1] = '\0';
+	if (len < 0 || len >= sizeof(msg)) {
 		G_Error ( "PrintMsg overrun" );
 	}
 	va_end (argptr);

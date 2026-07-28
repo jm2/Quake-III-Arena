@@ -562,7 +562,7 @@ LOOPBACK BUFFERS FOR LOCAL PLAYER
 #define	MAX_LOOPBACK	16
 
 typedef struct {
-	byte	data[MAX_PACKETLEN];
+	byte	data[MAX_MSGLEN];
 	int		datalen;
 } loopmsg_t;
 
@@ -590,6 +590,11 @@ qboolean	NET_GetLoopPacket (netsrc_t sock, netadr_t *net_from, msg_t *net_messag
 	i = loop->get & (MAX_LOOPBACK-1);
 	loop->get++;
 
+	if ( loop->msgs[i].datalen < 0 || loop->msgs[i].datalen > net_message->maxsize ) {
+		Com_Printf( "NET_GetLoopPacket: oversize packet %d\n", loop->msgs[i].datalen );
+		return qfalse;
+	}
+
 	Com_Memcpy (net_message->data, loop->msgs[i].data, loop->msgs[i].datalen);
 	net_message->cursize = loop->msgs[i].datalen;
 	Com_Memset (net_from, 0, sizeof(*net_from));
@@ -605,6 +610,11 @@ void NET_SendLoopPacket (netsrc_t sock, int length, const void *data, netadr_t t
 	loopback_t	*loop;
 
 	loop = &loopbacks[sock^1];
+
+	if ( length < 0 || length > sizeof(loop->msgs[0].data) ) {
+		Com_Printf( "NET_SendLoopPacket: oversize packet %d\n", length );
+		return;
+	}
 
 	i = loop->send & (MAX_LOOPBACK-1);
 	loop->send++;
@@ -656,7 +666,8 @@ void QDECL NET_OutOfBandPrint( netsrc_t sock, netadr_t adr, const char *format, 
 	string[3] = -1;
 
 	va_start( argptr, format );
-	vsprintf( string+4, format, argptr );
+	Q_vsnprintf( string + 4, sizeof( string ) - 4, format, argptr );
+	string[sizeof( string ) - 1] = '\0';
 	va_end( argptr );
 
 	// send the datagram
@@ -739,4 +750,3 @@ qboolean	NET_StringToAdr( const char *s, netadr_t *a ) {
 
 	return qtrue;
 }
-

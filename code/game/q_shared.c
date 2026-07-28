@@ -58,11 +58,25 @@ char *COM_SkipPath (char *pathname)
 COM_StripExtension
 ============
 */
-void COM_StripExtension( const char *in, char *out ) {
-	while ( *in && *in != '.' ) {
-		*out++ = *in++;
+void COM_StripExtension( const char *in, char *out, int destsize ) {
+	const char *dot;
+	const char *slash;
+
+	if ( !in || !out || destsize < 1 ) {
+		return;
 	}
-	*out = 0;
+
+	dot = strrchr( in, '.' );
+	slash = strrchr( in, '/' );
+	if ( dot && ( !slash || slash < dot ) && destsize > dot - in ) {
+		destsize = dot - in + 1;
+	}
+
+	if ( in == out ) {
+		out[destsize - 1] = '\0';
+	} else {
+		Q_strncpyz( out, in, destsize );
+	}
 }
 
 
@@ -454,7 +468,7 @@ char *COM_ParseExt( char **data_p, qboolean allowLineBreaks )
 				*data_p = ( char * ) data;
 				return com_token;
 			}
-			if (len < MAX_TOKEN_CHARS)
+			if (len < MAX_TOKEN_CHARS - 1)
 			{
 				com_token[len] = c;
 				len++;
@@ -465,7 +479,7 @@ char *COM_ParseExt( char **data_p, qboolean allowLineBreaks )
 	// parse a regular word
 	do
 	{
-		if (len < MAX_TOKEN_CHARS)
+		if (len < MAX_TOKEN_CHARS - 1)
 		{
 			com_token[len] = c;
 			len++;
@@ -870,14 +884,36 @@ char *Q_CleanStr( char *string ) {
 void QDECL Com_sprintf( char *dest, int size, const char *fmt, ...) {
 	int		len;
 	va_list		argptr;
-	char	bigbuffer[32000];	// big, but small enough to fit in PPC stack
+#ifdef Q3_VM
+	char		bigbuffer[32000];
+#endif
 
-	va_start (argptr,fmt);
-	len = vsprintf (bigbuffer,fmt,argptr);
-	va_end (argptr);
-	if ( len >= sizeof( bigbuffer ) ) {
+	if ( !dest || size < 1 ) {
+		return;
+	}
+
+	va_start( argptr, fmt );
+#ifdef Q3_VM
+	/*
+	 * The legacy QVM libc has no bounded formatter. Preserve the historical
+	 * intermediate buffer until bg_lib gains a real Q_vsnprintf; writing
+	 * directly into a small caller buffer would be an immediate regression.
+	 */
+	len = vsprintf( bigbuffer, fmt, argptr );
+#else
+	len = Q_vsnprintf( dest, size, fmt, argptr );
+#endif
+	va_end( argptr );
+
+#ifdef Q3_VM
+	if ( len >= sizeof(bigbuffer) ) {
 		Com_Error( ERR_FATAL, "Com_sprintf: overflowed bigbuffer" );
 	}
+	Q_strncpyz( dest, bigbuffer, size );
+#else
+	dest[size - 1] = '\0';
+#endif
+
 	if (len >= size) {
 		Com_Printf ("Com_sprintf: overflow of %i in %i\n", len, size);
 #ifdef	_DEBUG
@@ -886,7 +922,6 @@ void QDECL Com_sprintf( char *dest, int size, const char *fmt, ...) {
 		}
 #endif
 	}
-	Q_strncpyz (dest, bigbuffer, size );
 }
 
 
@@ -1209,7 +1244,7 @@ void Info_SetValueForKey( char *s, const char *key, const char *value ) {
 
 	Com_sprintf (newi, sizeof(newi), "\\%s\\%s", key, value);
 
-	if (strlen(newi) + strlen(s) > MAX_INFO_STRING)
+	if (strlen(newi) + strlen(s) >= MAX_INFO_STRING)
 	{
 		Com_Printf ("Info string length exceeded\n");
 		return;
@@ -1249,7 +1284,7 @@ void Info_SetValueForKey_Big( char *s, const char *key, const char *value ) {
 
 	Com_sprintf (newi, sizeof(newi), "\\%s\\%s", key, value);
 
-	if (strlen(newi) + strlen(s) > BIG_INFO_STRING)
+	if (strlen(newi) + strlen(s) >= BIG_INFO_STRING)
 	{
 		Com_Printf ("BIG Info string length exceeded\n");
 		return;
@@ -1262,5 +1297,3 @@ void Info_SetValueForKey_Big( char *s, const char *key, const char *value ) {
 
 
 //====================================================================
-
-

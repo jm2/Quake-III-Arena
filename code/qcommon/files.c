@@ -1037,6 +1037,19 @@ separate file or a ZIP file.
 */
 extern qboolean		com_fullyInitialized;
 
+static qboolean FS_HasExtension( const char *filename, const char *extension ) {
+	int filenameLen;
+	int extensionLen;
+
+	filenameLen = strlen( filename );
+	extensionLen = strlen( extension );
+	if ( filenameLen < extensionLen ) {
+		return qfalse;
+	}
+
+	return Q_stricmp( filename + filenameLen - extensionLen, extension ) == 0;
+}
+
 int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueFILE ) {
 	searchpath_t	*search;
 	char			*netpath;
@@ -1148,14 +1161,14 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 					// from every pk3 file.. 
 					l = strlen( filename );
 					if ( !(pak->referenced & FS_GENERAL_REF)) {
-						if ( Q_stricmp(filename + l - 7, ".shader") != 0 &&
-							Q_stricmp(filename + l - 4, ".txt") != 0 &&
-							Q_stricmp(filename + l - 4, ".cfg") != 0 &&
-							Q_stricmp(filename + l - 7, ".config") != 0 &&
+						if ( !FS_HasExtension(filename, ".shader") &&
+							!FS_HasExtension(filename, ".txt") &&
+							!FS_HasExtension(filename, ".cfg") &&
+							!FS_HasExtension(filename, ".config") &&
 							strstr(filename, "levelshots") == NULL &&
-							Q_stricmp(filename + l - 4, ".bot") != 0 &&
-							Q_stricmp(filename + l - 6, ".arena") != 0 &&
-							Q_stricmp(filename + l - 5, ".menu") != 0) {
+							!FS_HasExtension(filename, ".bot") &&
+							!FS_HasExtension(filename, ".arena") &&
+							!FS_HasExtension(filename, ".menu")) {
 							pak->referenced |= FS_GENERAL_REF;
 						}
 					}
@@ -1181,33 +1194,62 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 					// to avoid opening a new file handle (limit 40 on Mac OS 9).
 					
 					// 1. Setup shared handle to look at this file
-					unzSetCurrentFileInfoPosition(pak->handle, pakFile->pos);
+					if ( unzSetCurrentFileInfoPosition(pak->handle, pakFile->pos) != UNZ_OK ) {
+						Com_Printf( S_COLOR_YELLOW "WARNING: invalid PK3 entry metadata for %s\n", filename );
+						Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
+						*file = 0;
+						return -1;
+					}
 					
 					// 2. Peek at size
 					{
 						unz_s *sharedZ = (unz_s *)pak->handle;
-						int size = sharedZ->cur_file_info.uncompressed_size;
+						unsigned long unsignedSize = sharedZ->cur_file_info.uncompressed_size;
+						int size;
 						qboolean doBuffer = qfalse;
+
+						if ( unsignedSize > (unsigned long)(INT_MAX - 1) ) {
+							Com_Printf( S_COLOR_YELLOW "WARNING: oversized PK3 entry rejected: %s\n", filename );
+							Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
+							*file = 0;
+							return -1;
+						}
+						size = (int)unsignedSize;
 						
-						if (size < 32*1024*1024) doBuffer = qtrue;
-						if (strstr(filename, ".menu") || strstr(filename, ".txt") || strstr(filename, ".cfg") || strstr(filename, ".def")) doBuffer = qtrue;
+						if ( size > 0 && size < 32*1024*1024 ) doBuffer = qtrue;
+						if ( size > 0 && (FS_HasExtension(filename, ".menu") ||
+							FS_HasExtension(filename, ".txt") ||
+							FS_HasExtension(filename, ".cfg") ||
+							FS_HasExtension(filename, ".def")) ) doBuffer = qtrue;
 						
 						if (uniqueFILE && doBuffer) {
+							int readResult;
+
 							// OPTIMIZATION: Use shared handle, buffer, then forget handle.
 							// No unzReOpen needed!
 							fsh[*file].handleFiles.file.z = pak->handle;
 							fsh[*file].zipFile = qtrue;
 
 							// Open inside zip
-							unzOpenCurrentFile( pak->handle );
+							if ( unzOpenCurrentFile( pak->handle ) != UNZ_OK ) {
+								Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
+								*file = 0;
+								return -1;
+							}
 							
 							// Buffer
 							fsh[*file].buffer = Z_Malloc(size);
 							fsh[*file].bufferLen = size;
-							unzReadCurrentFile( pak->handle, fsh[*file].buffer, size );
+							readResult = unzReadCurrentFile( pak->handle, fsh[*file].buffer, size );
 							fsh[*file].bufferPos = 0;
 							
 							unzCloseCurrentFile( pak->handle );
+							if ( readResult != size ) {
+								Z_Free( fsh[*file].buffer );
+								Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
+								*file = 0;
+								return -1;
+							}
 							
 							// Clear handle so FS_FCloseFile doesn't touch shared handle
 							fsh[*file].handleFiles.file.z = NULL;
@@ -1233,13 +1275,27 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 					// in case the file was new
 					temp = zfi->file;
 					// set the file position in the zip file (also sets the current file info)
-					unzSetCurrentFileInfoPosition(pak->handle, pakFile->pos);
+					if ( unzSetCurrentFileInfoPosition(pak->handle, pakFile->pos) != UNZ_OK ) {
+						if ( uniqueFILE ) {
+							unzClose( fsh[*file].handleFiles.file.z );
+						}
+						Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
+						*file = 0;
+						return -1;
+					}
 					// copy the file info into the unzip structure
 					Com_Memcpy( zfi, pak->handle, sizeof(unz_s) );
 					// we copy this back into the structure
 					zfi->file = temp;
 					// open the file in the zip
-					unzOpenCurrentFile( fsh[*file].handleFiles.file.z );
+					if ( unzOpenCurrentFile( fsh[*file].handleFiles.file.z ) != UNZ_OK ) {
+						if ( uniqueFILE ) {
+							unzClose( fsh[*file].handleFiles.file.z );
+						}
+						Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
+						*file = 0;
+						return -1;
+					}
 					fsh[*file].zipFilePos = pakFile->pos;
 
 					// Antigravity: Buffer check for non-optimized path (e.g. shared handle usage)
@@ -1255,7 +1311,7 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 						// Com_Printf( "FS_FOpenFileRead: %s (found in '%s')\n", 
 						// 	filename, pak->pakFilename );
 					}
-					return zfi->cur_file_info.uncompressed_size;
+					return (int)zfi->cur_file_info.uncompressed_size;
 				}
 				pakFile = pakFile->next;
 			} while(pakFile != NULL);
@@ -1272,11 +1328,11 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
       // turned out I used FS_FileExists instead
 			if ( fs_restrict->integer || fs_numServerPaks ) {
 
-				if ( Q_stricmp( filename + l - 4, ".cfg" )		// for config files
-					&& Q_stricmp( filename + l - 5, ".menu" )	// menu files
-					&& Q_stricmp( filename + l - 5, ".game" )	// menu files
-					&& Q_stricmp( filename + l - strlen(demoExt), demoExt )	// menu files
-					&& Q_stricmp( filename + l - 4, ".dat" ) ) {	// for journal files
+				if ( !FS_HasExtension( filename, ".cfg" )		// for config files
+					&& !FS_HasExtension( filename, ".menu" )	// menu files
+					&& !FS_HasExtension( filename, ".game" )	// menu files
+					&& !FS_HasExtension( filename, demoExt )	// menu files
+					&& !FS_HasExtension( filename, ".dat" ) ) {	// for journal files
 					continue;
 				}
 			}
@@ -1289,11 +1345,11 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 				continue;
 			}
 
-			if ( Q_stricmp( filename + l - 4, ".cfg" )		// for config files
-				&& Q_stricmp( filename + l - 5, ".menu" )	// menu files
-				&& Q_stricmp( filename + l - 5, ".game" )	// menu files
-				&& Q_stricmp( filename + l - strlen(demoExt), demoExt )	// menu files
-				&& Q_stricmp( filename + l - 4, ".dat" ) ) {	// for journal files
+			if ( !FS_HasExtension( filename, ".cfg" )		// for config files
+				&& !FS_HasExtension( filename, ".menu" )	// menu files
+				&& !FS_HasExtension( filename, ".game" )	// menu files
+				&& !FS_HasExtension( filename, demoExt )	// menu files
+				&& !FS_HasExtension( filename, ".dat" ) ) {	// for journal files
 				fs_fakeChkSum = random();
 			}
       
@@ -1667,6 +1723,12 @@ int FS_ReadFile( const char *qpath, void **buffer ) {
 				*buffer = NULL;
 				return -1;
 			}
+			if ( len < 0 || len >= INT_MAX ) {
+				if ( buffer != NULL ) {
+					*buffer = NULL;
+				}
+				return -1;
+			}
 			if (buffer == NULL) {
 				return len;
 			}
@@ -1706,6 +1768,13 @@ int FS_ReadFile( const char *qpath, void **buffer ) {
 		}
 		return -1;
 	}
+	if ( len < 0 || len >= INT_MAX ) {
+		FS_FCloseFile( h );
+		if ( buffer ) {
+			*buffer = NULL;
+		}
+		return -1;
+	}
 	
 	if ( !buffer ) {
 		if ( isConfig && com_journal && com_journal->integer == 1 ) {
@@ -1723,7 +1792,13 @@ int FS_ReadFile( const char *qpath, void **buffer ) {
 	buf = Hunk_AllocateTempMemory(len+1);
 	*buffer = buf;
 
-	FS_Read (buf, len, h);
+	if ( FS_Read( buf, len, h ) != len ) {
+		FS_FCloseFile( h );
+		Hunk_FreeTempMemory( buf );
+		*buffer = NULL;
+		fs_loadStack--;
+		return -1;
+	}
 
 	// guarantee that it will have a trailing 0 for string operations
 	buf[len] = 0;
@@ -2711,8 +2786,13 @@ qboolean FS_ComparePaks( char *neededpaks, int len, qboolean dlstring ) {
 	searchpath_t	*sp;
 	qboolean havepak, badchecksum;
 	int i;
+	char remoteName[MAX_ZPATH];
+	char localName[MAX_ZPATH];
+	const char *pakName;
+	int pakNameLen;
+	int neededLen;
 
-	if ( !fs_numServerReferencedPaks ) {
+	if ( !neededpaks || len <= 0 || !fs_numServerReferencedPaks ) {
 		return qfalse; // Server didn't send any pack information along
 	}
 
@@ -2722,6 +2802,10 @@ qboolean FS_ComparePaks( char *neededpaks, int len, qboolean dlstring ) {
 		// Ok, see if we have this pak file
 		badchecksum = qfalse;
 		havepak = qfalse;
+
+		if ( !fs_serverReferencedPakNames[i] || !*fs_serverReferencedPakNames[i] ) {
+			continue;
+		}
 
 		// never autodownload any of the id paks
 		if ( FS_idPak(fs_serverReferencedPakNames[i], "baseq3") || FS_idPak(fs_serverReferencedPakNames[i], "missionpack") ) {
@@ -2740,26 +2824,46 @@ qboolean FS_ComparePaks( char *neededpaks, int len, qboolean dlstring ) {
 
       if (dlstring)
       {
+        pakName = fs_serverReferencedPakNames[i];
+        pakNameLen = strlen(pakName);
+
+        // The name is server supplied and becomes both a protocol field and
+        // a local path. Reject delimiters, traversal and truncated filenames.
+        if ( pakNameLen + 14 >= sizeof(localName)
+          || pakName[0] == '/' || pakName[0] == '\\'
+          || strstr(pakName, "..") || strstr(pakName, "::")
+          || strchr(pakName, ':') || strchr(pakName, '\\')
+          || strchr(pakName, '@') || strchr(pakName, '\n')
+          || strchr(pakName, '\r') || strchr(pakName, ';') ) {
+          Com_Printf( "WARNING: Invalid download name %s\n", pakName );
+          continue;
+        }
+
+        Com_sprintf( remoteName, sizeof(remoteName), "%s.pk3", pakName );
+
+        if ( FS_SV_FileExists( remoteName ) )
+        {
+          Com_sprintf( localName, sizeof(localName), "%s.%08x.pk3",
+            pakName, fs_serverReferencedPaks[i] );
+        }
+        else
+        {
+          Q_strncpyz( localName, remoteName, sizeof(localName) );
+        }
+
+        neededLen = strlen(neededpaks) + strlen(remoteName)
+          + strlen(localName) + 2;
+        if ( neededLen >= len ) {
+          break;
+        }
+
         // Remote name
         Q_strcat( neededpaks, len, "@");
-        Q_strcat( neededpaks, len, fs_serverReferencedPakNames[i] );
-        Q_strcat( neededpaks, len, ".pk3" );
+        Q_strcat( neededpaks, len, remoteName );
 
         // Local name
         Q_strcat( neededpaks, len, "@");
-        // Do we have one with the same name?
-        if ( FS_SV_FileExists( va( "%s.pk3", fs_serverReferencedPakNames[i] ) ) )
-        {
-          char st[MAX_ZPATH];
-          // We already have one called this, we need to download it to another name
-          // Make something up with the checksum in it
-          Com_sprintf( st, sizeof( st ), "%s.%08x.pk3", fs_serverReferencedPakNames[i], fs_serverReferencedPaks[i] );
-          Q_strcat( neededpaks, len, st );
-        } else
-        {
-          Q_strcat( neededpaks, len, fs_serverReferencedPakNames[i] );
-          Q_strcat( neededpaks, len, ".pk3" );
-        }
+        Q_strcat( neededpaks, len, localName );
       }
       else
       {
@@ -3573,4 +3677,3 @@ int		FS_FTell( fileHandle_t f ) {
 void	FS_Flush( fileHandle_t f ) {
 	fflush(fsh[f].handleFiles.file.o);
 }
-

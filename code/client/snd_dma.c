@@ -140,12 +140,7 @@ void S_Init( void ) {
 	cvar_t	*cv;
 	qboolean	r;
 
-	// TEMPORARY: Unconditionally skip sound on Mac OS 9 due to SNDDMA_Init hang
-	printf("SOFF\n");  // Sound OFF
 	Com_Printf("\n------- sound initialization -------\n");
-	Com_Printf ("Sound disabled for Mac OS 9 debugging.\n");
-	Com_Printf("------------------------------------\n");
-	return;
 
 	s_volume = Cvar_Get ("s_volume", "0.8", CVAR_ARCHIVE);
 	s_musicVolume = Cvar_Get ("s_musicvolume", "0.25", CVAR_ARCHIVE);
@@ -158,24 +153,30 @@ void S_Init( void ) {
 	s_show = Cvar_Get ("s_show", "0", CVAR_CHEAT);
 	s_testsound = Cvar_Get ("s_testsound", "0", CVAR_CHEAT);
 
-	cv = Cvar_Get ("s_initsound", "0", 0);  // Disabled to bypass Mac sound driver hang
+#ifdef __MACOS__
+	// Keep the unfinished Classic Sound Manager backend opt-in until it has
+	// been exercised on hardware. Unlike the old unconditional return,
+	// "+set s_initsound 1" now provides a usable bring-up/testing path.
+	cv = Cvar_Get ("s_initsound", "0", 0);
+#else
+	cv = Cvar_Get ("s_initsound", "1", 0);
+#endif
 	if ( !cv->integer ) {
-		printf("SND0\n");  // Sound disabled
 		Com_Printf ("not initializing.\n");
 		Com_Printf("------------------------------------\n");
 		return;
 	}
 
-	Cmd_AddCommand("play", S_Play_f);
-	Cmd_AddCommand("music", S_Music_f);
-	Cmd_AddCommand("s_list", S_SoundList_f);
-	Cmd_AddCommand("s_info", S_SoundInfo_f);
-	Cmd_AddCommand("s_stop", S_StopAllSounds);
-
 	r = SNDDMA_Init();
 	Com_Printf("------------------------------------\n");
 
 	if ( r ) {
+		Cmd_AddCommand("play", S_Play_f);
+		Cmd_AddCommand("music", S_Music_f);
+		Cmd_AddCommand("s_list", S_SoundList_f);
+		Cmd_AddCommand("s_info", S_SoundInfo_f);
+		Cmd_AddCommand("s_stop", S_StopAllSounds);
+
 		s_soundStarted = 1;
 		s_soundMuted = 1;
 //		s_numSfx = 0;
@@ -240,11 +241,11 @@ void S_Shutdown( void ) {
 
 	s_soundStarted = 0;
 
-    Cmd_RemoveCommand("play");
+	Cmd_RemoveCommand("play");
 	Cmd_RemoveCommand("music");
-	Cmd_RemoveCommand("stopsound");
-	Cmd_RemoveCommand("soundlist");
-	Cmd_RemoveCommand("soundinfo");
+	Cmd_RemoveCommand("s_stop");
+	Cmd_RemoveCommand("s_list");
+	Cmd_RemoveCommand("s_info");
 }
 
 

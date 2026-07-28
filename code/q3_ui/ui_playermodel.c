@@ -424,7 +424,7 @@ static void PlayerModel_BuildList( void )
 		{
 			filelen = strlen(fileptr);
 
-			COM_StripExtension(fileptr,skinname);
+			COM_StripExtension(fileptr, skinname, sizeof(skinname));
 
 			// look for icon_????
 			if (!Q_stricmpn(skinname,"icon_",5))
@@ -727,5 +727,4 @@ void UI_PlayerModelMenu(void)
 
 	Menu_SetCursorToItem( &s_playermodel.menu, &s_playermodel.pics[s_playermodel.selectedmodel % MAX_MODELSPERPAGE] );
 }
-
 

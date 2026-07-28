@@ -1377,7 +1377,10 @@ static void LoadJPG( const char *filename, unsigned char **pic, int *width, int 
   struct jpeg_error_mgr jerr;
   /* More stuff */
   JSAMPARRAY buffer;		/* Output row buffer */
-  int row_stride;		/* physical row width in output buffer */
+  unsigned int row_stride;	/* physical row width in output buffer */
+  unsigned int pixelcount, memcount;
+  unsigned int sindex, dindex;
+  unsigned int output_width, output_height, output_components;
   unsigned char *out;
   byte	*fbuffer;
   byte  *bbuf;
@@ -1420,9 +1423,8 @@ static void LoadJPG( const char *filename, unsigned char **pic, int *width, int 
 
   /* Step 4: set parameters for decompression */
 
-  /* In this example, we don't need to change any of the defaults set by
-   * jpeg_read_header(), so we do nothing here.
-   */
+  /* Always convert supported input images to three-component RGB. */
+  cinfo.out_color_space = JCS_RGB;
 
   /* Step 5: Start decompressor */
 
@@ -1438,11 +1440,25 @@ static void LoadJPG( const char *filename, unsigned char **pic, int *width, int 
    * In this example, we need to make an output work buffer of the right size.
    */ 
   /* JSAMPLEs per row in output buffer */
-  row_stride = cinfo.output_width * cinfo.output_components;
+  output_width = cinfo.output_width;
+  output_height = cinfo.output_height;
+  output_components = cinfo.output_components;
 
-  out = ri.Malloc(cinfo.output_width*cinfo.output_height*cinfo.output_components);
+  if ( !output_width || !output_height
+		|| output_height > 0x1FFFFFFF / output_width
+		|| output_components != 3 ) {
+	jpeg_destroy_decompress(&cinfo);
+	ri.FS_FreeFile(fbuffer);
+	ri.Error(ERR_DROP, "LoadJPG: %s has an invalid image format: %ux%u, components: %u",
+		filename, output_width, output_height, output_components);
+	return;
+  }
 
-  *pic = out;
+  pixelcount = output_width * output_height;
+  memcount = pixelcount * 4;
+  row_stride = output_width * output_components;
+  out = ri.Malloc(memcount);
+
   *width = cinfo.output_width;
   *height = cinfo.output_height;
 
@@ -1462,18 +1478,20 @@ static void LoadJPG( const char *filename, unsigned char **pic, int *width, int 
     (void) jpeg_read_scanlines(&cinfo, buffer, 1);
   }
 
-  // clear all the alphas to 255
-  {
-	  int	i, j;
-		byte	*buf;
+  /*
+   * Expand RGB to RGBA backwards so the source and destination may share
+   * the same allocation without overwriting unread pixels.
+   */
+  sindex = pixelcount * cinfo.output_components;
+  dindex = memcount;
+  do {
+	out[--dindex] = 255;
+	out[--dindex] = out[--sindex];
+	out[--dindex] = out[--sindex];
+	out[--dindex] = out[--sindex];
+  } while ( sindex );
 
-		buf = *pic;
-
-	  j = cinfo.output_width * cinfo.output_height * 4;
-	  for ( i = 3 ; i < j ; i+=4 ) {
-		  buf[i] = 255;
-	  }
-  }
+  *pic = out;
 
   /* Step 7: Finish decompression */
 
@@ -2517,4 +2535,3 @@ void	R_SkinList_f( void ) {
 	}
 	ri.Printf (PRINT_ALL, "------------------\n");
 }
-

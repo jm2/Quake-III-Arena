@@ -429,6 +429,31 @@ char *Cmd_Cmd()
 
 /*
 ============
+Cmd_Args_Sanitize
+
+Replace separators in client-supplied arguments before passing them to a
+game VM.  This protects older QVMs that construct console commands from
+their arguments without validating command separators.
+============
+*/
+void Cmd_Args_Sanitize( void ) {
+	int i;
+
+	for ( i = 1 ; i < cmd_argc ; i++ ) {
+		char *c = cmd_argv[i];
+
+		if ( strlen( c ) > MAX_CVAR_VALUE_STRING - 1 ) {
+			c[MAX_CVAR_VALUE_STRING - 1] = '\0';
+		}
+
+		while ( ( c = strpbrk( c, "\n\r;" ) ) != NULL ) {
+			*c++ = ' ';
+		}
+	}
+}
+
+/*
+============
 Cmd_TokenizeString
 
 Parses the given string into command line tokens.
@@ -712,4 +737,3 @@ void Cmd_Init (void) {
 	Cmd_AddCommand ("echo",Cmd_Echo_f);
 	Cmd_AddCommand ("wait", Cmd_Wait_f);
 }
-

@@ -117,8 +117,9 @@ void QDECL Com_FlightRecord( const char *fmt, ... ) {
     int i;
 
     va_start( argptr, fmt );
-    len = vsprintf( text, fmt, argptr );
+    len = Q_vsnprintf( text, sizeof(text), fmt, argptr );
     va_end( argptr );
+    text[sizeof(text) - 1] = '\0';
 
     if ( len < 0 ) return;
     if ( len > sizeof(text)-1 ) len = sizeof(text)-1;

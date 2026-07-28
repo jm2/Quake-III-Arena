@@ -4,6 +4,9 @@ import os
 import struct
 import binascii
 
+MAC_EPOCH_OFFSET = 2082844800
+
+
 def calc_crc(data):
     # CCITT CRC-16 (XMODEM)
     crc = 0
@@ -19,29 +22,35 @@ def calc_crc(data):
 
 def encode_macbinary(input_path, output_path, file_type, file_creator, rsrc_path=None):
     filename = os.path.basename(input_path)
-    if len(filename) > 63:
-        filename = filename[:63]
+    try:
+        filename_bytes = filename.encode('mac_roman')
+    except UnicodeEncodeError as exc:
+        raise ValueError(f"filename is not representable in MacRoman: {filename!r}") from exc
+    filename_bytes = filename_bytes[:63]
     
     data_len = os.path.getsize(input_path)
     rsrc_len = 0
     if rsrc_path and os.path.exists(rsrc_path):
         rsrc_len = os.path.getsize(rsrc_path)
+    if data_len > 0xFFFFFFFF or rsrc_len > 0xFFFFFFFF:
+        raise ValueError("MacBinary II fork lengths must fit in 32 bits")
     
-    # Creation/Mod time: seconds since Jan 1 1904. 
-    # For simplicity, using 0 or strict generic date (e.g. 2000-01-01) isn't strictly necessary 
-    # but good for cleanliness. Let's use current time + offset.
-    # Unix epoch (1970) is 2082844800 seconds after Mac epoch (1904)
-    # Actually, we can just leave zero if irrelevant, but Finder might show blank dates.
-    # Let's verify Mac epoch.
+    # SOURCE_DATE_EPOCH makes release metadata reproducible. Otherwise preserve
+    # the input image's modification time for both MacBinary date fields.
+    unix_timestamp = int(os.environ.get(
+        "SOURCE_DATE_EPOCH", os.path.getmtime(input_path)))
+    mac_timestamp = unix_timestamp + MAC_EPOCH_OFFSET
+    if not 0 <= mac_timestamp <= 0xFFFFFFFF:
+        raise ValueError("timestamp is outside the MacBinary II date range")
     
     header = bytearray(128)
     
     # 0: Old Version (0)
     header[0] = 0
     # 1: Filename Length
-    header[1] = len(filename)
+    header[1] = len(filename_bytes)
     # 2-64: Filename
-    header[2:2+len(filename)] = filename.encode('mac_roman', errors='ignore')
+    header[2:2+len(filename_bytes)] = filename_bytes
     
     # 65-68: Type
     header[65:69] = file_type.encode('mac_roman').ljust(4)[:4]
@@ -54,6 +63,10 @@ def encode_macbinary(input_path, output_path, file_type, file_creator, rsrc_path
     
     # 87-90: Resource Fork Length
     struct.pack_into('>I', header, 87, rsrc_len)
+
+    # 91-94: Creation date; 95-98: Modification date (Mac epoch).
+    struct.pack_into('>I', header, 91, mac_timestamp)
+    struct.pack_into('>I', header, 95, mac_timestamp)
     
     # 122: Version
     header[122] = 129

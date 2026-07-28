@@ -1523,8 +1523,9 @@ static void SV_RankError( const char* fmt, ... )
 	char	text[1024];
 
 	va_start( arg_ptr, fmt );
-	vsprintf( text, fmt, arg_ptr );
+	Q_vsnprintf( text, sizeof(text), fmt, arg_ptr );
 	va_end( arg_ptr );
+	text[sizeof(text) - 1] = '\0';
 
 	Com_DPrintf( "****************************************\n" );
 	Com_DPrintf( "SV_RankError: %s\n", text );
@@ -1534,4 +1535,3 @@ static void SV_RankError( const char* fmt, ... )
 	Cvar_Set( "sv_rankingsActive", "0" );
 	// FIXME - attempt clean shutdown?
 }
-

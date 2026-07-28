@@ -1,5 +1,10 @@
 # Implementation Plan: Quake III Arena 1.32c on Mac OS 9 via Retro68
 
+> **Historical snapshot.** This plan records an earlier bring-up state and
+> contains conclusions that later commits or the 2026-07-28 review superseded.
+> Use [`docs/task.md`](docs/task.md) as the authoritative continuation ledger
+> and [`docs/review-findings.md`](docs/review-findings.md) for current findings.
+
 This plan synthesizes a holistic review of the current tree against its stated goal:
 **build Q3 1.32c (with modern CVE fixes) for Mac OS 9 using the Retro68 cross
 toolchain**, and translates the review into a concrete, ordered work program.

@@ -1213,6 +1213,7 @@ Cmd_CallVote_f
 ==================
 */
 void Cmd_CallVote_f( gentity_t *ent ) {
+	char	*c;
 	int		i;
 	char	arg1[MAX_STRING_TOKENS];
 	char	arg2[MAX_STRING_TOKENS];
@@ -1239,9 +1240,12 @@ void Cmd_CallVote_f( gentity_t *ent ) {
 	trap_Argv( 1, arg1, sizeof( arg1 ) );
 	trap_Argv( 2, arg2, sizeof( arg2 ) );
 
-	if( strchr( arg1, ';' ) || strchr( arg2, ';' ) ) {
-		trap_SendServerCommand( ent-g_entities, "print \"Invalid vote string.\n\"" );
-		return;
+	// reject all command separators, not just semicolons
+	for ( c = arg2 ; *c ; c++ ) {
+		if ( *c == '\n' || *c == '\r' || *c == ';' ) {
+			trap_SendServerCommand( ent-g_entities, "print \"Invalid vote string.\n\"" );
+			return;
+		}
 	}
 
 	if ( !Q_stricmp( arg1, "map_restart" ) ) {

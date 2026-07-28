@@ -78,7 +78,16 @@ void Sys_QueEvent( int time, sysEventType_t type, int value, int value2, int ptr
     int next = (eventHead + 1) % MAX_MAC_EVENTS;
 
     if (next == eventTail) {
-        return; // Overflow
+        // Match the other platform queues: preserve the newest event, evict
+        // the oldest, and release any pointer-bearing payload it owned.
+        // Silently dropping the incoming packet leaked its Z_Malloc buffer;
+        // dropping a key-up event could also leave input latched.
+        ev = &eventQue[eventTail];
+        Com_Printf( "Sys_QueEvent: overflow\n" );
+        if ( ev->evPtr ) {
+            Z_Free( ev->evPtr );
+        }
+        eventTail = (eventTail + 1) % MAX_MAC_EVENTS;
     }
 
     // time == 0 means "now" (contract from the other ports); InputSprocket
@@ -313,7 +322,9 @@ void Sys_Error( const char *error, ... ) {
     fprintf( stderr, "Sys_Error: %s\n", text );
     Sys_LogPrintf("Sys_Error: %s\n", text);
     Sys_DumpRetroLogs("retro68_console_crash.txt");
-    Sys_Quit();
+    Sys_ShutdownInput();
+    Sys_ShutdownNetworking();
+    exit( 1 );
 }
 
 // Time
@@ -515,113 +526,184 @@ static OSErr PathToFSSpec(const char *path, FSSpec *spec) {
     return err;
 }
 
-// NEW IMPLEMENTATION: Hardcoded file discovery since:
-// 1. PBGetCatInfo directory iteration fails with -35
-// 2. <dirent.h> is not supported by Retro68
-// BUT fopen() works! So we probe for known files directly.
+/*
+=================
+Sys_GetDirectoryID
 
-char **Sys_ListFiles( const char *directory, const char *extension, char *filter, int *numfiles, qboolean wantsubs ) {
-    int nfiles = 0;
-    static char *list[MAX_FOUND_FILES];
-    char **listCopy;
-    int i;
-    int extLen;
-    qboolean dironly = wantsubs;
-    char testPath[512];
-    FILE *fp;
-    
-    //printf("DEBUG: Sys_ListFiles (hardcoded probe) dir='%s' ext='%s'\n", directory, extension);
-    
-    *numfiles = 0;
-    
-    if (!extension)
-        extension = "";
-    
-    if (extension[0] == '/' && extension[1] == 0) {
-        extension = "";
-        dironly = qtrue;
+Resolve an HFS path to the catalog directory ID needed for indexed
+PBGetCatInfoSync calls. FSSpec.parID is the parent ID, not the requested
+directory's ID, so it must not be used directly for enumeration.
+=================
+*/
+static qboolean Sys_GetDirectoryID( const char *directory, short *vRefNum,
+                                    long *dirID ) {
+    FSSpec spec;
+    CInfoPBRec pb;
+    OSErr err;
+
+    if ( !directory || !directory[0] ) {
+        return HGetVol( NULL, vRefNum, dirID ) == noErr;
     }
-    
-    extLen = strlen(extension);
-    
-    // If looking for directories, we can't enumerate - return NULL
-    if (dironly) {
-        //printf("DEBUG: Sys_ListFiles: Directory enumeration not supported, returning NULL\n");
+
+    err = PathToFSSpec( directory, &spec );
+    if ( err != noErr ) {
+        return qfalse;
+    }
+
+    memset( &pb, 0, sizeof( pb ) );
+    pb.hFileInfo.ioNamePtr = spec.name;
+    pb.hFileInfo.ioVRefNum = spec.vRefNum;
+    pb.hFileInfo.ioDirID = spec.parID;
+    pb.hFileInfo.ioFDirIndex = 0;
+
+    err = PBGetCatInfoSync( &pb );
+    if ( err != noErr || !(pb.hFileInfo.ioFlAttrib & ioDirMask) ) {
+        return qfalse;
+    }
+
+    *vRefNum = spec.vRefNum;
+    *dirID = pb.dirInfo.ioDrDirID;
+    return qtrue;
+}
+
+/*
+=================
+Sys_ListFilteredDirectory
+
+Classic File Manager equivalent of the recursive Unix filtered-file walk.
+Catalog names are converted to C strings, while returned relative paths use
+Q3's portable '/' separator for Com_FilterPath.
+=================
+*/
+static void Sys_ListFilteredDirectory( short vRefNum, long dirID,
+                                       const char *subdirs, char *filter,
+                                       char **list, int *numfiles ) {
+    int index;
+
+    for ( index = 1; *numfiles < MAX_FOUND_FILES - 1; index++ ) {
+        CInfoPBRec pb;
+        Str255 name;
+        OSErr err;
+        qboolean isDir;
+        long childDirID;
+        char filename[MAX_OSPATH];
+        char newsubdirs[MAX_OSPATH];
+
+        memset( &pb, 0, sizeof( pb ) );
+        pb.hFileInfo.ioNamePtr = name;
+        pb.hFileInfo.ioVRefNum = vRefNum;
+        pb.hFileInfo.ioDirID = dirID;
+        pb.hFileInfo.ioFDirIndex = index;
+
+        err = PBGetCatInfoSync( &pb );
+        if ( err != noErr ) {
+            break;
+        }
+
+        isDir = (pb.hFileInfo.ioFlAttrib & ioDirMask) != 0;
+        childDirID = isDir ? pb.dirInfo.ioDrDirID : 0;
+        PStringToCString( (char *)name );
+
+        if ( subdirs[0] ) {
+            Com_sprintf( filename, sizeof( filename ), "%s/%s",
+                         subdirs, (char *)name );
+        } else {
+            Q_strncpyz( filename, (char *)name, sizeof( filename ) );
+        }
+
+        if ( isDir ) {
+            Q_strncpyz( newsubdirs, filename, sizeof( newsubdirs ) );
+            Sys_ListFilteredDirectory( vRefNum, childDirID, newsubdirs,
+                                       filter, list, numfiles );
+        }
+
+        if ( *numfiles >= MAX_FOUND_FILES - 1 ) {
+            break;
+        }
+        if ( !Com_FilterPath( filter, filename, qfalse ) ) {
+            continue;
+        }
+
+        list[*numfiles] = CopyString( filename );
+        (*numfiles)++;
+    }
+}
+
+char **Sys_ListFiles( const char *directory, const char *extension, char *filter,
+                      int *numfiles, qboolean wantsubs ) {
+    char *list[MAX_FOUND_FILES];
+    char **listCopy;
+    short vRefNum;
+    long dirID;
+    qboolean dironly = wantsubs;
+    int extensionLength;
+    int nfiles = 0;
+    int index;
+    int i;
+
+    *numfiles = 0;
+
+    if ( !Sys_GetDirectoryID( directory, &vRefNum, &dirID ) ) {
         return NULL;
     }
-    
-    // For pk3 files, probe known filenames
-    if (Q_stricmp(extension, ".pk3") == 0) {
-        // Standard Quake 3 pk3 files
-        static const char *knownPk3[] = {
-            "pak0.pk3", "pak1.pk3", "pak2.pk3", "pak3.pk3", "pak4.pk3",
-            "pak5.pk3", "pak6.pk3", "pak7.pk3", "pak8.pk3",
-            NULL
-        };
-        
-        for (i = 0; knownPk3[i] && nfiles < MAX_FOUND_FILES - 1; i++) {
-            // Build path - handle HFS path format
-            if (directory[0] == ':') {
-                snprintf(testPath, sizeof(testPath), "%s:%s", directory, knownPk3[i]);
-            } else {
-                snprintf(testPath, sizeof(testPath), "%s%s%s", 
-                         directory, 
-                         (directory[0] && directory[strlen(directory)-1] != ':') ? ":" : "",
-                         knownPk3[i]);
+
+    if ( filter ) {
+        Sys_ListFilteredDirectory( vRefNum, dirID, "", filter, list, &nfiles );
+    } else {
+        if ( !extension ) {
+            extension = "";
+        }
+        if ( extension[0] == '/' && extension[1] == 0 ) {
+            extension = "";
+            dironly = qtrue;
+        }
+        extensionLength = strlen( extension );
+
+        for ( index = 1; nfiles < MAX_FOUND_FILES - 1; index++ ) {
+            CInfoPBRec pb;
+            Str255 name;
+            OSErr err;
+            qboolean isDir;
+            int nameLength;
+
+            memset( &pb, 0, sizeof( pb ) );
+            pb.hFileInfo.ioNamePtr = name;
+            pb.hFileInfo.ioVRefNum = vRefNum;
+            pb.hFileInfo.ioDirID = dirID;
+            pb.hFileInfo.ioFDirIndex = index;
+
+            err = PBGetCatInfoSync( &pb );
+            if ( err != noErr ) {
+                break;
             }
-            
-            fp = fopen(testPath, "rb");
-            if (fp) {
-                //printf("DEBUG: Sys_ListFiles: FOUND '%s'\n", knownPk3[i]);
-                fclose(fp);
-                list[nfiles] = CopyString(knownPk3[i]);
-                nfiles++;
+
+            isDir = (pb.hFileInfo.ioFlAttrib & ioDirMask) != 0;
+            if ( (dironly && !isDir) || (!dironly && isDir) ) {
+                continue;
             }
+
+            nameLength = PStringToCString( (char *)name );
+            if ( extensionLength &&
+                 (nameLength < extensionLength ||
+                  Q_stricmp( (char *)name + nameLength - extensionLength,
+                             extension )) ) {
+                continue;
+            }
+
+            list[nfiles++] = CopyString( (char *)name );
         }
     }
-    // For cfg files
-    else if (Q_stricmp(extension, ".cfg") == 0) {
-        static const char *knownCfg[] = {
-            "default.cfg", "q3config.cfg", "autoexec.cfg",
-            NULL
-        };
-        
-        for (i = 0; knownCfg[i] && nfiles < MAX_FOUND_FILES - 1; i++) {
-            if (directory[0] == ':') {
-                snprintf(testPath, sizeof(testPath), "%s:%s", directory, knownCfg[i]);
-            } else {
-                snprintf(testPath, sizeof(testPath), "%s%s%s",
-                         directory,
-                         (directory[0] && directory[strlen(directory)-1] != ':') ? ":" : "",
-                         knownCfg[i]);
-            }
-            
-            fp = fopen(testPath, "rb");
-            if (fp) {
-                //printf("DEBUG: Sys_ListFiles: FOUND '%s'\n", knownCfg[i]);
-                fclose(fp);
-                list[nfiles] = CopyString(knownCfg[i]);
-                nfiles++;
-            }
-        }
-    }
-    else {
-        //printf("DEBUG: Sys_ListFiles: Unknown extension '%s', cannot probe\n", extension);
-    }
-    
-    list[nfiles] = NULL;
+
     *numfiles = nfiles;
-    
-    //printf("DEBUG: Sys_ListFiles: Found %d files\n", nfiles);
-    
-    if (!nfiles) return NULL;
-    
-    listCopy = Z_Malloc((nfiles + 1) * sizeof(*listCopy));
-    for (i = 0; i < nfiles; i++) {
+    if ( !nfiles ) {
+        return NULL;
+    }
+
+    listCopy = Z_Malloc( (nfiles + 1) * sizeof( *listCopy ) );
+    for ( i = 0; i < nfiles; i++ ) {
         listCopy[i] = list[i];
     }
     listCopy[i] = NULL;
-    
     return listCopy;
 }
 
@@ -1005,13 +1087,30 @@ int VM_CallCompiled( void *vm, int *args ) { return 0; }
 int main( int argc, char **argv ) {
     int i;
     char commandLine[1024];
+    size_t commandLength;
 
     Sys_LogPrintf("main: START\n");
 
     commandLine[0] = 0;
+    commandLength = 0;
     for (i = 1; i < argc; i++) {
-        strcat(commandLine, argv[i]);
-        if (i < argc - 1) strcat(commandLine, " ");
+        size_t argumentLength = strlen( argv[i] );
+        size_t separatorLength = i < argc - 1 ? 1 : 0;
+
+        if ( argumentLength + separatorLength >
+             sizeof( commandLine ) - commandLength - 1 ) {
+            fprintf( stderr,
+                     "Quake3: command line exceeds %u bytes\n",
+                     (unsigned int)(sizeof( commandLine ) - 1) );
+            return 1;
+        }
+
+        memcpy( commandLine + commandLength, argv[i], argumentLength );
+        commandLength += argumentLength;
+        if ( separatorLength ) {
+            commandLine[commandLength++] = ' ';
+        }
+        commandLine[commandLength] = '\0';
     }
 
     // Note: Sys_Init() is called by Com_Init() after the cvar/zone systems
