@@ -355,7 +355,7 @@ static void SV_GameLocateData( int *args ) {
 #define	VMF(x)	((float *)args)[x]
 
 /** Bound server bot-client access by actual allocation, independent of later cvar changes. */
-static client_t *SV_GameBotClient( int index ) {
+client_t *SV_BotClient( int index ) {
 	if ( !svs.clients || index < 0 || index >= svs.clientCapacity ) {
 		VM_ErrorForVM( gvm, "Server bot client index out of range" );
 		return NULL;
@@ -402,13 +402,13 @@ static int SV_BotLibNavigationCalls( int *args ) {
 		return botlib_export->Test( args[1], VMASN(2), VMAP(3, vec3_t), VMAP(4, vec3_t) );
 
 	case BOTLIB_GET_SNAPSHOT_ENTITY:
-		SV_GameBotClient( args[1] );
+		SV_BotClient( args[1] );
 		return SV_BotGetSnapshotEntity( args[1], args[2] );
 	case BOTLIB_GET_CONSOLE_MESSAGE:
-		SV_GameBotClient( args[1] );
+		SV_BotClient( args[1] );
 		return SV_BotGetConsoleMessage( args[1], VMAB(2, args[3]), args[3] );
 	case BOTLIB_USER_COMMAND: {
-		client_t *client = SV_GameBotClient( args[1] );
+		client_t *client = SV_BotClient( args[1] );
 		usercmd_t *command = VMAP(2, usercmd_t);
 		SV_ClientThink( client, command );
 		return 0;
@@ -600,7 +600,7 @@ static int SV_BotLibActionCalls( int *args ) {
 		VM_Error( "Botlib API is unavailable" );
 		return -1;
 	}
-	SV_GameBotClient( args[1] );
+	SV_BotClient( args[1] );
 	if ( !EA_ClientValid( args[1] ) ) {
 		VM_Error( "Bot action client is not allocated" );
 		return -1;
