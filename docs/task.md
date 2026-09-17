@@ -73,7 +73,9 @@ QVMs while any P0 item is open.
         allocation arithmetic, initialized-word alignment, and unchanged
         restart allocation size. Host ASan/UBSan loader regressions and both
         Retro68 product builds pass; see [loader evidence](qvm-loading-validation.md).
-  - [ ] Validate bytecode decoding and branch targets before interpreter setup.
+  - [x] Validate bytecode decoding and branch targets before interpreter setup,
+        with unaligned little-endian reads and host ASan/UBSan regressions;
+        see [bytecode evidence](qvm-bytecode-validation.md).
   - [ ] Enforce runtime stack, CALL/JUMP, syscall, and data-image checks;
         retain valid PPC QVM compatibility.
 - [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)

@@ -593,7 +593,12 @@ vm_t *VM_Create( const char *module, int (*systemCalls)(int *),
 		VM_Compile( vm, header );
 	} else {
 		vm->compiled = qfalse;
-		VM_PrepareInterpreter( vm, header );
+		if ( !VM_PrepareInterpreter( vm, header ) ) {
+			FS_FreeFile( header );
+			VM_Free( vm );
+			Com_Error( ERR_DROP, "%s has invalid QVM bytecode", filename );
+			return NULL;
+		}
 	}
 
 	// free the original file

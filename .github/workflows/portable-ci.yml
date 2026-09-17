@@ -28,7 +28,7 @@ jobs:
 
       - name: Check Bash syntax and help
         run: |
-          bash -n build_mac.sh setup_retro68.sh tests/run_host_c_tests.sh tests/run_vm_loading_tests.sh
+          bash -n build_mac.sh setup_retro68.sh tests/run_host_c_tests.sh tests/run_vm_loading_tests.sh tests/run_vm_bytecode_tests.sh
           ./build_mac.sh --help
 
       - name: Check PowerShell syntax and help
@@ -89,3 +89,4 @@ jobs:
         run: |
           bash tests/run_host_c_tests.sh
           bash tests/run_vm_loading_tests.sh
+          bash tests/run_vm_bytecode_tests.sh

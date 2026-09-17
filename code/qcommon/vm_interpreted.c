@@ -111,20 +111,24 @@ static char	*opnames[256] = {
 };
 #endif
 
-#if idppc
-    #if defined(__GNUC__)
-        static inline unsigned int loadWord(void *addr) {
-            unsigned int word;
-            
-            asm("lwbrx %0,0,%1" : "=r" (word) : "r" (addr));
-            return word;
-        }
-    #else
-	#define loadWord(addr) __lwbrx(addr,0)
-    #endif
-#else
-	#define	loadWord(addr) *((int *)addr)
-#endif
+/* QVM immediates are little-endian and need not be word aligned. */
+static int VM_ReadCodeWord( const byte *code ) {
+	return (int)((unsigned int)code[0] | ((unsigned int)code[1] << 8) |
+	             ((unsigned int)code[2] << 16) | ((unsigned int)code[3] << 24));
+}
+
+/* Keep the sparse, byte-offset code representation used by the interpreter. */
+static int VM_OperandSize( int op ) {
+	if ( op == OP_ARG ) {
+		return 1;
+	}
+	if ( op == OP_ENTER || op == OP_LEAVE || op == OP_CONST ||
+	     op == OP_LOCAL || op == OP_BLOCK_COPY ||
+	     (op >= OP_EQ && op <= OP_GEF) ) {
+		return 4;
+	}
+	return 0;
+}
 
 char *VM_Indent( vm_t *vm ) {
 	static char	*string = "                                        ";
@@ -152,133 +156,62 @@ void VM_StackTrace( vm_t *vm, int programCounter, int programStack ) {
 VM_PrepareInterpreter
 ====================
 */
-void VM_PrepareInterpreter( vm_t *vm, vmHeader_t *header ) {
-	int		op;
-	int		pc;
-	byte	*code;
-	int		instruction;
-	int		*codeBase;
+qboolean VM_PrepareInterpreter( vm_t *vm, vmHeader_t *header ) {
+	int op, pc, instruction, operandSize, value;
+	byte *code = (byte *)header + header->codeOffset;
+	int *codeBase;
 
-	vm->codeBase = Hunk_Alloc( vm->codeLength*4, h_high );			// we're now int aligned
-//	memcpy( vm->codeBase, (byte *)header + header->codeOffset, vm->codeLength );
-
-	// we don't need to translate the instructions, but we still need
-	// to find each instructions starting point for jumps
+	// Validate the entire instruction stream before writing either table.
+	// VM_Create has already validated the header and allocation arithmetic.
 	pc = 0;
-	instruction = 0;
-	code = (byte *)header + header->codeOffset;
-	codeBase = (int *)vm->codeBase;
-
-	while ( instruction < header->instructionCount ) {
-		vm->instructionPointers[ instruction ] = pc;
-		instruction++;
-
-		op = code[ pc ];
-		codeBase[pc] = op;
-		if ( pc > header->codeLength ) {
-			Com_Error( ERR_FATAL, "VM_PrepareInterpreter: pc > header->codeLength" );
+	for ( instruction = 0; instruction < header->instructionCount; instruction++ ) {
+		if ( pc >= header->codeLength ) {
+			return qfalse;
 		}
-
-		pc++;
-
-		// these are the only opcodes that aren't a single byte
-		switch ( op ) {
-		case OP_ENTER:
-		case OP_CONST:
-		case OP_LOCAL:
-		case OP_LEAVE:
-		case OP_EQ:
-		case OP_NE:
-		case OP_LTI:
-		case OP_LEI:
-		case OP_GTI:
-		case OP_GEI:
-		case OP_LTU:
-		case OP_LEU:
-		case OP_GTU:
-		case OP_GEU:
-		case OP_EQF:
-		case OP_NEF:
-		case OP_LTF:
-		case OP_LEF:
-		case OP_GTF:
-		case OP_GEF:
-		case OP_BLOCK_COPY:
-			codeBase[pc+0] = loadWord(&code[pc]);
-			pc += 4;
-			break;
-		case OP_ARG:
-			codeBase[pc+0] = code[pc];
-			pc += 1;
-			break;
-		default:
-			break;
+		op = code[pc++];
+		if ( op < OP_IGNORE || op > OP_CVFI ) {
+			return qfalse;
 		}
-
-	}
-	pc = 0;
-	instruction = 0;
-	code = (byte *)header + header->codeOffset;
-	codeBase = (int *)vm->codeBase;
-
-	while ( instruction < header->instructionCount ) {
-		op = code[ pc ];
-		instruction++;
-		pc++;
-		switch ( op ) {
-		case OP_ENTER:
-		case OP_CONST:
-		case OP_LOCAL:
-		case OP_LEAVE:
-		case OP_EQ:
-		case OP_NE:
-		case OP_LTI:
-		case OP_LEI:
-		case OP_GTI:
-		case OP_GEI:
-		case OP_LTU:
-		case OP_LEU:
-		case OP_GTU:
-		case OP_GEU:
-		case OP_EQF:
-		case OP_NEF:
-		case OP_LTF:
-		case OP_LEF:
-		case OP_GTF:
-		case OP_GEF:
-		case OP_BLOCK_COPY:
-			switch(op) {
-				case OP_EQ:
-				case OP_NE:
-				case OP_LTI:
-				case OP_LEI:
-				case OP_GTI:
-				case OP_GEI:
-				case OP_LTU:
-				case OP_LEU:
-				case OP_GTU:
-				case OP_GEU:
-				case OP_EQF:
-				case OP_NEF:
-				case OP_LTF:
-				case OP_LEF:
-				case OP_GTF:
-				case OP_GEF:
-				codeBase[pc] = vm->instructionPointers[codeBase[pc]];
-				break;
-			default:
-				break;
+		operandSize = VM_OperandSize( op );
+		if ( operandSize > header->codeLength - pc ) {
+			return qfalse;
+		}
+		if ( op >= OP_EQ && op <= OP_GEF ) {
+			value = VM_ReadCodeWord( code + pc );
+			if ( value < 0 || value >= header->instructionCount ) {
+				return qfalse;
 			}
-			pc += 4;
-			break;
-		case OP_ARG:
-			pc += 1;
-			break;
-		default:
-			break;
 		}
-
+		pc += operandSize;
 	}
+
+	// q3asm may pad the code section after the declared instructions.
+	// Preserve that layout while ensuring every decoded operand is in range.
+	vm->codeBase = Hunk_Alloc( vm->codeLength * sizeof(int), h_high );
+	codeBase = (int *)vm->codeBase;
+	pc = 0;
+	for ( instruction = 0; instruction < header->instructionCount; instruction++ ) {
+		vm->instructionPointers[instruction] = pc;
+		op = code[pc];
+		codeBase[pc++] = op;
+		operandSize = VM_OperandSize( op );
+		if ( operandSize == 4 ) {
+			codeBase[pc] = VM_ReadCodeWord( code + pc );
+		} else if ( operandSize == 1 ) {
+			codeBase[pc] = code[pc];
+		}
+		pc += operandSize;
+	}
+
+	// Translate branches only after every instruction's offset is available.
+	for ( instruction = 0; instruction < header->instructionCount; instruction++ ) {
+		pc = vm->instructionPointers[instruction];
+		op = codeBase[pc++];
+		if ( op >= OP_EQ && op <= OP_GEF ) {
+			codeBase[pc] = vm->instructionPointers[codeBase[pc]];
+		}
+	}
+	return qtrue;
 }
 
 /*

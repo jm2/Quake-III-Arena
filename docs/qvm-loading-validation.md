@@ -60,8 +60,9 @@ archiver/ranlib instead of retaining the failed configure's host tools.
 
 ## Remaining acceptance
 
-Keep #35 open. Bytecode operand/branch validation, runtime stack/PC/data-image
-bounds, syscall pointer/range checks, and retail baseq3/Team Arena QVM testing
+The [next step](qvm-bytecode-validation.md) adds bytecode preparation checks.
+Keep #35 open: runtime stack/PC/data-image bounds, syscall pointer/range
+checks, and retail baseq3/Team Arena QVM testing
 on Mac OS 9 still need implementation or evidence. These builds and tests do
 not establish that untrusted QVM execution is safe. No target runtime,
 packaging, or mounted-resource validation is claimed here.

@@ -28,8 +28,11 @@ Retro68 installation, proprietary retail data, or a Mac OS 9 emulator.
     overflow, and larger/smaller replacement data images (issue #35);
   - checks recoverable rejection, file-buffer ownership, no hunk allocation
     before validation, unchanged data on rejected restart, and valid data
-    initialization/restart. Interpreter execution is stubbed in this harness;
-    it does not validate bytecode, runtime stacks, or syscall bounds.
+    initialization/restart, plus cleanup after failed bytecode preparation;
+  - exercises actual bytecode preparation with truncated operands, invalid
+    opcodes/counts/branch targets, unaligned immediates, and valid translation.
+    These harnesses do not execute instructions or validate runtime stacks
+    or syscall bounds.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -44,6 +47,7 @@ python3 -m py_compile create_appledouble.py generate_icon_r.py macbinary_encode.
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 bash tests/run_host_c_tests.sh
 bash tests/run_vm_loading_tests.sh
+bash tests/run_vm_bytecode_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
