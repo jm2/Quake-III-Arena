@@ -90,6 +90,9 @@ QVMs while any P0 item is open.
   - [x] UI syscall strings, buffers, structs, and arrays validate full ranges
         and alignment; CD-key and parser filename output honor their bounds;
         see [UI evidence](qvm-ui-syscall-validation.md).
+  - [x] Cgame syscall structures, strings, vectors, and arrays validate full
+        ranges, including polygon batches and fragment output capacities;
+        see [cgame evidence](qvm-cgame-syscall-validation.md).
   - [ ] Complete remaining syscall pointer/range checks and retain valid PPC
         QVM compatibility during deferred live acceptance.
 - [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)
