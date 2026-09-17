@@ -314,6 +314,7 @@ The module is making a system call
 
 #define	VMF(x)	((float *)args)[x]
 
+/** Dispatch game traps with shared bounds checks for raw memory operations. */
 int SV_GameSystemCalls( int *args ) {
 	switch( args[0] ) {
 	case G_PRINT:

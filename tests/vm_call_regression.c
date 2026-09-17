@@ -44,6 +44,7 @@ static int QDECL NativeEntry( int command, int a1, int a2, int a3, int a4,
 }
 static vm_t *GetVM( void ) { vmEvaluations++; return &vm; }
 
+/** Verify counted dispatch and quiet shutdown re-entry for faulted QVMs. */
 static void TestDispatches( void ) {
 	int mode, value;
 	for ( mode = 0; mode < 3; mode++ ) {

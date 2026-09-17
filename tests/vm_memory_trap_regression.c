@@ -12,12 +12,14 @@ static byte before[IMAGE_SIZE];
 static int expectError;
 static jmp_buf errorJump;
 
+/** Stop the fixture when a range or ownership contract is violated. */
 static void Check( int ok, const char *message ) {
 	if ( !ok ) {
 		fprintf( stderr, "VM memory trap regression failed: %s\n", message );
 		exit( 1 );
 	}
 }
+/** Catch expected drops and verify they preserve the full VM data image. */
 void QDECL Com_Error( int level, const char *format, ... ) {
 	(void)format;
 	Check( expectError && level == ERR_DROP, "unexpected engine error" );
@@ -25,13 +27,16 @@ void QDECL Com_Error( int level, const char *format, ... ) {
 	Check( !memcmp( before, vm.dataBase, IMAGE_SIZE ), "rejection modified data" );
 	longjmp( errorJump, 1 );
 }
+/** Provide the real byte-fill behavior for the isolated engine handler. */
 void Com_Memset( void *dest, int value, size_t length ) { memset( dest, value, length ); }
 
+/** Restore the fixture to a live VM with no terminating source bytes. */
 static void Reset( void ) {
 	vm.interpretFaulted = qfalse;
 	vm.currentlyInterpreting = qtrue;
 	memset( vm.dataBase, 'x', IMAGE_SIZE );
 }
+/** Require an invalid memory trap to fault before it changes any VM data. */
 static void Reject( int op, int dest, int source, int length ) {
 	vm.interpretFaulted = qfalse;
 	vm.currentlyInterpreting = qtrue;
@@ -46,6 +51,7 @@ static void Reject( int op, int dest, int source, int length ) {
 	expectError = 0;
 }
 
+/** Exercise exact-end, masked, overlapping, empty, and invalid buffers. */
 static void TestBuffers( void ) {
 	int op;
 	Reset();
@@ -82,6 +88,7 @@ static void TestBuffers( void ) {
 	       !memcmp( before, vm.dataBase, IMAGE_SIZE ), "zero-length operations" );
 }
 
+/** Exercise bounded source scanning, zero padding, overlap, and VM returns. */
 static void TestStrings( void ) {
 	Reset();
 	vm.dataBase[IMAGE_SIZE - 1] = 0;
@@ -161,6 +168,7 @@ static void TestCheckedArguments( void ) {
 	RejectChecked( 3, IMAGE_SIZE - 1, 2, 0, qfalse );
 }
 
+/** Run the real common memory traps against an exact-sized VM allocation. */
 int main( void ) {
 	vm.dataBase = malloc( IMAGE_SIZE );
 	Check( vm.dataBase != NULL, "allocation" );
