@@ -356,7 +356,7 @@ static qboolean VM_ValidateQVMHeader( vmHeader_t *header, int length,
 	int i, initializedLength, imageLength, allocationLength;
 	const int maxDataLength = INT_MAX / 2 + 1;
 
-	if ( length < (int)sizeof( *header ) ) {
+	if ( length < (int)sizeof( *header ) || length > INT_MAX - 31 ) {
 		return qfalse;
 	}
 
@@ -453,6 +453,17 @@ vm_t *VM_Restart( vm_t *vm ) {
 		// ERR_DROP calls the module's shutdown entry point before VM_Free.
 		// Keep the live VM intact for the caller's normal cleanup.
 		Com_Error( ERR_DROP, "%s changed QVM data size on restart", filename );
+		return NULL;
+	}
+
+	// Retained code and instruction tables belong to the original image.
+	// Compare normalized headers plus every code/data/padding byte before
+	// replacing data; a same-sized replacement can still be incompatible.
+	if ( length != vm->qvmImageLength || !vm->qvmImage ||
+	     memcmp( header, vm->qvmImage, length ) ) {
+		FS_FreeFile( header );
+		// Keep the old VM intact for ERR_DROP's normal shutdown callback.
+		Com_Error( ERR_DROP, "%s changed QVM image on restart", filename );
 		return NULL;
 	}
 
@@ -595,6 +606,12 @@ vm_t *VM_Create( const char *module, int (*systemCalls)(int *),
 		vm->compiled = qfalse;
 		VM_PrepareInterpreter( vm, header );
 	}
+
+	// A map_restart reuses executable state. Keep the original image so
+	// code, layout, initial data, and padding changes are rejected exactly.
+	vm->qvmImage = Hunk_Alloc( length, h_high );
+	vm->qvmImageLength = length;
+	Com_Memcpy( vm->qvmImage, header, length );
 
 	// free the original file
 	FS_FreeFile( header );

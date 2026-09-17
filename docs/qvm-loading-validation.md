@@ -5,7 +5,12 @@ This is the first implementation step for issue #35. `VM_Create` and
 copying data. It covers header truncation, code/data file ranges, instruction
 count/allocation arithmetic, initialized-word alignment, data/literal/BSS
 sums, and power-of-two data allocation. Restart rejects either growth or
-shrinkage of the existing allocation. Invalid headers free their file buffer
+shrinkage of the existing allocation, or any change to the original image.
+A hunk-owned copy of the normalized header and complete file bytes provides
+an exact comparison, including code, initialized data, and padding. It costs
+one additional file-sized allocation per loaded QVM; restart does not allocate.
+Changed modules require a full reload rather than `map_restart`.
+Invalid headers free their file buffer
 and raise `ERR_DROP`. Creation clears its uninitialized VM registration;
 restart preserves the live VM for the normal shutdown callback before cleanup.
 
@@ -16,6 +21,7 @@ ASan/UBSan with exact-sized synthetic file buffers. Its tests cover:
 
 - every truncation of a 47-byte structural fixture, on create and restart;
 - negative, overlapping, out-of-file, and extreme signed offsets/counts;
+- same-allocation changes to code, counts, layout, BSS, and initial data;
 - incomplete initialized words, overflowing data images, and an empty image;
 - valid initialization, byte order, literal bytes, zero filling, and restart;
 - rejected restarts preserving the VM and data until a simulated
@@ -47,8 +53,8 @@ the successful build log.
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,669,567 | `33d832cf08cd6aed2532225286178073cb99d2993365e9d7b859c6fce143a54c` |
-| Quake3_TeamArena | 3,818,141 | `749dcce7c547a9509214380214fda5cd059032c43ba11d0ae8feac62c19ce2e6` |
+| Quake3 | 3,669,573 | `1a9fc1f7bd9b22a98989e4edde8e4ad5196d92ebee3bbc0c54aef7526a52aa35` |
+| Quake3_TeamArena | 3,818,147 | `b9b99762404e29f8eb114bd1f16c5c99a3c6ed9b7e2146293b96333ade6201ab` |
 
 The installed compiler/archive tools initially lacked `libisl.so.23` and
 `libfl.so.2`. Validation used temporary libraries through `LD_LIBRARY_PATH`:
