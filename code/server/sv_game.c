@@ -26,6 +26,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../game/botlib.h"
 #include "../game/be_aas.h"
 #include "../game/be_ai_chat.h"
+#include "../game/be_ea.h"
 
 botlib_export_t	*botlib_export;
 
@@ -344,7 +345,7 @@ static void SV_GameLocateData( int *args ) {
 #define VMAP(x, type) VM_CheckedArgPtr( args[x], sizeof(type), 4, qfalse )
 #define VMAPN(x, type) VM_CheckedArgPtr( args[x], sizeof(type), 4, qtrue )
 #define VMAB(x, length) VM_CheckedStringBuffer( args[x], (length), qfalse )
-// Botlib families still use the legacy conversion until their next audit step.
+// Remaining AI families use the legacy conversion until their next audit step.
 #if ((defined __linux__) && (defined __powerpc__))
 #define VMA(x) ((void *) args[x])
 #else
@@ -593,7 +594,102 @@ static int SV_BotLibChatCalls( int *args ) {
 	}
 }
 
-/** Dispatch game traps with checked core/navigation/chat pointers; other botlib families remain under review. */
+/** Check server and native bot-input capacities before dispatching elementary actions. */
+static int SV_BotLibActionCalls( int *args ) {
+	if ( !botlib_export ) {
+		VM_Error( "Botlib API is unavailable" );
+		return -1;
+	}
+	SV_GameBotClient( args[1] );
+	if ( !EA_ClientValid( args[1] ) ) {
+		VM_Error( "Bot action client is not allocated" );
+		return -1;
+	}
+	switch( args[0] ) {
+	case BOTLIB_EA_SAY:
+		botlib_export->ea.EA_Say( args[1], VMAS(2) );
+		return 0;
+	case BOTLIB_EA_SAY_TEAM:
+		botlib_export->ea.EA_SayTeam( args[1], VMAS(2) );
+		return 0;
+	case BOTLIB_EA_COMMAND:
+		botlib_export->ea.EA_Command( args[1], VMAS(2) );
+		return 0;
+
+	case BOTLIB_EA_ACTION:
+		botlib_export->ea.EA_Action( args[1], args[2] );
+		break;
+	case BOTLIB_EA_GESTURE:
+		botlib_export->ea.EA_Gesture( args[1] );
+		return 0;
+	case BOTLIB_EA_TALK:
+		botlib_export->ea.EA_Talk( args[1] );
+		return 0;
+	case BOTLIB_EA_ATTACK:
+		botlib_export->ea.EA_Attack( args[1] );
+		return 0;
+	case BOTLIB_EA_USE:
+		botlib_export->ea.EA_Use( args[1] );
+		return 0;
+	case BOTLIB_EA_RESPAWN:
+		botlib_export->ea.EA_Respawn( args[1] );
+		return 0;
+	case BOTLIB_EA_CROUCH:
+		botlib_export->ea.EA_Crouch( args[1] );
+		return 0;
+	case BOTLIB_EA_MOVE_UP:
+		botlib_export->ea.EA_MoveUp( args[1] );
+		return 0;
+	case BOTLIB_EA_MOVE_DOWN:
+		botlib_export->ea.EA_MoveDown( args[1] );
+		return 0;
+	case BOTLIB_EA_MOVE_FORWARD:
+		botlib_export->ea.EA_MoveForward( args[1] );
+		return 0;
+	case BOTLIB_EA_MOVE_BACK:
+		botlib_export->ea.EA_MoveBack( args[1] );
+		return 0;
+	case BOTLIB_EA_MOVE_LEFT:
+		botlib_export->ea.EA_MoveLeft( args[1] );
+		return 0;
+	case BOTLIB_EA_MOVE_RIGHT:
+		botlib_export->ea.EA_MoveRight( args[1] );
+		return 0;
+
+	case BOTLIB_EA_SELECT_WEAPON:
+		botlib_export->ea.EA_SelectWeapon( args[1], args[2] );
+		return 0;
+	case BOTLIB_EA_JUMP:
+		botlib_export->ea.EA_Jump( args[1] );
+		return 0;
+	case BOTLIB_EA_DELAYED_JUMP:
+		botlib_export->ea.EA_DelayedJump( args[1] );
+		return 0;
+	case BOTLIB_EA_MOVE:
+		botlib_export->ea.EA_Move( args[1], VMAP(2, vec3_t), VMF(3) );
+		return 0;
+	case BOTLIB_EA_VIEW:
+		botlib_export->ea.EA_View( args[1], VMAP(2, vec3_t) );
+		return 0;
+
+	case BOTLIB_EA_END_REGULAR:
+		botlib_export->ea.EA_EndRegular( args[1], VMF(2) );
+		return 0;
+	case BOTLIB_EA_GET_INPUT:
+		botlib_export->ea.EA_GetInput( args[1], VMF(2), VMAP(3, bot_input_t) );
+		return 0;
+	case BOTLIB_EA_RESET_INPUT:
+		botlib_export->ea.EA_ResetInput( args[1] );
+		return 0;
+
+	default:
+		VM_Error( "Bad botlib action trap" );
+		return -1;
+	}
+	return -1;
+}
+
+/** Dispatch game traps with checked core/navigation/chat/action pointers; remaining AI stays under review. */
 int SV_GameSystemCalls( int *args ) {
 	switch( args[0] ) {
 	case G_PRINT:
@@ -781,80 +877,30 @@ int SV_GameSystemCalls( int *args ) {
 		return SV_BotLibNavigationCalls( args );
 
 	case BOTLIB_EA_SAY:
-		botlib_export->ea.EA_Say( args[1], VMA(2) );
-		return 0;
 	case BOTLIB_EA_SAY_TEAM:
-		botlib_export->ea.EA_SayTeam( args[1], VMA(2) );
-		return 0;
 	case BOTLIB_EA_COMMAND:
-		botlib_export->ea.EA_Command( args[1], VMA(2) );
-		return 0;
-
 	case BOTLIB_EA_ACTION:
-		botlib_export->ea.EA_Action( args[1], args[2] );
-		break;
 	case BOTLIB_EA_GESTURE:
-		botlib_export->ea.EA_Gesture( args[1] );
-		return 0;
 	case BOTLIB_EA_TALK:
-		botlib_export->ea.EA_Talk( args[1] );
-		return 0;
 	case BOTLIB_EA_ATTACK:
-		botlib_export->ea.EA_Attack( args[1] );
-		return 0;
 	case BOTLIB_EA_USE:
-		botlib_export->ea.EA_Use( args[1] );
-		return 0;
 	case BOTLIB_EA_RESPAWN:
-		botlib_export->ea.EA_Respawn( args[1] );
-		return 0;
 	case BOTLIB_EA_CROUCH:
-		botlib_export->ea.EA_Crouch( args[1] );
-		return 0;
 	case BOTLIB_EA_MOVE_UP:
-		botlib_export->ea.EA_MoveUp( args[1] );
-		return 0;
 	case BOTLIB_EA_MOVE_DOWN:
-		botlib_export->ea.EA_MoveDown( args[1] );
-		return 0;
 	case BOTLIB_EA_MOVE_FORWARD:
-		botlib_export->ea.EA_MoveForward( args[1] );
-		return 0;
 	case BOTLIB_EA_MOVE_BACK:
-		botlib_export->ea.EA_MoveBack( args[1] );
-		return 0;
 	case BOTLIB_EA_MOVE_LEFT:
-		botlib_export->ea.EA_MoveLeft( args[1] );
-		return 0;
 	case BOTLIB_EA_MOVE_RIGHT:
-		botlib_export->ea.EA_MoveRight( args[1] );
-		return 0;
-
 	case BOTLIB_EA_SELECT_WEAPON:
-		botlib_export->ea.EA_SelectWeapon( args[1], args[2] );
-		return 0;
 	case BOTLIB_EA_JUMP:
-		botlib_export->ea.EA_Jump( args[1] );
-		return 0;
 	case BOTLIB_EA_DELAYED_JUMP:
-		botlib_export->ea.EA_DelayedJump( args[1] );
-		return 0;
 	case BOTLIB_EA_MOVE:
-		botlib_export->ea.EA_Move( args[1], VMA(2), VMF(3) );
-		return 0;
 	case BOTLIB_EA_VIEW:
-		botlib_export->ea.EA_View( args[1], VMA(2) );
-		return 0;
-
 	case BOTLIB_EA_END_REGULAR:
-		botlib_export->ea.EA_EndRegular( args[1], VMF(2) );
-		return 0;
 	case BOTLIB_EA_GET_INPUT:
-		botlib_export->ea.EA_GetInput( args[1], VMF(2), VMA(3) );
-		return 0;
 	case BOTLIB_EA_RESET_INPUT:
-		botlib_export->ea.EA_ResetInput( args[1] );
-		return 0;
+		return SV_BotLibActionCalls( args );
 
 	case BOTLIB_AI_LOAD_CHARACTER:
 		return botlib_export->ai.BotLoadCharacter( VMA(1), VMF(2) );

@@ -65,7 +65,10 @@ Retro68 installation, proprietary retail data, or a Mac OS 9 emulator.
   - checks the actual bot chat dispatcher with complete output structures,
     nullable variables and their combined capacity, bounded match metadata,
     native synonym expansion/search bounds, and overlapping substring output.
-    Botlib EA and other AI families still need range checks.
+  - checks actual bot action dispatch into native elementary-action routines,
+    whole input output, bounded strings/vectors, separate server/bot capacities,
+    invalid native client indices, allocation arithmetic, and shutdown reset.
+    Remaining botlib AI families still need range checks.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -90,6 +93,7 @@ bash tests/run_server_core_syscall_tests.sh
 bash tests/run_vm_returned_string_tests.sh
 bash tests/run_botlib_navigation_tests.sh
 bash tests/run_botlib_chat_tests.sh
+bash tests/run_botlib_actions_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
