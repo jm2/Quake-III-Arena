@@ -210,8 +210,10 @@ implementation or check, without implying issue completion.
         before interpreter setup; see [bytecode evidence](qvm-bytecode-validation.md).
   - [x] Runtime stack/control-flow checks and faulted shutdown re-entry have
         synthetic execution regressions; see [runtime evidence](qvm-runtime-validation.md).
-  - [ ] Complete memory, arithmetic, syscall, and VM call argument handling
-        before accepting untrusted QVMs.
+  - [x] Data-image loads/stores, ARG, BLOCK_COPY, and syscall argument
+        snapshots have [execution regressions](qvm-memory-validation.md).
+  - [ ] Complete arithmetic, syscall pointer/range, and VM call argument
+        handling before accepting untrusted QVMs.
 - [ ] [#36 — oversized/truncated PK3 entries](https://github.com/jm2/Quake-III-Arena/issues/36)
   - [x] Local code rejects unrepresentable sizes before casts, checks unzip
         opens/reads, rejects short reads, and fixes short-name suffix checks.

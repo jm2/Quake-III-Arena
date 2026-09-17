@@ -14,6 +14,7 @@ static void *codeAllocation;
 static jmp_buf errorJump;
 static int expectError, errorCount, syscalls, recurseSyscall, corruptReturn;
 static char lastError[128];
+static int inspectSyscall, lastSyscallArgument;
 
 static void Check( int ok, const char *message ) {
 	if ( !ok ) {
@@ -48,8 +49,11 @@ static int SystemCall( int *args ) {
 	int nestedArgs[10] = {0};
 	Check( args[0] == 0, "syscall number" );
 	syscalls++;
+	if ( inspectSyscall ) {
+		Check( args[15] == lastSyscallArgument, "bounded syscall arguments" );
+	}
 	if ( corruptReturn ) {
-		args[-1] = corruptReturn;
+		*(int *)(vm.dataBase + vm.programStack + 4) = corruptReturn;
 	}
 	if ( recurseSyscall && syscalls == 1 ) {
 		Check( VM_CallInterpreted( &vm, nestedArgs ) == 123, "recursive result" );
@@ -61,6 +65,7 @@ static int SystemCall( int *args ) {
 static void ResetCode( void ) {
 	codeLength = instructionCount = syscalls = recurseSyscall = corruptReturn = 0;
 	lastError[0] = '\0';
+	inspectSyscall = lastSyscallArgument = 0;
 }
 
 static void Emit( int op, int operand ) {
@@ -237,11 +242,89 @@ static void TestTargets( void ) {
 	corruptReturn = 1; Run( qtrue, 0, "syscall return address" );
 }
 
+static void StoreWord( int offset, int value ) {
+	Emit( OP_CONST, offset ); Emit( OP_CONST, value ); Emit( OP_STORE4, 0 );
+}
+
+static void TestMemoryAccess( void ) {
+	const int badLoads[] = {IMAGE_SIZE - 1, IMAGE_SIZE - 2, IMAGE_SIZE - 3, -1};
+	const int badArgs[] = {1, 2, 3, 48, 252};
+	size_t i;
+	int op, width;
+	for ( op = OP_LOAD2; op <= OP_LOAD4; op++ ) {
+		width = op == OP_LOAD2 ? 2 : 4;
+		for ( i = 0; i < sizeof(badLoads)/sizeof(badLoads[0]); i++ ) {
+			ResetCode(); Emit( OP_CONST, badLoads[i] ); Emit( op, 0 ); Emit( OP_LEAVE, 0 );
+			Run( ((badLoads[i] & (IMAGE_SIZE - 1)) + width > IMAGE_SIZE), 0, "out of range" );
+		}
+		ResetCode(); Emit( OP_CONST, 1 ); Emit( op, 0 ); Emit( OP_LEAVE, 0 );
+		Run( qfalse, 0, NULL ); // unaligned, entirely inside the image
+	}
+	ResetCode(); StoreWord( IMAGE_SIZE + 3, 0x12345678 );
+	Emit( OP_CONST, 0 ); Emit( OP_LOAD4, 0 ); Emit( OP_LEAVE, 0 );
+	Run( qfalse, 0x12345678, NULL ); // preserve aligned/masked legacy stores
+	ResetCode(); Emit( OP_CONST, IMAGE_SIZE + 3 ); Emit( OP_CONST, 0x5678 ); Emit( OP_STORE2, 0 );
+	Emit( OP_CONST, 2 ); Emit( OP_LOAD2, 0 ); Emit( OP_LEAVE, 0 ); Run( qfalse, 0x5678, NULL );
+	ResetCode(); Emit( OP_CONST, -1 ); Emit( OP_CONST, 0x78 ); Emit( OP_STORE1, 0 );
+	Emit( OP_CONST, -1 ); Emit( OP_LOAD1, 0 ); Emit( OP_LEAVE, 0 ); Run( qfalse, 0x78, NULL );
+
+	for ( i = 0; i < sizeof(badArgs)/sizeof(badArgs[0]); i++ ) {
+		ResetCode(); Emit( OP_CONST, 55 ); Emit( OP_ARG, badArgs[i] ); Run( qtrue, 0, "ARG" );
+	}
+	ResetCode(); Emit( OP_CONST, 55 ); Emit( OP_ARG, 44 );
+	Emit( OP_CONST, 42 ); Emit( OP_LEAVE, 0 ); Run( qfalse, 42, NULL );
+
+	ResetCode(); Emit( OP_LOCAL, INT_MAX ); Emit( OP_LEAVE, 0 );
+	Run( qfalse, (int)((unsigned int)INT_MAX + IMAGE_SIZE - 48), NULL );
+}
+
+static void TestBlockCopies( void ) {
+	const struct { int dest, source, count; const char *reason; } bad[] = {
+		{0, 0, -4, "out of range"}, {0, 0, INT_MIN, "out of range"},
+		{0, 0, INT_MAX, "out of range"}, {0, IMAGE_SIZE - 4, 8, "out of range"},
+		{IMAGE_SIZE - 4, 0, 8, "out of range"}, {0, -1, 4, "out of range"},
+		{1, 0, 4, "aligned"}, {0, 1, 4, "aligned"}, {0, 0, 3, "aligned"}
+	};
+	size_t i;
+	int direction;
+	for ( i = 0; i < sizeof(bad)/sizeof(bad[0]); i++ ) {
+		ResetCode(); Emit( OP_CONST, bad[i].dest ); Emit( OP_CONST, bad[i].source );
+		Emit( OP_BLOCK_COPY, bad[i].count ); Run( qtrue, 0, bad[i].reason );
+	}
+	for ( direction = 0; direction < 2; direction++ ) {
+		ResetCode(); StoreWord( direction ? IMAGE_SIZE - 4 : 0, 42 );
+		Emit( OP_CONST, direction ? 0 : IMAGE_SIZE - 4 );
+		Emit( OP_CONST, direction ? IMAGE_SIZE - 4 : 0 ); Emit( OP_BLOCK_COPY, 4 );
+		Emit( OP_CONST, direction ? 0 : IMAGE_SIZE - 4 ); Emit( OP_LOAD4, 0 ); Emit( OP_LEAVE, 0 );
+		Run( qfalse, 42, NULL ); // source/destination ending exactly at image size
+	}
+	for ( direction = 0; direction < 2; direction++ ) {
+		ResetCode(); StoreWord( 0, 17 ); StoreWord( 4, 23 ); StoreWord( 8, 42 );
+		Emit( OP_CONST, direction ? 0 : 4 ); Emit( OP_CONST, direction ? 4 : 0 );
+		Emit( OP_BLOCK_COPY, 8 ); Emit( OP_CONST, direction ? 4 : 8 );
+		Emit( OP_LOAD4, 0 ); Emit( OP_LEAVE, 0 ); Run( qfalse, direction ? 42 : 23, NULL );
+	}
+	ResetCode(); StoreWord( 0, 42 ); Emit( OP_CONST, 0 ); Emit( OP_CONST, 4 );
+	Emit( OP_BLOCK_COPY, 0 ); Emit( OP_CONST, 0 ); Emit( OP_LOAD4, 0 ); Emit( OP_LEAVE, 0 );
+	Run( qfalse, 42, NULL );
+}
+
+static void TestSyscallSnapshot( void ) {
+	ResetCode(); Emit( OP_ENTER, 8 ); Emit( OP_CONST, -1 ); Emit( OP_CALL, 0 ); Emit( OP_LEAVE, 8 );
+	inspectSyscall = 1; Run( qfalse, 123, NULL ); // zero arguments beyond image
+	ResetCode(); Emit( OP_ENTER, 80 ); Emit( OP_CONST, 42 ); Emit( OP_ARG, 64 );
+	Emit( OP_CONST, -1 ); Emit( OP_CALL, 0 ); Emit( OP_LEAVE, 80 );
+	inspectSyscall = 1; lastSyscallArgument = 42; Run( qfalse, 123, NULL );
+}
+
 int main( void ) {
 	TestValidExecution();
 	TestOperandStacks();
 	TestFrames();
 	TestTargets();
-	puts( "QVM runtime stack/control-flow regressions passed (issue #35)" );
+	TestMemoryAccess();
+	TestBlockCopies();
+	TestSyscallSnapshot();
+	puts( "QVM runtime stack/control-flow/memory regressions passed (issue #35)" );
 	return 0;
 }
