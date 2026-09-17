@@ -31,8 +31,10 @@ Retro68 installation, proprietary retail data, or a Mac OS 9 emulator.
     initialization/restart, plus cleanup after failed bytecode preparation;
   - exercises actual bytecode preparation with truncated operands, invalid
     opcodes/counts/branch targets, unaligned immediates, and valid translation.
-    These harnesses do not execute instructions or validate runtime stacks
-    or syscall bounds.
+  - executes synthetic QVMs through the actual interpreter to check operand
+    and program stacks, CALL/JUMP targets, forged return addresses, recursive
+    syscalls, faulted shutdown re-entry, and valid execution. Memory-access
+    and syscall pointer/range coverage remains incomplete.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -48,6 +50,7 @@ python3 -m unittest discover -s tests -p 'test_*.py' -v
 bash tests/run_host_c_tests.sh
 bash tests/run_vm_loading_tests.sh
 bash tests/run_vm_bytecode_tests.sh
+bash tests/run_vm_runtime_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 

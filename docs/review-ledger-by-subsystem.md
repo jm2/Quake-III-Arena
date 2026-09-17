@@ -208,8 +208,10 @@ implementation or check, without implying issue completion.
         syscall hardening, and retail target compatibility remain open.
   - [x] Validate opcode/operand boundaries and conditional branch targets
         before interpreter setup; see [bytecode evidence](qvm-bytecode-validation.md).
-  - [ ] Complete runtime stack, control-flow, data-image, and syscall
-        validation before accepting untrusted QVMs.
+  - [x] Runtime stack/control-flow checks and faulted shutdown re-entry have
+        synthetic execution regressions; see [runtime evidence](qvm-runtime-validation.md).
+  - [ ] Complete memory, arithmetic, syscall, and VM call argument handling
+        before accepting untrusted QVMs.
 - [ ] [#36 — oversized/truncated PK3 entries](https://github.com/jm2/Quake-III-Arena/issues/36)
   - [x] Local code rejects unrepresentable sizes before casts, checks unzip
         opens/reads, rejects short reads, and fixes short-name suffix checks.

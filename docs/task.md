@@ -76,8 +76,11 @@ QVMs while any P0 item is open.
   - [x] Validate bytecode decoding and branch targets before interpreter setup,
         with unaligned little-endian reads and host ASan/UBSan regressions;
         see [bytecode evidence](qvm-bytecode-validation.md).
-  - [ ] Enforce runtime stack, CALL/JUMP, syscall, and data-image checks;
-        retain valid PPC QVM compatibility.
+  - [x] Enforce operand/program stack bounds and CALL/JUMP/return targets
+        during normal execution, including safe faulted shutdown re-entry;
+        see [runtime evidence](qvm-runtime-validation.md).
+  - [ ] Complete data-image, arithmetic, and syscall bounds; repair VM call
+        argument marshalling and retain valid PPC QVM compatibility.
 - [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)
       — **high**, connection redirection/injection/hijack.
   - [x] User selected commercial 1.32c compatibility (Quake3e/ioquake3 style).
