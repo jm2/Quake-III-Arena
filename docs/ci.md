@@ -52,7 +52,10 @@ PR head while retaining checks on the merged default branch.
     native averaging, and matching preview/videoMap upload dimensions;
   - checks every full RoQ codebook truncation and fixed RGBA table entry,
     partial updates, all VQ opcodes, exact payload prefixes, control-word refill,
-    both frame halves, signed/unaligned motion, and rejection before writes.
+    both frame halves, signed/unaligned motion, and rejection before writes;
+  - checks the actual BMP loader at four input alignments with every small
+    file truncation, 8/16/24/32-bit pixels, palettes, row padding/offsets,
+    orientation, extended headers, dimensions, and cleanup before errors.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -72,6 +75,7 @@ bash tests/run_vm_runtime_tests.sh
 bash tests/run_roq_stream_tests.sh
 bash tests/run_roq_frame_tests.sh
 bash tests/run_roq_vq_tests.sh
+bash tests/run_bmp_cursor_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
