@@ -203,7 +203,7 @@ implementation or check, without implying issue completion.
   - [ ] Finish the advisory inventory and malformed-input regression matrix.
 - [ ] [#35 — interpreted QVM validation and sandbox bounds](https://github.com/jm2/Quake-III-Arena/issues/35)
   - [x] Create/restart header, file-range, allocation arithmetic, and restart
-        size checks have host ASan/UBSan regressions and both Retro68 builds;
+        size/image checks have host ASan/UBSan regressions and both Retro68 builds;
         see [loader evidence](qvm-loading-validation.md). Runtime interpreter,
         syscall hardening, and retail target compatibility remain open.
   - [x] Validate opcode/operand boundaries and conditional branch targets

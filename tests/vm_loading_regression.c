@@ -275,6 +275,31 @@ static void TestHeaderFields( void ) {
 	}
 }
 
+static void TestChangedRestartImage( void ) {
+	ValidFixture();
+	fixture[32] = OP_BREAK;
+	RejectFixture( 1 );
+	ValidFixture();
+	SET_FIELD( instructionCount, 7 );
+	RejectFixture( 1 );
+	ValidFixture();
+	SET_FIELD( codeLength, 7 );
+	RejectFixture( 1 );
+	ValidFixture();
+	SET_FIELD( dataLength, 0 );
+	SET_FIELD( litLength, 7 );
+	RejectFixture( 1 );
+	ValidFixture();
+	SET_FIELD( bssLength, 65537 );
+	RejectFixture( 1 );
+	ValidFixture();
+	fixture[40] ^= 1;
+	RejectFixture( 1 );
+	ValidFixture();
+	fixture[46] ^= 1;
+	RejectFixture( 1 );
+}
+
 static void TestRestart( void ) {
 	vm_t *vm;
 	byte *data;
@@ -286,12 +311,11 @@ static void TestRestart( void ) {
 	before = allocationCount;
 	memset( data, 0x5a, vm->dataMask + 1 );
 	ValidFixture();
-	PutWord( 40, 0x76543210 );
 	Check( VM_Restart( vm ) == vm && vm->dataBase == data,
 	       "restart must reuse allocation" );
 	Check( allocationCount == before && preparations == 1,
 	       "restart must not reallocate or prepare code" );
-	Check( *(int *)data == 0x76543210 && data[7] == 0 &&
+	Check( *(int *)data == 0x12345678 && data[7] == 0 &&
 	       data[vm->dataMask] == 0, "restart initializes and clears data" );
 	Check( fileReads == fileFrees, "restart file ownership" );
 
@@ -310,6 +334,7 @@ int main( void ) {
 	TestTruncations();
 	TestHeaderFields();
 	TestRestart();
+	TestChangedRestartImage();
 	Reset();
 	puts( "QVM loading regressions passed (issue #35)" );
 	return 0;
