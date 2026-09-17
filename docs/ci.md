@@ -43,7 +43,10 @@ PR head while retaining checks on the merged default branch.
     bounds/overlap, and bounded syscall argument snapshots;
   - checks wrapping integer arithmetic, division/modulo traps, shift counts,
     and float conversion limits. Syscall-specific pointer/range checks and
-    VM call marshalling remain incomplete.
+    VM call marshalling remain incomplete;
+  - checks actual RoQ open/run/stop, chunk capacities and short reads, final
+    payloads, embedded packet boundaries/nesting, mono/stereo expansion limits,
+    malformed looping movies, and cleanup before the first frame.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -60,6 +63,7 @@ bash tests/run_host_c_tests.sh
 bash tests/run_vm_loading_tests.sh
 bash tests/run_vm_bytecode_tests.sh
 bash tests/run_vm_runtime_tests.sh
+bash tests/run_roq_stream_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
