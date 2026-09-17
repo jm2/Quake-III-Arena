@@ -513,18 +513,19 @@ char *StringContainsWord(char *str1, char *str2, int casesensitive)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
-/** Replace one synonym only if its result fits the fixed native chat buffer. */
-static qboolean BotReplaceChatWord( char *string, char *at, const char *synonym, const char *replacement ) {
+/** Replace a word only within the capacity established by its caller. */
+static qboolean BotReplaceChatWord( char *string, char *at, const char *synonym, const char *replacement, size_t capacity ) {
 	size_t length = strlen(string), oldLength = strlen(synonym), newLength = strlen(replacement);
-	if ( !oldLength || length >= MAX_MESSAGE_SIZE || oldLength > length ||
-	     newLength >= MAX_MESSAGE_SIZE - (length - oldLength) ) return qfalse;
+	if ( capacity > MAX_MESSAGE_SIZE ) capacity = MAX_MESSAGE_SIZE;
+	if ( !oldLength || length >= capacity || oldLength > length ||
+	     newLength >= capacity - (length - oldLength) ) return qfalse;
 	memmove( at + newLength, at + oldLength, strlen(at + oldLength) + 1 );
 	memcpy( at, replacement, newLength );
 	return qtrue;
 }
 
-/** Replace whole words while bounding growth and the next search position. */
-void StringReplaceWords(char *string, char *synonym, char *replacement)
+/** Replace whole words within explicit storage and bound the next search position. */
+static void StringReplaceWordsSized(char *string, char *synonym, char *replacement, size_t capacity)
 {
 	char *str, *str2;
 
@@ -544,7 +545,7 @@ void StringReplaceWords(char *string, char *synonym, char *replacement)
 		} //end while
 		if (!str2)
 		{
-			if (!BotReplaceChatWord(string, str, synonym, replacement)) break;
+			if (!BotReplaceChatWord(string, str, synonym, replacement, capacity)) break;
 		} //end if
 		//find the next synonym in the string
 		str = StringContainsWord(str + strlen(str2 ? synonym : replacement), synonym, qfalse);
@@ -747,7 +748,8 @@ bot_synonymlist_t *BotLoadSynonyms(char *filename)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
-void BotReplaceSynonyms(char *string, unsigned long int context)
+/** Normalize synonyms in an internal chat buffer whose allocation size is known. */
+static void BotReplaceSynonymsSized(char *string, unsigned long int context, size_t capacity)
 {
 	bot_synonymlist_t *syn;
 	bot_synonym_t *synonym;
@@ -757,10 +759,15 @@ void BotReplaceSynonyms(char *string, unsigned long int context)
 		if (!(syn->context & context)) continue;
 		for (synonym = syn->firstsynonym->next; synonym; synonym = synonym->next)
 		{
-			StringReplaceWords(string, synonym->string, syn->firstsynonym->string);
+			StringReplaceWordsSized(string, synonym->string, syn->firstsynonym->string, capacity);
 		} //end for
 	} //end for
-} //end of the function BotReplaceSynonyms
+}
+
+/** Preserve the size-less retail ABI by keeping replacements within the original string span. */
+void BotReplaceSynonyms(char *string, unsigned long int context) {
+	if ( string ) BotReplaceSynonymsSized(string, context, strlen(string) + 1);
+}
 //===========================================================================
 //
 // Parameter:				-
@@ -790,7 +797,7 @@ void BotReplaceWeightedSynonyms(char *string, unsigned long int context)
 		for (synonym = syn->firstsynonym; synonym; synonym = synonym->next)
 		{
 			if (synonym == replacement) continue;
-			StringReplaceWords(string, synonym->string, replacement->string);
+			StringReplaceWordsSized(string, synonym->string, replacement->string, MAX_MESSAGE_SIZE);
 		} //end for
 	} //end for
 } //end of the function BotReplaceWeightedSynonyms
@@ -800,7 +807,8 @@ void BotReplaceWeightedSynonyms(char *string, unsigned long int context)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
-void BotReplaceReplySynonyms(char *string, unsigned long int context)
+/** Normalize reply variables within their caller-owned temporary chat buffer. */
+static void BotReplaceReplySynonymsSized(char *string, unsigned long int context, size_t capacity)
 {
 	char *str1, *str2, *replacement;
 	bot_synonymlist_t *syn;
@@ -827,7 +835,7 @@ void BotReplaceReplySynonyms(char *string, unsigned long int context)
 				str2 = StringContainsWord(str1, replacement, qfalse);
 				if (str2 && str2 == str1) continue;
 				//
-				if (!BotReplaceChatWord(string, str1, synonym->string, replacement)) return;
+				if (!BotReplaceChatWord(string, str1, synonym->string, replacement, capacity)) return;
 				//
 				break;
 			} //end for
@@ -838,7 +846,7 @@ void BotReplaceReplySynonyms(char *string, unsigned long int context)
 		while(*str1 && *str1 > ' ') str1++;
 		if (!*str1) break;
 	} //end while
-} //end of the function BotReplaceReplySynonyms
+} //end of the function BotReplaceReplySynonymsSized
 //===========================================================================
 //
 // Parameter:			-
@@ -2282,12 +2290,12 @@ int BotExpandChatMessage(char *outmessage, char *message, unsigned long mcontext
 						if (reply)
 						{
 							//replace the reply synonyms in the variables
-							BotReplaceReplySynonyms(temp, vcontext);
+							BotReplaceReplySynonymsSized(temp, vcontext, sizeof(temp));
 						} //end if
 						else 
 						{
 							//replace synonyms in the variable context
-							BotReplaceSynonyms(temp, vcontext);
+							BotReplaceSynonymsSized(temp, vcontext, sizeof(temp));
 						} //end else
 						//
 						if (len + strlen(temp) >= MAX_MESSAGE_SIZE)

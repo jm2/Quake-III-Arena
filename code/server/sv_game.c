@@ -476,11 +476,10 @@ static int SV_BotLibNavigationCalls( int *args ) {
 	}
 }
 
-/** Check the fixed native chat capacity, including space needed for synonym growth. */
-static char *SV_GameBotChatMessage( int value, qboolean writable ) {
-	char *message = writable ? VM_CheckedArgPtr( value, MAX_MESSAGE_SIZE, 1, qfalse ) : VM_CheckedArgString( value, qfalse );
-	if ( (writable && !memchr( message, '\0', MAX_MESSAGE_SIZE )) ||
-	     (!writable && strlen(message) >= MAX_MESSAGE_SIZE) ) {
+/** Check a terminated chat string; the legacy synonym API never grows its original span. */
+static char *SV_GameBotChatMessage( int value ) {
+	char *message = VM_CheckedArgString( value, qfalse );
+	if ( strlen(message) >= MAX_MESSAGE_SIZE ) {
 		VM_Error( "Bot chat message is too long" );
 		return NULL;
 	}
@@ -584,7 +583,7 @@ static int SV_BotLibChatCalls( int *args ) {
 	case BOTLIB_AI_NUM_INITIAL_CHATS:
 		return botlib_export->ai.BotNumInitialChats( args[1], VMAS(2) );
 	case BOTLIB_AI_REPLY_CHAT: {
-		char *message = SV_GameBotChatMessage( args[2], qfalse );
+		char *message = SV_GameBotChatMessage( args[2] );
 		char *variables[MAX_MATCHVARIABLES];
 		SV_GameBotChatVariables( args, 5, variables, strlen(message) );
 		return botlib_export->ai.BotReplyChat( args[1], message, args[3], args[4], variables[0], variables[1], variables[2], variables[3], variables[4], variables[5], variables[6], variables[7] );
@@ -608,7 +607,7 @@ static int SV_BotLibChatCalls( int *args ) {
 		botlib_export->ai.UnifyWhiteSpaces( VMAS(1) );
 		return 0;
 	case BOTLIB_AI_REPLACE_SYNONYMS:
-		botlib_export->ai.BotReplaceSynonyms( SV_GameBotChatMessage( args[1], qtrue ), args[2] );
+		botlib_export->ai.BotReplaceSynonyms( SV_GameBotChatMessage( args[1] ), args[2] );
 		return 0;
 	case BOTLIB_AI_LOAD_CHAT_FILE:
 		return botlib_export->ai.BotLoadChatFile( args[1], VMAS(2), VMAS(3) );

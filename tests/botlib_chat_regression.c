@@ -49,9 +49,9 @@ static int Reply( int state, char *message, int mc, int vc, char *v0, char *v1, 
 }
 /** Touch the entire caller-supplied chat output. */
 static void GetMessage( int state, char *out, int size ) { Callback(); Check(state==1,"message state"); memset(out,'m',size); }
-/** Touch the entire checked synonym growth capacity. */
+/** Reproduce the exported synonym API's original-string span limit. */
 static void Synonyms( char *text, unsigned long context ) {
-	Callback(); Check(context==1,"synonym context"); memset(text,'s',MAX_MESSAGE_SIZE-1); text[MAX_MESSAGE_SIZE-1]=0;
+	size_t length=strlen(text); Callback(); Check(context==1,"synonym context"); memset(text,'s',length); text[length]=0;
 }
 /** Read the full match span and fill the requested output capacity. */
 static void MatchVariable( bot_match_t *match, int variable, char *out, int size ) {
@@ -102,8 +102,17 @@ int main( void ) {
 	Check(SV_BotLibChatCalls(args)==0,"whole message output"); args[3]=0; Reject(args); args[3]=9; Reject(args);
 	args[0]=BOTLIB_AI_REPLACE_SYNONYMS; args[1]=IMAGE_SIZE-MAX_MESSAGE_SIZE; args[2]=1;
 	memset(vm.dataBase+args[1],'a',MAX_MESSAGE_SIZE); vm.dataBase[IMAGE_SIZE-1]=0;
-	Check(SV_BotLibChatCalls(args)==0,"whole growth capacity"); args[1]++; Reject(args);
-	args[1]--; vm.dataBase[IMAGE_SIZE-1]='a'; Reject(args);
+	Check(SV_BotLibChatCalls(args)==0,"maximum original span"); args[1]++;
+	Check(SV_BotLibChatCalls(args)==0,"interior string near image end");
+	args[1]=IMAGE_SIZE-2; memcpy(vm.dataBase+args[1],"a",2);
+	Check(SV_BotLibChatCalls(args)==0 && vm.dataBase[IMAGE_SIZE-2]=='s' && !vm.dataBase[IMAGE_SIZE-1],"two-byte object at image end");
+	args[1]=IMAGE_SIZE-1; Check(SV_BotLibChatCalls(args)==0 && !vm.dataBase[IMAGE_SIZE-1],"empty string at image end");
+	args[1]=2064; memset(vm.dataBase+2048,0x5a,32); memcpy(vm.dataBase+args[1],"hi hi",6); memcpy(before,vm.dataBase,IMAGE_SIZE);
+	Check(SV_BotLibChatCalls(args)==0 && !memcmp(before,vm.dataBase,args[1]) &&
+	      !memcmp(before+args[1]+6,vm.dataBase+args[1]+6,IMAGE_SIZE-args[1]-6) && !vm.dataBase[args[1]+5],"interior object canaries");
+	args[1]=IMAGE_SIZE-2; vm.dataBase[IMAGE_SIZE-2]=vm.dataBase[IMAGE_SIZE-1]='a'; Reject(args);
+	args[1]=3072; memset(vm.dataBase+args[1],'a',256); vm.dataBase[args[1]+256]=0; Reject(args);
+	args[1]=0; Reject(args);
 	args[0]=BOTLIB_AI_MATCH_VARIABLE; args[1]=64; args[2]=0; args[3]=IMAGE_SIZE-8; args[4]=8;
 	match=(bot_match_t *)(vm.dataBase+64); memset(match,0,sizeof(*match)); strcpy(match->string,"test");
 	match->variables[0].offset=0; match->variables[0].length=4;

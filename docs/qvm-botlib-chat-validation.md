@@ -15,13 +15,19 @@ module before native dispatch. Native substring output now uses bounded
 `memmove`, including overlapping output, and rejects invalid embedded spans.
 Native match-string copying always terminates at the fixed buffer boundary.
 
-Synonym replacement currently checks a 256-byte VM range and bounds native
-expansion, including reply synonyms. That VM range does not establish the
-capacity of an interior message pointer; the legacy syscall lacks a size
-argument. Its object bounds fix remains pending the compatibility decision. The native word search now finds
-later words without stepping past the terminator. Skipping a synonym inside
-an existing replacement advances within the source rather than beyond it.
-These native changes also address part of the bot text bounds work in #48.
+The user selected a safe in-place limit for the size-less retail synonym
+syscall. Its exported replacement routine now caps the result at the original
+terminated string length, including for native callers; longer replacements
+may be skipped. The VM wrapper checks that original string span rather than
+assuming an additional 256 writable bytes. Interior pointers and short objects
+at the VM boundary retain their surrounding bytes. Syscall opcodes, argument
+count and the botlib export table remain unchanged.
+
+Private helpers receive the capacity of internal chat buffers explicitly, so
+initial/reply variable expansion and weighted generated text may still grow
+within their known 256-byte buffers. The word search finds later words without
+stepping past the terminator; skipping a synonym inside an existing replacement
+advances within the source. These native fixes also cover part of #48.
 
 ## Validation
 
@@ -30,7 +36,9 @@ routines with exact-sized allocations. They cover exact QVM console output
 and adjacent object canaries on a 64-bit host, scalar/message layout, cleared links, unchanged no-message output,
 eight nullable variables, combined-size limits, reply message limits,
 unterminated strings, match metadata rejection, growing/shrinking/empty
-synonym replacements, exact expansion capacity, trailing delimiters,
+synonym replacements, exact known expansion capacity, exact-sized/interior
+exported objects, near-end and empty VM strings, unchanged object canaries,
+retained internal initial/reply variable growth, trailing delimiters,
 termination of long native match input, and overlapping substring output.
 Rejected VM requests preserve the image and never call the native API.
 
@@ -41,8 +49,8 @@ PEF validation with the temporary libraries in the
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,686,413 | `db2b3cc37f8e936f07b5a41e268cefb9edc9dcb9661b46e2e2b7e01b67d78759` |
-| Quake3_TeamArena | 3,834,987 | `0df7f104a3b2f546791ecf2b15d9812e66e387a86aeb4e3fada5ac5bd6609bd0` |
+| Quake3 | 3,686,413 | `d19a74548b69ca3625fc72b490b8bfc2cfff27523220f8d356f06d7161511566` |
+| Quake3_TeamArena | 3,834,987 | `bb116f8d48173a46269ba179db0df142a57f0fb5b862cd0594a3ad794623b857` |
 
 ## Remaining acceptance
 
