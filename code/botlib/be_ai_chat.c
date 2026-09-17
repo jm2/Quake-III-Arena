@@ -492,52 +492,43 @@ int StringContains(char *str1, char *str2, int casesensitive)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
+/** Find a whole word without stepping beyond the input terminator. */
 char *StringContainsWord(char *str1, char *str2, int casesensitive)
 {
-	int len, i, j;
-
-	len = strlen(str1) - strlen(str2);
-	for (i = 0; i <= len; i++, str1++)
-	{
-		//if not at the start of the string
-		if (i)
-		{
-			//skip to the start of the next word
-			while(*str1 && *str1 != ' ' && *str1 != '.' && *str1 != ',' && *str1 != '!') str1++;
-			if (!*str1) break;
-			str1++;
-		} //end for
-		//compare the word
-		for (j = 0; str2[j]; j++)
-		{
-			if (casesensitive)
-			{
-				if (str1[j] != str2[j]) break;
-			} //end if
-			else
-			{
-				if (toupper(str1[j]) != toupper(str2[j])) break;
-			} //end else
-		} //end for
-		//if there was a word match
-		if (!str2[j])
-		{
-			//if the first string has an end of word
-			if (!str1[j] || str1[j] == ' ' || str1[j] == '.' || str1[j] == ',' || str1[j] == '!') return str1;
-		} //end if
-	} //end for
+	char *word;
+	int j;
+	if (!*str2) return str1;
+	for (word = str1; *word; word++) {
+		if (word > str1 && word[-1] != ' ' && word[-1] != '.' && word[-1] != ',' && word[-1] != '!') continue;
+		for (j = 0; str2[j] && word[j]; j++) {
+			if (casesensitive ? word[j] != str2[j] : toupper((unsigned char)word[j]) != toupper((unsigned char)str2[j])) break;
+		}
+		if (!str2[j] && (!word[j] || word[j] == ' ' || word[j] == '.' || word[j] == ',' || word[j] == '!')) return word;
+	}
 	return NULL;
-} //end of the function StringContainsWord
+}
 //===========================================================================
 //
 // Parameter:				-
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
+/** Replace one synonym only if its result fits the fixed native chat buffer. */
+static qboolean BotReplaceChatWord( char *string, char *at, const char *synonym, const char *replacement ) {
+	size_t length = strlen(string), oldLength = strlen(synonym), newLength = strlen(replacement);
+	if ( !oldLength || length >= MAX_MESSAGE_SIZE || oldLength > length ||
+	     newLength >= MAX_MESSAGE_SIZE - (length - oldLength) ) return qfalse;
+	memmove( at + newLength, at + oldLength, strlen(at + oldLength) + 1 );
+	memcpy( at, replacement, newLength );
+	return qtrue;
+}
+
+/** Replace whole words while bounding growth and the next search position. */
 void StringReplaceWords(char *string, char *synonym, char *replacement)
 {
 	char *str, *str2;
 
+	if (!*synonym) return;
 	//find the synonym in the string
 	str = StringContainsWord(string, synonym, qfalse);
 	//if the synonym occured in the string
@@ -545,7 +536,7 @@ void StringReplaceWords(char *string, char *synonym, char *replacement)
 	{
 		//if the synonym isn't part of the replacement which is already in the string
 		//usefull for abreviations
-		str2 = StringContainsWord(string, replacement, qfalse);
+		str2 = *replacement ? StringContainsWord(string, replacement, qfalse) : NULL;
 		while(str2)
 		{
 			if (str2 <= str && str < str2 + strlen(replacement)) break;
@@ -553,12 +544,10 @@ void StringReplaceWords(char *string, char *synonym, char *replacement)
 		} //end while
 		if (!str2)
 		{
-			memmove(str + strlen(replacement), str+strlen(synonym), strlen(str+strlen(synonym))+1);
-			//append the synonum replacement
-			Com_Memcpy(str, replacement, strlen(replacement));
+			if (!BotReplaceChatWord(string, str, synonym, replacement)) break;
 		} //end if
 		//find the next synonym in the string
-		str = StringContainsWord(str+strlen(replacement), synonym, qfalse);
+		str = StringContainsWord(str + strlen(str2 ? synonym : replacement), synonym, qfalse);
 	} //end if
 } //end of the function StringReplaceWords
 //===========================================================================
@@ -838,10 +827,7 @@ void BotReplaceReplySynonyms(char *string, unsigned long int context)
 				str2 = StringContainsWord(str1, replacement, qfalse);
 				if (str2 && str2 == str1) continue;
 				//
-				memmove(str1 + strlen(replacement), str1+strlen(synonym->string),
-							strlen(str1+strlen(synonym->string)) + 1);
-				//append the synonum replacement
-				Com_Memcpy(str1, replacement, strlen(replacement));
+				if (!BotReplaceChatWord(string, str1, synonym->string, replacement)) return;
 				//
 				break;
 			} //end for
@@ -1431,12 +1417,13 @@ int StringsMatch(bot_matchpiece_t *pieces, bot_match_t *match)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
+/** Keep copied match strings terminated even when native input exceeds the fixed capacity. */
 int BotFindMatch(char *str, bot_match_t *match, unsigned long int context)
 {
 	int i;
 	bot_matchtemplate_t *ms;
 
-	strncpy(match->string, str, MAX_MESSAGE_SIZE);
+	Q_strncpyz(match->string, str, sizeof(match->string));
 	//remove any trailing enters
 	while(strlen(match->string) &&
 			match->string[strlen(match->string)-1] == '\n')
@@ -1465,29 +1452,22 @@ int BotFindMatch(char *str, bot_match_t *match, unsigned long int context)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
+/** Bound embedded match spans and support overlapping substring output. */
 void BotMatchVariable(bot_match_t *match, int variable, char *buf, int size)
 {
-	if (variable < 0 || variable >= MAX_MATCHVARIABLES)
-	{
-		botimport.Print(PRT_FATAL, "BotMatchVariable: variable out of range\n");
-		strcpy(buf, "");
-		return;
-	} //end if
-
-	if (match->variables[variable].offset >= 0)
-	{
-		if (match->variables[variable].length < size)
-			size = match->variables[variable].length+1;
-		assert( match->variables[variable].offset >= 0 ); // bk001204
-		strncpy(buf, &match->string[ (int) match->variables[variable].offset], size-1);
-		buf[size-1] = '\0';
-	} //end if
-	else
-	{
-		strcpy(buf, "");
-	} //end else
-	return;
-} //end of the function BotMatchVariable
+	char *end;
+	int offset, length;
+	if (!buf || size <= 0) return;
+	if (variable < 0 || variable >= MAX_MATCHVARIABLES) { buf[0] = '\0'; return; }
+	offset = match->variables[variable].offset;
+	length = match->variables[variable].length;
+	end = memchr(match->string, '\0', sizeof(match->string));
+	if (offset < 0 || !end || length < 0 || offset > end - match->string ||
+	    length > end - match->string - offset) { buf[0] = '\0'; return; }
+	if (length >= size) length = size - 1;
+	memmove(buf, match->string + offset, length);
+	buf[length] = '\0';
+}
 //===========================================================================
 //
 // Parameter:				-
