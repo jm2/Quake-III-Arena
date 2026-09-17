@@ -18,7 +18,7 @@ static byte fixture[FIXTURE_SIZE];
 static int fixtureLength;
 static void *allocations[MAX_ALLOCS];
 static int allocationCount, fileReads, fileFrees, preparations;
-static int expectError, errorLevel;
+static int expectError, errorLevel, rejectPreparation;
 static vm_t *shutdownVM;
 static vm_t savedVM;
 static int shutdownCalls;
@@ -85,10 +85,11 @@ void FS_FreeFile( void *buffer ) {
 	free( buffer );
 }
 
-void VM_PrepareInterpreter( vm_t *vm, vmHeader_t *header ) {
+qboolean VM_PrepareInterpreter( vm_t *vm, vmHeader_t *header ) {
 	(void)vm;
 	Check( header->instructionCount > 0, "invalid header reached preparation" );
 	preparations++;
+	return rejectPreparation ? qfalse : qtrue;
 }
 
 int VM_CallInterpreted( vm_t *vm, int *args ) {
@@ -128,7 +129,7 @@ static void Reset( void ) {
 		free( allocations[i] );
 	}
 	allocationCount = fileReads = fileFrees = preparations = 0;
-	expectError = shutdownCalls = 0;
+	expectError = shutdownCalls = rejectPreparation = 0;
 	shutdownVM = NULL;
 }
 
@@ -210,6 +211,23 @@ static void RejectFixture( int restart ) {
 	for ( i = 0; i < oldSize; i++ ) {
 		Check( oldData[i] == 0x5a, "restart mutated data before validation" );
 	}
+}
+
+static void TestPreparationFailure( void ) {
+	Reset();
+	ValidFixture();
+	rejectPreparation = expectError = 1;
+	if ( setjmp( errorJump ) == 0 ) {
+		VM_Create( "test", SystemCall, VMI_BYTECODE );
+		Check( 0, "failed bytecode preparation accepted" );
+	}
+	expectError = 0;
+	Check( errorLevel == ERR_DROP && preparations == 1,
+	       "preparation failure must drop the load" );
+	Check( fileReads == fileFrees, "file buffer leaked after preparation" );
+	Check( vmTable[0].name[0] == '\0', "failed preparation retained VM" );
+	Reset();
+	CreateValid();
 }
 
 static void TestTruncations( void ) {
@@ -312,6 +330,7 @@ static void TestRestart( void ) {
 int main( void ) {
 	Reset();
 	CreateValid();
+	TestPreparationFailure();
 	TestTruncations();
 	TestHeaderFields();
 	TestRestart();
