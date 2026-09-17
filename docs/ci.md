@@ -72,7 +72,10 @@ PR head while retaining checks on the merged default branch.
   - checks actual bot action dispatch into native elementary-action routines,
     whole input output, bounded strings/vectors, separate server/bot capacities,
     invalid native client indices, allocation arithmetic, and shutdown reset.
-    Remaining botlib AI families still need range checks.
+  - checks remaining AI goal/move/weapon structures, retail inventory arrays,
+    bounded output strings, optional no-goal operations, genetic arrays and
+    scalar outputs, and the inclusive native random endpoint.
+    Scalar indices and indirect native accesses remain under review.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -98,6 +101,7 @@ bash tests/run_vm_returned_string_tests.sh
 bash tests/run_botlib_navigation_tests.sh
 bash tests/run_botlib_chat_tests.sh
 bash tests/run_botlib_actions_tests.sh
+bash tests/run_botlib_ai_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
