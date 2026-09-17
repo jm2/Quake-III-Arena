@@ -1,8 +1,12 @@
 # Continuous integration
 
 `Portable CI` is the first automated signal layer for review and GasCity
-workers. It runs on pushes, pull requests, and manual dispatch without a
+workers. It runs on master pushes, pull requests, and manual dispatch without a
 Retro68 installation, proprietary retail data, or a Mac OS 9 emulator.
+
+Feature branch updates run through the pull-request trigger. Filtering the
+push trigger to master avoids duplicate copies of the same four jobs for each
+PR head while retaining checks on the merged default branch.
 
 ## Required checks
 

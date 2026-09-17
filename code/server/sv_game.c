@@ -477,11 +477,10 @@ static int SV_BotLibNavigationCalls( int *args ) {
 	}
 }
 
-/** Check the fixed native chat capacity, including space needed for synonym growth. */
-static char *SV_GameBotChatMessage( int value, qboolean writable ) {
-	char *message = writable ? VM_CheckedArgPtr( value, MAX_MESSAGE_SIZE, 1, qfalse ) : VM_CheckedArgString( value, qfalse );
-	if ( (writable && !memchr( message, '\0', MAX_MESSAGE_SIZE )) ||
-	     (!writable && strlen(message) >= MAX_MESSAGE_SIZE) ) {
+/** Check a terminated chat string; the legacy synonym API never grows its original span. */
+static char *SV_GameBotChatMessage( int value ) {
+	char *message = VM_CheckedArgString( value, qfalse );
+	if ( strlen(message) >= MAX_MESSAGE_SIZE ) {
 		VM_Error( "Bot chat message is too long" );
 		return NULL;
 	}
@@ -522,6 +521,38 @@ static bot_match_t *SV_GameBotMatch( int value, int variable ) {
 	return match;
 }
 
+/* Console-message link pointers are 32-bit fields in the retail QVM ABI. */
+typedef struct {
+	int handle;
+	float time;
+	int type;
+	char message[MAX_MESSAGE_SIZE];
+	int prev, next;
+} qvmBotConsoleMessage_t;
+typedef char qvmBotConsoleMessageSizeCheck[(sizeof(qvmBotConsoleMessage_t) == 276) ? 1 : -1];
+
+/** Marshal native console messages into the fixed QVM layout without native links or padding. */
+static int SV_GameBotConsoleMessage( int state, int value ) {
+	bot_consolemessage_t native;
+	qvmBotConsoleMessage_t *output;
+	int result;
+	if ( VM_IsNative(gvm) ) {
+		return botlib_export->ai.BotNextConsoleMessage( state, VM_CheckedArgPtr( value, sizeof(native), 4, qfalse ) );
+	}
+	output = VM_CheckedArgPtr( value, sizeof(*output), 4, qfalse );
+	memset( &native, 0, sizeof(native) );
+	result = botlib_export->ai.BotNextConsoleMessage( state, &native );
+	if ( result ) {
+		output->handle = native.handle;
+		output->time = native.time;
+		output->type = native.type;
+		memcpy( output->message, native.message, sizeof(output->message) );
+		output->message[MAX_MESSAGE_SIZE-1] = '\0';
+		output->prev = output->next = 0;
+	}
+	return result;
+}
+
 /** Dispatch bot chat traps with complete buffers and bounded embedded metadata. */
 static int SV_BotLibChatCalls( int *args ) {
 	if ( !botlib_export ) {
@@ -541,7 +572,7 @@ static int SV_BotLibChatCalls( int *args ) {
 		botlib_export->ai.BotRemoveConsoleMessage( args[1], args[2] );
 		return 0;
 	case BOTLIB_AI_NEXT_CONSOLE_MESSAGE:
-		return botlib_export->ai.BotNextConsoleMessage( args[1], VMAP(2, bot_consolemessage_t) );
+		return SV_GameBotConsoleMessage( args[1], args[2] );
 	case BOTLIB_AI_NUM_CONSOLE_MESSAGE:
 		return botlib_export->ai.BotNumConsoleMessages( args[1] );
 	case BOTLIB_AI_INITIAL_CHAT: {
@@ -553,7 +584,7 @@ static int SV_BotLibChatCalls( int *args ) {
 	case BOTLIB_AI_NUM_INITIAL_CHATS:
 		return botlib_export->ai.BotNumInitialChats( args[1], VMAS(2) );
 	case BOTLIB_AI_REPLY_CHAT: {
-		char *message = SV_GameBotChatMessage( args[2], qfalse );
+		char *message = SV_GameBotChatMessage( args[2] );
 		char *variables[MAX_MATCHVARIABLES];
 		SV_GameBotChatVariables( args, 5, variables, strlen(message) );
 		return botlib_export->ai.BotReplyChat( args[1], message, args[3], args[4], variables[0], variables[1], variables[2], variables[3], variables[4], variables[5], variables[6], variables[7] );
@@ -577,7 +608,7 @@ static int SV_BotLibChatCalls( int *args ) {
 		botlib_export->ai.UnifyWhiteSpaces( VMAS(1) );
 		return 0;
 	case BOTLIB_AI_REPLACE_SYNONYMS:
-		botlib_export->ai.BotReplaceSynonyms( SV_GameBotChatMessage( args[1], qtrue ), args[2] );
+		botlib_export->ai.BotReplaceSynonyms( SV_GameBotChatMessage( args[1] ), args[2] );
 		return 0;
 	case BOTLIB_AI_LOAD_CHAT_FILE:
 		return botlib_export->ai.BotLoadChatFile( args[1], VMAS(2), VMAS(3) );

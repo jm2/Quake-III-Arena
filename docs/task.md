@@ -100,7 +100,7 @@ QVMs while any P0 item is open.
         after calls return; see [return evidence](qvm-returned-string-validation.md).
   - [x] Botlib common/navigation trap ranges, empty output capacities, and
         allocated client indices have [sanitizer regressions](qvm-botlib-navigation-validation.md).
-  - [x] Bot chat buffers, cumulative variables, native synonym expansion,
+  - [x] Bot chat buffers, cumulative variables, bounded in-place synonyms,
         and embedded match spans have [sanitizer regressions](qvm-botlib-chat-validation.md).
   - [x] Elementary-action VM arguments and native allocated client bounds
         have [sanitizer regressions](qvm-botlib-actions-validation.md).
