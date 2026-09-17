@@ -497,6 +497,7 @@ Q3OBJ = \
 	$(B)/client/tr_font.o \
 	$(B)/client/tr_image.o \
 	$(B)/client/tr_image_bmp.o \
+	$(B)/client/tr_image_pcx.o \
 	$(B)/client/tr_init.o \
 	$(B)/client/tr_light.o \
 	$(B)/client/tr_main.o \
@@ -726,6 +727,7 @@ $(B)/client/tr_flares.o : $(RDIR)/tr_flares.c; $(DO_CC)  $(GL_CFLAGS)
 $(B)/client/tr_font.o : $(RDIR)/tr_font.c; $(DO_CC)   $(GL_CFLAGS) 
 $(B)/client/tr_image.o : $(RDIR)/tr_image.c; $(DO_CC)   $(GL_CFLAGS) 
 $(B)/client/tr_image_bmp.o : $(RDIR)/tr_image_bmp.c $(RDIR)/tr_image_cursor.h; $(DO_CC)   $(GL_CFLAGS)
+$(B)/client/tr_image_pcx.o : $(RDIR)/tr_image_pcx.c $(RDIR)/tr_image_cursor.h; $(DO_CC)   $(GL_CFLAGS)
 $(B)/client/tr_init.o : $(RDIR)/tr_init.c; $(DO_CC)    $(GL_CFLAGS) 
 $(B)/client/tr_light.o : $(RDIR)/tr_light.c; $(DO_CC)  $(GL_CFLAGS) 
 $(B)/client/tr_main.o : $(RDIR)/tr_main.c; $(DO_CC)   $(GL_CFLAGS) 
@@ -1596,6 +1598,7 @@ Q3SOBJ = \
 	$(B)/q3static/tr_font.o \
 	$(B)/q3static/tr_image.o \
 	$(B)/q3static/tr_image_bmp.o \
+	$(B)/q3static/tr_image_pcx.o \
 	$(B)/q3static/tr_init.o \
 	$(B)/q3static/tr_light.o \
 	$(B)/q3static/tr_main.o \
@@ -1759,6 +1762,7 @@ $(B)/q3static/tr_flares.o : $(RDIR)/tr_flares.c; $(DO_CC) -DQ3_STATIC
 $(B)/q3static/tr_font.o : $(RDIR)/tr_font.c; $(DO_CC) -DQ3_STATIC  
 $(B)/q3static/tr_image.o : $(RDIR)/tr_image.c; $(DO_CC) -DQ3_STATIC 
 $(B)/q3static/tr_image_bmp.o : $(RDIR)/tr_image_bmp.c $(RDIR)/tr_image_cursor.h; $(DO_CC) -DQ3_STATIC
+$(B)/q3static/tr_image_pcx.o : $(RDIR)/tr_image_pcx.c $(RDIR)/tr_image_cursor.h; $(DO_CC) -DQ3_STATIC
 $(B)/q3static/tr_init.o : $(RDIR)/tr_init.c; $(DO_CC) -DQ3_STATIC 
 $(B)/q3static/tr_light.o : $(RDIR)/tr_light.c; $(DO_CC) -DQ3_STATIC 
 $(B)/q3static/tr_main.o : $(RDIR)/tr_main.c; $(DO_CC) -DQ3_STATIC 
