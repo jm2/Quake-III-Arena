@@ -317,6 +317,56 @@ static void TestSyscallSnapshot( void ) {
 	inspectSyscall = 1; lastSyscallArgument = 42; Run( qfalse, 123, NULL );
 }
 
+static void BinaryArithmetic( int op, int left, int right,
+                              qboolean rejected, int result, const char *reason ) {
+	ResetCode(); Emit( OP_CONST, left ); Emit( OP_CONST, right );
+	Emit( op, 0 ); Emit( OP_LEAVE, 0 ); Run( rejected, result, reason );
+}
+
+static void TestArithmetic( void ) {
+	const int divisions[] = {OP_DIVI, OP_DIVU, OP_MODI, OP_MODU};
+	const int shifts[] = {OP_LSH, OP_RSHI, OP_RSHU};
+	const int badShifts[] = {INT_MIN, -1, 32, INT_MAX};
+	const struct { int bits, result; qboolean rejected; } conversions[] = {
+		{0x3ff33333, 1, qfalse}, {(int)0xbff33333u, -1, qfalse},
+		{0x4effffff, 2147483520, qfalse}, {(int)0xcf000000u, INT_MIN, qfalse},
+		{0x4f000000, 0, qtrue}, {(int)0xcf000001u, 0, qtrue},
+		{0x7f800000, 0, qtrue}, {(int)0xff800000u, 0, qtrue},
+		{0x7fc00000, 0, qtrue}, {0x7f800001, 0, qtrue}
+	};
+	size_t i, j;
+	ResetCode(); Emit( OP_CONST, INT_MIN ); Emit( OP_NEGI, 0 ); Emit( OP_LEAVE, 0 );
+	Run( qfalse, INT_MIN, NULL );
+	BinaryArithmetic( OP_ADD, INT_MAX, 1, qfalse, INT_MIN, NULL );
+	BinaryArithmetic( OP_SUB, INT_MIN, 1, qfalse, INT_MAX, NULL );
+	BinaryArithmetic( OP_MULI, INT_MAX, 2, qfalse, -2, NULL );
+	BinaryArithmetic( OP_MULU, INT_MAX, 2, qfalse, -2, NULL );
+	for ( i = 0; i < sizeof(divisions)/sizeof(divisions[0]); i++ ) {
+		BinaryArithmetic( divisions[i], 42, 0, qtrue, 0, "division" );
+	}
+	BinaryArithmetic( OP_DIVI, INT_MIN, -1, qtrue, 0, "division" );
+	BinaryArithmetic( OP_MODI, INT_MIN, -1, qtrue, 0, "division" );
+	BinaryArithmetic( OP_DIVI, -7, 2, qfalse, -3, NULL );
+	BinaryArithmetic( OP_MODI, -7, 2, qfalse, -1, NULL );
+	BinaryArithmetic( OP_DIVU, -1, 2, qfalse, INT_MAX, NULL );
+	BinaryArithmetic( OP_MODU, -1, 2, qfalse, 1, NULL );
+	for ( i = 0; i < sizeof(shifts)/sizeof(shifts[0]); i++ ) {
+		for ( j = 0; j < sizeof(badShifts)/sizeof(badShifts[0]); j++ ) {
+			BinaryArithmetic( shifts[i], 1, badShifts[j], qtrue, 0, "shift" );
+		}
+		BinaryArithmetic( shifts[i], -1, 0, qfalse, -1, NULL );
+	}
+	BinaryArithmetic( OP_LSH, 1, 31, qfalse, INT_MIN, NULL );
+	BinaryArithmetic( OP_LSH, -1, 1, qfalse, -2, NULL );
+	BinaryArithmetic( OP_RSHI, INT_MIN, 31, qfalse, -1, NULL );
+	BinaryArithmetic( OP_RSHI, -3, 1, qfalse, -2, NULL );
+	BinaryArithmetic( OP_RSHU, INT_MIN, 31, qfalse, 1, NULL );
+	for ( i = 0; i < sizeof(conversions)/sizeof(conversions[0]); i++ ) {
+		ResetCode(); Emit( OP_CONST, conversions[i].bits ); Emit( OP_CVFI, 0 );
+		Emit( OP_LEAVE, 0 ); Run( conversions[i].rejected, conversions[i].result, "float conversion" );
+	}
+}
+
 int main( void ) {
 	TestValidExecution();
 	TestOperandStacks();
@@ -325,6 +375,7 @@ int main( void ) {
 	TestMemoryAccess();
 	TestBlockCopies();
 	TestSyscallSnapshot();
+	TestArithmetic();
 	puts( "QVM runtime stack/control-flow/memory regressions passed (issue #35)" );
 	return 0;
 }

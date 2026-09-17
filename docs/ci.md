@@ -35,8 +35,10 @@ Retro68 installation, proprietary retail data, or a Mac OS 9 emulator.
     and program stacks, CALL/JUMP targets, forged return addresses, recursive
     syscalls, faulted shutdown re-entry, and valid execution;
   - checks full-width loads, legacy masked stores, ARG boundaries, block-copy
-    bounds/overlap, and bounded syscall argument snapshots. Syscall-specific
-    pointer/range checks and arithmetic coverage remain incomplete.
+    bounds/overlap, and bounded syscall argument snapshots;
+  - checks wrapping integer arithmetic, division/modulo traps, shift counts,
+    and float conversion limits. Syscall-specific pointer/range checks and
+    VM call marshalling remain incomplete.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.

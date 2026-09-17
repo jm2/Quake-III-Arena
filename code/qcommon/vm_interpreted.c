@@ -20,6 +20,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 #include "vm_local.h"
+#include <limits.h>
 
 #ifdef DEBUG_VM // bk001204
 static char	*opnames[256] = {
@@ -806,34 +807,46 @@ nextInstruction2:
 		//===================================================================
 
 		case OP_NEGI:
-			*opStack = -r0;
+			*opStack = (int)(0u - (unsigned int)r0);
 			goto nextInstruction;
 		case OP_ADD:
-			opStack[-1] = r1 + r0;
+			opStack[-1] = (int)((unsigned int)r1 + (unsigned int)r0);
 			opStack--;
 			goto nextInstruction;
 		case OP_SUB:
-			opStack[-1] = r1 - r0;
+			opStack[-1] = (int)((unsigned int)r1 - (unsigned int)r0);
 			opStack--;
 			goto nextInstruction;
 		case OP_DIVI:
+			if ( r0 == 0 || (r1 == INT_MIN && r0 == -1) ) {
+				VM_INTERPRETER_ERROR( "VM signed division out of range" );
+			}
 			opStack[-1] = r1 / r0;
 			opStack--;
 			goto nextInstruction;
 		case OP_DIVU:
+			if ( r0 == 0 ) {
+				VM_INTERPRETER_ERROR( "VM unsigned division by zero" );
+			}
 			opStack[-1] = ((unsigned)r1) / ((unsigned)r0);
 			opStack--;
 			goto nextInstruction;
 		case OP_MODI:
+			if ( r0 == 0 || (r1 == INT_MIN && r0 == -1) ) {
+				VM_INTERPRETER_ERROR( "VM signed division out of range" );
+			}
 			opStack[-1] = r1 % r0;
 			opStack--;
 			goto nextInstruction;
 		case OP_MODU:
+			if ( r0 == 0 ) {
+				VM_INTERPRETER_ERROR( "VM unsigned division by zero" );
+			}
 			opStack[-1] = ((unsigned)r1) % (unsigned)r0;
 			opStack--;
 			goto nextInstruction;
 		case OP_MULI:
-			opStack[-1] = r1 * r0;
+			opStack[-1] = (int)((unsigned int)r1 * (unsigned int)r0);
 			opStack--;
 			goto nextInstruction;
 		case OP_MULU:
@@ -858,14 +871,27 @@ nextInstruction2:
 			goto nextInstruction;
 
 		case OP_LSH:
-			opStack[-1] = r1 << r0;
+			if ( (unsigned int)r0 >= 32 ) {
+				VM_INTERPRETER_ERROR( "VM shift out of range" );
+			}
+			opStack[-1] = (int)((unsigned int)r1 << r0);
 			opStack--;
 			goto nextInstruction;
 		case OP_RSHI:
-			opStack[-1] = r1 >> r0;
+			if ( (unsigned int)r0 >= 32 ) {
+				VM_INTERPRETER_ERROR( "VM shift out of range" );
+			}
+			// Spell out sign extension without implementation-defined shifts.
+			opStack[-1] = (int)((unsigned int)r1 >> r0);
+			if ( r1 < 0 && r0 != 0 ) {
+				opStack[-1] |= (int)(~0u << (32 - r0));
+			}
 			opStack--;
 			goto nextInstruction;
 		case OP_RSHU:
+			if ( (unsigned int)r0 >= 32 ) {
+				VM_INTERPRETER_ERROR( "VM shift out of range" );
+			}
 			opStack[-1] = ((unsigned)r1) >> r0;
 			opStack--;
 			goto nextInstruction;
@@ -894,7 +920,16 @@ nextInstruction2:
 			*(float *)opStack =  (float)*opStack;
 			goto nextInstruction;
 		case OP_CVFI:
-			*opStack = (int) *(float *)opStack;
+			{
+				float value = *(float *)opStack;
+				// INT_MAX rounds up when converted to float. Use the exact
+				// exclusive upper bound and reject NaN before the C cast.
+				if ( value != value || value >= 2147483648.0f ||
+				     value < -2147483648.0f ) {
+					VM_INTERPRETER_ERROR( "VM float conversion out of range" );
+				}
+				*opStack = (int)value;
+			}
 			goto nextInstruction;
 		case OP_SEX8:
 			*opStack = (signed char)*opStack;
