@@ -33,8 +33,10 @@ Retro68 installation, proprietary retail data, or a Mac OS 9 emulator.
     opcodes/counts/branch targets, unaligned immediates, and valid translation.
   - executes synthetic QVMs through the actual interpreter to check operand
     and program stacks, CALL/JUMP targets, forged return addresses, recursive
-    syscalls, faulted shutdown re-entry, and valid execution. Memory-access
-    and syscall pointer/range coverage remains incomplete.
+    syscalls, faulted shutdown re-entry, and valid execution;
+  - checks full-width loads, legacy masked stores, ARG boundaries, block-copy
+    bounds/overlap, and bounded syscall argument snapshots. Syscall-specific
+    pointer/range checks and arithmetic coverage remain incomplete.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.

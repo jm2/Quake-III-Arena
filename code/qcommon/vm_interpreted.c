@@ -214,6 +214,13 @@ qboolean VM_PrepareInterpreter( vm_t *vm, vmHeader_t *header ) {
 	return qtrue;
 }
 
+/* Address masking is part of the legacy VM ABI, but a complete access must
+ * fit after masking. Subtraction avoids wrapping the end of the range. */
+static qboolean VM_DataRange( vm_t *vm, unsigned int offset, unsigned int length ) {
+	unsigned int size = (unsigned int)vm->dataMask + 1;
+	return offset <= size && length <= size - offset;
+}
+
 /* Return addresses live in writable VM data. Require an instruction boundary,
  * not merely an offset into the expanded opcode/operand buffer. */
 static qboolean VM_ValidReturnAddress( vm_t *vm, int pc ) {
@@ -280,7 +287,7 @@ locals from sp
 #define	DEBUGSTR va("%s%i", VM_Indent(vm), opStack-stack )
 
 int	VM_CallInterpreted( vm_t *vm, int *args ) {
-	int		stack[MAX_STACK + 1] = {0};
+	int		stack[MAX_STACK + 1];
 	int		*opStack;
 	int		programCounter;
 	int		programStack;
@@ -325,6 +332,7 @@ int	VM_CallInterpreted( vm_t *vm, int *args ) {
 	
 	// Reserve two initialized slots below the first operand so cached
 	// reads of opStack[0] and opStack[-1] are safe even at depth zero.
+	stack[0] = stack[1] = 0;
 	opStack = stack + 1;
 	programCounter = 0;
 
@@ -403,32 +411,51 @@ nextInstruction2:
 		case OP_LOCAL:
 			opStack++;
 			r1 = r0;
-			r0 = *opStack = r2+programStack;
+			r0 = *opStack = (int)((unsigned int)r2 + (unsigned int)programStack);
 
 			programCounter += 4;
 			goto nextInstruction2;
 
 		case OP_LOAD4:
-#ifdef DEBUG_VM
-			if ( *opStack & 3 ) {
-				Com_Error( ERR_DROP, "OP_LOAD4 misaligned" );
+			v1 = r0 & dataMask;
+			if ( !VM_DataRange( vm, v1, 4 ) ) {
+				VM_INTERPRETER_ERROR( "VM LOAD4 out of range" );
 			}
-#endif
-			r0 = *opStack = *(int *)&image[ r0&dataMask ];
+			// Native byte order matches the initialized data image. memcpy
+			// also permits unaligned accesses without a PowerPC alignment trap.
+			memcpy( opStack, image + v1, 4 );
+			r0 = *opStack;
 			goto nextInstruction2;
 		case OP_LOAD2:
-			r0 = *opStack = *(unsigned short *)&image[ r0&dataMask ];
+			{
+				unsigned short value;
+				v1 = r0 & dataMask;
+				if ( !VM_DataRange( vm, v1, 2 ) ) {
+					VM_INTERPRETER_ERROR( "VM LOAD2 out of range" );
+				}
+				memcpy( &value, image + v1, 2 );
+				r0 = *opStack = value;
+			}
 			goto nextInstruction2;
 		case OP_LOAD1:
-			r0 = *opStack = image[ r0&dataMask ];
+			r0 = *opStack = image[r0 & dataMask];
 			goto nextInstruction2;
 
 		case OP_STORE4:
-			*(int *)&image[ r1&(dataMask & ~3) ] = r0;
+			// Preserve legacy store-address alignment as well as masking.
+			v1 = r1 & (dataMask & ~3);
+			if ( !VM_DataRange( vm, v1, 4 ) ) {
+				VM_INTERPRETER_ERROR( "VM STORE4 out of range" );
+			}
+			*(int *)&image[v1] = r0;
 			opStack -= 2;
 			goto nextInstruction;
 		case OP_STORE2:
-			*(short *)&image[ r1&(dataMask & ~1) ] = r0;
+			v1 = r1 & (dataMask & ~1);
+			if ( !VM_DataRange( vm, v1, 2 ) ) {
+				VM_INTERPRETER_ERROR( "VM STORE2 out of range" );
+			}
+			*(short *)&image[v1] = r0;
 			opStack -= 2;
 			goto nextInstruction;
 		case OP_STORE1:
@@ -437,33 +464,28 @@ nextInstruction2:
 			goto nextInstruction;
 
 		case OP_ARG:
-			// single byte offset from programStack
-			*(int *)&image[ codeImage[programCounter] + programStack ] = r0;
+			// Unlike general data addresses, stack arguments must not wrap.
+			v1 = codeImage[programCounter];
+			if ( (v1 & 3) || !VM_DataRange( vm, programStack + v1, 4 ) ) {
+				VM_INTERPRETER_ERROR( "VM ARG out of range or unaligned" );
+			}
+			*(int *)&image[programStack + v1] = r0;
 			opStack--;
-			programCounter += 1;
+			programCounter++;
 			goto nextInstruction;
 
 		case OP_BLOCK_COPY:
 			{
-				int		*src, *dest;
-				int		i, count, srci, desti;
-
-				count = r2;
-				// MrE: copy range check
-				srci = r0 & dataMask;
-				desti = r1 & dataMask;
-				count = ((srci + count) & dataMask) - srci;
-				count = ((desti + count) & dataMask) - desti;
-
-				src = (int *)&image[ r0&dataMask ];
-				dest = (int *)&image[ r1&dataMask ];
-				if ( ( (int)src | (int)dest | count ) & 3 ) {
-					Com_Error( ERR_DROP, "OP_BLOCK_COPY not dword aligned" );
+				int count = r2;
+				int source = r0 & dataMask, dest = r1 & dataMask;
+				if ( count < 0 || !VM_DataRange( vm, source, count ) ||
+				     !VM_DataRange( vm, dest, count ) ) {
+					VM_INTERPRETER_ERROR( "VM BLOCK_COPY out of range" );
 				}
-				count >>= 2;
-				for ( i = count-1 ; i>= 0 ; i-- ) {
-					dest[i] = src[i];
+				if ( (source | dest | count) & 3 ) {
+					VM_INTERPRETER_ERROR( "VM BLOCK_COPY not dword aligned" );
 				}
+				memmove( image + dest, image + source, count );
 				programCounter += 4;
 				opStack -= 2;
 			}
@@ -480,6 +502,8 @@ nextInstruction2:
 				// system call
 				int		r;
 				int		temp;
+				int syscallArgs[16] = {0};
+				int available;
 #ifdef DEBUG_VM
 				int		stomped;
 
@@ -496,7 +520,15 @@ nextInstruction2:
 				*(int *)&image[ programStack + 4 ] = -1 - programCounter;
 
 //VM_LogSyscalls( (int *)&image[ programStack + 4 ] );
-				r = vm->systemCall( (int *)&image[ programStack + 4 ] );
+				// Dispatchers consume up to 16 integer arguments. Snapshot the
+				// available words and zero missing ones so an undersized frame
+				// cannot expose native memory beyond the VM data allocation.
+				available = (dataMask + 1 - (programStack + 4)) / sizeof(int);
+				if ( available > 16 ) {
+					available = 16;
+				}
+				memcpy( syscallArgs, image + programStack + 4, available * sizeof(int) );
+				r = vm->systemCall( syscallArgs );
 
 #ifdef DEBUG_VM
 				// this is just our stack frame pointer, only needed

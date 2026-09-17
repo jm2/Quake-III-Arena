@@ -79,7 +79,9 @@ QVMs while any P0 item is open.
   - [x] Enforce operand/program stack bounds and CALL/JUMP/return targets
         during normal execution, including safe faulted shutdown re-entry;
         see [runtime evidence](qvm-runtime-validation.md).
-  - [ ] Complete data-image, arithmetic, and syscall bounds; repair VM call
+  - [x] Bound full-width data accesses, stack arguments, block copies, and
+        syscall argument snapshots; see [memory evidence](qvm-memory-validation.md).
+  - [ ] Complete arithmetic and syscall pointer/range checks; repair VM call
         argument marshalling and retain valid PPC QVM compatibility.
 - [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)
       — **high**, connection redirection/injection/hijack.

@@ -50,9 +50,9 @@ pass PEF validation, using the temporary libraries described in the
 
 ## Remaining acceptance
 
-Keep #35 open. Data-image accesses, block copies, arithmetic edge cases,
-syscall argument/pointer ranges, and VM call argument marshalling still need
-work. The host harness calls the interpreter with an explicit argument array;
+The [next step](qvm-memory-validation.md) covers data-image accesses, block
+copies, and syscall argument snapshots. Keep #35 open: arithmetic edge cases,
+syscall pointer/range checks, and VM call argument marshalling still need work. The host harness calls the interpreter with an explicit argument array;
 it does not validate `VM_Call`'s legacy varargs handling. No full sandbox or
 retail/Mac OS 9 runtime compatibility claim is made. Target acceptance remains
 deferred to the user's live-testing session.
