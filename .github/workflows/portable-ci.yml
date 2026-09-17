@@ -28,7 +28,7 @@ jobs:
 
       - name: Check Bash syntax and help
         run: |
-          bash -n build_mac.sh setup_retro68.sh tests/run_host_c_tests.sh
+          bash -n build_mac.sh setup_retro68.sh tests/run_host_c_tests.sh tests/run_vm_loading_tests.sh
           ./build_mac.sh --help
 
       - name: Check PowerShell syntax and help
@@ -85,5 +85,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Build and run isolated q_shared checks
-        run: bash tests/run_host_c_tests.sh
+      - name: Build and run host memory-safety checks
+        run: |
+          bash tests/run_host_c_tests.sh
+          bash tests/run_vm_loading_tests.sh

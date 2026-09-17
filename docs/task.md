@@ -68,8 +68,10 @@ QVMs while any P0 item is open.
         for every accepted security family.
 - [ ] [#35 — harden interpreted QVM validation and sandbox bounds](https://github.com/jm2/Quake-III-Arena/issues/35)
       — **high**, native memory corruption from malformed QVMs.
-  - [ ] Validate header/range/allocation arithmetic in both `VM_Create` and
-        `VM_Restart`, including restart allocation-size compatibility.
+  - [x] Shared create/restart header validation checks file ranges, signed
+        allocation arithmetic, initialized-word alignment, and unchanged
+        restart allocation size. Host ASan/UBSan loader regressions and both
+        Retro68 product builds pass; see [loader evidence](qvm-loading-validation.md).
   - [ ] Validate bytecode decoding and branch targets before interpreter setup.
   - [ ] Enforce runtime stack, CALL/JUMP, syscall, and data-image checks;
         retain valid PPC QVM compatibility.
@@ -307,7 +309,9 @@ QVMs while any P0 item is open.
       and July evidence; retain their current priorities and closure gates.
 - [x] Re-run the eight Python tests, q_shared ASan/UBSan harness, Bash syntax
       and help, and PowerShell syntax and help on 2026-09-17.
-- [ ] Confirm the configured review bot before the first PR merge.
+- [x] Confirm Codex and CodeRabbit are enabled and review PRs automatically.
+- [ ] Confirm the merge review gate after CodeRabbit's one-review-per-hour
+      limit deferred re-review; keep merges held while the user decides.
 - [ ] Obtain the secure/legacy protocol policy before implementing #37.
 - [ ] Locate legal retail assets and a Mac OS 9 test environment before any
       dependent compatibility/runtime acceptance check.
