@@ -56,7 +56,7 @@ jobs:
             macbinary_encode.py
 
       - name: Check prioritized issue ledger
-        run: python -m unittest tests.test_review_ledger -v
+        run: python -m unittest tests.test_review_ledger tests.test_renderer_build_manifests -v
 
   packaging-tools:
     name: Packaging tools (Python ${{ matrix.python }})

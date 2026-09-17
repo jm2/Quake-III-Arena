@@ -15,7 +15,9 @@ pixel offsets follow the [file-header definition](https://learn.microsoft.com/en
 Legacy 32-bit alpha bytes remain preserved. Extended Windows headers and
 explicit gaps before pixel data are range checked. Outputs publish only on
 success; malformed data releases its file before ERR_DROP. CMake's existing
-renderer source glob includes the new module in both products.
+renderer source glob includes the new module in both products. Explicit Unix
+Make/Cons, Visual Studio, Xcode and lint lists also include the decoder; the
+manifest regression checks every source phase that builds the existing image module.
 
 ## Validation
 
