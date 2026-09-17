@@ -521,6 +521,38 @@ static bot_match_t *SV_GameBotMatch( int value, int variable ) {
 	return match;
 }
 
+/* Console-message link pointers are 32-bit fields in the retail QVM ABI. */
+typedef struct {
+	int handle;
+	float time;
+	int type;
+	char message[MAX_MESSAGE_SIZE];
+	int prev, next;
+} qvmBotConsoleMessage_t;
+typedef char qvmBotConsoleMessageSizeCheck[(sizeof(qvmBotConsoleMessage_t) == 276) ? 1 : -1];
+
+/** Marshal native console messages into the fixed QVM layout without native links or padding. */
+static int SV_GameBotConsoleMessage( int state, int value ) {
+	bot_consolemessage_t native;
+	qvmBotConsoleMessage_t *output;
+	int result;
+	if ( VM_IsNative(gvm) ) {
+		return botlib_export->ai.BotNextConsoleMessage( state, VM_CheckedArgPtr( value, sizeof(native), 4, qfalse ) );
+	}
+	output = VM_CheckedArgPtr( value, sizeof(*output), 4, qfalse );
+	memset( &native, 0, sizeof(native) );
+	result = botlib_export->ai.BotNextConsoleMessage( state, &native );
+	if ( result ) {
+		output->handle = native.handle;
+		output->time = native.time;
+		output->type = native.type;
+		memcpy( output->message, native.message, sizeof(output->message) );
+		output->message[MAX_MESSAGE_SIZE-1] = '\0';
+		output->prev = output->next = 0;
+	}
+	return result;
+}
+
 /** Dispatch bot chat traps with complete buffers and bounded embedded metadata. */
 static int SV_BotLibChatCalls( int *args ) {
 	if ( !botlib_export ) {
@@ -540,7 +572,7 @@ static int SV_BotLibChatCalls( int *args ) {
 		botlib_export->ai.BotRemoveConsoleMessage( args[1], args[2] );
 		return 0;
 	case BOTLIB_AI_NEXT_CONSOLE_MESSAGE:
-		return botlib_export->ai.BotNextConsoleMessage( args[1], VMAP(2, bot_consolemessage_t) );
+		return SV_GameBotConsoleMessage( args[1], args[2] );
 	case BOTLIB_AI_NUM_CONSOLE_MESSAGE:
 		return botlib_export->ai.BotNumConsoleMessages( args[1] );
 	case BOTLIB_AI_INITIAL_CHAT: {

@@ -10,7 +10,7 @@ static vm_t vm;
 vm_t *gvm = &vm;
 static botlib_export_t api;
 static byte before[IMAGE_SIZE];
-static int expectError, callbacks;
+static int expectError, callbacks, emptyConsole;
 static jmp_buf errorJump;
 
 /** Stop on unexpected output or native dispatch. */
@@ -30,7 +30,9 @@ void QDECL Com_Printf( const char *format, ... ) { (void)format; }
 static void Callback( void ) { Check(!expectError,"invalid request dispatched"); callbacks++; }
 /** Touch the complete console structure, including pointer padding. */
 static int Console( int state, bot_consolemessage_t *out ) {
-	Callback(); Check(state==1,"console state"); memset(out,0,sizeof(*out)); return 2;
+	Callback(); Check(state==1,"console state"); if(emptyConsole) return 0;
+	memset(out,0,sizeof(*out)); out->handle=2; out->time=3.5f; out->type=4;
+	strcpy(out->message,"test"); out->prev=(bot_consolemessage_t *)out; out->next=(bot_consolemessage_t *)out; return 2;
 }
 /** Reproduce native fixed-buffer concatenation for all eight nullable variables. */
 static void Initial( int state, char *type, int context, char *v0, char *v1, char *v2, char *v3, char *v4, char *v5, char *v6, char *v7 ) {
@@ -68,7 +70,7 @@ static void Reject( int *args ) {
 /** Cover complete outputs, optional variables, combined sizes, embedded metadata, and API availability. */
 int main( void ) {
 	int args[16]={0}, i;
-	bot_match_t *match;
+	bot_match_t *match; qvmBotConsoleMessage_t *console;
 	vm.dataBase=malloc(IMAGE_SIZE); Check(vm.dataBase!=NULL,"allocation");
 	vm.dataMask=IMAGE_SIZE-1; currentVM=&vm; botlib_export=&api;
 	api.ai.BotNextConsoleMessage=Console; api.ai.BotInitialChat=Initial; api.ai.BotReplyChat=Reply;
@@ -76,8 +78,16 @@ int main( void ) {
 	api.ai.BotMatchVariable=MatchVariable; api.ai.StringContains=Contains;
 	memset(vm.dataBase,'x',IMAGE_SIZE); memcpy(vm.dataBase+32,"test",5);
 	memset(vm.dataBase+512,'a',255); vm.dataBase[767]=0; memcpy(vm.dataBase+1024,"a",2);
-	args[0]=BOTLIB_AI_NEXT_CONSOLE_MESSAGE; args[1]=1; args[2]=IMAGE_SIZE-sizeof(bot_consolemessage_t);
-	Check(SV_BotLibChatCalls(args)==2,"whole console output"); args[2]+=4; Reject(args); args[2]=0; Reject(args);
+	args[0]=BOTLIB_AI_NEXT_CONSOLE_MESSAGE; args[1]=1; args[2]=IMAGE_SIZE-sizeof(qvmBotConsoleMessage_t);
+	Check(SV_BotLibChatCalls(args)==2,"whole QVM console output");
+	console=(qvmBotConsoleMessage_t *)(vm.dataBase+args[2]);
+	Check(console->handle==2 && console->time==3.5f && console->type==4 && !strcmp(console->message,"test") && !console->prev && !console->next,"QVM console layout and cleared links");
+	emptyConsole=1; memcpy(before,vm.dataBase,IMAGE_SIZE);
+	Check(SV_BotLibChatCalls(args)==0 && !memcmp(before,vm.dataBase,IMAGE_SIZE),"empty console preserves output"); emptyConsole=0;
+	args[2]=2048; memset(vm.dataBase+args[2]+sizeof(*console),0x5a,12);
+	Check(SV_BotLibChatCalls(args)==2,"contained QVM console object");
+	for(i=0;i<12;i++) Check(vm.dataBase[args[2]+sizeof(*console)+i]==0x5a,"QVM object tail overwritten");
+	args[2]=IMAGE_SIZE-sizeof(*console)+4; Reject(args); args[2]=0; Reject(args);
 	args[0]=BOTLIB_AI_INITIAL_CHAT; args[2]=32; args[3]=3;
 	Check(SV_BotLibChatCalls(args)==0,"all absent variables");
 	for(i=0;i<8;i++) args[4+i]=1024;
