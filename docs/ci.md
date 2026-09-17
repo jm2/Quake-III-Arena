@@ -59,9 +59,15 @@ Mac OS 9 runtime behavior. Passing these starter checks alone does not close
 security or target-runtime issues; each issue needs its specified regressions
 and applicable target evidence.
 
-For every new PR, inspect CI and bot review on the current head before merging.
-Resolve findings, push fixes, and obtain successful checks and renewed review.
-No review, a pending review, or a bot service error is not a clean review.
+For every new PR, require successful CI and a clean Codex review on the current
+head, plus resolution of every CodeRabbit finding. The user confirmed that
+CodeRabbit rate limits need not block a merge once this gate is satisfied.
+Resolve findings, push fixes, and obtain successful checks and renewed Codex
+review. Absent, pending, or failed Codex review is not a clean review.
+
+The user has deferred retail-content and Mac OS 9 live testing to a follow-up
+session. Host-tested fixes may merge with those limitations recorded; do not
+mark the outstanding target acceptance checks complete.
 Host-tool-only changes do not require unrelated engine or target tests unless
 their issue's acceptance criteria specify them.
 

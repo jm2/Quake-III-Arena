@@ -440,7 +440,8 @@ vm_t *VM_Restart( vm_t *vm ) {
 
 	if ( !VM_ValidateQVMHeader( header, length, &dataLength ) ) {
 		FS_FreeFile( header );
-		VM_Free( vm );
+		// ERR_DROP calls the module's shutdown entry point before VM_Free.
+		// Keep the live VM intact for the caller's normal cleanup.
 		Com_Error( ERR_DROP, "%s has an invalid QVM header", filename );
 		return NULL;
 	}
@@ -449,7 +450,8 @@ vm_t *VM_Restart( vm_t *vm ) {
 	// must not resize it, even when all of its own file ranges are valid.
 	if ( dataLength != vm->dataMask + 1 ) {
 		FS_FreeFile( header );
-		VM_Free( vm );
+		// ERR_DROP calls the module's shutdown entry point before VM_Free.
+		// Keep the live VM intact for the caller's normal cleanup.
 		Com_Error( ERR_DROP, "%s changed QVM data size on restart", filename );
 		return NULL;
 	}

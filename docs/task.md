@@ -16,8 +16,9 @@ checks; they do not automatically require an unrelated engine rebuild.
 A checked nested item records only the stated implementation or check.
 
 Every new step goes through a pull request. Before merging, require successful
-CI for its current head and a completed bot review with no outstanding
-findings. Re-run affected checks and obtain renewed bot review after fixes.
+CI for its current head and a clean Codex review, with every CodeRabbit
+finding resolved. CodeRabbit rate limits or skipped reviews do not replace
+the required completed Codex review. Re-run affected checks and obtain renewed bot review after fixes.
 Do not interpret absent, pending, failed, or unavailable review as clean.
 Keep issues open when a merged step covers only part of their acceptance
 criteria, and link the PR and remaining evidence in the issue.
@@ -77,8 +78,10 @@ QVMs while any P0 item is open.
         retain valid PPC QVM compatibility.
 - [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)
       — **high**, connection redirection/injection/hijack.
-  - [ ] Decide and document secure-versus-legacy wire compatibility before
-        implementation.
+  - [x] User selected commercial 1.32c compatibility (Quake3e/ioquake3 style).
+        Harden compatible paths without requiring a different wire protocol.
+  - [ ] Document protection limits for legacy peers and test compatible setup,
+        rejection of spoofed responses, and any explicitly negotiated extension.
 - [ ] [#36 — reject oversized and truncated PK3 entries](https://github.com/jm2/Quake-III-Arena/issues/36)
       — **high**, ZIP-controlled allocation/decompression corruption.
   - [x] Local size/cast, exact-read, open-result, cleanup, and short-suffix
@@ -310,11 +313,14 @@ QVMs while any P0 item is open.
 - [x] Re-run the eight Python tests, q_shared ASan/UBSan harness, Bash syntax
       and help, and PowerShell syntax and help on 2026-09-17.
 - [x] Confirm Codex and CodeRabbit are enabled and review PRs automatically.
-- [ ] Confirm the merge review gate after CodeRabbit's one-review-per-hour
-      limit deferred re-review; keep merges held while the user decides.
-- [ ] Obtain the secure/legacy protocol policy before implementing #37.
-- [ ] Locate legal retail assets and a Mac OS 9 test environment before any
-      dependent compatibility/runtime acceptance check.
+- [x] User confirmed the merge gate: clean current-head Codex review plus
+      resolved CodeRabbit findings; no additional merge approval is needed.
+- [x] User requires commercial Quake III Arena 1.32c wire compatibility for
+      #37, as supported by Quake3e/ioquake3; no mandatory incompatible fields.
+- [x] User authorized host tests and cross-builds without retail assets or a
+      Mac OS 9 environment; live acceptance is deferred to a follow-up session.
+- [ ] Record and execute the deferred retail/target compatibility checks when
+      the user provides the assets and test environment.
 
 - [x] Run the new portable CI suite locally and correct every failure.
 - [x] Re-run both product builds after the last formatter/release-tool/CI

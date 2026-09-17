@@ -5,8 +5,9 @@ This is the first implementation step for issue #35. `VM_Create` and
 copying data. It covers header truncation, code/data file ranges, instruction
 count/allocation arithmetic, initialized-word alignment, data/literal/BSS
 sums, and power-of-two data allocation. Restart rejects either growth or
-shrinkage of the existing allocation. Invalid headers free their file buffer,
-clear the failed VM registration, and raise `ERR_DROP`.
+shrinkage of the existing allocation. Invalid headers free their file buffer
+and raise `ERR_DROP`. Creation clears its uninitialized VM registration;
+restart preserves the live VM for the normal shutdown callback before cleanup.
 
 ## Host regressions
 
@@ -17,7 +18,8 @@ ASan/UBSan with exact-sized synthetic file buffers. Its tests cover:
 - negative, overlapping, out-of-file, and extreme signed offsets/counts;
 - incomplete initialized words, overflowing data images, and an empty image;
 - valid initialization, byte order, literal bytes, zero filling, and restart;
-- rejected larger/smaller restarts preserving every existing data byte;
+- rejected restarts preserving the VM and data until a simulated
+  `SV_ShutdownGameProgs` callback runs through the real `VM_Call` dispatcher;
 - balanced file-buffer ownership and rejection before hunk allocation.
 
 The harness substitutes file I/O, hunk storage, and interpreter preparation.
@@ -45,8 +47,8 @@ the successful build log.
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,669,567 | `855125ed8fe8163d27bc7b43669f0139573cef4748b5f1bdbf52a9999c0d5c5b` |
-| Quake3_TeamArena | 3,818,141 | `2b34d6302761fcb1d5a93c43cbc53fe5ff7630c9612774dc003f651776293ccd` |
+| Quake3 | 3,669,567 | `33d832cf08cd6aed2532225286178073cb99d2993365e9d7b859c6fce143a54c` |
+| Quake3_TeamArena | 3,818,141 | `749dcce7c547a9509214380214fda5cd059032c43ba11d0ae8feac62c19ce2e6` |
 
 The installed compiler/archive tools initially lacked `libisl.so.23` and
 `libfl.so.2`. Validation used temporary libraries through `LD_LIBRARY_PATH`:

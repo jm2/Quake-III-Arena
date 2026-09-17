@@ -3,6 +3,7 @@
  * acceptance criterion. File buffers are exact-sized to expose overreads.
  */
 #include "../code/qcommon/vm_local.h"
+#include "../code/game/g_public.h"
 #include <limits.h>
 #include <setjmp.h>
 #include <stddef.h>
@@ -18,6 +19,9 @@ static int fixtureLength;
 static void *allocations[MAX_ALLOCS];
 static int allocationCount, fileReads, fileFrees, preparations;
 static int expectError, errorLevel;
+static vm_t *shutdownVM;
+static vm_t savedVM;
+static int shutdownCalls;
 static jmp_buf errorJump;
 static cvar_t developer;
 cvar_t *com_developer = &developer;
@@ -34,6 +38,15 @@ void QDECL Com_Error( int level, const char *format, ... ) {
 	(void)format;
 	Check( expectError, "unexpected engine error" );
 	errorLevel = level;
+	if ( shutdownVM ) {
+		// Model Com_Error -> SV_ShutdownGameProgs before the error longjmp.
+		Check( !memcmp( shutdownVM, &savedVM, sizeof(savedVM) ),
+		       "restart cleared the live VM before error cleanup" );
+		Check( fileReads == fileFrees, "file buffer retained during shutdown" );
+		VM_Call( shutdownVM, GAME_SHUTDOWN, qfalse );
+		VM_Free( shutdownVM );
+		shutdownVM = NULL;
+	}
 	longjmp( errorJump, 1 );
 }
 
@@ -78,6 +91,21 @@ void VM_PrepareInterpreter( vm_t *vm, vmHeader_t *header ) {
 	preparations++;
 }
 
+int VM_CallInterpreted( vm_t *vm, int *args ) {
+	Check( vm == shutdownVM && args[0] == GAME_SHUTDOWN,
+	       "unexpected shutdown dispatch" );
+	Check( vm->dataBase && vm->dataBase[0] == 0x5a && vm->systemCall,
+	       "shutdown callback received invalid VM state" );
+	shutdownCalls++;
+	return 0;
+}
+
+int VM_CallCompiled( vm_t *vm, int *args ) {
+	(void)vm; (void)args;
+	Check( 0, "unexpected compiled VM call" );
+	return 0;
+}
+
 void VM_Compile( vm_t *vm, vmHeader_t *header ) {
 	(void)vm;
 	(void)header;
@@ -100,7 +128,8 @@ static void Reset( void ) {
 		free( allocations[i] );
 	}
 	allocationCount = fileReads = fileFrees = preparations = 0;
-	expectError = 0;
+	expectError = shutdownCalls = 0;
+	shutdownVM = NULL;
 }
 
 static void PutWord( size_t offset, int value ) {
@@ -157,6 +186,8 @@ static void RejectFixture( int restart ) {
 		oldData = vm->dataBase;
 		oldSize = vm->dataMask + 1;
 		memset( oldData, 0x5a, oldSize );
+		shutdownVM = vm;
+		memcpy( &savedVM, vm, sizeof(savedVM) );
 	}
 	memcpy( fixture, invalid, sizeof(fixture) );
 	fixtureLength = invalidLength;
@@ -175,6 +206,7 @@ static void RejectFixture( int restart ) {
 	Check( fileReads == fileFrees, "file buffer leaked on rejection" );
 	Check( allocationCount == oldAllocations, "allocated before validation" );
 	Check( vmTable[0].name[0] == '\0', "failed VM registration retained" );
+	Check( shutdownCalls == restart, "restart must permit normal shutdown" );
 	for ( i = 0; i < oldSize; i++ ) {
 		Check( oldData[i] == 0x5a, "restart mutated data before validation" );
 	}
