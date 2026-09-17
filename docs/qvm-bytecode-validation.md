@@ -47,8 +47,8 @@ header validation. The temporary host runtime setup is documented in the
 
 ## Remaining acceptance
 
-Keep #35 open. Runtime operand/program stacks, dynamic CALL/JUMP targets,
-return addresses, data-image accesses, and syscall pointer/range checks remain
-separate work. Preparation checks do not prove that execution is safe. Retail
+The [next step](qvm-runtime-validation.md) covers runtime stacks and dynamic
+control flow. Keep #35 open: data-image accesses, arithmetic edge cases, VM
+call marshalling, and syscall pointer/range checks remain separate work. Preparation checks do not prove that execution is safe. Retail
 baseq3/Team Arena QVM compatibility on Mac OS 9 remains deferred to the user's
 live-testing session; no target runtime result is claimed.

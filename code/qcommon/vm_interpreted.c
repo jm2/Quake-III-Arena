@@ -214,6 +214,42 @@ qboolean VM_PrepareInterpreter( vm_t *vm, vmHeader_t *header ) {
 	return qtrue;
 }
 
+/* Return addresses live in writable VM data. Require an instruction boundary,
+ * not merely an offset into the expanded opcode/operand buffer. */
+static qboolean VM_ValidReturnAddress( vm_t *vm, int pc ) {
+	int low = 0, high = vm->instructionPointersLength / sizeof(int);
+	while ( low < high ) {
+		int middle = low + (high - low) / 2;
+		int offset = vm->instructionPointers[middle];
+		if ( pc == offset ) {
+			return qtrue;
+		}
+		if ( pc < offset ) {
+			high = middle;
+		} else {
+			low = middle + 1;
+		}
+	}
+	return qfalse;
+}
+
+/* Operands required before executing each opcode. Positive stack growth is
+ * limited separately for CONST, LOCAL, and PUSH; CALL replaces its target. */
+static int VM_RequiredOperands( int op ) {
+	switch ( op ) {
+	case OP_IGNORE: case OP_BREAK: case OP_ENTER:
+	case OP_CONST: case OP_LOCAL: case OP_PUSH:
+		return 0;
+	case OP_LEAVE: case OP_CALL: case OP_POP: case OP_JUMP:
+	case OP_LOAD1: case OP_LOAD2: case OP_LOAD4: case OP_ARG:
+	case OP_SEX8: case OP_SEX16: case OP_NEGI: case OP_BCOM:
+	case OP_NEGF: case OP_CVIF: case OP_CVFI:
+		return 1;
+	default:
+		return 2;
+	}
+}
+
 /*
 ==============
 VM_Call
@@ -244,7 +280,7 @@ locals from sp
 #define	DEBUGSTR va("%s%i", VM_Indent(vm), opStack-stack )
 
 int	VM_CallInterpreted( vm_t *vm, int *args ) {
-	int		stack[MAX_STACK];
+	int		stack[MAX_STACK + 1] = {0};
 	int		*opStack;
 	int		programCounter;
 	int		programStack;
@@ -253,12 +289,25 @@ int	VM_CallInterpreted( vm_t *vm, int *args ) {
 	int		*codeImage;
 	int		v1;
 	int		dataMask;
+	int		stackFloor;
+	qboolean wasInterpreting;
 #ifdef DEBUG_VM
 	vmSymbol_t	*profileSymbol;
 #endif
 
-	// interpret the code
+	// ERR_DROP invokes module shutdown before longjmp. Never execute a VM
+	// that has already faulted, including when a syscall re-enters it.
+	if ( vm->interpretFaulted ) {
+		return 0;
+	}
+	wasInterpreting = vm->currentlyInterpreting;
 	vm->currentlyInterpreting = qtrue;
+#define VM_INTERPRETER_ERROR(message) do { \
+	vm->interpretFaulted = qtrue; \
+	vm->currentlyInterpreting = qfalse; \
+	Com_Error( ERR_DROP, "%s", message ); \
+	return 0; \
+} while (0)
 
 	// we might be called recursively, so this might not be the very top
 	programStack = stackOnEntry = vm->programStack;
@@ -274,12 +323,16 @@ int	VM_CallInterpreted( vm_t *vm, int *args ) {
 	codeImage = (int *)vm->codeBase;
 	dataMask = vm->dataMask;
 	
-	// leave a free spot at start of stack so
-	// that as long as opStack is valid, opStack-1 will
-	// not corrupt anything
-	opStack = stack;
+	// Reserve two initialized slots below the first operand so cached
+	// reads of opStack[0] and opStack[-1] are safe even at depth zero.
+	opStack = stack + 1;
 	programCounter = 0;
 
+	stackFloor = vm->stackBottom > 0 ? vm->stackBottom : 0;
+	if ( (programStack & 3) || programStack < stackFloor ||
+	     programStack - stackFloor < 48 || programStack > dataMask + 1 ) {
+		VM_INTERPRETER_ERROR( "VM entry stack out of range" );
+	}
 	programStack -= 48;
 
 	*(int *)&image[ programStack + 44] = args[9];
@@ -313,27 +366,21 @@ nextInstruction:
 		r0 = ((int *)opStack)[0];
 		r1 = ((int *)opStack)[-1];
 nextInstruction2:
-		opcode = codeImage[ programCounter++ ];
+		if ( (unsigned int)programCounter >= (unsigned int)vm->codeLength ) {
+			VM_INTERPRETER_ERROR( "VM pc out of range" );
+		}
+		opcode = codeImage[programCounter++];
+		if ( opcode < OP_IGNORE || opcode > OP_CVFI ) {
+			VM_INTERPRETER_ERROR( "Bad VM instruction" );
+		}
+		if ( opStack - (stack + 1) < VM_RequiredOperands( opcode ) ) {
+			VM_INTERPRETER_ERROR( "VM operand stack underflow" );
+		}
+		if ( (opcode == OP_CONST || opcode == OP_LOCAL || opcode == OP_PUSH) &&
+		     opStack == stack + MAX_STACK ) {
+			VM_INTERPRETER_ERROR( "VM operand stack overflow" );
+		}
 #ifdef DEBUG_VM
-		if ( (unsigned)programCounter > vm->codeLength ) {
-			Com_Error( ERR_DROP, "VM pc out of range" );
-		}
-
-		if ( opStack < stack ) {
-			Com_Error( ERR_DROP, "VM opStack underflow" );
-		}
-		if ( opStack >= stack+MAX_STACK ) {
-			Com_Error( ERR_DROP, "VM opStack overflow" );
-		}
-
-		if ( programStack <= vm->stackBottom ) {
-			Com_Error( ERR_DROP, "VM stack overflow" );
-		}
-
-		if ( programStack & 3 ) {
-			Com_Error( ERR_DROP, "VM program stack misaligned" );
-		}
-
 		if ( vm_debugLevel > 1 ) {
 			Com_Printf( "%s %s\n", DEBUGSTR, opnames[opcode] );
 		}
@@ -341,10 +388,8 @@ nextInstruction2:
 #endif
 
 		switch ( opcode ) {
-#ifdef DEBUG_VM
-		default:
-			Com_Error( ERR_DROP, "Bad VM instruction" );  // this should be scanned on load!
-#endif
+		case OP_IGNORE:
+			goto nextInstruction2;
 		case OP_BREAK:
 			vm->breakCount++;
 			goto nextInstruction2;
@@ -469,14 +514,20 @@ nextInstruction2:
 					Com_Printf( "%s<--- %s\n", DEBUGSTR, VM_ValueToSymbol( vm, programCounter ) );
 				}
 #endif
+				if ( !VM_ValidReturnAddress( vm, programCounter ) ) {
+					VM_INTERPRETER_ERROR( "VM syscall return address out of range" );
+				}
 			} else {
-				programCounter = vm->instructionPointers[ programCounter ];
+				if ( programCounter >= vm->instructionPointersLength / (int)sizeof(int) ) {
+					VM_INTERPRETER_ERROR( "VM CALL target out of range" );
+				}
+				programCounter = vm->instructionPointers[programCounter];
 			}
 			goto nextInstruction;
 
 		// push and pop are only needed for discarded or bad function return values
 		case OP_PUSH:
-			opStack++;
+			*++opStack = 0;
 			goto nextInstruction;
 		case OP_POP:
 			opStack--;
@@ -489,6 +540,9 @@ nextInstruction2:
 			// get size of stack frame
 			v1 = r2;
 
+			if ( v1 < 0 || (v1 & 3) || v1 > programStack - stackFloor ) {
+				VM_INTERPRETER_ERROR( "VM ENTER frame out of range" );
+			}
 			programCounter += 4;
 			programStack -= v1;
 #ifdef DEBUG_VM
@@ -510,6 +564,9 @@ nextInstruction2:
 			// remove our stack frame
 			v1 = r2;
 
+			if ( v1 < 0 || (v1 & 3) || v1 > stackOnEntry - 48 - programStack ) {
+				VM_INTERPRETER_ERROR( "VM LEAVE frame out of range" );
+			}
 			programStack += v1;
 
 			// grab the saved program counter
@@ -523,7 +580,13 @@ nextInstruction2:
 #endif
 			// check for leaving the VM
 			if ( programCounter == -1 ) {
+				if ( programStack != stackOnEntry - 48 ) {
+					VM_INTERPRETER_ERROR( "VM return stack mismatch" );
+				}
 				goto done;
+			}
+			if ( !VM_ValidReturnAddress( vm, programCounter ) ) {
+				VM_INTERPRETER_ERROR( "VM return address out of range" );
 			}
 			goto nextInstruction;
 
@@ -534,8 +597,10 @@ nextInstruction2:
 		*/
 
 		case OP_JUMP:
-			programCounter = r0;
-			programCounter = vm->instructionPointers[ programCounter ];
+			if ( (unsigned int)r0 >= vm->instructionPointersLength / sizeof(int) ) {
+				VM_INTERPRETER_ERROR( "VM JUMP target out of range" );
+			}
+			programCounter = vm->instructionPointers[r0];
 			opStack--;
 			goto nextInstruction;
 
@@ -757,7 +822,7 @@ nextInstruction2:
 			opStack--;
 			goto nextInstruction;
 		case OP_BCOM:
-			opStack[-1] = ~ ((unsigned)r0);
+			*opStack = ~ ((unsigned)r0);
 			goto nextInstruction;
 
 		case OP_LSH:
@@ -809,13 +874,12 @@ nextInstruction2:
 	}
 
 done:
-	vm->currentlyInterpreting = qfalse;
-
-	if ( opStack != &stack[1] ) {
-		Com_Error( ERR_DROP, "Interpreter error: opStack = %i", opStack - stack );
+	if ( opStack != &stack[2] ) {
+		VM_INTERPRETER_ERROR( "VM return operand stack mismatch" );
 	}
-
+	vm->currentlyInterpreting = wasInterpreting;
 	vm->programStack = stackOnEntry;
+#undef VM_INTERPRETER_ERROR
 
 	// return the result
 	return *opStack;
