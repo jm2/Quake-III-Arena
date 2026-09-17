@@ -32,8 +32,12 @@ and pass PEF validation using the temporary libraries in the
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,690,549 | `03901aff921088a809e6202f5fe67b8fcf0b9213eae26e45712b898d0adbe890` |
-| Quake3_TeamArena | 3,839,123 | `9be31d3dba11142323f7281d6497eadf83ea42ab070ba7446b5c90e6489b21b9` |
+| Quake3 | 3,690,549 | `f8f97db55afa00abdc0830153a2ddce6ad83a963d708ff66641124d58e5dba8f` |
+| Quake3_TeamArena | 3,839,123 | `b3617052253e991c6da1d9da1c663e38716e5599eaeb0c299040c0bbf468170a` |
+
+The updated branch includes the retail console marshalling and user-selected
+in-place synonym limit from #66. Chat/action regressions, eight Python checks
+and both products pass again after that integration.
 
 ## Remaining acceptance
 
