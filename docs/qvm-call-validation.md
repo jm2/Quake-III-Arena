@@ -29,8 +29,8 @@ pass PEF validation with the temporary libraries described in the
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,673,863 | `79dd7422cfdea0f42341f797838ed97a414cd8c85d6c317a5e26118972b5f9b5` |
-| Quake3_TeamArena | 3,822,437 | `de4fa23660ed52f7eb7ca8742b85f0bf2df161f0d22340f7f82749e5c81a66b9` |
+| Quake3 | 3,673,885 | `ebbf6eda10d876128c596a15969250ecde64c2645f7e3fd0139d08d8a2ffa21e` |
+| Quake3_TeamArena | 3,826,555 | `598e143bb7b613cc8615763061f0dc273dd7a77198bcc20248639c42694a59e2` |
 
 ## Remaining acceptance
 
