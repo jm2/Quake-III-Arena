@@ -37,8 +37,12 @@ diagnostics and pass PEF validation using the temporary libraries in the
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,690,561 | `dedd0934cea235a358f2cab0840d7d2ded736b4768cc6c9c0b6e1b953507bc06` |
-| Quake3_TeamArena | 3,839,135 | `ab069b8c549303ba10b2237296d0ee0fb4835b01c26985fa04130ddb4985b6d0` |
+| Quake3 | 3,690,561 | `bbd714d8cb0365a14e77626e98e10f4e6ec8f2798bd82e0e4bda9fcc9f4e6a51` |
+| Quake3_TeamArena | 3,839,135 | `28d94e803dae93a8bf80a39bcc5e866a94882c88be8bd3b38061a77d6757ffa3` |
+
+The branch includes the retail console layout and user-selected in-place
+synonym policy from #66 through #67. Chat, action/indirect-client and AI/genetic
+regressions, eight Python checks and both products pass after integration.
 
 ## Remaining acceptance
 
