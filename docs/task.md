@@ -96,6 +96,8 @@ QVMs while any P0 item is open.
   - [x] Core server syscall ranges, persistent game-array registration and
         indices, and native debug-polygon capacities have sanitizer coverage;
         see [server evidence](qvm-server-core-validation.md).
+  - [x] Connection-denial strings validate termination in their owning VM
+        after calls return; see [return evidence](qvm-returned-string-validation.md).
   - [ ] Complete remaining syscall pointer/range checks and retain valid PPC
         QVM compatibility during deferred live acceptance.
 - [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)

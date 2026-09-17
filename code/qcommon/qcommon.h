@@ -336,6 +336,7 @@ void VM_ErrorForVM( vm_t *vm, const char *message );
 void VM_Error( const char *message );
 void *VM_CheckedArgPtr( int value, int length, int alignment, qboolean nullable );
 char *VM_CheckedArgString( int value, qboolean nullable );
+char *VM_CheckedExplicitString( vm_t *vm, int value, qboolean nullable );
 void *VM_CheckedArgArray( int value, int count, int elementSize );
 void *VM_CheckedStringBuffer( int value, int length, qboolean nullable );
 void VM_MemoryFill( int dest, int value, int length );

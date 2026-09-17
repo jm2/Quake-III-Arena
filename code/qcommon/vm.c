@@ -703,38 +703,47 @@ void VM_Error( const char *message ) {
 	VM_ErrorForVM( currentVM, message );
 }
 
-/* Alignment is required when native code consumes VM structs or floats. */
-/** Validate the complete QVM range and alignment, retaining masked addresses and optional NULL. */
-void *VM_CheckedArgPtr( int value, int length, int alignment, qboolean nullable ) {
+/** Validate a buffer in the supplied module without changing the active VM. */
+static void *VM_CheckedArgPtrForVM( vm_t *vm, int value, int length, int alignment, qboolean nullable ) {
 	int offset;
-	if ( !currentVM || length < 0 || (alignment != 1 && alignment != 4) ||
+	if ( !vm || length < 0 || (alignment != 1 && alignment != 4) ||
 	     (!value && !nullable) ) {
-		VM_Error( "VM syscall buffer out of range" );
+		VM_ErrorForVM( vm, "VM syscall buffer out of range" );
 		return NULL;
 	}
 	if ( !value ) {
 		return NULL;
 	}
-	if ( currentVM->entryPoint ) {
+	if ( vm->entryPoint ) {
 		return (void *)(unsigned long)(unsigned int)value;
 	}
-	offset = value & currentVM->dataMask;
-	if ( (offset & (alignment - 1)) || length > currentVM->dataMask + 1 - offset ) {
-		VM_Error( "VM syscall buffer out of range or unaligned" );
+	offset = value & vm->dataMask;
+	if ( (offset & (alignment - 1)) || length > vm->dataMask + 1 - offset ) {
+		VM_ErrorForVM( vm, "VM syscall buffer out of range or unaligned" );
 		return NULL;
 	}
-	return currentVM->dataBase + offset;
+	return vm->dataBase + offset;
 }
 
-/** Require a terminator inside the QVM image before native string code reads it. */
-char *VM_CheckedArgString( int value, qboolean nullable ) {
-	char *input = VM_CheckedArgPtr( value, 1, 1, nullable );
-	if ( input && !currentVM->entryPoint &&
-	     !memchr( input, 0, currentVM->dataMask + 1 - (value & currentVM->dataMask) ) ) {
-		VM_Error( "VM syscall string is not terminated" );
+/** Validate the complete active QVM range and alignment, retaining legacy masking. */
+void *VM_CheckedArgPtr( int value, int length, int alignment, qboolean nullable ) {
+	return VM_CheckedArgPtrForVM( currentVM, value, length, alignment, nullable );
+}
+
+/** Bound a returned string in its owning module and fault that module on failure. */
+char *VM_CheckedExplicitString( vm_t *vm, int value, qboolean nullable ) {
+	char *input = VM_CheckedArgPtrForVM( vm, value, 1, 1, nullable );
+	if ( input && !vm->entryPoint &&
+	     !memchr( input, 0, vm->dataMask + 1 - (value & vm->dataMask) ) ) {
+		VM_ErrorForVM( vm, "VM string is not terminated" );
 		return NULL;
 	}
 	return input;
+}
+
+/** Require a terminator inside the active QVM image before native string reads. */
+char *VM_CheckedArgString( int value, qboolean nullable ) {
+	return VM_CheckedExplicitString( currentVM, value, nullable );
 }
 
 /** Reject negative or overflowing element counts before checking an aligned array range. */

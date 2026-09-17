@@ -222,6 +222,8 @@ implementation or check, without implying issue completion.
         [sanitizer regressions](qvm-cgame-syscall-validation.md).
   - [x] Core server traps, persistent game-data arrays, and native debug
         capacities have [sanitizer regressions](qvm-server-core-validation.md).
+  - [x] Returned connection-denial strings have
+        [ownership and termination regressions](qvm-returned-string-validation.md).
   - [ ] Complete remaining syscall pointer/range handling before accepting
         untrusted QVMs.
 - [ ] [#36 — oversized/truncated PK3 entries](https://github.com/jm2/Quake-III-Arena/issues/36)
