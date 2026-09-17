@@ -240,7 +240,8 @@ implementation or check, without implying issue completion.
 - [ ] [#42 — BMP/PCX/TGA loaders need bounded cursors](https://github.com/jm2/Quake-III-Arena/issues/42)
   - [x] BMP checked cursors/rows/palettes have [host regressions](bmp-cursor-validation.md).
   - [x] PCX checked header/palette/RLE and padded rows have [host regressions](pcx-cursor-validation.md).
-  - [ ] Complete TGA replacement and deferred retail acceptance.
+  - [x] TGA checked header/ID/raw/RLE and allocation preflight have [host regressions](tga-cursor-validation.md).
+  - [ ] Complete deferred retail and strict-alignment PPC acceptance.
 - [ ] [#43 — JPEG I/O is not length-aware and APIs are duplicated](https://github.com/jm2/Quake-III-Arena/issues/43)
   - [x] Local RGBA output allocation/dimension validation fixes one deterministic
         overwrite.
