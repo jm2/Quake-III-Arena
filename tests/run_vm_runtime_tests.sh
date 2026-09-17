@@ -9,6 +9,7 @@ trap 'rm -f -- "$Q3_TEST_BINARY"' EXIT
     -fsanitize=address,undefined \
     "$Q3_TEST_ROOT/tests/vm_runtime_regression.c" \
     "$Q3_TEST_ROOT/code/qcommon/vm_interpreted.c" \
+    "$Q3_TEST_ROOT/code/qcommon/vm.c" \
     -Wl,--gc-sections -lm -o "$Q3_TEST_BINARY"
 
 ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 \
