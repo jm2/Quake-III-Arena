@@ -22,7 +22,15 @@ Retro68 installation, proprietary retail data, or a Mac OS 9 emulator.
 - `Host C regressions (ASan/UBSan)`
   - builds a deliberately isolated portion of `q_shared.c`;
   - checks bounded extension stripping, formatting, and token termination
-    under AddressSanitizer and UndefinedBehaviorSanitizer.
+    under AddressSanitizer and UndefinedBehaviorSanitizer;
+  - exercises the real QVM create/restart loaders with exact-sized files,
+    every truncation of a small image, invalid signed ranges/counts, data-size
+    overflow, larger/smaller replacement data images, and same-sized changes
+    to code, counts, layout, BSS, or initial data (issue #35);
+  - checks recoverable rejection, file-buffer ownership, no hunk allocation
+    before validation, unchanged data on rejected restart, and valid data
+    initialization/restart. Interpreter execution is stubbed in this harness;
+    it does not validate bytecode, runtime stacks, or syscall bounds.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -36,6 +44,7 @@ bash -n build_mac.sh setup_retro68.sh tests/run_host_c_tests.sh
 python3 -m py_compile create_appledouble.py generate_icon_r.py macbinary_encode.py
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 bash tests/run_host_c_tests.sh
+bash tests/run_vm_loading_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
@@ -51,9 +60,15 @@ Mac OS 9 runtime behavior. Passing these starter checks alone does not close
 security or target-runtime issues; each issue needs its specified regressions
 and applicable target evidence.
 
-For every new PR, inspect CI and bot review on the current head before merging.
-Resolve findings, push fixes, and obtain successful checks and renewed review.
-No review, a pending review, or a bot service error is not a clean review.
+For every new PR, require successful CI and a clean Codex review on the current
+head, plus resolution of every CodeRabbit finding. The user confirmed that
+CodeRabbit rate limits need not block a merge once this gate is satisfied.
+Resolve findings, push fixes, and obtain successful checks and renewed Codex
+review. Absent, pending, or failed Codex review is not a clean review.
+
+The user has deferred retail-content and Mac OS 9 live testing to a follow-up
+session. Host-tested fixes may merge with those limitations recorded; do not
+mark the outstanding target acceptance checks complete.
 Host-tool-only changes do not require unrelated engine or target tests unless
 their issue's acceptance criteria specify them.
 

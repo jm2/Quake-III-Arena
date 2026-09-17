@@ -143,6 +143,8 @@ struct vm_s {
 	qboolean	compiled;
 	byte		*codeBase;
 	int			codeLength;
+	byte		*qvmImage;		// original image for exact restart comparison
+	int			qvmImageLength;
 
 	int			*instructionPointers;
 	int			instructionPointersLength;

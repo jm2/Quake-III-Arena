@@ -35,6 +35,8 @@ and one exported function: Perform
 
 #include "vm_local.h"
 
+#include <limits.h>
+
 
 vm_t	*currentVM = NULL; // bk001212
 vm_t	*lastVM    = NULL; // bk001212
@@ -342,6 +344,63 @@ int QDECL VM_DllSyscall( int arg, ... ) {
 
 /*
 =================
+VM_ValidateQVMHeader
+
+Validate the complete on-disk image before either load path allocates, clears,
+or copies VM memory. Offsets are checked by subtraction before forming sums.
+The largest data image must still fit a positive, power-of-two signed int.
+=================
+*/
+static qboolean VM_ValidateQVMHeader( vmHeader_t *header, int length,
+                                    int *dataLength ) {
+	int i, initializedLength, imageLength, allocationLength;
+	const int maxDataLength = INT_MAX / 2 + 1;
+
+	if ( length < (int)sizeof( *header ) || length > INT_MAX - 31 ) {
+		return qfalse;
+	}
+
+	for ( i = 0; i < (int)(sizeof( *header ) / sizeof( int )); i++ ) {
+		((int *)header)[i] = LittleLong( ((int *)header)[i] );
+	}
+
+	if ( header->vmMagic != VM_MAGIC || header->instructionCount <= 0 ||
+	     header->codeOffset < (int)sizeof( *header ) ||
+	     header->codeOffset > length || header->codeLength <= 0 ||
+	     header->codeLength > length - header->codeOffset ||
+	     header->instructionCount > header->codeLength ||
+	     // Interpreter instructions expand to ints; Hunk_Alloc rounds to 32.
+	     header->codeLength > (INT_MAX - 31) / (int)sizeof( int ) ||
+	     header->dataOffset < header->codeOffset + header->codeLength ||
+	     header->dataOffset > length || header->dataLength < 0 ||
+	     (header->dataLength & 3) || header->litLength < 0 ||
+	     header->bssLength < 0 ) {
+		return qfalse;
+	}
+
+	if ( header->dataLength > length - header->dataOffset ||
+	     header->litLength > length - header->dataOffset - header->dataLength ) {
+		return qfalse;
+	}
+	initializedLength = header->dataLength + header->litLength;
+	if ( initializedLength > maxDataLength ||
+	     header->bssLength > maxDataLength - initializedLength ) {
+		return qfalse;
+	}
+	imageLength = initializedLength + header->bssLength;
+	if ( imageLength == 0 ) {
+		return qfalse;
+	}
+
+	for ( allocationLength = 1; allocationLength < imageLength;
+	      allocationLength *= 2 ) {
+	}
+	*dataLength = allocationLength;
+	return qtrue;
+}
+
+/*
+=================
 VM_Restart
 
 Reload the data, but leave everything else in place
@@ -370,35 +429,43 @@ vm_t *VM_Restart( vm_t *vm ) {
 	}
 
 	// load the image
-	Com_Printf( "VM_Restart()\n", filename );
+	Com_Printf( "VM_Restart()\n" );
 	Com_sprintf( filename, sizeof(filename), "vm/%s.qvm", vm->name );
 	Com_Printf( "Loading vm file %s.\n", filename );
 	length = FS_ReadFile( filename, (void **)&header );
 	if ( !header ) {
 		Com_Error( ERR_DROP, "VM_Restart failed.\n" );
+		return NULL;
 	}
 
-	// byte swap the header
-	for ( i = 0 ; i < sizeof( *header ) / 4 ; i++ ) {
-		((int *)header)[i] = LittleLong( ((int *)header)[i] );
+	if ( !VM_ValidateQVMHeader( header, length, &dataLength ) ) {
+		FS_FreeFile( header );
+		// ERR_DROP calls the module's shutdown entry point before VM_Free.
+		// Keep the live VM intact for the caller's normal cleanup.
+		Com_Error( ERR_DROP, "%s has an invalid QVM header", filename );
+		return NULL;
 	}
 
-	// validate
-	if ( header->vmMagic != VM_MAGIC
-		|| header->bssLength < 0 
-		|| header->dataLength < 0 
-		|| header->litLength < 0 
-		|| header->codeLength <= 0 ) {
-		VM_Free( vm );
-		Com_Error( ERR_FATAL, "%s has bad header", filename );
+	// Restart keeps the existing allocation and stack. A replacement file
+	// must not resize it, even when all of its own file ranges are valid.
+	if ( dataLength != vm->dataMask + 1 ) {
+		FS_FreeFile( header );
+		// ERR_DROP calls the module's shutdown entry point before VM_Free.
+		// Keep the live VM intact for the caller's normal cleanup.
+		Com_Error( ERR_DROP, "%s changed QVM data size on restart", filename );
+		return NULL;
 	}
 
-	// round up to next power of 2 so all data operations can
-	// be mask protected
-	dataLength = header->dataLength + header->litLength + header->bssLength;
-	for ( i = 0 ; dataLength > ( 1 << i ) ; i++ ) {
+	// Retained code and instruction tables belong to the original image.
+	// Compare normalized headers plus every code/data/padding byte before
+	// replacing data; a same-sized replacement can still be incompatible.
+	if ( length != vm->qvmImageLength || !vm->qvmImage ||
+	     memcmp( header, vm->qvmImage, length ) ) {
+		FS_FreeFile( header );
+		// Keep the old VM intact for ERR_DROP's normal shutdown callback.
+		Com_Error( ERR_DROP, "%s changed QVM image on restart", filename );
+		return NULL;
 	}
-	dataLength = 1 << i;
 
 	// clear the data
 	Com_Memset( vm->dataBase, 0, dataLength );
@@ -496,27 +563,12 @@ vm_t *VM_Create( const char *module, int (*systemCalls)(int *),
 		return NULL;
 	}
 
-	// byte swap the header
-	for ( i = 0 ; i < sizeof( *header ) / 4 ; i++ ) {
-		((int *)header)[i] = LittleLong( ((int *)header)[i] );
-	}
-
-	// validate
-	if ( header->vmMagic != VM_MAGIC
-		|| header->bssLength < 0 
-		|| header->dataLength < 0 
-		|| header->litLength < 0 
-		|| header->codeLength <= 0 ) {
+	if ( !VM_ValidateQVMHeader( header, length, &dataLength ) ) {
+		FS_FreeFile( header );
 		VM_Free( vm );
-		Com_Error( ERR_FATAL, "%s has bad header", filename );
+		Com_Error( ERR_DROP, "%s has an invalid QVM header", filename );
+		return NULL;
 	}
-
-	// round up to next power of 2 so all data operations can
-	// be mask protected
-	dataLength = header->dataLength + header->litLength + header->bssLength;
-	for ( i = 0 ; dataLength > ( 1 << i ) ; i++ ) {
-	}
-	dataLength = 1 << i;
 
 	// allocate zero filled space for initialized and uninitialized data
 	vm->dataBase = Hunk_Alloc( dataLength, h_high );
@@ -554,6 +606,12 @@ vm_t *VM_Create( const char *module, int (*systemCalls)(int *),
 		vm->compiled = qfalse;
 		VM_PrepareInterpreter( vm, header );
 	}
+
+	// A map_restart reuses executable state. Keep the original image so
+	// code, layout, initial data, and padding changes are rejected exactly.
+	vm->qvmImage = Hunk_Alloc( length, h_high );
+	vm->qvmImageLength = length;
+	Com_Memcpy( vm->qvmImage, header, length );
 
 	// free the original file
 	FS_FreeFile( header );
