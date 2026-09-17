@@ -734,57 +734,67 @@ locals from sp
 #define	MAX_STACK	256
 #define	STACK_MASK	(MAX_STACK-1)
 
-int	QDECL VM_Call( vm_t *vm, int callnum, ... ) {
-	vm_t	*oldVM;
-	int		r;
-	int i;
-	int args[16];
-	va_list ap;
-
-
-	if ( !vm ) {
-		Com_Error( ERR_FATAL, "VM_Call with NULL vm" );
+/* Shared marshalling for interpreted and compiled QVM entry. */
+int VM_SetupCallFrame( vm_t *vm, const int *args ) {
+	int stack = vm->programStack;
+	int floor = vm->stackBottom > 0 ? vm->stackBottom : 0;
+	int arg;
+	if ( !args || (stack & 3) || stack < floor ||
+	     stack - floor < VM_ENTRY_FRAME_SIZE || stack > vm->dataMask + 1 ) {
+		vm->interpretFaulted = qtrue;
+		vm->currentlyInterpreting = qfalse;
+		Com_Error( ERR_DROP, "VM entry stack out of range" );
+		return 0;
 	}
+	stack -= VM_ENTRY_FRAME_SIZE;
+	for ( arg = 0; arg < MAX_VMMAIN_ARGS; arg++ ) {
+		*(int *)(vm->dataBase + stack + 8 + arg * 4) = args[arg];
+	}
+	*(int *)(vm->dataBase + stack + 4) = 0;
+	*(int *)(vm->dataBase + stack) = -1;
+	return stack;
+}
 
+int VM_CallArgs( vm_t *vm, int callnum, const int *parameters, int count ) {
+	vm_t *oldVM;
+	int result, args[MAX_VMMAIN_ARGS] = {0};
+
+	if ( !vm || count < 0 || count >= MAX_VMMAIN_ARGS || (count && !parameters) ) {
+		Com_Error( ERR_FATAL, "VM_Call: invalid VM or argument count" );
+		return 0;
+	}
+	if ( !vm->entryPoint && vm->interpretFaulted ) {
+		return 0; // ERR_DROP module shutdown must not re-enter a faulted VM
+	}
+	args[0] = callnum;
+	if ( count ) {
+		Com_Memcpy( args + 1, parameters, count * sizeof(int) );
+	}
 	oldVM = currentVM;
 	currentVM = vm;
 	lastVM = vm;
-
 	if ( vm_debugLevel ) {
-	  Com_Printf( "VM_Call( %i )\n", callnum );
+		Com_Printf( "VM_Call( %i )\n", callnum );
 	}
 
-	// if we have a dll loaded, call it directly
 	if ( vm->entryPoint ) {
-		//rcg010207 -  see dissertation at top of VM_DllSyscall() in this file.
-		if ( vm_debugLevel ) {
-			Com_Printf("VM_Call: Calling native %s entryPoint %p cmd=%i\n", vm->name, vm->entryPoint, callnum);
-		}
-		va_start(ap, callnum);
-		for (i = 0; i < sizeof (args) / sizeof (args[i]); i++) {
-			args[i] = va_arg(ap, int);
-		}
-		va_end(ap);
-
-		// Fix for PPC/Static Build: Cast to the exact function signature of vmMain
-		// vmMain takes command + 12 integers = 13 arguments.
-		// Original code passed 17 arguments (command + 16 args) via a varargs pointer, 
-		// which breaks on PPC because fixed-arg functions expect args in registers differently than varargs.
-		typedef int (QDECL *vmMain_t)(int, int, int, int, int, int, int, int, int, int, int, int, int);
-		vmMain_t func = (vmMain_t)vm->entryPoint;
-		
-		r = func( callnum,  args[0],  args[1],  args[2], args[3],
-                            args[4],  args[5],  args[6], args[7],
-                            args[8],  args[9], args[10], args[11] );
+		// Retail vmMain uses a fixed command + twelve-parameter signature.
+		// Its calling convention on PPC differs from a varargs function.
+		typedef int (QDECL *vmMain_t)(int, int, int, int, int, int, int,
+		                             int, int, int, int, int, int);
+		vmMain_t entry = (vmMain_t)vm->entryPoint;
+		result = entry( args[0], args[1], args[2], args[3], args[4],
+		                args[5], args[6], args[7], args[8], args[9],
+		                args[10], args[11], args[12] );
 	} else if ( vm->compiled ) {
-		r = VM_CallCompiled( vm, &callnum );
+		result = VM_CallCompiled( vm, args );
 	} else {
-		r = VM_CallInterpreted( vm, &callnum );
+		result = VM_CallInterpreted( vm, args );
 	}
-
-	if ( oldVM != NULL ) // bk001220 - assert(currentVM!=NULL) for oldVM==NULL
-	  currentVM = oldVM;
-	return r;
+	if ( oldVM ) {
+		currentVM = oldVM;
+	}
+	return result;
 }
 
 //=================================================================
