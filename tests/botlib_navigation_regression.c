@@ -57,7 +57,7 @@ static int UpdateEntity( int entity, bot_entitystate_t *state ) {
 	Callback(); Check(entity==1,"entity number"); if(state) memset(state,0,sizeof(*state)); return 13;
 }
 /** Touch the complete native area-info output. */
-static int AreaInfo( int area, aas_areainfo_t *info ) { Callback(); Check(area==1,"area number"); memset(info,0,sizeof(*info)); return 14; }
+static int AreaInfo( int area, aas_areainfo_t *info ) { Callback(); Check(area==1,"area number"); if(!info) return 0; memset(info,0,sizeof(*info)); return 14; }
 /** Touch all area outputs, exposing incomplete array range checks. */
 static int BoxAreas( vec3_t mins, vec3_t maxs, int *areas, int count ) {
 	Callback(); Check((byte *)mins==vm.dataBase+4 && (byte *)maxs==vm.dataBase+16,"box vectors"); memset(areas,0,count*sizeof(*areas)); return count;
@@ -75,6 +75,14 @@ static int ReachabilityIndex( vec3_t origin ) {
 static int TravelTime( int area, vec3_t origin, int goal, int flags ) {
 	Callback(); Check(area==1 && goal==2 && flags==3,"travel args");
 	Check(!origin || (byte *)origin==vm.dataBase+4,"travel origin"); return 16;
+}
+/** Check optional route origins and the complete alternative-goal output. */
+static int AlternativeRoutes( vec3_t start, int area, vec3_t goal, int goalArea, int flags,
+                              aas_altroutegoal_t *output, int count, int type ) {
+	Callback(); Check(!start || (byte *)start==vm.dataBase+4,"alternative start");
+	Check(!goal || (byte *)goal==vm.dataBase+16,"alternative goal");
+	Check(area==1 && goalArea==2 && flags==3 && count==1 && type==0,"alternative args");
+	memset(output,0,sizeof(*output)); return 17;
 }
 /** Require malformed arguments to fail before calling the native API. */
 static void Reject( int *args ) {
@@ -94,6 +102,7 @@ int main( void ) {
 	api.BotLibUpdateEntity=UpdateEntity; api.aas.AAS_AreaInfo=AreaInfo;
 	api.aas.AAS_BBoxAreas=BoxAreas; api.aas.AAS_TraceAreas=TraceAreas;
 	api.aas.AAS_PointReachabilityAreaIndex=ReachabilityIndex; api.aas.AAS_AreaTravelTimeToGoalArea=TravelTime;
+	api.aas.AAS_AlternativeRouteGoals=AlternativeRoutes;
 	memset(vm.dataBase,'x',IMAGE_SIZE); memcpy(vm.dataBase+32,"test",5);
 	args[0]=BOTLIB_LIBVAR_GET; args[1]=32; args[2]=IMAGE_SIZE-8; args[3]=8;
 	Check(SV_BotLibNavigationCalls(args)==11,"var result");
@@ -114,7 +123,8 @@ int main( void ) {
 	args[2]=IMAGE_SIZE-sizeof(bot_entitystate_t); Check(SV_BotLibNavigationCalls(args)==13,"whole state");
 	args[2]+=4; Reject(args);
 	args[0]=BOTLIB_AAS_AREA_INFO; args[1]=1; args[2]=IMAGE_SIZE-sizeof(aas_areainfo_t);
-	Check(SV_BotLibNavigationCalls(args)==14,"whole area info"); args[2]+=4; Reject(args);
+	Check(SV_BotLibNavigationCalls(args)==14,"whole area info"); args[2]+=4; Reject(args); args[2]=0;
+	Check(SV_BotLibNavigationCalls(args)==0,"NULL area-info output");
 	args[0]=BOTLIB_AAS_BBOX_AREAS; args[1]=4; args[2]=16; args[3]=IMAGE_SIZE-3*sizeof(int); args[4]=3;
 	Check(SV_BotLibNavigationCalls(args)==3,"whole area array");
 	args[3]+=4; Reject(args); args[3]-=4; args[4]=-1; Reject(args); args[4]=INT_MAX; Reject(args);
@@ -125,6 +135,11 @@ int main( void ) {
 	args[5]=0; calls=callbacks; Check(SV_BotLibNavigationCalls(args)==0 && callbacks==calls,"empty trace output");
 	args[0]=BOTLIB_AAS_ALTERNATIVE_ROUTE_GOAL; args[7]=0;
 	calls=callbacks; Check(SV_BotLibNavigationCalls(args)==0 && callbacks==calls,"empty alternate routes");
+	args[1]=0; args[2]=1; args[3]=0; args[4]=2; args[5]=3;
+	args[6]=IMAGE_SIZE-sizeof(aas_altroutegoal_t); args[7]=1; args[8]=0;
+	Check(SV_BotLibNavigationCalls(args)==17,"nullable alternative origins");
+	args[1]=4; args[3]=16; Check(SV_BotLibNavigationCalls(args)==17,"checked alternative origins");
+	args[1]=IMAGE_SIZE-8; Reject(args); args[1]=4; args[3]=IMAGE_SIZE-8; Reject(args);
 	args[0]=BOTLIB_GET_CONSOLE_MESSAGE; args[1]=1; args[2]=IMAGE_SIZE-8; args[3]=8;
 	Check(SV_BotLibNavigationCalls(args)==10,"console output");
 	args[0]=BOTLIB_GET_SNAPSHOT_ENTITY; args[2]=2; Check(SV_BotLibNavigationCalls(args)==9,"snapshot result");
