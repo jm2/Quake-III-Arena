@@ -109,6 +109,65 @@ static void TestStrings( void ) {
 	VM_StringCopy( 6, 4, 8 );
 	Check( !memcmp( vm.dataBase + 6, "abcdef\0\0", 8 ), "overlapping string" );
 }
+/* Check typed pointer failures before native code consumes the VM data. */
+static void RejectChecked( int op, int value, int length, int extra, qboolean nullable ) {
+	vm.interpretFaulted = qfalse;
+	vm.currentlyInterpreting = qtrue;
+	memcpy( before, vm.dataBase, IMAGE_SIZE );
+	expectError = 1;
+	if ( setjmp( errorJump ) == 0 ) {
+		if ( op == 0 ) VM_CheckedArgPtr( value, length, extra, nullable );
+		else if ( op == 1 ) VM_CheckedArgString( value, nullable );
+		else if ( op == 2 ) VM_CheckedArgArray( value, length, extra );
+		else VM_CheckedStringBuffer( value, length, nullable );
+		Check( 0, "invalid typed argument accepted" );
+	}
+	expectError = 0;
+}
+
+static void TestCheckedArguments( void ) {
+	Reset();
+	Check( VM_CheckedArgPtr( IMAGE_SIZE - 4, 4, 4, qfalse ) == vm.dataBase + IMAGE_SIZE - 4,
+	       "aligned structure at image end" );
+	Check( VM_CheckedArgPtr( IMAGE_SIZE + 4, 4, 4, qfalse ) == vm.dataBase + 4,
+	       "typed pointer preserves legacy masking" );
+	Check( VM_CheckedArgPtr( IMAGE_SIZE - 1, 1, 1, qfalse ) == vm.dataBase + IMAGE_SIZE - 1,
+	       "byte buffer need not align" );
+	Check( VM_CheckedArgPtr( 0, 4, 4, qtrue ) == NULL, "nullable structure query" );
+	RejectChecked( 0, 0, 4, 4, qfalse );
+	RejectChecked( 0, 5, 4, 4, qfalse );
+	RejectChecked( 0, IMAGE_SIZE - 4, 5, 4, qfalse );
+	RejectChecked( 0, 4, -1, 1, qfalse );
+	RejectChecked( 0, 4, INT_MAX, 1, qfalse );
+
+	Check( VM_CheckedArgArray( IMAGE_SIZE - 8, 2, 4 ) == vm.dataBase + IMAGE_SIZE - 8,
+	       "exact-end vertex array" );
+	Check( VM_CheckedArgArray( 0, 0, 4 ) == NULL, "empty array" );
+	RejectChecked( 2, 4, -1, 4, qfalse );
+	RejectChecked( 2, 4, INT_MAX, 4, qfalse );
+	RejectChecked( 2, 4, INT_MIN, 4, qfalse );
+	RejectChecked( 2, 4, 1, 0, qfalse );
+	RejectChecked( 2, 5, 1, 4, qfalse );
+	RejectChecked( 2, IMAGE_SIZE - 4, 2, 4, qfalse );
+
+	Check( VM_CheckedArgString( 0, qtrue ) == NULL, "nullable string reset" );
+	RejectChecked( 1, 0, 0, 0, qfalse );
+	RejectChecked( 1, IMAGE_SIZE - 4, 0, 0, qfalse );
+	vm.dataBase[IMAGE_SIZE - 1] = 0;
+	Check( VM_CheckedArgString( IMAGE_SIZE - 1, qfalse ) == (char *)vm.dataBase + IMAGE_SIZE - 1,
+	       "empty string in final byte" );
+	Check( VM_CheckedArgString( IMAGE_SIZE + IMAGE_SIZE - 4, qfalse ) ==
+	       (char *)vm.dataBase + IMAGE_SIZE - 4, "terminated masked string" );
+
+	Check( VM_CheckedStringBuffer( IMAGE_SIZE - 1, 1, qfalse ) == vm.dataBase + IMAGE_SIZE - 1,
+	       "terminator-sized output" );
+	Check( VM_CheckedStringBuffer( 0, 0, qtrue ) == NULL, "nullable string query" );
+	RejectChecked( 3, 0, 1, 0, qfalse );
+	RejectChecked( 3, 4, 0, 0, qfalse );
+	RejectChecked( 3, 0, -1, 0, qtrue );
+	RejectChecked( 3, IMAGE_SIZE - 1, 2, 0, qfalse );
+}
+
 /** Run the real common memory traps against an exact-sized VM allocation. */
 int main( void ) {
 	vm.dataBase = malloc( IMAGE_SIZE );
@@ -117,6 +176,7 @@ int main( void ) {
 	currentVM = &vm;
 	TestBuffers();
 	TestStrings();
+	TestCheckedArguments();
 	free( vm.dataBase );
 	puts( "VM syscall memory trap regressions passed (issue #35)" );
 	return 0;

@@ -332,6 +332,11 @@ int VM_CallArgs( vm_t *vm, int callNum, const int *args, int argCount );
 void	VM_Debug( int level );
 
 void	*VM_ArgPtr( int intValue );
+void VM_Error( const char *message );
+void *VM_CheckedArgPtr( int value, int length, int alignment, qboolean nullable );
+char *VM_CheckedArgString( int value, qboolean nullable );
+void *VM_CheckedArgArray( int value, int count, int elementSize );
+void *VM_CheckedStringBuffer( int value, int length, qboolean nullable );
 void VM_MemoryFill( int dest, int value, int length );
 void VM_MemoryCopy( int dest, int source, int length );
 int VM_StringCopy( int dest, int source, int length );

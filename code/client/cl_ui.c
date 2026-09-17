@@ -817,15 +817,12 @@ CLUI_GetCDKey
 ====================
 */
 static void CLUI_GetCDKey( char *buf, int buflen ) {
-	cvar_t	*fs;
-	fs = Cvar_Get ("fs_game", "", CVAR_INIT|CVAR_SYSTEMINFO );
-	if (UI_usesUniqueCDKey() && fs && fs->string[0] != 0) {
-		Com_Memcpy( buf, &cl_cdkey[16], 16);
-		buf[16] = 0;
-	} else {
-		Com_Memcpy( buf, cl_cdkey, 16);
-		buf[16] = 0;
-	}
+	char key[17];
+	cvar_t *fs = Cvar_Get( "fs_game", "", CVAR_INIT | CVAR_SYSTEMINFO );
+	int offset = UI_usesUniqueCDKey() && fs && fs->string[0] ? 16 : 0;
+	Com_Memcpy( key, cl_cdkey + offset, 16 );
+	key[16] = 0;
+	Q_strncpyz( buf, key, buflen );
 }
 
 
@@ -887,8 +884,11 @@ static int FloatAsInt( float f ) {
 	return temp;
 }
 
-void *VM_ArgPtr( int intValue );
-#define	VMA(x) VM_ArgPtr(args[x])
+#define VMAS(x) VM_CheckedArgString( args[x], qfalse )
+#define VMASN(x) VM_CheckedArgString( args[x], qtrue )
+#define VMAP(x, type) VM_CheckedArgPtr( args[x], sizeof(type), 4, qfalse )
+#define VMAPN(x, type) VM_CheckedArgPtr( args[x], sizeof(type), 4, qtrue )
+#define VMAB(x, length) VM_CheckedStringBuffer( args[x], (length), qfalse )
 #define	VMF(x)	((float *)args)[x]
 
 /*
@@ -898,75 +898,80 @@ CL_UISystemCalls
 The ui module is making a system call
 ====================
 */
-/** Dispatch UI traps with shared bounds checks for raw memory operations. */
+/** Dispatch UI traps after validating QVM string, buffer, structure, and array arguments. */
 int CL_UISystemCalls( int *args ) {
 	switch( args[0] ) {
 	case UI_ERROR:
-		Com_Error( ERR_DROP, "%s", VMA(1) );
+		VM_Error( VMAS(1) );
 		return 0;
 
 	case UI_PRINT:
-		Com_Printf( "%s", VMA(1) );
+		Com_Printf( "%s", VMAS(1) );
 		return 0;
 
 	case UI_MILLISECONDS:
 		return Sys_Milliseconds();
 
 	case UI_CVAR_REGISTER:
-		Cvar_Register( VMA(1), VMA(2), VMA(3), args[4] ); 
+		Cvar_Register( VMAPN(1, vmCvar_t), VMAS(2), VMAS(3), args[4] );
 		return 0;
 
 	case UI_CVAR_UPDATE:
-		Cvar_Update( VMA(1) );
+		Cvar_Update( VMAP(1, vmCvar_t) );
 		return 0;
 
 	case UI_CVAR_SET:
-		Cvar_Set( VMA(1), VMA(2) );
+		Cvar_Set( VMAS(1), VMASN(2) );
 		return 0;
 
 	case UI_CVAR_VARIABLEVALUE:
-		return FloatAsInt( Cvar_VariableValue( VMA(1) ) );
+		return FloatAsInt( Cvar_VariableValue( VMAS(1) ) );
 
 	case UI_CVAR_VARIABLESTRINGBUFFER:
-		Cvar_VariableStringBuffer( VMA(1), VMA(2), args[3] );
+		Cvar_VariableStringBuffer( VMAS(1), VMAB(2, args[3]), args[3] );
 		return 0;
 
 	case UI_CVAR_SETVALUE:
-		Cvar_SetValue( VMA(1), VMF(2) );
+		Cvar_SetValue( VMAS(1), VMF(2) );
 		return 0;
 
 	case UI_CVAR_RESET:
-		Cvar_Reset( VMA(1) );
+		Cvar_Reset( VMAS(1) );
 		return 0;
 
 	case UI_CVAR_CREATE:
-		Cvar_Get( VMA(1), VMA(2), args[3] );
+		Cvar_Get( VMAS(1), VMAS(2), args[3] );
 		return 0;
 
 	case UI_CVAR_INFOSTRINGBUFFER:
-		Cvar_InfoStringBuffer( args[1], VMA(2), args[3] );
+		Cvar_InfoStringBuffer( args[1], VMAB(2, args[3]), args[3] );
 		return 0;
 
 	case UI_ARGC:
 		return Cmd_Argc();
 
 	case UI_ARGV:
-		Cmd_ArgvBuffer( args[1], VMA(2), args[3] );
+		Cmd_ArgvBuffer( args[1], VMAB(2, args[3]), args[3] );
 		return 0;
 
 	case UI_CMD_EXECUTETEXT:
-		Cbuf_ExecuteText( args[1], VMA(2) );
+		Cbuf_ExecuteText( args[1], VMAS(2) );
 		return 0;
 
 	case UI_FS_FOPENFILE:
-		return FS_FOpenFileByMode( VMA(1), VMA(2), args[3] );
+		if ( args[3] < FS_READ || args[3] > FS_APPEND_SYNC ) {
+			VM_Error( "UI filesystem open mode out of range" );
+			return -1;
+		}
+		return FS_FOpenFileByMode( VMAS(1),
+		        VM_CheckedArgPtr( args[2], sizeof(fileHandle_t), 4, args[3] == FS_READ ), args[3] );
 
 	case UI_FS_READ:
-		FS_Read2( VMA(1), args[2], args[3] );
+		FS_Read2( VM_CheckedArgPtr( args[1], args[2], 1, args[2] == 0 ), args[2], args[3] );
 		return 0;
 
 	case UI_FS_WRITE:
-		FS_Write( VMA(1), args[2], args[3] );
+		FS_Write( VM_CheckedArgPtr( args[1], args[2], 1, args[2] == 0 ), args[2], args[3] );
 		return 0;
 
 	case UI_FS_FCLOSEFILE:
@@ -974,42 +979,43 @@ int CL_UISystemCalls( int *args ) {
 		return 0;
 
 	case UI_FS_GETFILELIST:
-		return FS_GetFileList( VMA(1), VMA(2), VMA(3), args[4] );
+		return FS_GetFileList( VMAS(1), VMAS(2), VMAB(3, args[4]), args[4] );
 
 	case UI_FS_SEEK:
 		return FS_Seek( args[1], args[2], args[3] );
 	
 	case UI_R_REGISTERMODEL:
-		return re.RegisterModel( VMA(1) );
+		return re.RegisterModel( VMAS(1) );
 
 	case UI_R_REGISTERSKIN:
-		return re.RegisterSkin( VMA(1) );
+		return re.RegisterSkin( VMAS(1) );
 
 	case UI_R_REGISTERSHADERNOMIP:
-		return re.RegisterShaderNoMip( VMA(1) );
+		return re.RegisterShaderNoMip( VMAS(1) );
 
 	case UI_R_CLEARSCENE:
 		re.ClearScene();
 		return 0;
 
 	case UI_R_ADDREFENTITYTOSCENE:
-		re.AddRefEntityToScene( VMA(1) );
+		re.AddRefEntityToScene( VMAP(1, refEntity_t) );
 		return 0;
 
 	case UI_R_ADDPOLYTOSCENE:
-		re.AddPolyToScene( args[1], args[2], VMA(3), 1 );
+		if ( args[2] == 0 ) return 0;
+		re.AddPolyToScene( args[1], args[2], VM_CheckedArgArray( args[3], args[2], sizeof(polyVert_t) ), 1 );
 		return 0;
 
 	case UI_R_ADDLIGHTTOSCENE:
-		re.AddLightToScene( VMA(1), VMF(2), VMF(3), VMF(4), VMF(5) );
+		re.AddLightToScene( VMAP(1, vec3_t), VMF(2), VMF(3), VMF(4), VMF(5) );
 		return 0;
 
 	case UI_R_RENDERSCENE:
-		re.RenderScene( VMA(1) );
+		re.RenderScene( VMAP(1, refdef_t) );
 		return 0;
 
 	case UI_R_SETCOLOR:
-		re.SetColor( VMA(1) );
+		re.SetColor( VMAPN(1, vec4_t) );
 		return 0;
 
 	case UI_R_DRAWSTRETCHPIC:
@@ -1017,7 +1023,7 @@ int CL_UISystemCalls( int *args ) {
 		return 0;
 
   case UI_R_MODELBOUNDS:
-		re.ModelBounds( args[1], VMA(2), VMA(3) );
+		re.ModelBounds( args[1], VMAP(2, vec3_t), VMAP(3, vec3_t) );
 		return 0;
 
 	case UI_UPDATESCREEN:
@@ -1025,26 +1031,26 @@ int CL_UISystemCalls( int *args ) {
 		return 0;
 
 	case UI_CM_LERPTAG:
-		re.LerpTag( VMA(1), args[2], args[3], args[4], VMF(5), VMA(6) );
+		re.LerpTag( VMAP(1, orientation_t), args[2], args[3], args[4], VMF(5), VMAS(6) );
 		return 0;
 
 	case UI_S_REGISTERSOUND:
-		return S_RegisterSound( VMA(1), args[2] );
+		return S_RegisterSound( VMAS(1), args[2] );
 
 	case UI_S_STARTLOCALSOUND:
 		S_StartLocalSound( args[1], args[2] );
 		return 0;
 
 	case UI_KEY_KEYNUMTOSTRINGBUF:
-		Key_KeynumToStringBuf( args[1], VMA(2), args[3] );
+		Key_KeynumToStringBuf( args[1], VMAB(2, args[3]), args[3] );
 		return 0;
 
 	case UI_KEY_GETBINDINGBUF:
-		Key_GetBindingBuf( args[1], VMA(2), args[3] );
+		Key_GetBindingBuf( args[1], VMAB(2, args[3]), args[3] );
 		return 0;
 
 	case UI_KEY_SETBINDING:
-		Key_SetBinding( args[1], VMA(2) );
+		Key_SetBinding( args[1], VMAS(2) );
 		return 0;
 
 	case UI_KEY_ISDOWN:
@@ -1069,19 +1075,19 @@ int CL_UISystemCalls( int *args ) {
 		return 0;
 
 	case UI_GETCLIPBOARDDATA:
-		GetClipboardData( VMA(1), args[2] );
+		GetClipboardData( VMAB(1, args[2]), args[2] );
 		return 0;
 
 	case UI_GETCLIENTSTATE:
-		GetClientState( VMA(1) );
+		GetClientState( VMAP(1, uiClientState_t) );
 		return 0;		
 
 	case UI_GETGLCONFIG:
-		CL_GetGlconfig( VMA(1) );
+		CL_GetGlconfig( VMAP(1, glconfig_t) );
 		return 0;
 
 	case UI_GETCONFIGSTRING:
-		return GetConfigString( args[1], VMA(2), args[3] );
+		return GetConfigString( args[1], VMAB(2, args[3]), args[3] );
 
 	case UI_LAN_LOADCACHEDSERVERS:
 		LAN_LoadCachedServers();
@@ -1092,10 +1098,10 @@ int CL_UISystemCalls( int *args ) {
 		return 0;
 
 	case UI_LAN_ADDSERVER:
-		return LAN_AddServer(args[1], VMA(2), VMA(3));
+		return LAN_AddServer(args[1], VMAS(2), VMAS(3));
 
 	case UI_LAN_REMOVESERVER:
-		LAN_RemoveServer(args[1], VMA(2));
+		LAN_RemoveServer(args[1], VMAS(2));
 		return 0;
 
 	case UI_LAN_GETPINGQUEUECOUNT:
@@ -1106,22 +1112,22 @@ int CL_UISystemCalls( int *args ) {
 		return 0;
 
 	case UI_LAN_GETPING:
-		LAN_GetPing( args[1], VMA(2), args[3], VMA(4) );
+		LAN_GetPing( args[1], VMAB(2, args[3]), args[3], VMAP(4, int) );
 		return 0;
 
 	case UI_LAN_GETPINGINFO:
-		LAN_GetPingInfo( args[1], VMA(2), args[3] );
+		LAN_GetPingInfo( args[1], VMAB(2, args[3]), args[3] );
 		return 0;
 
 	case UI_LAN_GETSERVERCOUNT:
 		return LAN_GetServerCount(args[1]);
 
 	case UI_LAN_GETSERVERADDRESSSTRING:
-		LAN_GetServerAddressString( args[1], args[2], VMA(3), args[4] );
+		LAN_GetServerAddressString( args[1], args[2], VMAB(3, args[4]), args[4] );
 		return 0;
 
 	case UI_LAN_GETSERVERINFO:
-		LAN_GetServerInfo( args[1], args[2], VMA(3), args[4] );
+		LAN_GetServerInfo( args[1], args[2], VMAB(3, args[4]), args[4] );
 		return 0;
 
 	case UI_LAN_GETSERVERPING:
@@ -1142,7 +1148,7 @@ int CL_UISystemCalls( int *args ) {
 		return 0;
 
 	case UI_LAN_SERVERSTATUS:
-		return LAN_GetServerStatus( VMA(1), VMA(2), args[3] );
+		return LAN_GetServerStatus( VMASN(1), VM_CheckedStringBuffer( args[2], args[3], qtrue ), args[3] );
 
 	case UI_LAN_COMPARESERVERS:
 		return LAN_CompareServers( args[1], args[2], args[3], args[4], args[5] );
@@ -1151,18 +1157,18 @@ int CL_UISystemCalls( int *args ) {
 		return Hunk_MemoryRemaining();
 
 	case UI_GET_CDKEY:
-		CLUI_GetCDKey( VMA(1), args[2] );
+		CLUI_GetCDKey( VMAB(1, args[2]), args[2] );
 		return 0;
 
 	case UI_SET_CDKEY:
-		CLUI_SetCDKey( VMA(1) );
+		CLUI_SetCDKey( VM_CheckedArgPtr( args[1], 16, 1, qfalse ) );
 		return 0;
 	
 	case UI_SET_PBCLSTATUS:
 		return 0;	
 
 	case UI_R_REGISTERFONT:
-		re.RegisterFont( VMA(1), args[2], VMA(3));
+		re.RegisterFont( VMAS(1), args[2], VMAP(3, fontInfo_t));
 		return 0;
 
 	case UI_MEMSET:
@@ -1199,14 +1205,14 @@ int CL_UISystemCalls( int *args ) {
 #if USE_SIMPLE_SCRIPT_PARSER
 		return 0;  // Ignore
 #else
-		return botlib_export->PC_AddGlobalDefine( VMA(1) );
+		return botlib_export->PC_AddGlobalDefine( VMAS(1) );
 #endif
 	case UI_PC_LOAD_SOURCE:
-		printf("UI_PC_LOAD_SOURCE: Loading '%s'...\n", (char *)VMA(1));
+		printf("UI_PC_LOAD_SOURCE: Loading '%s'...\n", (char *)VMAS(1));
 		fflush(stdout);
 #if USE_SIMPLE_SCRIPT_PARSER
 		{
-			int handle = Script_LoadSource( VMA(1) );
+			int handle = Script_LoadSource( VMAS(1) );
 			printf("UI_PC_LOAD_SOURCE: Simple parser handle=%d\n", handle);
 			fflush(stdout);
 			return handle;
@@ -1218,7 +1224,7 @@ int CL_UISystemCalls( int *args ) {
 			return 0;
 		}
 		{
-			int handle = botlib_export->PC_LoadSourceHandle( VMA(1) );
+			int handle = botlib_export->PC_LoadSourceHandle( VMAS(1) );
 			printf("UI_PC_LOAD_SOURCE: Got handle=%d\n", handle);
 			fflush(stdout);
 			return handle;
@@ -1233,11 +1239,11 @@ int CL_UISystemCalls( int *args ) {
 	case UI_PC_READ_TOKEN:
 #if USE_SIMPLE_SCRIPT_PARSER
 		{
-			int result = Script_ReadToken( args[1], VMA(2) );
+			int result = Script_ReadToken( args[1], VMAP(2, pc_token_t) );
 			// Only log first few to avoid spam
 			static int readCount = 0;
 			if (readCount < 20) {
-				pc_token_t *tok = (pc_token_t *)VMA(2);
+				pc_token_t *tok = (pc_token_t *)VMAP(2, pc_token_t);
 				printf("UI_PC_READ_TOKEN: handle=%d result=%d token='%s'\n", 
 					(int)args[1], result, result ? tok->string : "");
 				fflush(stdout);
@@ -1252,7 +1258,7 @@ int CL_UISystemCalls( int *args ) {
 			return 0;
 		}
 		{
-			int result = botlib_export->PC_ReadTokenHandle( args[1], VMA(2) );
+			int result = botlib_export->PC_ReadTokenHandle( args[1], VMAP(2, pc_token_t) );
 			// Only log first few to avoid spam
 			static int readCount = 0;
 			if (readCount < 5) {
@@ -1267,22 +1273,22 @@ int CL_UISystemCalls( int *args ) {
 #if USE_SIMPLE_SCRIPT_PARSER
 		return 0;  // Not implemented for simple parser
 #else
-		return botlib_export->PC_SourceFileAndLine( args[1], VMA(2), VMA(3) );
+		return botlib_export->PC_SourceFileAndLine( args[1], VMAB(2, MAX_QPATH), VMAP(3, int) );
 #endif
 
 	case UI_S_STOPBACKGROUNDTRACK:
 		S_StopBackgroundTrack();
 		return 0;
 	case UI_S_STARTBACKGROUNDTRACK:
-		S_StartBackgroundTrack( VMA(1), VMA(2));
+		S_StartBackgroundTrack( VMASN(1), VMASN(2));
 		return 0;
 
 	case UI_REAL_TIME:
-		return Com_RealTime( VMA(1) );
+		return Com_RealTime( VMAPN(1, qtime_t) );
 
 	case UI_CIN_PLAYCINEMATIC:
 	  Com_DPrintf("UI_CIN_PlayCinematic\n");
-	  return CIN_PlayCinematic(VMA(1), args[2], args[3], args[4], args[5], args[6]);
+	  return CIN_PlayCinematic(VMAS(1), args[2], args[3], args[4], args[5], args[6]);
 
 	case UI_CIN_STOPCINEMATIC:
 	  return CIN_StopCinematic(args[1]);
@@ -1299,16 +1305,16 @@ int CL_UISystemCalls( int *args ) {
 	  return 0;
 
 	case UI_R_REMAP_SHADER:
-		re.RemapShader( VMA(1), VMA(2), VMA(3) );
+		re.RemapShader( VMAS(1), VMAS(2), VMASN(3) );
 		return 0;
 
 	case UI_VERIFY_CDKEY:
-		return CL_CDKeyValidate(VMA(1), VMA(2));
+		return CL_CDKeyValidate(VMAS(1), VMASN(2));
 
 
 		
 	default:
-		Com_Error( ERR_DROP, "Bad UI system trap: %i", args[0] );
+		VM_Error( va( "Bad UI system trap: %i", args[0] ) );
 
 	}
 
