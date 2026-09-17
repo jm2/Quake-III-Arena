@@ -417,10 +417,10 @@ static int SV_BotLibNavigationCalls( int *args ) {
 		if ( args[4] == 0 ) return 0;
 		return botlib_export->aas.AAS_BBoxAreas( VMAP(1, vec3_t), VMAP(2, vec3_t), VM_CheckedArgArray( args[3], args[4], sizeof(int) ), args[4] );
 	case BOTLIB_AAS_AREA_INFO:
-		return botlib_export->aas.AAS_AreaInfo( args[1], VMAP(2, aas_areainfo_t) );
+		return botlib_export->aas.AAS_AreaInfo( args[1], VMAPN(2, aas_areainfo_t) );
 	case BOTLIB_AAS_ALTERNATIVE_ROUTE_GOAL:
 		if ( args[7] == 0 ) return 0;
-		return botlib_export->aas.AAS_AlternativeRouteGoals( VMAP(1, vec3_t), args[2], VMAP(3, vec3_t), args[4], args[5], VM_CheckedArgArray( args[6], args[7], sizeof(aas_altroutegoal_t) ), args[7], args[8] );
+		return botlib_export->aas.AAS_AlternativeRouteGoals( VMAPN(1, vec3_t), args[2], VMAPN(3, vec3_t), args[4], args[5], VM_CheckedArgArray( args[6], args[7], sizeof(aas_altroutegoal_t) ), args[7], args[8] );
 	case BOTLIB_AAS_ENTITY_INFO:
 		botlib_export->aas.AAS_EntityInfo( args[1], VMAP(2, aas_entityinfo_t) );
 		return 0;

@@ -11,7 +11,10 @@ output before checking capacity, so merely accepting a zero-length array would
 leave an overwrite. Trace-area point output remains optional. NULL map names
 and entity states preserve native query/update and removal behavior. NULL
 reachability origins preserve the total-area query; NULL travel origins
-preserve cached area-to-area travel-time queries.
+preserve cached area-to-area travel-time queries. Area-info output may be
+NULL for the native no-output result. Alternative-route origins remain
+nullable: routing accepts a cached start query and does not read the goal
+vector. Every non-NULL vector/output still validates its complete range.
 
 Snapshot retrieval, console output, and bot user commands check client indices
 against a saved count of actually allocated server clients. Both allocation
@@ -37,8 +40,8 @@ temporary libraries in the [loading evidence](qvm-loading-validation.md).
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,686,351 | `d9d0ab88691eb6e3becc8437e6c3fb8771d300aabbb3fd06be3194668c2d98d2` |
-| Quake3_TeamArena | 3,834,925 | `ecc0ca7996e4ac592f0d1592f57c4cb0c3b423ca6dc51efdaffa67d4f279fde0` |
+| Quake3 | 3,686,351 | `be881dfd01e66ade6b2f9ecfbaa9da0d60695f96d88cac32abc0d2c3a58b20c5` |
+| Quake3_TeamArena | 3,834,925 | `29db8c7127b28fd4d951a2375177b9745957aaa3722bf8626bb6671f8fff300f` |
 
 ## Remaining acceptance
 
