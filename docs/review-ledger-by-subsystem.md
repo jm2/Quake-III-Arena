@@ -1,16 +1,18 @@
 # Quake III Arena Mac OS 9 subsystem evidence appendix
 
-Last updated: 2026-07-28
+Last updated: 2026-09-17
 
 This preserves the first review session's subsystem-oriented evidence and
 local-fix notes. It is not the work-order queue. Use the priority/severity
 sorted [task.md](task.md) as the authoritative handoff and update both files
 when evidence here materially changes.
 
-An issue-level checkbox stays open until its fix is committed, focused checks
-pass, the full Retro68 build succeeds, required target testing is complete, and
-the GitHub issue is closed. Nested checkboxes may record locally drafted or
-partially verified work without implying completion.
+The July candidate changes are committed in `204fe36`. The September
+[reassessment](review-2026-09-17.md) supersedes their old worktree status;
+July build hashes and runtime limitations remain historical evidence.
+Issue closure follows the applicable acceptance criteria and the PR/CI/bot
+review gates in [task.md](task.md). Nested checkboxes record only the stated
+implementation or check, without implying issue completion.
 
 ## Baseline and preserved evidence
 
@@ -81,7 +83,8 @@ partially verified work without implying completion.
   - [ ] Run equivalent PowerShell checks on Windows.
 - [ ] [#8 — demo fallback produced an invalid full-game package](https://github.com/jm2/Quake-III-Arena/issues/8)
   - [x] Local scripts now fail clearly without retail `baseq3/pak0.pk3`.
-  - [ ] Add a separately correct demo product or document retail-only scope.
+  - [x] Retail-only scope is documented in `building-mac-os9.md`.
+  - [ ] Boot a generated package with legal retail data.
 - [ ] [#9 — Finder creator differed from the BNDL signature](https://github.com/jm2/Quake-III-Arena/issues/9)
   - [x] Local resources, generator, and package mappings use `IDQ3`.
   - [ ] Mount and inspect a produced HFS artifact on target.
@@ -111,7 +114,8 @@ partially verified work without implying completion.
 - [ ] [#32 — MacBinary output has invalid zero dates](https://github.com/jm2/Quake-III-Arena/issues/32)
   - [x] Local encoder writes input-mtime or `SOURCE_DATE_EPOCH` as valid Mac
         creation/modification dates.
-  - [ ] Validate dates and CRC with an independent decoder and on target.
+  - [x] Host tests check deterministic dates and CRC using `binascii.crc_hqx`.
+  - [ ] Validate with a complete independent decoder and on target.
 - [ ] [#50 — Windows Rez include path was nonexistent](https://github.com/jm2/Quake-III-Arena/issues/50)
   - [x] Local packaging probes the prepared/source layouts and requires
         `Types.r` plus `CodeFragments.r`.
@@ -123,7 +127,8 @@ partially verified work without implying completion.
 - [ ] [#52 — MacBinary counted characters instead of encoded bytes](https://github.com/jm2/Quake-III-Arena/issues/52)
   - [x] Local encoder strictly encodes MacRoman first, then truncates/counts
         bytes and validates 32-bit fork lengths.
-  - [ ] Add 63/64-byte and representable/unrepresentable filename fixtures.
+  - [x] Host fixtures cover 64-byte MacRoman truncation and unrepresentable input.
+  - [ ] Add exact 63-byte/short non-ASCII cases and independent-reader validation.
 
 ### Mac platform, renderer, input, sound, and networking
 

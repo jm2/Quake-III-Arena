@@ -63,17 +63,16 @@ class ReviewLedgerTests(unittest.TestCase):
             )
             self.assertEqual(found, expected, priority)
 
-    def test_issue_entries_are_open_checkboxes_with_severity(self):
+    def test_issue_entries_are_checkboxes_with_severity(self):
         for index, line in enumerate(self.lines):
             if not ISSUE_PATTERN.search(line):
                 continue
-            self.assertTrue(line.startswith("- [ ] [#"), line)
+            self.assertRegex(line, r"^- \[[ x]\] \[#", line)
             entry = "\n".join(self.lines[index:index + 2])
             self.assertIn("**", entry, entry)
 
-    def test_continuation_queue_contains_unfinished_work(self):
+    def test_continuation_queue_records_work_order(self):
         continuation = self.text[self.text.index("## Exact continuation point"):]
-        self.assertGreaterEqual(continuation.count("- [ ]"), 5)
         self.assertIn("P0 implementation order", continuation)
 
 

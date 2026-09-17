@@ -11,7 +11,8 @@ Retro68 installation, proprietary retail data, or a Mac OS 9 emulator.
   - runs both build-script help paths;
   - compiles the Python utilities;
   - requires `docs/task.md` to remain in P0-to-P3 order with exactly one direct
-    link for every confirmed issue #1 through #52.
+    link for every confirmed issue #1 through #52, allowing both open and
+    completed checkboxes as the queue is worked down.
 - `Packaging tools (Python 3.11)` and `(Python 3.14)`
   - validate AppleDouble entry offsets, resource data, Finder type/creator,
     and bundle flag;
@@ -29,6 +30,7 @@ Dependabot is configured to propose GitHub Actions updates.
 ## Run the portable checks locally
 
 ```sh
+export TMPDIR="${TMPDIR:-/var/tmp}"
 bash -n build_mac.sh setup_retro68.sh tests/run_host_c_tests.sh
 ./build_mac.sh --help
 python3 -m py_compile create_appledouble.py generate_icon_r.py macbinary_encode.py
@@ -45,8 +47,15 @@ PowerShell parser validation is also part of CI; see
 Portable CI does not compile a PowerPC PEF, preserve/inspect a Classic resource
 fork inside a mounted HFS image, use retail PK3s, or exercise AGL,
 DrawSprocket, InputSprocket, Sound Manager, Open Transport, Finder events, or
-Mac OS 9 runtime behavior. It must never be cited as proof that a security
-issue or target-runtime issue is closed.
+Mac OS 9 runtime behavior. Passing these starter checks alone does not close
+security or target-runtime issues; each issue needs its specified regressions
+and applicable target evidence.
+
+For every new PR, inspect CI and bot review on the current head before merging.
+Resolve findings, push fixes, and obtain successful checks and renewed review.
+No review, a pending review, or a bot service error is not a clean review.
+Host-tool-only changes do not require unrelated engine or target tests unless
+their issue's acceptance criteria specify them.
 
 The next CI layers should be:
 
