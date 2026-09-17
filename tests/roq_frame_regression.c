@@ -88,9 +88,15 @@ static void Render( unsigned int width, unsigned int height, int maxTexture, int
 	sourceWidth=width; sourceHeight=height; textureWidth=targetWidth; textureHeight=targetHeight;
 	draws=uploads=0; movie->dirty=qtrue;
 	CIN_DrawCinematic(handle); Check(draws==1 && !tempMemory,"preview texture cleanup");
+	if(width!=targetWidth || height!=targetHeight) {
+		/* Poison the exact source after its first conversion: cached refreshes must never read it again. */
+		memset(frame,0xfd,movie->screenDelta);
+		CIN_DrawCinematic(handle); Check(draws==2 && !tempMemory,"unchanged preview recomputed or allocated");
+	}
 	movie->dirty=qtrue; CIN_UploadCinematic(handle); Check(uploads==1 && !tempMemory,"videoMap texture cleanup");
 	Check(CIN_StopCinematic(handle)==FMV_EOF,"render stop");
-	CIN_DrawCinematic(handle); CIN_UploadCinematic(handle); Check(draws==1 && uploads==1,"stopped frame submitted");
+	CIN_DrawCinematic(handle); CIN_UploadCinematic(handle); Check(draws==(width!=targetWidth || height!=targetHeight ? 2 : 1) && uploads==1,"stopped frame submitted");
+	Check(!cin.scaledValid,"stopped texture cache retained");
 	free(frame);
 }
 
