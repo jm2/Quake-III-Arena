@@ -31,6 +31,11 @@ the new trap harness. Both Retro68 products build without compiler diagnostics
 and pass PEF validation with the temporary libraries described in the
 [loading evidence](qvm-loading-validation.md).
 
+| Product | PEF bytes | SHA-256 |
+| --- | ---: | --- |
+| Quake3 | 3,677,987 | `53584f54f8da10cdffac20394fffffda9face2ec9b7fe728355b29c6d53c7acc` |
+| Quake3_TeamArena | 3,826,561 | `425dac46a417fb8c4e0dddbd4681f7a0c28c2a35c0bad189135de9d564b605bf` |
+
 ## Remaining acceptance
 
 Keep #35 open. File, cvar, command, renderer, collision, botlib, and other
