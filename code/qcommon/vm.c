@@ -689,27 +689,71 @@ void *VM_ArgPtr( int intValue ) {
 	}
 }
 
-/* Validate complete syscall buffers, retaining legacy address masking. */
-static void *VM_TrapBuffer( int value, int length ) {
+/** Mark the active QVM as faulted before ERR_DROP can invoke module shutdown. */
+void VM_Error( const char *message ) {
+	if ( currentVM && !currentVM->entryPoint ) {
+		currentVM->interpretFaulted = qtrue;
+		currentVM->currentlyInterpreting = qfalse;
+	}
+	Com_Error( ERR_DROP, "%s", message );
+}
+
+/* Alignment is required when native code consumes VM structs or floats. */
+/** Validate the complete QVM range and alignment, retaining masked addresses and optional NULL. */
+void *VM_CheckedArgPtr( int value, int length, int alignment, qboolean nullable ) {
 	int offset;
-	if ( !currentVM || length < 0 || (!value && length) ) {
-		goto invalid;
+	if ( !currentVM || length < 0 || (alignment != 1 && alignment != 4) ||
+	     (!value && !nullable) ) {
+		VM_Error( "VM syscall buffer out of range" );
+		return NULL;
+	}
+	if ( !value ) {
+		return NULL;
 	}
 	if ( currentVM->entryPoint ) {
 		return (void *)(unsigned long)(unsigned int)value;
 	}
 	offset = value & currentVM->dataMask;
-	if ( length > currentVM->dataMask + 1 - offset ) {
-		goto invalid;
+	if ( (offset & (alignment - 1)) || length > currentVM->dataMask + 1 - offset ) {
+		VM_Error( "VM syscall buffer out of range or unaligned" );
+		return NULL;
 	}
 	return currentVM->dataBase + offset;
-invalid:
-	if ( currentVM && !currentVM->entryPoint ) {
-		currentVM->interpretFaulted = qtrue;
-		currentVM->currentlyInterpreting = qfalse;
+}
+
+/** Require a terminator inside the QVM image before native string code reads it. */
+char *VM_CheckedArgString( int value, qboolean nullable ) {
+	char *input = VM_CheckedArgPtr( value, 1, 1, nullable );
+	if ( input && !currentVM->entryPoint &&
+	     !memchr( input, 0, currentVM->dataMask + 1 - (value & currentVM->dataMask) ) ) {
+		VM_Error( "VM syscall string is not terminated" );
+		return NULL;
 	}
-	Com_Error( ERR_DROP, "VM memory trap buffer out of range" );
-	return NULL;
+	return input;
+}
+
+/** Reject negative or overflowing element counts before checking an aligned array range. */
+void *VM_CheckedArgArray( int value, int count, int elementSize ) {
+	if ( count < 0 || elementSize <= 0 || count > INT_MAX / elementSize ) {
+		VM_Error( "VM syscall array size out of range" );
+		return NULL;
+	}
+	return VM_CheckedArgPtr( value, count * elementSize, 4, count == 0 );
+}
+
+/** Check output capacity, reserving a terminator slot unless NULL is an allowed query. */
+void *VM_CheckedStringBuffer( int value, int length, qboolean nullable ) {
+	// A NULL output is supported by query/reset APIs. Non-NULL string outputs
+	// require a terminator slot; zero lengths must not reach Q_strncpyz.
+	if ( length < 0 || (value && length == 0) ) {
+		VM_Error( "VM syscall string buffer is empty" );
+		return NULL;
+	}
+	return VM_CheckedArgPtr( value, length, 1, nullable );
+}
+
+static void *VM_TrapBuffer( int value, int length ) {
+	return VM_CheckedArgPtr( value, length, 1, length == 0 );
 }
 
 void VM_MemoryFill( int dest, int value, int length ) {

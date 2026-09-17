@@ -44,7 +44,11 @@ Retro68 installation, proprietary retail data, or a Mac OS 9 emulator.
     invalid counts, and faulted VM re-entry;
   - checks common MEMSET/MEMCPY/STRNCPY trap ranges, overlap, null/negative/
     oversized buffers, terminating sources at image boundaries, and VM
-    destination return values. Remaining syscall families need range checks.
+    destination return values;
+  - checks typed syscall buffer alignment, bounded strings, array-size
+    arithmetic, nullable query/reset arguments, and nonempty string outputs;
+  - exercises the real UI CD-key and parser filename outputs with exact-sized
+    allocations. Cgame and server syscall families still need range checks.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -63,6 +67,7 @@ bash tests/run_vm_bytecode_tests.sh
 bash tests/run_vm_runtime_tests.sh
 bash tests/run_vm_call_tests.sh
 bash tests/run_vm_memory_trap_tests.sh
+bash tests/run_ui_syscall_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 

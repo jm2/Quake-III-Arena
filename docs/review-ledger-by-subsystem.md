@@ -216,6 +216,8 @@ implementation or check, without implying issue completion.
   - [x] Native/compiled/interpreted calls use counted, zero-padded arguments;
         see [call evidence](qvm-call-validation.md).
   - [x] Shared memory/string syscall traps have [range regressions](qvm-memory-trap-validation.md).
+  - [x] UI syscall argument ranges and output boundaries have
+        [sanitizer regressions](qvm-ui-syscall-validation.md).
   - [ ] Complete remaining syscall pointer/range handling before accepting
         untrusted QVMs.
 - [ ] [#36 — oversized/truncated PK3 entries](https://github.com/jm2/Quake-III-Arena/issues/36)

@@ -87,6 +87,9 @@ QVMs while any P0 item is open.
         all execution modes; see [call evidence](qvm-call-validation.md).
   - [x] Common MEMSET/MEMCPY/STRNCPY syscalls validate full buffers and
         string boundaries; see [trap evidence](qvm-memory-trap-validation.md).
+  - [x] UI syscall strings, buffers, structs, and arrays validate full ranges
+        and alignment; CD-key and parser filename output honor their bounds;
+        see [UI evidence](qvm-ui-syscall-validation.md).
   - [ ] Complete remaining syscall pointer/range checks and retain valid PPC
         QVM compatibility during deferred live acceptance.
 - [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)
