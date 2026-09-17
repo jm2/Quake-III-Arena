@@ -67,6 +67,15 @@ static int TraceAreas( vec3_t start, vec3_t end, int *areas, vec3_t *points, int
 	Callback(); Check((byte *)start==vm.dataBase+4 && (byte *)end==vm.dataBase+16,"trace vectors");
 	memset(areas,0,count*sizeof(*areas)); if(points) memset(points,0,count*sizeof(*points)); return count;
 }
+/** Preserve NULL reachability-count queries and checked non-NULL origins. */
+static int ReachabilityIndex( vec3_t origin ) {
+	Callback(); Check(!origin || (byte *)origin==vm.dataBase+4,"reachability origin"); return 15;
+}
+/** Preserve NULL-origin cached travel-time queries. */
+static int TravelTime( int area, vec3_t origin, int goal, int flags ) {
+	Callback(); Check(area==1 && goal==2 && flags==3,"travel args");
+	Check(!origin || (byte *)origin==vm.dataBase+4,"travel origin"); return 16;
+}
 /** Require malformed arguments to fail before calling the native API. */
 static void Reject( int *args ) {
 	int calls = callbacks;
@@ -84,6 +93,7 @@ int main( void ) {
 	botlib_export=&api; api.BotLibVarGet=VarGet; api.BotLibLoadMap=LoadMap;
 	api.BotLibUpdateEntity=UpdateEntity; api.aas.AAS_AreaInfo=AreaInfo;
 	api.aas.AAS_BBoxAreas=BoxAreas; api.aas.AAS_TraceAreas=TraceAreas;
+	api.aas.AAS_PointReachabilityAreaIndex=ReachabilityIndex; api.aas.AAS_AreaTravelTimeToGoalArea=TravelTime;
 	memset(vm.dataBase,'x',IMAGE_SIZE); memcpy(vm.dataBase+32,"test",5);
 	args[0]=BOTLIB_LIBVAR_GET; args[1]=32; args[2]=IMAGE_SIZE-8; args[3]=8;
 	Check(SV_BotLibNavigationCalls(args)==11,"var result");
@@ -91,6 +101,14 @@ int main( void ) {
 	args[1]=IMAGE_SIZE-4; Reject(args); args[1]=32;
 	args[0]=BOTLIB_LOAD_MAP; args[1]=0; Check(SV_BotLibNavigationCalls(args)==12,"NULL map query");
 	args[1]=32; Check(SV_BotLibNavigationCalls(args)==12,"named map");
+	args[0]=BOTLIB_AAS_POINT_REACHABILITY_AREA_INDEX; args[1]=0;
+	Check(SV_BotLibNavigationCalls(args)==15,"NULL reachability count");
+	args[1]=4; Check(SV_BotLibNavigationCalls(args)==15,"checked reachability origin");
+	args[1]=IMAGE_SIZE-8; Reject(args);
+	args[0]=BOTLIB_AAS_AREA_TRAVEL_TIME_TO_GOAL_AREA; args[1]=1; args[2]=0; args[3]=2; args[4]=3;
+	Check(SV_BotLibNavigationCalls(args)==16,"NULL cached travel query");
+	args[2]=4; Check(SV_BotLibNavigationCalls(args)==16,"checked travel origin");
+	args[2]=IMAGE_SIZE-8; Reject(args);
 	args[0]=BOTLIB_UPDATENTITY; args[1]=1; args[2]=0;
 	Check(SV_BotLibNavigationCalls(args)==13,"NULL entity removal");
 	args[2]=IMAGE_SIZE-sizeof(bot_entitystate_t); Check(SV_BotLibNavigationCalls(args)==13,"whole state");

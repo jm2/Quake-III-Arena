@@ -435,7 +435,7 @@ static int SV_BotLibNavigationCalls( int *args ) {
 	case BOTLIB_AAS_POINT_AREA_NUM:
 		return botlib_export->aas.AAS_PointAreaNum( VMAP(1, vec3_t) );
 	case BOTLIB_AAS_POINT_REACHABILITY_AREA_INDEX:
-		return botlib_export->aas.AAS_PointReachabilityAreaIndex( VMAP(1, vec3_t) );
+		return botlib_export->aas.AAS_PointReachabilityAreaIndex( VMAPN(1, vec3_t) );
 	case BOTLIB_AAS_TRACE_AREAS:
 		if ( args[5] == 0 ) return 0;
 		return botlib_export->aas.AAS_TraceAreas( VMAP(1, vec3_t), VMAP(2, vec3_t), VM_CheckedArgArray( args[3], args[5], sizeof(int) ), (args[4] ? VM_CheckedArgArray( args[4], args[5], sizeof(vec3_t) ) : NULL), args[5] );
@@ -457,7 +457,7 @@ static int SV_BotLibNavigationCalls( int *args ) {
 		return botlib_export->aas.AAS_AreaReachability( args[1] );
 
 	case BOTLIB_AAS_AREA_TRAVEL_TIME_TO_GOAL_AREA:
-		return botlib_export->aas.AAS_AreaTravelTimeToGoalArea( args[1], VMAP(2, vec3_t), args[3], args[4] );
+		return botlib_export->aas.AAS_AreaTravelTimeToGoalArea( args[1], VMAPN(2, vec3_t), args[3], args[4] );
 	case BOTLIB_AAS_ENABLE_ROUTING_AREA:
 		return botlib_export->aas.AAS_EnableRoutingArea( args[1], args[2] );
 	case BOTLIB_AAS_PREDICT_ROUTE:
