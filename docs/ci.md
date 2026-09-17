@@ -25,7 +25,8 @@ Retro68 installation, proprietary retail data, or a Mac OS 9 emulator.
     under AddressSanitizer and UndefinedBehaviorSanitizer;
   - exercises the real QVM create/restart loaders with exact-sized files,
     every truncation of a small image, invalid signed ranges/counts, data-size
-    overflow, and larger/smaller replacement data images (issue #35);
+    overflow, larger/smaller replacement data images, and same-sized changes
+    to code, counts, layout, BSS, or initial data (issue #35);
   - checks recoverable rejection, file-buffer ownership, no hunk allocation
     before validation, unchanged data on rejected restart, and valid data
     initialization/restart, plus cleanup after failed bytecode preparation;
