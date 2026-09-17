@@ -37,8 +37,9 @@ libraries documented in the [loading evidence](qvm-loading-validation.md).
 
 ## Remaining acceptance
 
-Keep #35 open. Arithmetic edge cases, syscall-specific pointer/range checks,
-and VM call argument marshalling still need work. Retail baseq3/Team Arena
+The [next step](qvm-arithmetic-validation.md) covers arithmetic edge cases.
+Keep #35 open: syscall-specific pointer/range checks and VM call argument
+marshalling still need work. Retail baseq3/Team Arena
 execution and Mac OS 9 performance/compatibility remain deferred to the user's
 live-testing session. These fixtures establish the covered memory behaviors,
 not a complete sandbox guarantee.

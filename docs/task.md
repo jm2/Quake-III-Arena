@@ -81,8 +81,10 @@ QVMs while any P0 item is open.
         see [runtime evidence](qvm-runtime-validation.md).
   - [x] Bound full-width data accesses, stack arguments, block copies, and
         syscall argument snapshots; see [memory evidence](qvm-memory-validation.md).
-  - [ ] Complete arithmetic and syscall pointer/range checks; repair VM call
-        argument marshalling and retain valid PPC QVM compatibility.
+  - [x] Define wrapping integer arithmetic and reject division, shift, and
+        float conversion traps; see [arithmetic evidence](qvm-arithmetic-validation.md).
+  - [ ] Complete syscall pointer/range checks and VM call argument marshalling;
+        retain valid PPC QVM compatibility.
 - [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)
       — **high**, connection redirection/injection/hijack.
   - [x] User selected commercial 1.32c compatibility (Quake3e/ioquake3 style).
