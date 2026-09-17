@@ -314,6 +314,7 @@ The module is making a system call
 
 #define	VMF(x)	((float *)args)[x]
 
+/** Dispatch game traps with shared bounds checks for raw memory operations. */
 int SV_GameSystemCalls( int *args ) {
 	switch( args[0] ) {
 	case G_PRINT:
@@ -820,15 +821,15 @@ int SV_GameSystemCalls( int *args ) {
 		return botlib_export->ai.GeneticParentsAndChildSelection(args[1], VMA(2), VMA(3), VMA(4), VMA(5));
 
 	case TRAP_MEMSET:
-		Com_Memset( VMA(1), args[2], args[3] );
+		VM_MemoryFill( args[1], args[2], args[3] );
 		return 0;
 
 	case TRAP_MEMCPY:
-		Com_Memcpy( VMA(1), VMA(2), args[3] );
+		VM_MemoryCopy( args[1], args[2], args[3] );
 		return 0;
 
 	case TRAP_STRNCPY:
-		return (int)strncpy( VMA(1), VMA(2), args[3] );
+		return VM_StringCopy( args[1], args[2], args[3] );
 
 	case TRAP_SIN:
 		return FloatAsInt( sin( VMF(1) ) );

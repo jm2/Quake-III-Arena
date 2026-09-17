@@ -44,6 +44,7 @@ static int QDECL NativeEntry( int command, int a1, int a2, int a3, int a4,
 }
 static vm_t *GetVM( void ) { vmEvaluations++; return &vm; }
 
+/** Verify counted dispatch and quiet shutdown re-entry for faulted QVMs. */
 static void TestDispatches( void ) {
 	int mode, value;
 	for ( mode = 0; mode < 3; mode++ ) {
@@ -67,6 +68,14 @@ static void TestDispatches( void ) {
 		       "full-argument result" );
 	}
 	Check( dispatches == 9, "dispatch count" );
+	vm.entryPoint = NULL;
+	vm.interpretFaulted = qtrue;
+	for ( mode = 0; mode < 2; mode++ ) {
+		vm.compiled = mode;
+		Check( VM_Call( &vm, 7 ) == 0 && dispatches == 9 &&
+		       currentVM == &previousVM, "faulted VM re-entry" );
+	}
+	vm.interpretFaulted = qfalse;
 }
 
 static void TestSharedFrame( void ) {

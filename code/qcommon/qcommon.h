@@ -332,6 +332,9 @@ int VM_CallArgs( vm_t *vm, int callNum, const int *args, int argCount );
 void	VM_Debug( int level );
 
 void	*VM_ArgPtr( int intValue );
+void VM_MemoryFill( int dest, int value, int length );
+void VM_MemoryCopy( int dest, int source, int length );
+int VM_StringCopy( int dest, int source, int length );
 void	*VM_ExplicitArgPtr( vm_t *vm, int intValue );
 
 /*

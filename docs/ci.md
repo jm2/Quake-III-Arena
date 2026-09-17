@@ -41,7 +41,10 @@ Retro68 installation, proprietary retail data, or a Mac OS 9 emulator.
     and float conversion limits;
   - checks native/compiled/interpreted VM dispatch with empty, partial, and
     twelve-parameter calls, zero padding, single argument evaluation, and
-    invalid counts. Syscall-specific pointer/range checks remain incomplete.
+    invalid counts, and faulted VM re-entry;
+  - checks common MEMSET/MEMCPY/STRNCPY trap ranges, overlap, null/negative/
+    oversized buffers, terminating sources at image boundaries, and VM
+    destination return values. Remaining syscall families need range checks.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -59,6 +62,7 @@ bash tests/run_vm_loading_tests.sh
 bash tests/run_vm_bytecode_tests.sh
 bash tests/run_vm_runtime_tests.sh
 bash tests/run_vm_call_tests.sh
+bash tests/run_vm_memory_trap_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 

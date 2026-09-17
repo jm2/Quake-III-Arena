@@ -85,8 +85,10 @@ QVMs while any P0 item is open.
         float conversion traps; see [arithmetic evidence](qvm-arithmetic-validation.md).
   - [x] Marshal counted VM call arguments and zero padding explicitly for
         all execution modes; see [call evidence](qvm-call-validation.md).
-  - [ ] Complete syscall pointer/range checks and retain valid PPC QVM
-        compatibility during deferred live acceptance.
+  - [x] Common MEMSET/MEMCPY/STRNCPY syscalls validate full buffers and
+        string boundaries; see [trap evidence](qvm-memory-trap-validation.md).
+  - [ ] Complete remaining syscall pointer/range checks and retain valid PPC
+        QVM compatibility during deferred live acceptance.
 - [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)
       — **high**, connection redirection/injection/hijack.
   - [x] User selected commercial 1.32c compatibility (Quake3e/ioquake3 style).

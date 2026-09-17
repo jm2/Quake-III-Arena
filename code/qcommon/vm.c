@@ -689,6 +689,78 @@ void *VM_ArgPtr( int intValue ) {
 	}
 }
 
+/* Validate complete syscall buffers, retaining legacy address masking. */
+/** Return a complete VM buffer or drop the module before memory is accessed. */
+static void *VM_TrapBuffer( int value, int length ) {
+	int offset;
+	if ( !currentVM || length < 0 || (!value && length) ) {
+		goto invalid;
+	}
+	if ( currentVM->entryPoint ) {
+		return (void *)(unsigned long)(unsigned int)value;
+	}
+	offset = value & currentVM->dataMask;
+	if ( length > currentVM->dataMask + 1 - offset ) {
+		goto invalid;
+	}
+	return currentVM->dataBase + offset;
+invalid:
+	if ( currentVM && !currentVM->entryPoint ) {
+		currentVM->interpretFaulted = qtrue;
+		currentVM->currentlyInterpreting = qfalse;
+	}
+	Com_Error( ERR_DROP, "VM memory trap buffer out of range" );
+	return NULL;
+}
+
+/** Fill only a validated VM range; an empty range needs no buffer. */
+void VM_MemoryFill( int dest, int value, int length ) {
+	void *buffer = VM_TrapBuffer( dest, length );
+	if ( length ) {
+		Com_Memset( buffer, value, length );
+	}
+}
+
+/** Copy validated VM ranges, allowing overlapping source and destination. */
+void VM_MemoryCopy( int dest, int source, int length ) {
+	void *output = VM_TrapBuffer( dest, length );
+	void *input = VM_TrapBuffer( source, length );
+	if ( length ) {
+		memmove( output, input, length );
+	}
+}
+
+/** Copy at most length bytes and zero-pad without reading beyond VM storage. */
+int VM_StringCopy( int dest, int source, int length ) {
+	char *output = VM_TrapBuffer( dest, length );
+	char *input;
+	int copied = 0;
+	if ( length == 0 ) {
+		return dest;
+	}
+	input = VM_TrapBuffer( source, 1 );
+	if ( currentVM->entryPoint ) {
+		strncpy( output, input, length );
+		return dest;
+	}
+	// strncpy may stop reading early at NUL, so permit a short source when
+	// it terminates in range. Reject an unterminated source before writing.
+	while ( copied < length ) {
+		if ( copied >= currentVM->dataMask + 1 - (source & currentVM->dataMask) ) {
+			VM_TrapBuffer( source, copied + 1 );
+			return dest;
+		}
+		if ( input[copied++] == '\0' ) {
+			break;
+		}
+	}
+	memmove( output, input, copied );
+	if ( copied < length ) {
+		Com_Memset( output + copied, 0, length - copied );
+	}
+	return dest;
+}
+
 void *VM_ExplicitArgPtr( vm_t *vm, int intValue ) {
 	if ( !intValue ) {
 		return NULL;
@@ -735,6 +807,7 @@ locals from sp
 #define	STACK_MASK	(MAX_STACK-1)
 
 /* Shared marshalling for interpreted and compiled QVM entry. */
+/** Build the complete command and twelve-argument frame inside the VM stack. */
 int VM_SetupCallFrame( vm_t *vm, const int *args ) {
 	int stack = vm->programStack;
 	int floor = vm->stackBottom > 0 ? vm->stackBottom : 0;
@@ -755,6 +828,7 @@ int VM_SetupCallFrame( vm_t *vm, const int *args ) {
 	return stack;
 }
 
+/** Dispatch counted arguments with zero padding and skip faulted QVM re-entry. */
 int VM_CallArgs( vm_t *vm, int callnum, const int *parameters, int count ) {
 	vm_t *oldVM;
 	int result, args[MAX_VMMAIN_ARGS] = {0};

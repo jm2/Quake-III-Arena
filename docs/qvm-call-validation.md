@@ -37,7 +37,8 @@ pass PEF validation with the temporary libraries described in the
 
 ## Remaining acceptance
 
-Keep #35 open. Syscall-specific pointer/range handling remains incomplete.
+The [next step](qvm-memory-trap-validation.md) bounds common memory traps.
+Keep #35 open: remaining syscall-specific pointer/range handling is incomplete.
 The call harness checks dispatcher arguments with execution stubs; the runtime
 harness checks the interpreter with explicit arrays. Retail baseq3/Team Arena
 and Mac OS 9 execution remains deferred. No native Windows build or legacy
