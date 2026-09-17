@@ -689,13 +689,18 @@ void *VM_ArgPtr( int intValue ) {
 	}
 }
 
-/** Mark the active QVM as faulted before ERR_DROP can invoke module shutdown. */
-void VM_Error( const char *message ) {
-	if ( currentVM && !currentVM->entryPoint ) {
-		currentVM->interpretFaulted = qtrue;
-		currentVM->currentlyInterpreting = qfalse;
+/** Fault the responsible QVM even when engine code has a different current VM. */
+void VM_ErrorForVM( vm_t *vm, const char *message ) {
+	if ( vm && !vm->entryPoint ) {
+		vm->interpretFaulted = qtrue;
+		vm->currentlyInterpreting = qfalse;
 	}
 	Com_Error( ERR_DROP, "%s", message );
+}
+
+/** Mark the active QVM as faulted before ERR_DROP can invoke module shutdown. */
+void VM_Error( const char *message ) {
+	VM_ErrorForVM( currentVM, message );
 }
 
 /* Alignment is required when native code consumes VM structs or floats. */
