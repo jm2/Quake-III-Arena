@@ -689,6 +689,11 @@ void *VM_ArgPtr( int intValue ) {
 	}
 }
 
+/** Report whether a module uses the native structure and pointer ABI. */
+qboolean VM_IsNative( vm_t *vm ) {
+	return vm && vm->entryPoint ? qtrue : qfalse;
+}
+
 /** Fault the responsible QVM even when engine code has a different current VM. */
 void VM_ErrorForVM( vm_t *vm, const char *message ) {
 	if ( vm && !vm->entryPoint ) {
