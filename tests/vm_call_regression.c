@@ -67,6 +67,14 @@ static void TestDispatches( void ) {
 		       "full-argument result" );
 	}
 	Check( dispatches == 9, "dispatch count" );
+	vm.entryPoint = NULL;
+	vm.interpretFaulted = qtrue;
+	for ( mode = 0; mode < 2; mode++ ) {
+		vm.compiled = mode;
+		Check( VM_Call( &vm, 7 ) == 0 && dispatches == 9 &&
+		       currentVM == &previousVM, "faulted VM re-entry" );
+	}
+	vm.interpretFaulted = qfalse;
 }
 
 static void RejectCall( vm_t *target, const int *args, int count ) {

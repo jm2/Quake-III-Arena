@@ -1165,15 +1165,15 @@ int CL_UISystemCalls( int *args ) {
 		return 0;
 
 	case UI_MEMSET:
-		Com_Memset( VMA(1), args[2], args[3] );
+		VM_MemoryFill( args[1], args[2], args[3] );
 		return 0;
 
 	case UI_MEMCPY:
-		Com_Memcpy( VMA(1), VMA(2), args[3] );
+		VM_MemoryCopy( args[1], args[2], args[3] );
 		return 0;
 
 	case UI_STRNCPY:
-		return (int)strncpy( VMA(1), VMA(2), args[3] );
+		return VM_StringCopy( args[1], args[2], args[3] );
 
 	case UI_SIN:
 		return FloatAsInt( sin( VMF(1) ) );

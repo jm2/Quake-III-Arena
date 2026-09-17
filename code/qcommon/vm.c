@@ -689,6 +689,74 @@ void *VM_ArgPtr( int intValue ) {
 	}
 }
 
+/* Validate complete syscall buffers, retaining legacy address masking. */
+static void *VM_TrapBuffer( int value, int length ) {
+	int offset;
+	if ( !currentVM || length < 0 || (!value && length) ) {
+		goto invalid;
+	}
+	if ( currentVM->entryPoint ) {
+		return (void *)(unsigned long)(unsigned int)value;
+	}
+	offset = value & currentVM->dataMask;
+	if ( length > currentVM->dataMask + 1 - offset ) {
+		goto invalid;
+	}
+	return currentVM->dataBase + offset;
+invalid:
+	if ( currentVM && !currentVM->entryPoint ) {
+		currentVM->interpretFaulted = qtrue;
+		currentVM->currentlyInterpreting = qfalse;
+	}
+	Com_Error( ERR_DROP, "VM memory trap buffer out of range" );
+	return NULL;
+}
+
+void VM_MemoryFill( int dest, int value, int length ) {
+	void *buffer = VM_TrapBuffer( dest, length );
+	if ( length ) {
+		Com_Memset( buffer, value, length );
+	}
+}
+
+void VM_MemoryCopy( int dest, int source, int length ) {
+	void *output = VM_TrapBuffer( dest, length );
+	void *input = VM_TrapBuffer( source, length );
+	if ( length ) {
+		memmove( output, input, length );
+	}
+}
+
+int VM_StringCopy( int dest, int source, int length ) {
+	char *output = VM_TrapBuffer( dest, length );
+	char *input;
+	int copied = 0;
+	if ( length == 0 ) {
+		return dest;
+	}
+	input = VM_TrapBuffer( source, 1 );
+	if ( currentVM->entryPoint ) {
+		strncpy( output, input, length );
+		return dest;
+	}
+	// strncpy may stop reading early at NUL, so permit a short source when
+	// it terminates in range. Reject an unterminated source before writing.
+	while ( copied < length ) {
+		if ( copied >= currentVM->dataMask + 1 - (source & currentVM->dataMask) ) {
+			VM_TrapBuffer( source, copied + 1 );
+			return dest;
+		}
+		if ( input[copied++] == '\0' ) {
+			break;
+		}
+	}
+	memmove( output, input, copied );
+	if ( copied < length ) {
+		Com_Memset( output + copied, 0, length - copied );
+	}
+	return dest;
+}
+
 void *VM_ExplicitArgPtr( vm_t *vm, int intValue ) {
 	if ( !intValue ) {
 		return NULL;
@@ -741,6 +809,9 @@ int VM_CallArgs( vm_t *vm, int callnum, const int *parameters, int count ) {
 	if ( !vm || count < 0 || count >= MAX_VMMAIN_ARGS || (count && !parameters) ) {
 		Com_Error( ERR_FATAL, "VM_Call: invalid VM or argument count" );
 		return 0;
+	}
+	if ( !vm->entryPoint && vm->interpretFaulted ) {
+		return 0; // ERR_DROP module shutdown must not re-enter a faulted VM
 	}
 	args[0] = callnum;
 	if ( count ) {
