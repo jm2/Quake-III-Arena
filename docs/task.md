@@ -71,7 +71,7 @@ QVMs while any P0 item is open.
       — **high**, native memory corruption from malformed QVMs.
   - [x] Shared create/restart header validation checks file ranges, signed
         allocation arithmetic, initialized-word alignment, and unchanged
-        restart allocation size. Host ASan/UBSan loader regressions and both
+        restart allocation size/image. Host ASan/UBSan loader regressions and both
         Retro68 product builds pass; see [loader evidence](qvm-loading-validation.md).
   - [x] Validate bytecode decoding and branch targets before interpreter setup,
         with unaligned little-endian reads and host ASan/UBSan regressions;
