@@ -321,7 +321,13 @@ void	VM_Free( vm_t *vm );
 void	VM_Clear(void);
 vm_t	*VM_Restart( vm_t *vm );
 
-int		QDECL VM_Call( vm_t *vm, int callNum, ... );
+#define MAX_VMMAIN_ARGS 13 // command plus twelve retail vmMain parameters
+int VM_CallArgs( vm_t *vm, int callNum, const int *args, int argCount );
+// C99 array initializers carry the supplied count and evaluate each argument
+// once. The leading zero keeps empty calls valid; sizeof does not evaluate it.
+#define VM_Call(vm, callNum, ...) \
+	VM_CallArgs( (vm), (callNum), (const int[]){0, ##__VA_ARGS__} + 1, \
+	             sizeof((const int[]){0, ##__VA_ARGS__}) / sizeof(int) - 1 )
 
 void	VM_Debug( int level );
 

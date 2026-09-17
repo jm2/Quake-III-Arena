@@ -37,8 +37,10 @@ Retro68 installation, proprietary retail data, or a Mac OS 9 emulator.
   - checks full-width loads, legacy masked stores, ARG boundaries, block-copy
     bounds/overlap, and bounded syscall argument snapshots;
   - checks wrapping integer arithmetic, division/modulo traps, shift counts,
-    and float conversion limits. Syscall-specific pointer/range checks and
-    VM call marshalling remain incomplete.
+    and float conversion limits;
+  - checks native/compiled/interpreted VM dispatch with empty, partial, and
+    twelve-parameter calls, zero padding, single argument evaluation, and
+    invalid counts. Syscall-specific pointer/range checks remain incomplete.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -55,6 +57,7 @@ bash tests/run_host_c_tests.sh
 bash tests/run_vm_loading_tests.sh
 bash tests/run_vm_bytecode_tests.sh
 bash tests/run_vm_runtime_tests.sh
+bash tests/run_vm_call_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
