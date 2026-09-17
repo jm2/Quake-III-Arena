@@ -49,7 +49,10 @@ PR head while retaining checks on the merged default branch.
     malformed looping movies, and cleanup before the first frame;
   - checks RoQ dimension/product limits, complete quad groups in both frame
     halves, exact-sized resampling sources and textures, hardware limits,
-    native averaging, and matching preview/videoMap upload dimensions.
+    native averaging, and matching preview/videoMap upload dimensions;
+  - checks every full RoQ codebook truncation and fixed RGBA table entry,
+    partial updates, all VQ opcodes, exact payload prefixes, control-word refill,
+    both frame halves, signed/unaligned motion, and rejection before writes.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -68,6 +71,7 @@ bash tests/run_vm_bytecode_tests.sh
 bash tests/run_vm_runtime_tests.sh
 bash tests/run_roq_stream_tests.sh
 bash tests/run_roq_frame_tests.sh
+bash tests/run_roq_vq_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 

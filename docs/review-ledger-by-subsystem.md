@@ -235,7 +235,8 @@ implementation or check, without implying issue completion.
 - [ ] [#41 — RoQ chunk/dimension/audio/cursor bounds](https://github.com/jm2/Quake-III-Arena/issues/41)
   - [x] Chunk/audio bounds and early cleanup have [host regressions](roq-stream-validation.md).
   - [x] Frame/quad geometry and renderer source/output bounds have [host regressions](roq-frame-validation.md).
-  - [ ] Complete VQ cursor/motion bounds and deferred retail acceptance.
+  - [x] Codebook/VQ cursors and frame preflight have [host regressions](roq-vq-validation.md).
+  - [ ] Complete deferred retail cinematic acceptance.
 - [ ] [#42 — BMP/PCX/TGA loaders need bounded cursors](https://github.com/jm2/Quake-III-Arena/issues/42)
 - [ ] [#43 — JPEG I/O is not length-aware and APIs are duplicated](https://github.com/jm2/Quake-III-Arena/issues/43)
   - [x] Local RGBA output allocation/dimension validation fixes one deterministic
