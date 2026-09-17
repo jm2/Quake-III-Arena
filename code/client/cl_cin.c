@@ -944,143 +944,89 @@ static void decodeCodeBook( byte *input, unsigned short roq_flags )
 *
 ******************************************************************************/
 
-static void recurseQuad( long startX, long startY, long quadSize, long xOff, long yOff )
-{
-	byte *scroff;
-	long bigx, bigy, lowx, lowy, useY;
-	long offset;
-
-	offset = cinTable[currentHandle].screenDelta;
-	
-	lowx = lowy = 0;
-	bigx = cinTable[currentHandle].xsize;
-	bigy = cinTable[currentHandle].ysize;
-
-	if (bigx > cinTable[currentHandle].CIN_WIDTH) bigx = cinTable[currentHandle].CIN_WIDTH;
-	if (bigy > cinTable[currentHandle].CIN_HEIGHT) bigy = cinTable[currentHandle].CIN_HEIGHT;
-
-	if ( (startX >= lowx) && (startX+quadSize) <= (bigx) && (startY+quadSize) <= (bigy) && (startY >= lowy) && quadSize <= MAXSIZE) {
-		useY = startY;
-		scroff = cin.linbuf + (useY+((cinTable[currentHandle].CIN_HEIGHT-bigy)>>1)+yOff)*(cinTable[currentHandle].samplesPerLine) + (((startX+xOff))*cinTable[currentHandle].samplesPerPixel);
-
-		cin.qStatus[0][cinTable[currentHandle].onQuad  ] = scroff;
-		cin.qStatus[1][cinTable[currentHandle].onQuad++] = scroff+offset;
+/** Append only complete blocks within one validated frame half and the quad table. */
+static qboolean recurseQuad( long startX, long startY, long quadSize ) {
+	cin_cache *movie = &cinTable[currentHandle];
+	long offset, end;
+	if ( startX + quadSize <= movie->xsize && startY + quadSize <= movie->ysize && quadSize <= MAXSIZE ) {
+		offset = startY * movie->samplesPerLine + startX * movie->samplesPerPixel;
+		end = offset + (quadSize - 1) * movie->samplesPerLine + quadSize * movie->samplesPerPixel;
+		if ( movie->onQuad >= sizeof(cin.qStatus[0]) / sizeof(cin.qStatus[0][0]) - 64 ||
+		     offset < 0 || end > movie->screenDelta ) return qfalse;
+		cin.qStatus[0][movie->onQuad] = cin.linbuf + offset;
+		cin.qStatus[1][movie->onQuad++] = cin.linbuf + movie->screenDelta + offset;
 	}
-
-	if ( quadSize != MINSIZE ) {
-		quadSize >>= 1;
-		recurseQuad( startX,		  startY		  , quadSize, xOff, yOff );
-		recurseQuad( startX+quadSize, startY		  , quadSize, xOff, yOff );
-		recurseQuad( startX,		  startY+quadSize , quadSize, xOff, yOff );
-		recurseQuad( startX+quadSize, startY+quadSize , quadSize, xOff, yOff );
-	}
+	if ( quadSize == MINSIZE ) return qtrue;
+	quadSize >>= 1;
+	return recurseQuad(startX, startY, quadSize) &&
+	       recurseQuad(startX + quadSize, startY, quadSize) &&
+	       recurseQuad(startX, startY + quadSize, quadSize) &&
+	       recurseQuad(startX + quadSize, startY + quadSize, quadSize);
 }
 
-
-/******************************************************************************
-*
-* Function:		
-*
-* Description:	
-*
-******************************************************************************/
-
-static void setupQuad( long xOff, long yOff )
-{
-	long numQuadCels, i,x,y;
-	byte *temp;
-
-	if (xOff == cin.oldXOff && yOff == cin.oldYOff && cinTable[currentHandle].ysize == cin.oldysize && cinTable[currentHandle].xsize == cin.oldxsize) {
-		return;
-	}
-
-	cin.oldXOff = xOff;
-	cin.oldYOff = yOff;
-	cin.oldysize = cinTable[currentHandle].ysize;
-	cin.oldxsize = cinTable[currentHandle].xsize;
-
-	numQuadCels  = (cinTable[currentHandle].CIN_WIDTH*cinTable[currentHandle].CIN_HEIGHT) / (16);
-	numQuadCels += numQuadCels/4 + numQuadCels/16;
-	numQuadCels += 64;							  // for overflow
-
-	numQuadCels  = (cinTable[currentHandle].xsize*cinTable[currentHandle].ysize) / (16);
-	numQuadCels += numQuadCels/4;
-	numQuadCels += 64;							  // for overflow
-
-	cinTable[currentHandle].onQuad = 0;
-
-	for(y=0;y<(long)cinTable[currentHandle].ysize;y+=16) 
-		for(x=0;x<(long)cinTable[currentHandle].xsize;x+=16) 
-			recurseQuad( x, y, 16, xOff, yOff );
-
-	temp = NULL;
-
-	for(i=(numQuadCels-64);i<numQuadCels;i++) {
-		cin.qStatus[0][i] = temp;			  // eoq
-		cin.qStatus[1][i] = temp;			  // eoq
-	}
-}
-
-/******************************************************************************
-*
-* Function:		
-*
-* Description:	
-*
-******************************************************************************/
-
-static void readQuadInfo( byte *qData )
-{
-	if (currentHandle < 0) return;
-
-	cinTable[currentHandle].xsize    = qData[0]+qData[1]*256;
-	cinTable[currentHandle].ysize    = qData[2]+qData[3]*256;
-	cinTable[currentHandle].maxsize  = qData[4]+qData[5]*256;
-	cinTable[currentHandle].minsize  = qData[6]+qData[7]*256;
-	
-	cinTable[currentHandle].CIN_HEIGHT = cinTable[currentHandle].ysize;
-	cinTable[currentHandle].CIN_WIDTH  = cinTable[currentHandle].xsize;
-
-	cinTable[currentHandle].samplesPerLine = cinTable[currentHandle].CIN_WIDTH*cinTable[currentHandle].samplesPerPixel;
-	cinTable[currentHandle].screenDelta = cinTable[currentHandle].CIN_HEIGHT*cinTable[currentHandle].samplesPerLine;
-
-	cinTable[currentHandle].half = qfalse;
-	cinTable[currentHandle].smootheddouble = qfalse;
-	
-	cinTable[currentHandle].VQ0 = cinTable[currentHandle].VQNormal;
-	cinTable[currentHandle].VQ1 = cinTable[currentHandle].VQBuffer;
-
-	cinTable[currentHandle].t[0] = (0 - (unsigned int)cin.linbuf)+(unsigned int)cin.linbuf+cinTable[currentHandle].screenDelta;
-	cinTable[currentHandle].t[1] = (0 - ((unsigned int)cin.linbuf + cinTable[currentHandle].screenDelta))+(unsigned int)cin.linbuf;
-
-        cinTable[currentHandle].drawX = cinTable[currentHandle].CIN_WIDTH;
-        cinTable[currentHandle].drawY = cinTable[currentHandle].CIN_HEIGHT;
-        
-	// rage pro is very slow at 512 wide textures, voodoo can't do it at all
-	if ( glConfig.hardwareType == GLHW_RAGEPRO || glConfig.maxTextureSize <= 256) {
-                if (cinTable[currentHandle].drawX>256) {
-                        cinTable[currentHandle].drawX = 256;
-                }
-                if (cinTable[currentHandle].drawY>256) {
-                        cinTable[currentHandle].drawY = 256;
-                }
-		if (cinTable[currentHandle].CIN_WIDTH != 256 || cinTable[currentHandle].CIN_HEIGHT != 256) {
-			Com_Printf("HACK: approxmimating cinematic for Rage Pro or Voodoo\n");
+/** Build complete 8x8/4x4 groups and reserve termination entries without unchecked products. */
+static qboolean setupQuad( void ) {
+	cin_cache *movie = &cinTable[currentHandle];
+	long count, i, x, y;
+	count = (movie->xsize / 8) * (movie->ysize / 8) * 5;
+	if ( count <= 0 || count > sizeof(cin.qStatus[0]) / sizeof(cin.qStatus[0][0]) - 64 ||
+	     movie->screenDelta <= 0 || movie->screenDelta > sizeof(cin.linbuf) / 2 ) return qfalse;
+	if ( movie->onQuad == count && movie->ysize == cin.oldysize && movie->xsize == cin.oldxsize ) return qtrue;
+	movie->onQuad = 0;
+	for ( y = 0; y < movie->ysize; y += 16 ) {
+		for ( x = 0; x < movie->xsize; x += 16 ) {
+			if ( !recurseQuad(x, y, 16) ) return qfalse;
 		}
 	}
-#if defined(MACOS_X)
-	cinTable[currentHandle].drawX = 256;
-	cinTable[currentHandle].drawX = 256;
-#endif
+	if ( movie->onQuad != count ) return qfalse;
+	for ( i = count; i < count + 64; i++ ) cin.qStatus[0][i] = cin.qStatus[1][i] = NULL;
+	cin.oldysize = movie->ysize;
+	cin.oldxsize = movie->xsize;
+	return qtrue;
 }
 
-/******************************************************************************
-*
-* Function:		
-*
-* Description:	
-*
-******************************************************************************/
+/** Choose a supported power-of-two texture size within the source and hardware limits. */
+static int RoQDrawSize( unsigned int source, int limit ) {
+	int size = 1;
+	while ( size <= source / 2 && size <= limit / 2 ) size <<= 1;
+	return size;
+}
+
+/** Validate geometry before products, frame offsets, quad construction, or cache mutation. */
+static qboolean readQuadInfo( byte *data, byte *end ) {
+	cin_cache *movie = &cinTable[currentHandle];
+	unsigned int width, height, maxsize, minsize, maxPixels;
+	int limit;
+	if ( end - data < 8 ) return qfalse;
+	width = data[0] | (unsigned int)data[1] << 8;
+	height = data[2] | (unsigned int)data[3] << 8;
+	maxsize = data[4] | (unsigned int)data[5] << 8;
+	minsize = data[6] | (unsigned int)data[7] << 8;
+	maxPixels = sizeof(cin.linbuf) / (2 * 4);
+	if ( width < 8 || height < 8 || (width & 7) || (height & 7) ||
+	     height > maxPixels / width || maxsize != MAXSIZE || minsize != MINSIZE ||
+	     movie->samplesPerPixel != 4 ) return qfalse;
+	movie->xsize = movie->CIN_WIDTH = width;
+	movie->ysize = movie->CIN_HEIGHT = height;
+	movie->maxsize = maxsize;
+	movie->minsize = minsize;
+	movie->samplesPerLine = width * 4;
+	movie->screenDelta = height * movie->samplesPerLine;
+	movie->half = movie->smootheddouble = qfalse;
+	movie->VQ0 = movie->VQNormal;
+	movie->VQ1 = movie->VQBuffer;
+	movie->t[0] = movie->screenDelta;
+	movie->t[1] = -movie->screenDelta;
+	limit = glConfig.maxTextureSize > 0 ? glConfig.maxTextureSize : 256;
+	if ( glConfig.hardwareType == GLHW_RAGEPRO && limit > 256 ) limit = 256;
+	movie->drawX = RoQDrawSize( width, limit );
+	movie->drawY = RoQDrawSize( height, limit );
+#if defined(MACOS_X)
+	if ( movie->drawX > 256 ) movie->drawX = 256;
+	if ( movie->drawY > 256 ) movie->drawY = 256;
+#endif
+	return setupQuad();
+}
 
 static void RoQPrepMcomp( long xoff, long yoff ) 
 {
@@ -1300,6 +1246,7 @@ static qboolean RoQDecodeChunk( const roqChunk_t *chunk, byte *framedata, byte *
 	switch(cinTable[currentHandle].roq_id) 
 	{
 		case	ROQ_QUAD_VQ:
+			if ( cinTable[currentHandle].numQuads < 0 || cinTable[currentHandle].screenDelta <= 0 || cinTable[currentHandle].onQuad <= 0 ) return qfalse;
 			if ((cinTable[currentHandle].numQuads&1)) {
 				cinTable[currentHandle].normalBuffer0 = cinTable[currentHandle].t[1];
 				RoQPrepMcomp( cinTable[currentHandle].roqF0, cinTable[currentHandle].roqF1 );
@@ -1331,8 +1278,7 @@ static qboolean RoQDecodeChunk( const roqChunk_t *chunk, byte *framedata, byte *
 		case	ROQ_QUAD_INFO:
 			if ( end - framedata < 8 ) return qfalse;
 			if (cinTable[currentHandle].numQuads == -1) {
-				readQuadInfo( framedata );
-				setupQuad( 0, 0 );
+				if ( !readQuadInfo(framedata, end) ) return qfalse;
 				// we need to use CL_ScaledMilliseconds because of the smp mode calls from the renderer
 				cinTable[currentHandle].startTime = cinTable[currentHandle].lastTime = CL_ScaledMilliseconds()*com_timescale->value;
 			}
@@ -1635,81 +1581,48 @@ SCR_DrawCinematic
 
 ==================
 */
-void CIN_DrawCinematic (int handle) {
-	float	x, y, w, h;
-	byte	*buf;
-
-	if (handle < 0 || handle>= MAX_VIDEO_HANDLES || cinTable[handle].status == FMV_EOF) return;
-
-	if (!cinTable[handle].buf) {
-        Sys_LogPrintf("CIN_DrawCinematic: Buffer NULL for handle %d\n", handle);
-		return;
+/** Scale only from pixels in the validated source frame into an exact-sized texture buffer. */
+static byte *RoQResampleFrame( const cin_cache *movie ) {
+	byte *output;
+	int x, y, c, sourceX, sourceY, offset;
+	qboolean averageFour, averageTwo;
+	if ( movie->CIN_WIDTH == movie->drawX && movie->CIN_HEIGHT == movie->drawY ) return NULL;
+	output = Hunk_AllocateTempMemory( movie->drawX * movie->drawY * 4 );
+	averageFour = movie->CIN_WIDTH == 512 && movie->CIN_HEIGHT == 512 && movie->drawX == 256 && movie->drawY == 256;
+	averageTwo = movie->CIN_WIDTH == 512 && movie->CIN_HEIGHT == 256 && movie->drawX == 256 && movie->drawY == 256;
+	for ( y = 0; y < movie->drawY; y++ ) {
+		sourceY = (y * movie->CIN_HEIGHT) / movie->drawY;
+		for ( x = 0; x < movie->drawX; x++ ) {
+			sourceX = (x * movie->CIN_WIDTH) / movie->drawX;
+			offset = sourceY * movie->samplesPerLine + sourceX * 4;
+			for ( c = 0; c < 4; c++ ) {
+				int value = movie->buf[offset + c];
+				if ( averageFour ) {
+					value = (value + movie->buf[offset + 4 + c] + movie->buf[offset + movie->samplesPerLine + c] + movie->buf[offset + movie->samplesPerLine + 4 + c]) >> 2;
+				} else if ( averageTwo ) {
+					value = (value + movie->buf[offset + 4 + c]) >> 1;
+				}
+				output[(y * movie->drawX + x) * 4 + c] = value;
+			}
+		}
 	}
+	return output;
+}
 
-	x = cinTable[handle].xpos;
-	y = cinTable[handle].ypos;
-	w = cinTable[handle].width;
-	h = cinTable[handle].height;
-	buf = cinTable[handle].buf;
+/** Draw only a live movie with complete geometry and a texture that matches its source bytes. */
+void CIN_DrawCinematic( int handle ) {
+	float x, y, w, h;
+	byte *scaled;
+	cin_cache *movie;
+	if ( handle < 0 || handle >= MAX_VIDEO_HANDLES || !cinTable[handle].fileName[0] ) return;
+	movie = &cinTable[handle];
+	if ( movie->status == FMV_EOF || !movie->buf || movie->screenDelta <= 0 ) return;
+	x = movie->xpos; y = movie->ypos; w = movie->width; h = movie->height;
 	SCR_AdjustFrom640( &x, &y, &w, &h );
-
-	if (cinTable[handle].dirty && (cinTable[handle].CIN_WIDTH != cinTable[handle].drawX || cinTable[handle].CIN_HEIGHT != cinTable[handle].drawY)) {
-		int ix, iy, *buf2, *buf3, xm, ym, ll;
-                
-		xm = cinTable[handle].CIN_WIDTH/256;
-		ym = cinTable[handle].CIN_HEIGHT/256;
-                ll = 8;
-                if (cinTable[handle].CIN_WIDTH==512) {
-                    ll = 9;
-                }
-                
-		buf3 = (int*)buf;
-		buf2 = Hunk_AllocateTempMemory( 256*256*4 );
-                if (xm==2 && ym==2) {
-                    byte *bc2, *bc3;
-                    int	ic, iiy;
-                    
-                    bc2 = (byte *)buf2;
-                    bc3 = (byte *)buf3;
-                    for (iy = 0; iy<256; iy++) {
-                            iiy = iy<<12;
-                            for (ix = 0; ix<2048; ix+=8) {
-                                for(ic = ix;ic<(ix+4);ic++) {
-                                    *bc2=(bc3[iiy+ic]+bc3[iiy+4+ic]+bc3[iiy+2048+ic]+bc3[iiy+2048+4+ic])>>2;
-                                    bc2++;
-                                }
-                            }
-                    }
-                } else if (xm==2 && ym==1) {
-                    byte *bc2, *bc3;
-                    int	ic, iiy;
-                    
-                    bc2 = (byte *)buf2;
-                    bc3 = (byte *)buf3;
-                    for (iy = 0; iy<256; iy++) {
-                            iiy = iy<<11;
-                            for (ix = 0; ix<2048; ix+=8) {
-                                for(ic = ix;ic<(ix+4);ic++) {
-                                    *bc2=(bc3[iiy+ic]+bc3[iiy+4+ic])>>1;
-                                    bc2++;
-                                }
-                            }
-                    }
-                } else {
-                    for (iy = 0; iy<256; iy++) {
-                            for (ix = 0; ix<256; ix++) {
-                                    buf2[(iy<<8)+ix] = buf3[((iy*ym)<<ll) + (ix*xm)];
-                            }
-                    }
-                }
-		re.DrawStretchRaw( x, y, w, h, 256, 256, (byte *)buf2, handle, qtrue);
-		cinTable[handle].dirty = qfalse;
-		Hunk_FreeTempMemory(buf2);
-		return;
-	}
-
-	re.DrawStretchRaw( x, y, w, h, cinTable[handle].drawX, cinTable[handle].drawY, buf, handle, cinTable[handle].dirty);
-	cinTable[handle].dirty = qfalse;
+	scaled = RoQResampleFrame( movie );
+	re.DrawStretchRaw( x, y, w, h, movie->drawX, movie->drawY, scaled ? scaled : movie->buf, handle, movie->dirty );
+	movie->dirty = qfalse;
+	if ( scaled ) Hunk_FreeTempMemory( scaled );
 }
 
 void CL_PlayCinematic_f(void) {
@@ -1776,26 +1689,20 @@ void SCR_StopCinematic(void) {
 	}
 }
 
-void CIN_UploadCinematic(int handle) {
-	if (handle >= 0 && handle < MAX_VIDEO_HANDLES) {
-		if (!cinTable[handle].buf) {
-			return;
-		}
-		if (cinTable[handle].playonwalls <= 0 && cinTable[handle].dirty) {
-			if (cinTable[handle].playonwalls == 0) {
-				cinTable[handle].playonwalls = -1;
-			} else {
-				if (cinTable[handle].playonwalls == -1) {
-					cinTable[handle].playonwalls = -2;
-				} else {
-					cinTable[handle].dirty = qfalse;
-				}
-			}
-		}
-		re.UploadCinematic( 256, 256, 256, 256, cinTable[handle].buf, handle, cinTable[handle].dirty);
-		if (cl_inGameVideo->integer == 0 && cinTable[handle].playonwalls == 1) {
-			cinTable[handle].playonwalls--;
-		}
+/** Upload the same bounded texture pixels and dimensions used by cinematic previews. */
+void CIN_UploadCinematic( int handle ) {
+	cin_cache *movie;
+	byte *scaled;
+	if ( handle < 0 || handle >= MAX_VIDEO_HANDLES || !cinTable[handle].fileName[0] ) return;
+	movie = &cinTable[handle];
+	if ( movie->status == FMV_EOF || !movie->buf || movie->screenDelta <= 0 ) return;
+	if ( movie->playonwalls <= 0 && movie->dirty ) {
+		if ( movie->playonwalls == 0 ) movie->playonwalls = -1;
+		else if ( movie->playonwalls == -1 ) movie->playonwalls = -2;
+		else movie->dirty = qfalse;
 	}
+	scaled = RoQResampleFrame( movie );
+	re.UploadCinematic( movie->drawX, movie->drawY, movie->drawX, movie->drawY, scaled ? scaled : movie->buf, handle, movie->dirty );
+	if ( scaled ) Hunk_FreeTempMemory( scaled );
+	if ( cl_inGameVideo->integer == 0 && movie->playonwalls == 1 ) movie->playonwalls--;
 }
-
