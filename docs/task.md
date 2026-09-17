@@ -98,6 +98,8 @@ QVMs while any P0 item is open.
         see [server evidence](qvm-server-core-validation.md).
   - [x] Connection-denial strings validate termination in their owning VM
         after calls return; see [return evidence](qvm-returned-string-validation.md).
+  - [x] Botlib common/navigation trap ranges, empty output capacities, and
+        allocated client indices have [sanitizer regressions](qvm-botlib-navigation-validation.md).
   - [ ] Complete remaining syscall pointer/range checks and retain valid PPC
         QVM compatibility during deferred live acceptance.
 - [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)
