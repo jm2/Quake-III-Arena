@@ -37,13 +37,17 @@ void QDECL Com_Error( int level, const char *format, ... ) {
 	longjmp( errorJump, 1 );
 }
 
-void VM_Debug( int level ) { (void)level; }
 void *Hunk_Alloc( int size, ha_pref preference ) {
 	(void)preference;
 	Check( size > 0 && !codeAllocation, "code allocation" );
 	codeAllocation = calloc( 1, size );
 	Check( codeAllocation != NULL, "allocation failed" );
 	return codeAllocation;
+}
+
+int VM_CallCompiled( vm_t *target, int *args ) {
+	(void)target; (void)args;
+	Check( 0, "unexpected compiled execution" ); return 0;
 }
 
 static int SystemCall( int *args ) {

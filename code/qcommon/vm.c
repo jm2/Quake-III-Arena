@@ -734,6 +734,27 @@ locals from sp
 #define	MAX_STACK	256
 #define	STACK_MASK	(MAX_STACK-1)
 
+/* Shared marshalling for interpreted and compiled QVM entry. */
+int VM_SetupCallFrame( vm_t *vm, const int *args ) {
+	int stack = vm->programStack;
+	int floor = vm->stackBottom > 0 ? vm->stackBottom : 0;
+	int arg;
+	if ( !args || (stack & 3) || stack < floor ||
+	     stack - floor < VM_ENTRY_FRAME_SIZE || stack > vm->dataMask + 1 ) {
+		vm->interpretFaulted = qtrue;
+		vm->currentlyInterpreting = qfalse;
+		Com_Error( ERR_DROP, "VM entry stack out of range" );
+		return 0;
+	}
+	stack -= VM_ENTRY_FRAME_SIZE;
+	for ( arg = 0; arg < MAX_VMMAIN_ARGS; arg++ ) {
+		*(int *)(vm->dataBase + stack + 8 + arg * 4) = args[arg];
+	}
+	*(int *)(vm->dataBase + stack + 4) = 0;
+	*(int *)(vm->dataBase + stack) = -1;
+	return stack;
+}
+
 int VM_CallArgs( vm_t *vm, int callnum, const int *parameters, int count ) {
 	vm_t *oldVM;
 	int result, args[MAX_VMMAIN_ARGS] = {0};
@@ -741,6 +762,9 @@ int VM_CallArgs( vm_t *vm, int callnum, const int *parameters, int count ) {
 	if ( !vm || count < 0 || count >= MAX_VMMAIN_ARGS || (count && !parameters) ) {
 		Com_Error( ERR_FATAL, "VM_Call: invalid VM or argument count" );
 		return 0;
+	}
+	if ( !vm->entryPoint && vm->interpretFaulted ) {
+		return 0; // ERR_DROP module shutdown must not re-enter a faulted VM
 	}
 	args[0] = callnum;
 	if ( count ) {

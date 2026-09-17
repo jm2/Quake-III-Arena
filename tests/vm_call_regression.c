@@ -69,6 +69,28 @@ static void TestDispatches( void ) {
 	Check( dispatches == 9, "dispatch count" );
 }
 
+static void TestSharedFrame( void ) {
+	int args[MAX_VMMAIN_ARGS], i;
+	byte image[256], before[256];
+	int stack;
+	memset( image, 0x5a, sizeof(image) );
+	memcpy( before, image, sizeof(image) );
+	vm.dataBase = image;
+	vm.dataMask = sizeof(image) - 1;
+	vm.programStack = sizeof(image);
+	vm.stackBottom = 0;
+	for ( i = 0; i < MAX_VMMAIN_ARGS; i++ ) args[i] = 100 + i;
+	stack = VM_SetupCallFrame( &vm, args );
+	Check( stack == (int)sizeof(image) - VM_ENTRY_FRAME_SIZE, "shared frame size" );
+	Check( !memcmp( image, before, stack ), "entry overwrote preceding data" );
+	Check( *(int *)(image + stack) == -1 && *(int *)(image + stack + 4) == 0,
+	       "entry return slots" );
+	for ( i = 0; i < MAX_VMMAIN_ARGS; i++ ) {
+		Check( *(int *)(image + stack + 8 + i * 4) == args[i], "shared frame arguments" );
+	}
+	vm.dataBase = NULL;
+}
+
 static void RejectCall( vm_t *target, const int *args, int count ) {
 	vm_t *before = currentVM;
 	int callsBefore = dispatches;
@@ -83,6 +105,7 @@ static void RejectCall( vm_t *target, const int *args, int count ) {
 }
 int main( void ) {
 	TestDispatches();
+	TestSharedFrame();
 	RejectCall( NULL, expected, 1 );
 	RejectCall( &vm, NULL, 1 );
 	RejectCall( &vm, expected, -1 );

@@ -298,8 +298,7 @@ int	VM_CallInterpreted( vm_t *vm, int *args ) {
 	int		v1;
 	int		dataMask;
 	int		stackFloor;
-	int		arg;
-	const int entryFrame = 8 + 4 * MAX_VMMAIN_ARGS;
+	const int entryFrame = VM_ENTRY_FRAME_SIZE;
 	qboolean wasInterpreting;
 #ifdef DEBUG_VM
 	vmSymbol_t	*profileSymbol;
@@ -340,17 +339,7 @@ int	VM_CallInterpreted( vm_t *vm, int *args ) {
 	programCounter = 0;
 
 	stackFloor = vm->stackBottom > 0 ? vm->stackBottom : 0;
-	if ( (programStack & 3) || programStack < stackFloor ||
-	     programStack - stackFloor < entryFrame || programStack > dataMask + 1 ) {
-		VM_INTERPRETER_ERROR( "VM entry stack out of range" );
-	}
-	programStack -= entryFrame;
-
-	for ( arg = 0; arg < MAX_VMMAIN_ARGS; arg++ ) {
-		*(int *)&image[programStack + 8 + arg * 4] = args[arg];
-	}
-	*(int *)&image[ programStack + 4 ] = 0;	// return stack
-	*(int *)&image[ programStack ] = -1;	// will terminate the loop on return
+	programStack = VM_SetupCallFrame( vm, args );
 
 	vm->callLevel = 0;
 	
