@@ -81,6 +81,9 @@ static	unsigned short		vq8[256*256*4];
 typedef struct {
 	byte				linbuf[DEFAULT_CIN_WIDTH*DEFAULT_CIN_HEIGHT*4*2];
 	byte				file[65536];
+	byte scaledFrame[DEFAULT_CIN_WIDTH*DEFAULT_CIN_HEIGHT*4];
+	const void *scaledOwner;
+	qboolean scaledValid;
 	short				sqrTable[256];
 
 	unsigned int		mcomp[256];
@@ -1017,6 +1020,7 @@ static qboolean readQuadInfo( byte *data, byte *end ) {
 	movie->VQ1 = movie->VQBuffer;
 	movie->t[0] = movie->screenDelta;
 	movie->t[1] = -movie->screenDelta;
+	cin.scaledValid = qfalse;
 	limit = glConfig.maxTextureSize > 0 ? glConfig.maxTextureSize : 256;
 	if ( glConfig.hardwareType == GLHW_RAGEPRO && limit > 256 ) limit = 256;
 	movie->drawX = RoQDrawSize( width, limit );
@@ -1102,6 +1106,7 @@ static void RoQCloseFile( void ) {
 		movie->iFile = 0;
 	}
 	movie->streaming = qfalse;
+	cin.scaledValid = qfalse;
 }
 
 /** Reopen and validate the current file before starting another playback pass. */
@@ -1262,6 +1267,7 @@ static qboolean RoQDecodeChunk( const roqChunk_t *chunk, byte *framedata, byte *
 				Com_Memcpy(cin.linbuf+cinTable[currentHandle].screenDelta, cin.linbuf, cinTable[currentHandle].samplesPerLine*cinTable[currentHandle].ysize);
 			}
 			cinTable[currentHandle].numQuads++;
+			cin.scaledValid = qfalse;
 			cinTable[currentHandle].dirty = qtrue;
 			break;
 		case ROQ_CODEBOOK: {
@@ -1330,6 +1336,7 @@ static qboolean RoQ_init( void ) {
 	if ( !movie->roqFPS ) movie->roqFPS = 30;
 	movie->numQuads = -1;
 	movie->hasChunk = qtrue;
+	cin.scaledValid = qfalse;
 	RoQSetChunk( &chunk );
 	return qtrue;
 }
@@ -1581,13 +1588,14 @@ SCR_DrawCinematic
 
 ==================
 */
-/** Scale only from pixels in the validated source frame into an exact-sized texture buffer. */
+/** Cache bounded texture pixels until a new frame, geometry, or playback pass invalidates them. */
 static byte *RoQResampleFrame( const cin_cache *movie ) {
 	byte *output;
 	int x, y, c, sourceX, sourceY, offset;
 	qboolean averageFour, averageTwo;
 	if ( movie->CIN_WIDTH == movie->drawX && movie->CIN_HEIGHT == movie->drawY ) return NULL;
-	output = Hunk_AllocateTempMemory( movie->drawX * movie->drawY * 4 );
+	if ( cin.scaledValid && cin.scaledOwner == movie ) return cin.scaledFrame;
+	output = cin.scaledFrame;
 	averageFour = movie->CIN_WIDTH == 512 && movie->CIN_HEIGHT == 512 && movie->drawX == 256 && movie->drawY == 256;
 	averageTwo = movie->CIN_WIDTH == 512 && movie->CIN_HEIGHT == 256 && movie->drawX == 256 && movie->drawY == 256;
 	for ( y = 0; y < movie->drawY; y++ ) {
@@ -1606,6 +1614,8 @@ static byte *RoQResampleFrame( const cin_cache *movie ) {
 			}
 		}
 	}
+	cin.scaledOwner = movie;
+	cin.scaledValid = qtrue;
 	return output;
 }
 
@@ -1622,7 +1632,6 @@ void CIN_DrawCinematic( int handle ) {
 	scaled = RoQResampleFrame( movie );
 	re.DrawStretchRaw( x, y, w, h, movie->drawX, movie->drawY, scaled ? scaled : movie->buf, handle, movie->dirty );
 	movie->dirty = qfalse;
-	if ( scaled ) Hunk_FreeTempMemory( scaled );
 }
 
 void CL_PlayCinematic_f(void) {
@@ -1703,6 +1712,5 @@ void CIN_UploadCinematic( int handle ) {
 	}
 	scaled = RoQResampleFrame( movie );
 	re.UploadCinematic( movie->drawX, movie->drawY, movie->drawX, movie->drawY, scaled ? scaled : movie->buf, handle, movie->dirty );
-	if ( scaled ) Hunk_FreeTempMemory( scaled );
 	if ( cl_inGameVideo->integer == 0 && movie->playonwalls == 1 ) movie->playonwalls--;
 }

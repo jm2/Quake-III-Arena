@@ -11,7 +11,9 @@ halves replace pointer-to-32-bit casts. VQ data before geometry is rejected.
 Preview drawing and videoMap uploads use the same texture dimensions and
 pixel buffer. Each axis selects a power of two within the source and hardware
 limits, retaining the Rage Pro 256 limit. Generic resampling reads source
-rows using the validated stride into an exact-sized output. The standard
+rows using the validated stride into a bounded shared 1 MiB texture cache.
+Repeated previews/uploads reuse those pixels without allocation or conversion;
+new VQ output, geometry, playback passes, and file close invalidate the cache. The standard
 512x512 and 512x256 to 256x256 averaging paths retain their native behavior.
 Smaller/rectangular frames no longer use hardcoded 256/512 row offsets or
 submit 256x256 pixels regardless of their source size. Stopped frames are
@@ -22,7 +24,9 @@ never submitted again.
 The new ASan/UBSan fixture executes actual open/run/stop, quad construction,
 preview drawing and upload callbacks. It verifies every block in both frame
 halves and the termination reservation, and every submitted texture pixel.
-Standalone source frames and output textures have exact-sized allocations.
+Standalone source frames have exact-sized allocations. Scaled refreshes poison
+the source after its first conversion and still require every cached output
+pixel to match, proving there is no repeated source read or allocation.
 
 Cases include minimum 8x8, 16x16, non-power-of-two 24x24, retail 256/512,
 maximum-area 8x32768 and 32768x8, zero/small/non-aligned dimensions,
@@ -38,8 +42,8 @@ validation with the temporary libraries in [loading evidence](qvm-loading-valida
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,673,851 | `2aca1f59160b2221b6ebbc2ece4e6329d4c67ab1d15dc92a277de0b2a3c0c0e4` |
-| Quake3_TeamArena | 3,822,425 | `8c73c16f0a8ee6367e85461f8e9e51474f000cdcd4c91466ace0aec082229087` |
+| Quake3 | 3,673,857 | `97c6a2784fab068aa6f812c36c908699acbeb3f4ceb9ad88bc072be35a20f042` |
+| Quake3_TeamArena | 3,822,431 | `3af0b02b65d10b12a5fefebb938227a33033dee22f122b8c9feb8a2178aa2230` |
 
 ## Remaining acceptance
 
