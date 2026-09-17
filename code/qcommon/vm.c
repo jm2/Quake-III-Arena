@@ -690,6 +690,7 @@ void *VM_ArgPtr( int intValue ) {
 }
 
 /* Validate complete syscall buffers, retaining legacy address masking. */
+/** Return a complete VM buffer or drop the module before memory is accessed. */
 static void *VM_TrapBuffer( int value, int length ) {
 	int offset;
 	if ( !currentVM || length < 0 || (!value && length) ) {
@@ -712,6 +713,7 @@ invalid:
 	return NULL;
 }
 
+/** Fill only a validated VM range; an empty range needs no buffer. */
 void VM_MemoryFill( int dest, int value, int length ) {
 	void *buffer = VM_TrapBuffer( dest, length );
 	if ( length ) {
@@ -719,6 +721,7 @@ void VM_MemoryFill( int dest, int value, int length ) {
 	}
 }
 
+/** Copy validated VM ranges, allowing overlapping source and destination. */
 void VM_MemoryCopy( int dest, int source, int length ) {
 	void *output = VM_TrapBuffer( dest, length );
 	void *input = VM_TrapBuffer( source, length );
@@ -727,6 +730,7 @@ void VM_MemoryCopy( int dest, int source, int length ) {
 	}
 }
 
+/** Copy at most length bytes and zero-pad without reading beyond VM storage. */
 int VM_StringCopy( int dest, int source, int length ) {
 	char *output = VM_TrapBuffer( dest, length );
 	char *input;
@@ -803,6 +807,7 @@ locals from sp
 #define	STACK_MASK	(MAX_STACK-1)
 
 /* Shared marshalling for interpreted and compiled QVM entry. */
+/** Build the complete command and twelve-argument frame inside the VM stack. */
 int VM_SetupCallFrame( vm_t *vm, const int *args ) {
 	int stack = vm->programStack;
 	int floor = vm->stackBottom > 0 ? vm->stackBottom : 0;
@@ -823,6 +828,7 @@ int VM_SetupCallFrame( vm_t *vm, const int *args ) {
 	return stack;
 }
 
+/** Dispatch counted arguments with zero padding and skip faulted QVM re-entry. */
 int VM_CallArgs( vm_t *vm, int callnum, const int *parameters, int count ) {
 	vm_t *oldVM;
 	int result, args[MAX_VMMAIN_ARGS] = {0};

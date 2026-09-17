@@ -898,6 +898,7 @@ CL_UISystemCalls
 The ui module is making a system call
 ====================
 */
+/** Dispatch UI traps with shared bounds checks for raw memory operations. */
 int CL_UISystemCalls( int *args ) {
 	switch( args[0] ) {
 	case UI_ERROR:
