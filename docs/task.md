@@ -1,6 +1,6 @@
 # Quake III Arena Mac OS 9 prioritized review queue
 
-Last updated: 2026-07-28
+Last updated: 2026-09-17
 
 This is the authoritative continuation ledger. Work is sorted first by
 priority (`P0` through `P3`), then by severity and exploit/runtime impact
@@ -8,16 +8,32 @@ within each priority. Every confirmed GitHub issue from #1 through #52 appears
 exactly once below. The subsystem evidence appendix is
 [review-ledger-by-subsystem.md](review-ledger-by-subsystem.md).
 
-An issue-level checkbox stays open until its fix is committed, focused checks
-pass, the full Retro68 build succeeds, required Mac OS 9 testing is complete,
-and the linked GitHub issue is closed. A checked nested item means only that
-the stated local candidate or check is complete.
+An issue-level checkbox stays open until its fix is merged, its acceptance
+criteria and applicable checks pass, and the linked GitHub issue is closed.
+Engine changes require both Retro68 product builds and any Mac OS 9 tests
+specified by the issue. Host-tool changes require the relevant host/format
+checks; they do not automatically require an unrelated engine rebuild.
+A checked nested item records only the stated implementation or check.
+
+Every new step goes through a pull request. Before merging, require successful
+CI for its current head and a completed bot review with no outstanding
+findings. Re-run affected checks and obtain renewed bot review after fixes.
+Do not interpret absent, pending, failed, or unavailable review as clean.
+Keep issues open when a merged step covers only part of their acceptance
+criteria, and link the PR and remaining evidence in the issue.
+
+The [2026-09-17 reassessment](review-2026-09-17.md) records the disposition of
+all 52 issues, implementation dependencies, and decisions awaiting input.
+The July evidence below is historical unless explicitly dated otherwise;
+“local” candidate fixes from that pass are committed in `204fe36`.
 
 ## Baseline and current evidence
 
 - [x] Repository: `jm2/Quake-III-Arena`, branch `master`.
-- [x] Review baseline:
+- [x] Original July review baseline:
       `abe5028afda280240d48d012a62c09e713689fd2`.
+- [x] September source/issue baseline: `204fe36deccfde8ead94f6bba0422dd8c1ba396e`;
+      all 52 issues remain open and there were no existing PRs.
 - [x] Preserve the pre-existing untracked `q3-logs/`; its latest captured
       startup ends at `Couldn't load default.cfg`.
 - [x] First-pass security comparison anchored to ioquake3
@@ -26,10 +42,10 @@ the stated local candidate or check is complete.
       [security-provenance.md](security-provenance.md).
 - [x] 52 confirmed root causes opened in the
       [GitHub issue tracker](https://github.com/jm2/Quake-III-Arena/issues).
-- [x] Latest locally tested base PEF: `Joy!peff` / `pwpc`, 3,669,561 bytes,
+- [x] July locally tested base PEF: `Joy!peff` / `pwpc`, 3,669,561 bytes,
       SHA-256
       `8a23e2225ce5e21f253f7f155a0d601ae5d659685e558150061eba677305115c`.
-- [x] Latest locally tested Team Arena PEF: `Joy!peff` / `pwpc`,
+- [x] July locally tested Team Arena PEF: `Joy!peff` / `pwpc`,
       3,818,135 bytes, SHA-256
       `b7fcfbc21c63c360b0b9afc3f1d5e34e5589317fd1c4526f90706e150713e480`.
 - [x] Re-record the two PEF sizes/hashes after the final source changes in
@@ -44,15 +60,19 @@ the stated local candidate or check is complete.
 Do not describe the port as safe for untrusted servers, mods, PK3s, maps, or
 QVMs while any P0 item is open.
 
-- [ ] [#29 — modern CVE coverage lacks auditable provenance and regressions](https://github.com/jm2/Quake-III-Arena/issues/29)
+- [ ] [#29 — complete security provenance and regression coverage](https://github.com/jm2/Quake-III-Arena/issues/29)
       — **assurance gate**.
-  - [x] First upstream/local status matrix and GitHub provenance comment added.
+  - [x] First upstream/local status matrix and GitHub provenance comment added;
+        the matrix is committed in `204fe36`, not an uncommitted draft.
   - [ ] Complete the advisory inventory and add a malformed-input regression
         for every accepted security family.
 - [ ] [#35 — harden interpreted QVM validation and sandbox bounds](https://github.com/jm2/Quake-III-Arena/issues/35)
       — **high**, native memory corruption from malformed QVMs.
-  - [ ] Port complete header/range, bytecode, branch, stack, syscall, and
-        data-image checks; retain valid PPC QVM compatibility.
+  - [ ] Validate header/range/allocation arithmetic in both `VM_Create` and
+        `VM_Restart`, including restart allocation-size compatibility.
+  - [ ] Validate bytecode decoding and branch targets before interpreter setup.
+  - [ ] Enforce runtime stack, CALL/JUMP, syscall, and data-image checks;
+        retain valid PPC QVM compatibility.
 - [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)
       — **high**, connection redirection/injection/hijack.
   - [ ] Decide and document secure-versus-legacy wire compatibility before
@@ -235,12 +255,17 @@ QVMs while any P0 item is open.
 - [ ] [#32 — MacBinary output writes invalid zero dates](https://github.com/jm2/Quake-III-Arena/issues/32)
       — **low metadata**.
   - [x] Local encoder writes `SOURCE_DATE_EPOCH` or input mtime in Mac epoch.
-  - [ ] Validate CRC/dates with an independent decoder and on target.
+  - [x] Host fixture checks dates, fork layout, and CRC against Python's
+        independent `binascii.crc_hqx` implementation.
+  - [ ] Validate with a complete independent decoder and on target.
 - [ ] [#52 — MacBinary filename length counted characters, not bytes](https://github.com/jm2/Quake-III-Arena/issues/52)
       — **low metadata**.
   - [x] Local encoder strictly encodes MacRoman, then truncates/counts bytes and
         validates fork widths.
-  - [ ] Test 63/64-byte and representable/unrepresentable names.
+  - [x] Host tests cover a 64-byte MacRoman name truncated to 63 bytes and
+        rejection of an unrepresentable name.
+  - [ ] Add exact 63-byte and short representable non-ASCII fixtures; validate
+        the complete result with an independent MacBinary II reader.
 
 ## Completed review work not tied to one open issue
 
@@ -251,7 +276,9 @@ QVMs while any P0 item is open.
 - [x] Cross-build base and Team Arena with the local review patch set.
 - [x] Validate PEF architecture/header and classify compiler output.
 - [x] Add first-pass ioquake3 provenance and accepted/missing family mapping.
-- [x] Preserve pre-existing user logs and avoid committing/pushing changes.
+- [x] Preserve pre-existing user logs during the July review; its candidate
+      changes were subsequently committed in `204fe36`. New work follows the
+      PR/CI/bot-review merge process above.
 - [x] Add portable GitHub Actions starter CI, packaging/ledger unit tests,
       isolated ASan/UBSan C regressions, CI documentation, and pinned-action
       Dependabot updates.
@@ -276,6 +303,15 @@ QVMs while any P0 item is open.
 
 ## Exact continuation point
 
+- [x] Reconcile all 52 open issues against `204fe36`, existing test coverage,
+      and July evidence; retain their current priorities and closure gates.
+- [x] Re-run the eight Python tests, q_shared ASan/UBSan harness, Bash syntax
+      and help, and PowerShell syntax and help on 2026-09-17.
+- [ ] Confirm the configured review bot before the first PR merge.
+- [ ] Obtain the secure/legacy protocol policy before implementing #37.
+- [ ] Locate legal retail assets and a Mac OS 9 test environment before any
+      dependent compatibility/runtime acceptance check.
+
 - [x] Run the new portable CI suite locally and correct every failure.
 - [x] Re-run both product builds after the last formatter/release-tool/CI
       edits; update the PEF sizes/hashes above and leave CMake base-only.
@@ -284,7 +320,9 @@ QVMs while any P0 item is open.
       #48, then the compatibility-sensitive #37.
 - [ ] P0 validation order for local candidates: #36, message/Huffman exact
       bounds, downloads, and known format-string fixes.
-- [ ] P1 target/runtime order: #11, #15, #16, #17, #5, #20, #19.
+- [ ] P1 target/runtime order: #11 after #48; #15, #16, #17, #5, #20, #19.
+      Re-enable #12 after #47/#48, #13 after #35/#39, and #14 after #41.
+      Validate fullscreen/gamma behavior after #15/#16.
 - [ ] Add a legally provisioned Retro68 CI runner for both product builds
       before treating portable CI as release evidence.
 - [ ] Do not close an issue solely because a cross-build passed.

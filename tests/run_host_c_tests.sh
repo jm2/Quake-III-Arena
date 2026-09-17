@@ -2,7 +2,7 @@
 set -euo pipefail
 
 Q3_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-Q3_TEST_BINARY="$(mktemp "${TMPDIR:-/tmp}/q3-q-shared-regression.XXXXXX")"
+Q3_TEST_BINARY="$(mktemp "${TMPDIR:-/var/tmp}/q3-q-shared-regression.XXXXXX")"
 Q3_TEST_CC="${CC:-cc}"
 
 cleanup() {

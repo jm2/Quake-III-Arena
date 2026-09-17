@@ -23,10 +23,12 @@ EXPECTED_PRIORITIES = {
 class ReviewLedgerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        """Read the checked-in ledger once for structural validation."""
         cls.text = TASK_PATH.read_text(encoding="utf-8")
         cls.lines = cls.text.splitlines()
 
     def test_every_confirmed_issue_is_linked_exactly_once(self):
+        """Keep all confirmed issues visible without duplicate queue entries."""
         numbers = [int(number) for number in ISSUE_PATTERN.findall(self.text)]
         counts = Counter(numbers)
         expected_numbers = {
@@ -42,6 +44,7 @@ class ReviewLedgerTests(unittest.TestCase):
         )
 
     def test_priority_sections_are_ordered_and_have_expected_issues(self):
+        """Preserve the reviewed priority and within-priority issue order."""
         headings = {
             priority: self.text.index(f"## {priority} ")
             for priority in ("P0", "P1", "P2", "P3")
@@ -63,17 +66,23 @@ class ReviewLedgerTests(unittest.TestCase):
             )
             self.assertEqual(found, expected, priority)
 
-    def test_issue_entries_are_open_checkboxes_with_severity(self):
+    def test_issue_entries_are_checkboxes_with_severity(self):
+        """Accept progress while requiring a recognized severity level."""
         for index, line in enumerate(self.lines):
             if not ISSUE_PATTERN.search(line):
                 continue
-            self.assertTrue(line.startswith("- [ ] [#"), line)
+            self.assertRegex(line, r"^- \[[ x]\] \[#", line)
             entry = "\n".join(self.lines[index:index + 2])
-            self.assertIn("**", entry, entry)
+            self.assertRegex(
+                entry,
+                r"\*\*(?:assurance gate|(?:high|moderate-high|medium-low|"
+                r"medium|low)(?:[ /][a-z][a-z /-]*)?)\*\*",
+                entry,
+            )
 
-    def test_continuation_queue_contains_unfinished_work(self):
+    def test_continuation_queue_records_work_order(self):
+        """Retain the work order without requiring a minimum unfinished count."""
         continuation = self.text[self.text.index("## Exact continuation point"):]
-        self.assertGreaterEqual(continuation.count("- [ ]"), 5)
         self.assertIn("P0 implementation order", continuation)
 
 
