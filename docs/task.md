@@ -224,6 +224,9 @@ QVMs while any P0 item is open.
   - [x] Retail legacy font records decode bytewise from the actual FS length,
         validate fixed names/floats before imports and release input; see
         [layout/ownership evidence](font-legacy-layout-validation.md).
+  - [x] Identity alpha and multitexture alpha-wave checks use their native
+        alpha enums; [semantic evidence](shader-alpha-validation.md) retains
+        distinct waveform passes and removes the two host enum warnings.
   - [ ] Complete FreeType generation ownership and remaining shader
         semantic/file-allocation checks.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
