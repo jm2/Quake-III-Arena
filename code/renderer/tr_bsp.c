@@ -1658,14 +1658,14 @@ typedef struct {
 
 static const char *R_ParseGridSize(const char *value,vec3_t size) {
 	char *end;
-	double number;
+	float number;
 	int i;
 	for(i=0;i<3;i++) {
-		number=strtod(value,&end);
+		/* Direct float conversion matches q3map's %f, including decimal midpoints. */
+		number=strtof(value,&end);
 		if(end==value) break; /* Keep the legacy partial-value/default behavior. */
-		if(!(number>0) || number>FLT_MAX || number<1.0/(double)FLT_MAX) return "invalid BSP light grid size";
-		size[i]=(float)number;
-		if(!(size[i]>0) || 1.0/(double)size[i]>FLT_MAX) return "invalid BSP light grid inverse size";
+		if(!(number>0) || number>FLT_MAX || 1.0/(double)number>FLT_MAX) return "invalid BSP light grid size";
+		size[i]=number;
 		value=end;
 	}
 	return NULL;

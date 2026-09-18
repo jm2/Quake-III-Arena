@@ -11,8 +11,9 @@ parser as loading, without shader remaps or warnings. Preserve the native
 64/64/128 defaults, partial custom gridsize values, ignored suffixes/unknown
 keys, remap prefixes, vertex-light conditions and missing-semicolon stop.
 Custom components must remain positive and finite, with representable float
-inverses. strtod checks range before float conversion rather than relying on
-an overflowing scanf assignment.
+inverses. Direct strtof conversion retains q3map's binary32 decimal rounding;
+checks reject nonfinite/underflow outcomes and unsafe inverses without an
+intermediate double or an overflowing scanf assignment.
 
 The validated world model bounds and grid size determine origins/dimensions
 using the native float quotient before ceil/floor, stored float origins/maxima
@@ -46,6 +47,8 @@ embedded NULs, a following non-NUL sample lump, partial/unknown grid settings,
 remap arguments/vertex-light conditions and malformed remap stopping.
 Fractional-grid goldens execute native 11x11x11 and partial 11x1x1 grids,
 retaining all q3map-generated samples and actual lighting at their edges.
+Exact/just-above binary32 decimal midpoints distinguish 11 from 10 native
+samples, retaining direct float parsing and actual edge lighting.
 
 Invalid zero/negative/nonfinite/underflow/overflow settings, finite bounds
 with unsafe grid dimensions/products/origins and injected temporary OOM
@@ -68,8 +71,8 @@ libraries from [loading evidence](qvm-loading-validation.md).
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,720,697 | `4741cf30c11e39fa866e59bb9e79e2d12329e20b003b1505e3534ec79d87636a` |
-| Quake3_TeamArena | 3,869,271 | `0f960937c4c02f21beedd2553c39ffd9ad04b1acbfa83530eb753cc9b08a3498` |
+| Quake3 | 3,720,691 | `821f605ebffbdb1bda3631796ccf4b8f99718e7162d8a2a95033e2178e7c8941` |
+| Quake3_TeamArena | 3,869,265 | `a60eb8897e2568559c23f93d8ef3e3e1d463b07d4eb42e069191657ad677cdbd` |
 
 ## Remaining acceptance
 
