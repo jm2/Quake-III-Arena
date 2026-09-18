@@ -359,6 +359,10 @@ QVMs while any P0 item is open.
         preserve native bases/suffixes, and check float conversion/fraction
         costs with bounded auxiliary integers;
         see [number evidence](bot-number-validation.md).
+  - [x] Numeric escape values clamp before signed overflow, invalid escapes
+        fail without output-byte mutation, and legacy literal/punctuation
+        helpers keep quote consumption and buffer cursors bounded;
+        see [escape evidence](bot-escape-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
