@@ -1828,22 +1828,50 @@ void BotFreeGoalState(int handle)
 //===========================================================================
 int BotSetupGoalAI(void)
 {
-	char *filename;
+	libvar_t *gametype, *configvariable, *weightvariable;
+	itemconfig_t *config;
+	unsigned int bits;
+	volatile unsigned int representation;
+	int type;
 
-	//check if teamplay is on
-	g_gametype = LibVarValue("g_gametype", "0");
-	//item configuration file
-	filename = LibVarString("itemconfig", "items.c");
-	//load the item configuration
-	itemconfig = LoadItemConfig(filename);
-	if (!itemconfig)
+	gametype = LibVar("g_gametype", "0");
+	if (!gametype)
+	{
+		botimport.Print(PRT_ERROR, "couldn't initialize g_gametype\n");
+		return BLERR_LIBRARYNOTSETUP;
+	}
+	Com_Memcpy(&bits, &gametype->value, sizeof(bits));
+	representation = bits;
+	if ((representation & 0x7f800000U) == 0x7f800000U ||
+			(double)gametype->value < INT_MIN || (double)gametype->value > INT_MAX)
+	{
+		botimport.Print(PRT_ERROR, "invalid g_gametype during goal setup\n");
+		return BLERR_LIBRARYNOTSETUP;
+	}
+	type = (int)gametype->value;
+	configvariable = LibVar("itemconfig", "items.c");
+	if (!configvariable)
+	{
+		botimport.Print(PRT_FATAL, "couldn't initialize itemconfig\n");
+		return BLERR_CANNOTLOADITEMCONFIG;
+	}
+	weightvariable = LibVar("droppedweight", "1000");
+	if (!weightvariable)
+	{
+		botimport.Print(PRT_ERROR, "couldn't initialize droppedweight\n");
+		return BLERR_LIBRARYNOTSETUP;
+	}
+	config = LoadItemConfig(configvariable->string);
+	if (!config)
 	{
 		botimport.Print(PRT_FATAL, "couldn't load item config\n");
 		return BLERR_CANNOTLOADITEMCONFIG;
-	} //end if
-	//
-	droppedweight = LibVar("droppedweight", "1000");
-	//everything went ok
+	}
+	//All imports and parsed owners are complete before replacing prior state.
+	if (itemconfig) FreeMemory(itemconfig);
+	g_gametype = type;
+	itemconfig = config;
+	droppedweight = weightvariable;
 	return BLERR_NOERROR;
 } //end of the function BotSetupGoalAI
 //===========================================================================
