@@ -1,6 +1,6 @@
 # Quake III Arena Mac OS 9 prioritized review queue
 
-Last updated: 2026-09-17
+Last updated: 2026-09-18
 
 This is the authoritative continuation ledger. Work is sorted first by
 priority (`P0` through `P3`), then by severity and exploit/runtime impact
@@ -154,10 +154,10 @@ QVMs while any P0 item is open.
   - [ ] Complete deferred retail 1.32c JPEG and screenshot acceptance.
 - [ ] [#44 — validate MD3/MD4 layouts before allocation or swapping](https://github.com/jm2/Quake-III-Arena/issues/44)
       — **high**, malformed model memory corruption/hangs.
-  - [ ] Merge the MD3 and MD4 validation steps after their current-head gates;
-        host fixtures exercise full layouts, native conversion, staging cleanup,
-        tag/frame bounds and actual MD4 skinning. Retail/PPC live acceptance
-        remains deferred.
+  - [x] MD3 step [#77](https://github.com/jm2/Quake-III-Arena/pull/77) and
+        MD4 step [#79](https://github.com/jm2/Quake-III-Arena/pull/79) merged
+        after their current-head CI/review gates. Host fixtures cover full
+        layouts, native conversion, cleanup, tag/frame bounds and MD4 skinning.
   - [x] Complete MD3 layout validation before copying/swapping and staged
         LOD registration have [host regressions](md3-layout-validation.md).
   - [x] Complete MD4 layout/weight/index validation before allocation and native
@@ -475,8 +475,18 @@ QVMs while any P0 item is open.
 - [x] QVM steps #54–#67/#69 and single-run CI #68 are merged at master
       `4fd62bd`, each after successful CI, clean completed Codex review and
       resolved CodeRabbit findings.
-- [ ] Finish gated RoQ/image/JPEG/model/BSP PRs #70–#77/#79/#80.
-      Keep their parent issues open through remaining acceptance.
+- [x] RoQ/image/JPEG/model/BSP steps #70–#77/#79–#82 and assessment #78
+      are merged at master `95a6c18`, after the same current-head CI/review gates.
+- [x] BSP steps #83–#91/#93–#101 and shader capacity #102 are merged at
+      master `cdc8c38` after the same current-head CI/review gates.
+- [ ] Finish gated skin/font/shader PRs #103–#111 in dependency order;
+      affected host checks and both PPC builds pass. Queued CI still holds
+      merges; renewed Codex review is required after fixes.
+      See the [September 18 snapshot](review-2026-09-18.md).
+- [ ] Finish #45 renderer aggregate capacity and full transactional
+      publication; retain remaining query/candidate costs and deferred target
+      acceptance. Collision aggregate and derived geometry/facet checks are
+      merged; keep parent acceptance open.
 - [ ] Record and execute the deferred retail/target compatibility checks when
       the user provides the assets and test environment.
 
