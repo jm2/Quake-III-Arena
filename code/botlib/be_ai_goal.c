@@ -30,6 +30,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *****************************************************************************/
 
 #include "../game/q_shared.h"
+#include <limits.h>
+#include <stddef.h>
 #include "l_utils.h"
 #include "l_libvar.h"
 #include "l_memory.h"
@@ -134,7 +136,7 @@ typedef struct iteminfo_s
 	int number;							//number of the item info
 } iteminfo_t;
 
-#define ITEMINFO_OFS(x)	(int)&(((iteminfo_t *)0)->x)
+#define ITEMINFO_OFS(x)	(int)offsetof(iteminfo_t, x)
 
 fielddef_t iteminfo_fields[] =
 {
@@ -270,18 +272,49 @@ itemconfig_t *LoadItemConfig(char *filename)
 	token_t token;
 	char path[MAX_PATH];
 	source_t *source;
-	itemconfig_t *ic;
+	itemconfig_t *ic, *result;
 	iteminfo_t *ii;
+	libvar_t *variable;
+	unsigned int bits;
+	volatile unsigned int representation;
+	unsigned long bytes;
 
-	max_iteminfo = (int) LibVarValue("max_iteminfo", "256");
+	if (!filename || !*filename || strlen(filename) >= sizeof(path))
+	{
+		botimport.Print(PRT_ERROR, "invalid item configuration filename\n");
+		return NULL;
+	}
+	variable = LibVar("max_iteminfo", "256");
+	if (!variable)
+	{
+		botimport.Print(PRT_ERROR, "couldn't initialize max_iteminfo\n");
+		return NULL;
+	}
+	Com_Memcpy(&bits, &variable->value, sizeof(bits));
+	representation = bits;
+	if ((representation & 0x7f800000U) == 0x7f800000U ||
+			(double)variable->value < INT_MIN || (double)variable->value > INT_MAX)
+	{
+		botimport.Print(PRT_ERROR, "invalid max_iteminfo\n");
+		return NULL;
+	}
+	max_iteminfo = (int)variable->value;
 	if (max_iteminfo < 0)
 	{
 		botimport.Print(PRT_ERROR, "max_iteminfo = %d\n", max_iteminfo);
 		max_iteminfo = 256;
 		LibVarSet( "max_iteminfo", "256" );
+		if (variable->value != 256.0f) return NULL;
 	}
+	if ((unsigned long)max_iteminfo >
+			((unsigned long)INT_MAX - sizeof(itemconfig_t)) / sizeof(iteminfo_t))
+	{
+		botimport.Print(PRT_ERROR, "item configuration allocation is too large\n");
+		return NULL;
+	}
+	bytes = sizeof(itemconfig_t) + (unsigned long)max_iteminfo * sizeof(iteminfo_t);
 
-	strncpy( path, filename, MAX_PATH );
+	strcpy(path, filename);
 	PC_SetBaseFolder(BOTFILESBASEFOLDER);
 	source = LoadSourceFile( path );
 	if( !source ) {
@@ -289,8 +322,13 @@ itemconfig_t *LoadItemConfig(char *filename)
 		return NULL;
 	} //end if
 	//initialize item config
-	ic = (itemconfig_t *) GetClearedHunkMemory(sizeof(itemconfig_t) +
-														max_iteminfo * sizeof(iteminfo_t));
+	ic = (itemconfig_t *) GetClearedMemory(bytes);
+	if (!ic)
+	{
+		botimport.Print(PRT_ERROR, "couldn't stage item configuration\n");
+		FreeSource(source);
+		return NULL;
+	}
 	ic->iteminfo = (iteminfo_t *) ((char *) ic + sizeof(itemconfig_t));
 	ic->numiteminfo = 0;
 	//parse the item config file
@@ -310,7 +348,7 @@ itemconfig_t *LoadItemConfig(char *filename)
 			if (!PC_ExpectTokenType(source, TT_STRING, 0, &token))
 			{
 				FreeMemory(ic);
-				FreeMemory(source);
+				FreeSource(source);
 				return NULL;
 			} //end if
 			StripDoubleQuotes(token.string);
@@ -332,7 +370,24 @@ itemconfig_t *LoadItemConfig(char *filename)
 			return NULL;
 		} //end else
 	} //end while
+	if (PC_SourceHasError(source))
+	{
+		FreeMemory(ic);
+		FreeSource(source);
+		return NULL;
+	}
 	FreeSource(source);
+	result = (itemconfig_t *)GetClearedHunkMemory(bytes);
+	if (!result)
+	{
+		botimport.Print(PRT_ERROR, "couldn't allocate complete item configuration\n");
+		FreeMemory(ic);
+		return NULL;
+	}
+	Com_Memcpy(result, ic, bytes);
+	result->iteminfo = (iteminfo_t *)((char *)result + sizeof(itemconfig_t));
+	FreeMemory(ic);
+	ic = result;
 	//
 	if (!ic->numiteminfo) botimport.Print(PRT_WARNING, "no item info loaded\n");
 	botimport.Print(PRT_MESSAGE, "loaded %s\n", path);
