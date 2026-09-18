@@ -371,6 +371,10 @@ QVMs while any P0 item is open.
         release current names/partial trees on failure, and roll back nullable
         configuration/name/separator imports in cached and reload modes;
         see [weight evidence](bot-weight-validation.md).
+  - [x] Public characteristic integer getters reject non-finite/unrepresentable
+        casts; finite bounded floats clamp before conversion while representable
+        truncation, signed integer fields and native error fallbacks remain;
+        see [integer evidence](bot-character-integer-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 

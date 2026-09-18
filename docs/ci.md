@@ -620,3 +620,14 @@ weights and malformed/duplicate defaults reject before publication. A prior
 cached configuration retains its header, names, tree values and slots. Every
 failed load retries, and complete shutdown frees physical owners. Both GCC/Clang
 normal and release fast-math sanitizers run the fixture.
+
+
+The characteristic integer runner links actual character/source/lexer/libvar/core
+bodies and compares 9,612 representable truncation/bound results with original
+native getters. Parsed wide floats and directly supplied extreme/non-finite
+values reject unsafe unbounded casts; bounded finite floats clamp before casting,
+including exact full signed bounds. Signed integer fields, wrong-type/index and
+reversed-bound fallbacks retain native behavior. Every getter preserves complete
+character/string owners without imports. The reference header contains original
+actual getter bodies at the documented parent and is used only for safe values.
+Both GCC/Clang normal and release fast-math sanitizers run the fixture.

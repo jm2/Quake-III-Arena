@@ -29,6 +29,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  *****************************************************************************/
 
+#include <limits.h>
 #include "../game/q_shared.h"
 #include "l_log.h"
 #include "l_memory.h"
@@ -75,6 +76,13 @@ typedef struct bot_character_s
 } bot_character_t;
 
 bot_character_t *botcharacters[MAX_CLIENTS + 1];
+
+static int BotCharacterFloatFinite(const float *value)
+{
+	unsigned int bits;
+	Com_Memcpy(&bits, value, sizeof(bits));
+	return (bits & 0x7f800000u) != 0x7f800000u;
+}
 
 static int BotCharacterFilePathValid(const char *filename)
 {
@@ -788,6 +796,13 @@ int Characteristic_Integer(int character, int index)
 	//floats are casted to integers
 	else if (ch->c[index].type == CT_FLOAT)
 	{
+		if (!BotCharacterFloatFinite(&ch->c[index].value._float) ||
+				(double) ch->c[index].value._float < INT_MIN ||
+				(double) ch->c[index].value._float > INT_MAX)
+		{
+			botimport.Print(PRT_ERROR, "characteristic %d cannot convert to integer\n", index);
+			return 0;
+		} //end if
 		return (int) ch->c[index].value._float;
 	} //end else if
 	else
@@ -814,6 +829,17 @@ int Characteristic_BInteger(int character, int index, int min, int max)
 	{
 		botimport.Print(PRT_ERROR, "cannot bound characteristic %d between %d and %d\n", index, min, max);
 		return 0;
+	} //end if
+	if (index >= 0 && index < MAX_CHARACTERISTICS && ch->c[index].type == CT_FLOAT)
+	{
+		if (!BotCharacterFloatFinite(&ch->c[index].value._float))
+		{
+			botimport.Print(PRT_ERROR, "characteristic %d cannot convert to bounded integer\n", index);
+			return 0;
+		} //end if
+		if ((double) ch->c[index].value._float < min) return min;
+		if ((double) ch->c[index].value._float > max) return max;
+		return (int) ch->c[index].value._float;
 	} //end if
 	value = Characteristic_Integer(character, index);
 	if (value < min) return min;
