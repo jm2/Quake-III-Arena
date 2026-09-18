@@ -766,3 +766,12 @@ Original default/configured/cached reference identity and brush classifications
 remain. GCC/Clang run normal/release fast-math sanitizers. Clang exposes an existing
 integer-abs-on-float elevator warning outside this initialization change; its
 numeric behavior is retained for separate assessment.
+
+The file-comment runner validates actual file/source/include/character imports
+before compression can erase unterminated block comments. Six original-body proofs
+fail, including both native include forms/fallbacks and complete-prefix character
+publication. Malformed files close/release all script/punctuation owners with raw
+line diagnostics; included failures preserve synchronized parent recovery. The
+1,035 valid cases retain native compressed bytes and actual token metadata across
+quotes/escapes/line comments/block lengths/newlines. Raw memory lexer behavior and
+native characters remain. GCC/Clang run normal/release fast-math sanitizers.
