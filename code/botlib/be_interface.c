@@ -145,11 +145,12 @@ int Export_BotLibSetup(void)
 	//
 	botimport.Print(PRT_MESSAGE, "------- BotLib Initialization -------\n");
 	//
-	botlibglobals.maxclients = (int) LibVarValue("maxclients", "128");
-	botlibglobals.maxentities = (int) LibVarValue("maxentities", "1024");
 
 	errnum = AAS_Setup();			//be_aas_main.c
 	if (errnum != BLERR_NOERROR) return errnum;
+	//AAS validated both cached native values before integer publication.
+	botlibglobals.maxclients = (int) LibVarGetValue("maxclients");
+	botlibglobals.maxentities = (int) LibVarGetValue("maxentities");
 	errnum = EA_Setup();			//be_ea.c
 	if (errnum != BLERR_NOERROR) return errnum;
 	errnum = BotSetupWeaponAI();	//be_ai_weap.c
