@@ -3,7 +3,8 @@
 The native loader publishes invalid reachability destinations and area spans.
 Validate subtraction-checked per-area ranges, exclude dummy/zero-start spans
 from real routing ownership and bound total referenced records by native
-reachability table capacity. Check destination areas, finite start/end fields
+reachability table capacity. A temporary heap bitmap enforces disjoint ownership
+in linear bounded work, preserving reordered nonoverlapping spans. Check destination areas, finite start/end fields
 and signed ordinary face/edge references before loaded publication.
 
 Match native AAS_Optimize semantics: elevator, jump-pad and func-bob fields carry
@@ -14,12 +15,15 @@ allocator policy changes are introduced.
 
 ## Validation
 
-Two original actual-loader proofs fail: an invalid destination and an invalid
-per-area count still report success. New actual-body normal/release fast-math
-sanitizers cover 134 accepted type/team/signed/packed cases retaining every
-payload byte, plus 106 malformed finite/reference/span/aggregate cases in both
+Three original actual-loader proofs fail: invalid destination/counts and two
+areas sharing one record still report success. New actual-body normal/release fast-math
+sanitizers cover 138 accepted type/team/signed/packed cases retaining every
+payload byte, plus 110 malformed finite/reference/span/aggregate cases in both
 versions. Three individually valid reused area spans exceed backing table
-capacity and must reject before publication. Every rejection closes once and
+capacity and must reject before publication. Duplicate and partially overlapping
+spans reject even when their aggregate counts fit; adjacent/reordered spans keep
+all native bytes. Ownership-workspace failure rejects cleanly in both versions,
+and both successful and failed overlap checks physically release the bitmap. Every rejection closes once and
 clears partial logical ownership. Existing layout/geometry/node/endian/writer
 and allocator seams remain passing. Optimized GCC normal/fast-math, nine Python,
 Bash syntax and diff checks pass. Both Retro68 products build with zero compiler
@@ -27,12 +31,12 @@ diagnostics and validate as PPC PEFs.
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,749,997 | `e6a1374948cc56cfe7ebdf08d62d8dff1c39b697ed84ea59a97786170bbef726` |
-| Quake3_TeamArena | 3,902,667 | `bf5baf0c3ad9c22398d62c0080d6bb7363581cb0068959969c06a661104a9004` |
+| Quake3 | 3,754,099 | `119dc2ebfc4b14e5ceda9d58689be8c927c6a44b8d9f676d519415e21e9d043d` |
+| Quake3_TeamArena | 3,902,673 | `f355b053b87e8a89d20ae17356447b531b74b05418fb975c296e8d46465189cc` |
 
-After integrating the #123 review fixes through #124, all eight allocator
-sanitizer configurations and node/reachability checks pass again. Both PPC
-products rebuild with zero compiler diagnostics and unchanged artifact hashes.
+The table includes the inherited #123 native engine overhead fix and the
+Codex ownership-bitmap follow-up. Node/layout/geometry and nine Python checks
+remain passing; both overlap modes pass Clang sanitizers and optimized GCC.
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 

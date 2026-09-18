@@ -35,12 +35,12 @@ PEFs; build manifests/logs confirm the changed bot sources compile in both.
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,749,997 | `d401d0b9d500e987100ab854ed468f2e99fdbba30c0d3b68740eff926e872ccd` |
-| Quake3_TeamArena | 3,898,571 | `190c098c8e4a6a1ee7530679cac209185c3777ff3b235589c65563adc55fd5b1` |
+| Quake3 | 3,750,003 | `6dde1c951dcfaa8561e036d3651588b2f448277ce157d8a900c6e5f1f1433e62` |
+| Quake3_TeamArena | 3,898,577 | `2fb7e2d61d284821110a1a8c7d343dfe9b64c38a365f478b0f37c6d435cb33f5` |
 
-After integrating the #123 review fixes, all eight allocator sanitizer variants,
-node/layout/geometry checks and nine Python checks pass again. Both PPC products
-rebuild with zero compiler diagnostics and unchanged artifact hashes.
+After integrating both #123 review follow-ups, node and native engine zone
+sanitizer checks pass. Both PPC products rebuild with zero compiler diagnostics;
+the table records the artifacts with the native engine overhead checks.
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 
