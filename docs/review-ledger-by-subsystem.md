@@ -338,7 +338,10 @@ implementation or check, without implying issue completion.
   - [x] Optional font glyph/atlas arithmetic, complete page/final-glyph output,
         generated cache names and legacy LE serialization have
         [generation evidence](font-atlas-legacy-output-validation.md).
-  - [ ] Complete remaining shader semantic/file-allocation checks.
+  - [x] Shader archives check native allocation sizes, balance list/file input,
+        and clear stale state on empty restarts; see
+        [archive ownership evidence](shader-archive-ownership-validation.md).
+  - [ ] Complete remaining shader definition/index and semantic checks.
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.
   - [ ] Validate the complete file and graph before setting `loaded`.

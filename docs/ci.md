@@ -113,6 +113,8 @@ PR head while retaining checks on the merged default branch.
   - executes native shader parsing/registration and both archive index passes
     with 0–10 stages, following definitions, quotes/comments/nesting, EOF tails,
     skipped excess-stage cinematics, native modifiers and valid/default caching;
+  - executes native shader archive initialization, checked file/aggregate sizes,
+    reverse input release, empty startup/restarts, native paths and 4,096-file cap;
   - compares patch LOD propagation with 401 tiny stock-recursive oracles and
     passes a 4,096-patch chain with a 512 KB stack and no traversal allocation;
   - checks native planar face distances for finite-source product/sum/cancellation
@@ -235,6 +237,7 @@ bash tests/run_shader_stage_tests.sh
 bash tests/run_skin_capacity_tests.sh
 bash tests/run_font_layout_tests.sh
 bash tests/run_font_freetype_tests.sh
+bash tests/run_shader_archive_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
