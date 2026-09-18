@@ -161,6 +161,30 @@ static void NumericCurves(void) {
 	for(a=0;a<4;a++) { alignment=a;failPatchWorkspace=1;RejectRenderer();Check(!failPatchWorkspace && !patchWorkspace,"workspace failure retains renderer state and releases input"); }
 	alignment=0;
 }
+static void NumericFaces(void) {
+	int mode;unsigned int vertex,normal;
+	for(mode=0;mode<3;mode++) {
+		Build(MST_PLANAR,3,3,0,0);vertex=At(LUMP_DRAWVERTS,0,sizeof(drawVert_t));normal=At(LUMP_SURFACES,0,sizeof(dsurface_t))+offsetof(dsurface_t,lightmapVecs)+24;
+		Float(vertex,FLT_MAX);Float(normal,mode==1?1:2);
+		if(mode==1 || mode==2) { Float(vertex+4,mode==2?-FLT_MAX:FLT_MAX);Float(normal+4,mode==2?2:1); }
+		RejectGeometry(qfalse);
+		Check(!patchWorkspace,"face numeric preflight owns no curve workspace");
+	}
+}
+static void NativeFacePlanes(void) {
+	const vec3_t points[]={{125,-200,32},{FLT_MAX,3,4},{-FLT_MAX,-3,4},{1e10f,2e10f,-1e10f}};
+	const vec3_t normals[]={{0.6f,0.8f,0},{0,1,0},{0,-1,0},{1e-10f,1e-10f,1e-10f}};
+	const float distances[]={-85,3,3,2};const int types[]={3,1,3,3},signs[]={0,0,2,0};
+	dheader_t h;msurface_t surf;srfSurfaceFace_t *face;int i,j;unsigned int vertex,normal;
+	for(i=0;i<4;i++) {
+		Build(MST_PLANAR,3,3,0,0);vertex=At(LUMP_DRAWVERTS,0,sizeof(drawVert_t));normal=At(LUMP_SURFACES,0,sizeof(dsurface_t))+offsetof(dsurface_t,lightmapVecs)+24;
+		for(j=0;j<3;j++) { Float(vertex+j*4,points[i][j]);Float(normal+j*4,normals[i][j]); }
+		Header(&h);Check(!R_ValidateBSPGeometry(source,&h),"finite native face planes preserve large input compatibility");
+		s_worldData.numShaders=2;s_worldData.shaders=(void *)(source+h.lumps[LUMP_SHADERS].fileofs);memset(&surf,0,sizeof(surf));
+		ParseFace((void *)(source+h.lumps[LUMP_SURFACES].fileofs),(void *)(source+h.lumps[LUMP_DRAWVERTS].fileofs),&surf,(void *)(source+h.lumps[LUMP_DRAWINDEXES].fileofs));face=(void *)surf.data;
+		Check(!memcmp(&face->plane.dist,&distances[i],4) && !memcmp(face->plane.normal,normals[i],sizeof(vec3_t)) && face->plane.type==types[i] && face->plane.signbits==signs[i],"native distances/normals/classification remain bit exact");
+	}
+}
 static void NativeNodraw(void) {
 	dheader_t h;msurface_t surf;int before=patchAllocations;
 	Build(MST_PATCH,129*3,0,129,3);
@@ -192,5 +216,5 @@ int main(void) {
 	NativeSurface(MST_PLANAR,999,5999,0,0);NativeSurface(MST_PLANAR,1,0,0,0);NativeSurface(MST_TRIANGLE_SOUP,999,5999,0,0);NativeSurface(MST_TRIANGLE_SOUP,0,0,0,0);
 	NativeSurface(MST_PATCH,31*31,0,31,31);NativeSurface(MST_PATCH,65*15,0,65,15);
 	Build(MST_PATCH,129*3,0,129,3);Header(&h);Check(!BSP_ValidateGeometry(source,&h,CM_MAX_PATCH_GRID_SIZE,MAX_PATCH_VERTS),"collision native 129-column boundary");
-	CurveGoldens();NumericCurves();NativeNodraw();NativeLighting();Check(!heapCount && !fileAllocation && !patchWorkspace && patchAllocations==patchFrees,"all fixture ownership released");FreeHunks();puts("BSP finite geometry, native storage, renderer rejection and surface/curve regressions passed (issue #45)");return 0;
+	CurveGoldens();NumericCurves();NumericFaces();NativeFacePlanes();NativeNodraw();NativeLighting();Check(!heapCount && !fileAllocation && !patchWorkspace && patchAllocations==patchFrees,"all fixture ownership released");FreeHunks();puts("BSP finite geometry, native storage, renderer rejection and surface/curve regressions passed (issue #45)");return 0;
 }

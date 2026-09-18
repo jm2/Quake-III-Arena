@@ -315,6 +315,8 @@ implementation or check, without implying issue completion.
   - [x] Aggregate collision allocations fit actual remaining hunk capacity,
         including derived indexes/visibility and real patch geometry; see
         [memory evidence](bsp-memory-budget-validation.md).
+  - [x] Native planar face distances reject nonfinite derived results before
+        world/shader/model changes; see [face evidence](bsp-face-numeric-validation.md).
 - [ ] [#46 — shader/skin/font fixed limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.

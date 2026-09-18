@@ -1851,7 +1851,7 @@ static const char *R_ValidateBSPGeometry(const void *buffer,const dheader_t *hea
 	unsigned int i,j,k,count,type,vertices,indexes,width,height,first;
 	drawVert_t points[MAX_PATCH_SIZE*MAX_PATCH_SIZE];
 	vec3_t bounds[2],origin,delta;
-	float radius;
+	float radius, distance;
 	const char *error;
 
 	/* A nodraw patch is skipped before native renderer control/LOD access. */
@@ -1883,6 +1883,13 @@ static const char *R_ValidateBSPGeometry(const void *buffer,const dheader_t *hea
 		if(type!=MST_PLANAR && type!=MST_TRIANGLE_SOUP) continue;
 		vertices=BSP_FileWord(record+offsetof(dsurface_t,numVerts));indexes=BSP_FileWord(record+offsetof(dsurface_t,numIndexes));
 		if(vertices>=SHADER_MAX_VERTEXES || indexes>=SHADER_MAX_INDEXES || (type==MST_PLANAR && !vertices)) return "BSP surface exceeds native tessellation storage";
+		if(type==MST_PLANAR) {
+			first=BSP_FileWord(record+offsetof(dsurface_t,firstVert));
+			vertex=base+header->lumps[LUMP_DRAWVERTS].fileofs+first*sizeof(drawVert_t);
+			for(j=0;j<3;j++) { origin[j]=BSP_GeometryFloat(vertex+offsetof(drawVert_t,xyz)+j*4);delta[j]=BSP_GeometryFloat(record+offsetof(dsurface_t,lightmapVecs)+(6+j)*4); }
+			distance=DotProduct(origin,delta);
+			if(!R_BSPFiniteVector(&distance,1)) return "nonfinite renderer face plane distance";
+		}
 	}
 	return NULL;
 }
