@@ -218,8 +218,11 @@ QVMs while any P0 item is open.
   - [x] Shader stage capacity checks precede native array access and rejected
         definitions preserve following parse/index/cache behavior; see
         [stage evidence](shader-stage-validation.md).
-  - [ ] Complete skin/font bounds and ownership, including complete single-shader
-        surface allocation, and remaining shader semantic/file-allocation checks.
+  - [x] Default/single-shader skins allocate complete native surfaces; safe
+        names, 32-surface/token limits and balanced file ownership have
+        [native skin evidence](skin-capacity-validation.md).
+  - [ ] Complete font bounds/layout/ownership and remaining shader
+        semantic/file-allocation checks.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
       — **high**, server OOB access/infinite traversal.
   - [x] Local mover model boundary/look-up fixes cross-build.
