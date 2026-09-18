@@ -401,6 +401,9 @@ implementation or check, without implying issue completion.
   - [x] Routing start scratch follows incoming degree with checked heap costs
         and physical release; failed cache creation/update stays unpublished
         and can retry; see [workspace evidence](aas-routing-workspace-validation.md).
+  - [x] Native routing cache counts, allocation costs and signed byte accounting
+        reject before overflow/import; native layouts and nullable ownership
+        remain intact; see [cache evidence](aas-cache-allocation-validation.md).
   - [ ] Validate the complete file and graph before setting `loaded`.
 - [ ] [#48 — bot preprocessor/token/path bounds](https://github.com/jm2/Quake-III-Arena/issues/48)
   - [x] Several upstream primitive/preprocessor/diagnostic bounds fixes are

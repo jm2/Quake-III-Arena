@@ -753,11 +753,13 @@ aas_routingcache_t *AAS_AllocRoutingCache(int numtraveltimes)
 	aas_routingcache_t *cache;
 	int size;
 
-	//
-	size = sizeof(aas_routingcache_t)
-						+ numtraveltimes * sizeof(unsigned short int)
-						+ numtraveltimes * sizeof(unsigned char);
-	//
+	// Bound native signed import/accounting costs before multiplication or allocation.
+	if (numtraveltimes < 0 || numtraveltimes >
+		(INT_MAX - (int)sizeof(aas_routingcache_t)) /
+		(int)(sizeof(unsigned short int) + sizeof(unsigned char))) return NULL;
+	size = (int)sizeof(aas_routingcache_t) + numtraveltimes *
+		(int)(sizeof(unsigned short int) + sizeof(unsigned char));
+	if (routingcachesize < 0 || size > INT_MAX - routingcachesize) return NULL;
 	cache = (aas_routingcache_t *) GetClearedMemory(size);
 	if (!cache) return NULL;
 	routingcachesize += size;
