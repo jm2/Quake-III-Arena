@@ -338,6 +338,11 @@ QVMs while any P0 item is open.
         EOF/nullable character-string imports release partial owners; real
         quote stripping handles overlap and empty text;
         see [character evidence](bot-character-validation.md).
+  - [x] Native script/source creation checks complete signed buffer and path
+        costs, rejects short reads, closes failed files and releases partial
+        script/table/dictionary/global-copy owners; native byte classification
+        and punctuation indexing avoid signed high-byte indexes;
+        see [source evidence](bot-source-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 

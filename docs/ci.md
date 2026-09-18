@@ -524,3 +524,16 @@ owners and retry. Real quote stripping uses overlap-safe copies and handles
 empty/unmatched text. Ten original actual-body proofs reproduce the previous
 path/index/null/EOF/quote defects. GCC and Clang run normal/release sanitizer
 configurations; default/interpolated-character ownership remains separate work.
+
+The source runner links the same actual native parser/lexer/core and exercises
+file/memory source creation, punctuation tables and real copied global macros.
+Every base owner and all twelve base/global-copy allocation positions unwind
+without partial publication; original global owners/counters survive and retry.
+Negative/overflowing signed costs and full native path overflow reject before
+imports, last signed/byte/name boundaries remain representable, short reads
+close/release staged owners, and empty/anonymous sources remain valid. High bytes
+outside strings reject with unsigned whitespace/table classification. Real
+memory macros and punctuation parse through EOF. Fourteen original actual-body
+proofs cover the previous null/cost/read/name/path/global/byte defects. GCC and
+Clang run normal/release fast-math sanitizers; other directive/indent allocations
+and aggregate parse budgets remain separate acceptance.

@@ -180,6 +180,7 @@ void PS_CreatePunctuationTable(script_t *script, punctuation_t *punctuations)
 	//get memory for the table
 	if (!script->punctuationtable) script->punctuationtable = (punctuation_t **)
 												GetMemory(256 * sizeof(punctuation_t *));
+	if (!script->punctuationtable) return;
 	Com_Memset(script->punctuationtable, 0, 256 * sizeof(punctuation_t *));
 	//add the punctuations in the list to the punctuation table
 	for (i = 0; punctuations[i].p; i++)
@@ -187,13 +188,13 @@ void PS_CreatePunctuationTable(script_t *script, punctuation_t *punctuations)
 		newp = &punctuations[i];
 		lastp = NULL;
 		//sort the punctuations in this table entry on length (longer punctuations first)
-		for (p = script->punctuationtable[(unsigned int) newp->p[0]]; p; p = p->next)
+		for (p = script->punctuationtable[(unsigned char) newp->p[0]]; p; p = p->next)
 		{
 			if (strlen(p->p) < strlen(newp->p))
 			{
 				newp->next = p;
 				if (lastp) lastp->next = newp;
-				else script->punctuationtable[(unsigned int) newp->p[0]] = newp;
+				else script->punctuationtable[(unsigned char) newp->p[0]] = newp;
 				break;
 			} //end if
 			lastp = p;
@@ -202,7 +203,7 @@ void PS_CreatePunctuationTable(script_t *script, punctuation_t *punctuations)
 		{
 			newp->next = NULL;
 			if (lastp) lastp->next = newp;
-			else script->punctuationtable[(unsigned int) newp->p[0]] = newp;
+			else script->punctuationtable[(unsigned char) newp->p[0]] = newp;
 		} //end if
 	} //end for
 } //end of the function PS_CreatePunctuationTable
@@ -304,7 +305,7 @@ int PS_ReadWhiteSpace(script_t *script)
 	while(1)
 	{
 		//skip white space
-		while(*script->script_p <= ' ')
+		while((unsigned char)*script->script_p <= ' ')
 		{
 			if (!*script->script_p) return 0;
 			if (*script->script_p == '\n') script->line++;
@@ -789,7 +790,8 @@ int PS_ReadPunctuation(script_t *script, token_t *token)
 	punctuation_t *punc;
 
 #ifdef PUNCTABLE
-	for (punc = script->punctuationtable[(unsigned int)*script->script_p]; punc; punc = punc->next)
+	if (!script->punctuationtable) return 0;
+	for (punc = script->punctuationtable[(unsigned char)*script->script_p]; punc; punc = punc->next)
 	{
 #else
 	int i;
@@ -1311,23 +1313,41 @@ int FileLength(FILE *fp)
 // Returns:					-
 // Changes Globals:		-
 //============================================================================
+/* Keep every script-buffer request representable by the signed native import. */
+static int PS_ScriptMemoryCost(int length, const char *name, unsigned long *size)
+{
+	if (!name || strlen(name) >= sizeof(((script_t *)0)->filename) || length < 0 ||
+		(size_t)length > (size_t)INT_MAX - sizeof(script_t) - 1) return 0;
+	*size = sizeof(script_t) + (size_t)length + 1;
+	return 1;
+}
+
 script_t *LoadScriptFile(const char *filename)
 {
 #ifdef BOTLIB
 	fileHandle_t fp;
 	char pathname[MAX_QPATH];
+	size_t prefix, name;
 #else
 	FILE *fp;
 #endif
 	int length;
 	void *buffer;
 	script_t *script;
+	unsigned long size;
+	if (!filename || !*filename || !PS_ScriptMemoryCost(0, filename, &size)) return NULL;
 
 #ifdef BOTLIB
-	if (strlen(basefolder))
-		Com_sprintf(pathname, sizeof(pathname), "%s/%s", basefolder, filename);
-	else
-		Com_sprintf(pathname, sizeof(pathname), "%s", filename);
+	prefix = strlen(basefolder);
+	name = strlen(filename);
+	if (prefix)
+	{
+		if (prefix >= sizeof(pathname) - 1 || name >= sizeof(pathname) - prefix - 1) return NULL;
+		memcpy(pathname, basefolder, prefix);
+		pathname[prefix++] = '/';
+	}
+	else if (name >= sizeof(pathname)) return NULL;
+	memcpy(pathname + prefix, filename, name + 1);
 	length = botimport.FS_FOpenFile( pathname, &fp, FS_READ );
 	if (!fp) return NULL;
 #else
@@ -1337,7 +1357,25 @@ script_t *LoadScriptFile(const char *filename)
 	length = FileLength(fp);
 #endif
 
-	buffer = GetClearedMemory(sizeof(script_t) + length + 1);
+	if (!PS_ScriptMemoryCost(length, filename, &size))
+	{
+#ifdef BOTLIB
+		botimport.FS_FCloseFile(fp);
+#else
+		fclose(fp);
+#endif
+		return NULL;
+	}
+	buffer = GetClearedMemory(size);
+	if (!buffer)
+	{
+#ifdef BOTLIB
+		botimport.FS_FCloseFile(fp);
+#else
+		fclose(fp);
+#endif
+		return NULL;
+	}
 	script = (script_t *) buffer;
 	Com_Memset(script, 0, sizeof(script_t));
 	strcpy(script->filename, filename);
@@ -1357,20 +1395,37 @@ script_t *LoadScriptFile(const char *filename)
 	script->lastline = 1;
 	//
 	SetScriptPunctuations(script, NULL);
+#ifdef PUNCTABLE
+	if (!script->punctuationtable)
+	{
+#ifdef BOTLIB
+		botimport.FS_FCloseFile(fp);
+#else
+		fclose(fp);
+#endif
+		FreeScript(script);
+		return NULL;
+	}
+#endif
 	//
 #ifdef BOTLIB
-	botimport.FS_Read(script->buffer, length, fp);
+	if (botimport.FS_Read(script->buffer, length, fp) != length)
+	{
+		botimport.FS_FCloseFile(fp);
+		FreeScript(script);
+		return NULL;
+	}
 	botimport.FS_FCloseFile(fp);
 #else
-	if (fread(script->buffer, length, 1, fp) != 1)
+	if (fread(script->buffer, 1, length, fp) != (size_t)length)
 	{
-		FreeMemory(buffer);
+		FreeScript(script);
 		script = NULL;
 	} //end if
 	fclose(fp);
 #endif
 	//
-	script->length = COM_Compress(script->buffer);
+	if (script) script->length = COM_Compress(script->buffer);
 
 	return script;
 } //end of the function LoadScriptFile
@@ -1384,8 +1439,11 @@ script_t *LoadScriptMemory(char *ptr, int length, char *name)
 {
 	void *buffer;
 	script_t *script;
+	unsigned long size;
+	if ((!ptr && length) || !PS_ScriptMemoryCost(length, name, &size)) return NULL;
 
-	buffer = GetClearedMemory(sizeof(script_t) + length + 1);
+	buffer = GetClearedMemory(size);
+	if (!buffer) return NULL;
 	script = (script_t *) buffer;
 	Com_Memset(script, 0, sizeof(script_t));
 	strcpy(script->filename, name);
@@ -1405,8 +1463,14 @@ script_t *LoadScriptMemory(char *ptr, int length, char *name)
 	script->lastline = 1;
 	//
 	SetScriptPunctuations(script, NULL);
-	//
-	Com_Memcpy(script->buffer, ptr, length);
+#ifdef PUNCTABLE
+	if (!script->punctuationtable)
+	{
+		FreeScript(script);
+		return NULL;
+	}
+#endif
+	if (length) Com_Memcpy(script->buffer, ptr, length);
 	//
 	return script;
 } //end of the function LoadScriptMemory

@@ -10,7 +10,11 @@ static const char *fileText;
 static char openedPath[MAX_QPATH];
 static void Check(int condition,const char *message) {if(!condition){fprintf(stderr,"Bot character regression failed: %s\n",message);exit(1);}}
 void *GetMemory(unsigned long size) {
-    int i;Check(size>0&&size<=65536&&requests<256,"bounded real native parser allocation");requestCosts[requests++]=size;
+    int i;
+#ifdef Q3_CHARACTER_HEAP_HOOK
+    if(Q3_CHARACTER_HEAP_HOOK(size)){requests++;return NULL;}
+#endif
+    Check(size>0&&size<=65536&&requests<256,"bounded real native parser allocation");requestCosts[requests++]=size;
     if(size==sizeof(bot_character_t)+MAX_CHARACTERISTICS*sizeof(bot_characteristic_t))characterRequest=requests;
     if(requests==failAt)return NULL;
     for(i=0;i<256;i++)if(!owners[i]){owners[i]=malloc(size);costs[i]=size;Check(owners[i]!=NULL,"fixture heap allocation");liveOwners++;return owners[i];}
@@ -24,7 +28,14 @@ void Com_Memcpy(void *out,const void *in,size_t size) {memcpy(out,in,size);}
 #ifndef Com_Memset
 void Com_Memset(void *out,int value,size_t size) {memset(out,value,size);}
 #endif
-void QDECL Com_Error(int level,const char *format,...) {(void)level;(void)format;Check(0,"unexpected native fatal error");}
+void QDECL Com_Error(int level,const char *format,...) {
+#ifdef Q3_CHARACTER_FATAL_HOOK
+    Q3_CHARACTER_FATAL_HOOK(level);
+#else
+    (void)level;Check(0,"unexpected native fatal error");
+#endif
+    (void)format;
+}
 void QDECL Com_Printf(const char *format,...) {(void)format;formatWarnings++;}
 void QDECL Log_Write(char *format,...) {(void)format;}
 static void QDECL Print(int level,char *format,...) {(void)format;if(level==PRT_ERROR||level==PRT_FATAL)errors++;else if(level==PRT_WARNING)warnings++;else Check(level==PRT_MESSAGE,"native print severity");}
