@@ -824,6 +824,8 @@ void Hunk_ClearTempMemory( void );
 void *Hunk_AllocateTempMemory( int size );
 void Hunk_FreeTempMemory( void *buf );
 int	Hunk_MemoryRemaining( void );
+// Permanent allocation cost, or -1 when the request cannot be represented.
+int Hunk_AllocationSize( int size );
 void Hunk_Log( void);
 void Hunk_Trash( void );
 

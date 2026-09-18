@@ -204,6 +204,8 @@ QVMs while any P0 item is open.
         or winding vertices; see [numeric evidence](bsp-patch-numeric-validation.md).
   - [x] Renderer curve refinement, attributes and derived bounds validate
         before publication; see [native curve evidence](bsp-curve-numeric-validation.md).
+  - [x] Permanent hunk allocations expose checked native alignment/debug costs
+        and reject before bank changes; see [allocator evidence](hunk-allocation-validation.md).
 - [ ] [#46 — enforce shader/skin/font limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
       — **high**, fixed-array writes and unsafe serialized resources.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)

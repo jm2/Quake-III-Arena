@@ -110,6 +110,9 @@ PR head while retaining checks on the merged default branch.
   - executes actual MD4 registration, complete layout validation, native endian
     conversion and animation skinning, with variable weights, LOD/surface
     progress, bones/back references, extreme frame indexes and tess bases;
+  - executes the actual permanent allocator in release/debug modes, checking
+    native cacheline/header costs, both banks, live temporary capacity, exact
+    fits and failure ownership at negative/signed-maximum boundaries;
   - executes native renderer curve refinement with eight captured output
     fingerprints, finite-source overflow and workspace-failure rejection at
     four FS alignments, and actual nodraw skips before control allocation;
@@ -192,6 +195,7 @@ bash tests/run_bsp_trace_tests.sh
 bash tests/run_bsp_world_tests.sh
 bash tests/run_bsp_patch_grid_tests.sh
 bash tests/run_bsp_winding_tests.sh
+bash tests/run_hunk_allocation_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 

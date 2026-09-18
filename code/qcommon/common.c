@@ -1709,6 +1709,18 @@ static void Hunk_SwapBanks( void ) {
 	}
 }
 
+/* Real permanent-allocation cost, including native debug metadata. */
+int Hunk_AllocationSize( int size ) {
+	int header = 0;
+#ifdef HUNK_DEBUG
+	header = sizeof( hunkblock_t );
+#endif
+	if ( size < 0 || size > INT_MAX - header - 31 ) {
+		return -1;
+	}
+	return ( size + header + 31 ) & ~31;
+}
+
 /*
 =================
 Hunk_Alloc
@@ -1728,6 +1740,23 @@ void *Hunk_Alloc( int size, ha_pref preference ) {
 		Com_Error( ERR_FATAL, "Hunk_Alloc: Hunk memory system not initialized" );
 	}
 
+	{
+		int requested = size;
+		size = Hunk_AllocationSize( size );
+		if ( size < 0 ) {
+			Com_Error( ERR_DROP, "Hunk_Alloc: invalid size %i", requested );
+			return NULL;
+		}
+	}
+	if ( size > Hunk_MemoryRemaining() ) {
+#ifdef HUNK_DEBUG
+		Hunk_Log();
+		Hunk_SmallLog();
+#endif
+		Com_Error( ERR_DROP, "Hunk_Alloc failed on %i", size );
+		return NULL;
+	}
+
 	// can't do preference if there is any temp allocated
 	if (preference == h_dontcare || hunk_temp->temp != hunk_temp->permanent) {
 		Hunk_SwapBanks();
@@ -1737,21 +1766,6 @@ void *Hunk_Alloc( int size, ha_pref preference ) {
 		} else if (preference == h_high && hunk_permanent != &hunk_high) {
 			Hunk_SwapBanks();
 		}
-	}
-
-#ifdef HUNK_DEBUG
-	size += sizeof(hunkblock_t);
-#endif
-
-	// round to cacheline
-	size = (size+31)&~31;
-
-	if ( hunk_low.temp + hunk_high.temp + size > s_hunkTotal ) {
-#ifdef HUNK_DEBUG
-		Hunk_Log();
-		Hunk_SmallLog();
-#endif
-		Com_Error( ERR_DROP, "Hunk_Alloc failed on %i", size );
 	}
 
 	if ( hunk_permanent == &hunk_low ) {
