@@ -211,6 +211,8 @@ QVMs while any P0 item is open.
         [memory evidence](bsp-memory-budget-validation.md).
   - [x] Native planar face distances reject nonfinite derived results before
         world/shader/model changes; see [face evidence](bsp-face-numeric-validation.md).
+  - [x] Native patch LOD propagation retains stock depth-first results with
+        constant stack and no traversal allocation; see [LOD evidence](bsp-lod-validation.md).
 - [ ] [#46 — enforce shader/skin/font limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
       — **high**, fixed-array writes and unsafe serialized resources.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)

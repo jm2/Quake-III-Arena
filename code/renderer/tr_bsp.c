@@ -595,114 +595,125 @@ int R_MergedHeightPoints(srfGridMesh_t *grid, int offset) {
 
 /*
 =================
-R_FixSharedVertexLodError_r
+R_FixSharedVertexLodErrorWalk
 
 NOTE: never sync LoD through grid edges with merged points!
 
 FIXME: write generalized version that also avoids cracks between a patch and one that meets half way?
 =================
 */
-void R_FixSharedVertexLodError_r( int start, srfGridMesh_t *grid1 ) {
+static void R_FixSharedVertexLodErrorWalk( int start, srfGridMesh_t *grid1 ) {
 	int j, k, l, m, n, offset1, offset2, touch;
-	srfGridMesh_t *grid2;
+	srfGridMesh_t *grid2, *parent;
 
-	for ( j = start; j < s_worldData.numsurfaces; j++ ) {
-		//
-		grid2 = (srfGridMesh_t *) s_worldData.surfaces[j].data;
-		// if this surface is not a grid
-		if ( grid2->surfaceType != SF_GRID ) continue;
-		// if the LOD errors are already fixed for this patch
-		if ( grid2->lodFixed == 2 ) continue;
-		// grids in the same LOD group should have the exact same lod radius
-		if ( grid1->lodRadius != grid2->lodRadius ) continue;
-		// grids in the same LOD group should have the exact same lod origin
-		if ( grid1->lodOrigin[0] != grid2->lodOrigin[0] ) continue;
-		if ( grid1->lodOrigin[1] != grid2->lodOrigin[1] ) continue;
-		if ( grid1->lodOrigin[2] != grid2->lodOrigin[2] ) continue;
-		//
-		touch = qfalse;
-		for (n = 0; n < 2; n++) {
+	grid1->lodParent = NULL;
+	grid1->lodNextSurface = start;
+	while ( grid1 ) {
+		for ( j = grid1->lodNextSurface; j < s_worldData.numsurfaces; j++ ) {
+			grid1->lodNextSurface = j + 1;
 			//
-			if (n) offset1 = (grid1->height-1) * grid1->width;
-			else offset1 = 0;
-			if (R_MergedWidthPoints(grid1, offset1)) continue;
-			for (k = 1; k < grid1->width-1; k++) {
-				for (m = 0; m < 2; m++) {
+			grid2 = (srfGridMesh_t *) s_worldData.surfaces[j].data;
+			// if this surface is not a grid
+			if ( grid2->surfaceType != SF_GRID ) continue;
+			// if the LOD errors are already fixed for this patch
+			if ( grid2->lodFixed == 2 ) continue;
+			// grids in the same LOD group should have the exact same lod radius
+			if ( grid1->lodRadius != grid2->lodRadius ) continue;
+			// grids in the same LOD group should have the exact same lod origin
+			if ( grid1->lodOrigin[0] != grid2->lodOrigin[0] ) continue;
+			if ( grid1->lodOrigin[1] != grid2->lodOrigin[1] ) continue;
+			if ( grid1->lodOrigin[2] != grid2->lodOrigin[2] ) continue;
+			//
+			touch = qfalse;
+			for (n = 0; n < 2; n++) {
+				//
+				if (n) offset1 = (grid1->height-1) * grid1->width;
+				else offset1 = 0;
+				if (R_MergedWidthPoints(grid1, offset1)) continue;
+				for (k = 1; k < grid1->width-1; k++) {
+					for (m = 0; m < 2; m++) {
 
-					if (m) offset2 = (grid2->height-1) * grid2->width;
-					else offset2 = 0;
-					if (R_MergedWidthPoints(grid2, offset2)) continue;
-					for ( l = 1; l < grid2->width-1; l++) {
-					//
-						if ( fabs(grid1->verts[k + offset1].xyz[0] - grid2->verts[l + offset2].xyz[0]) > .1) continue;
-						if ( fabs(grid1->verts[k + offset1].xyz[1] - grid2->verts[l + offset2].xyz[1]) > .1) continue;
-						if ( fabs(grid1->verts[k + offset1].xyz[2] - grid2->verts[l + offset2].xyz[2]) > .1) continue;
-						// ok the points are equal and should have the same lod error
-						grid2->widthLodError[l] = grid1->widthLodError[k];
-						touch = qtrue;
+						if (m) offset2 = (grid2->height-1) * grid2->width;
+						else offset2 = 0;
+						if (R_MergedWidthPoints(grid2, offset2)) continue;
+						for ( l = 1; l < grid2->width-1; l++) {
+						//
+							if ( fabs(grid1->verts[k + offset1].xyz[0] - grid2->verts[l + offset2].xyz[0]) > .1) continue;
+							if ( fabs(grid1->verts[k + offset1].xyz[1] - grid2->verts[l + offset2].xyz[1]) > .1) continue;
+							if ( fabs(grid1->verts[k + offset1].xyz[2] - grid2->verts[l + offset2].xyz[2]) > .1) continue;
+							// ok the points are equal and should have the same lod error
+							grid2->widthLodError[l] = grid1->widthLodError[k];
+							touch = qtrue;
+						}
 					}
-				}
-				for (m = 0; m < 2; m++) {
+					for (m = 0; m < 2; m++) {
 
-					if (m) offset2 = grid2->width-1;
-					else offset2 = 0;
-					if (R_MergedHeightPoints(grid2, offset2)) continue;
-					for ( l = 1; l < grid2->height-1; l++) {
-					//
-						if ( fabs(grid1->verts[k + offset1].xyz[0] - grid2->verts[grid2->width * l + offset2].xyz[0]) > .1) continue;
-						if ( fabs(grid1->verts[k + offset1].xyz[1] - grid2->verts[grid2->width * l + offset2].xyz[1]) > .1) continue;
-						if ( fabs(grid1->verts[k + offset1].xyz[2] - grid2->verts[grid2->width * l + offset2].xyz[2]) > .1) continue;
-						// ok the points are equal and should have the same lod error
-						grid2->heightLodError[l] = grid1->widthLodError[k];
-						touch = qtrue;
+						if (m) offset2 = grid2->width-1;
+						else offset2 = 0;
+						if (R_MergedHeightPoints(grid2, offset2)) continue;
+						for ( l = 1; l < grid2->height-1; l++) {
+						//
+							if ( fabs(grid1->verts[k + offset1].xyz[0] - grid2->verts[grid2->width * l + offset2].xyz[0]) > .1) continue;
+							if ( fabs(grid1->verts[k + offset1].xyz[1] - grid2->verts[grid2->width * l + offset2].xyz[1]) > .1) continue;
+							if ( fabs(grid1->verts[k + offset1].xyz[2] - grid2->verts[grid2->width * l + offset2].xyz[2]) > .1) continue;
+							// ok the points are equal and should have the same lod error
+							grid2->heightLodError[l] = grid1->widthLodError[k];
+							touch = qtrue;
+						}
 					}
 				}
 			}
-		}
-		for (n = 0; n < 2; n++) {
-			//
-			if (n) offset1 = grid1->width-1;
-			else offset1 = 0;
-			if (R_MergedHeightPoints(grid1, offset1)) continue;
-			for (k = 1; k < grid1->height-1; k++) {
-				for (m = 0; m < 2; m++) {
+			for (n = 0; n < 2; n++) {
+				//
+				if (n) offset1 = grid1->width-1;
+				else offset1 = 0;
+				if (R_MergedHeightPoints(grid1, offset1)) continue;
+				for (k = 1; k < grid1->height-1; k++) {
+					for (m = 0; m < 2; m++) {
 
-					if (m) offset2 = (grid2->height-1) * grid2->width;
-					else offset2 = 0;
-					if (R_MergedWidthPoints(grid2, offset2)) continue;
-					for ( l = 1; l < grid2->width-1; l++) {
-					//
-						if ( fabs(grid1->verts[grid1->width * k + offset1].xyz[0] - grid2->verts[l + offset2].xyz[0]) > .1) continue;
-						if ( fabs(grid1->verts[grid1->width * k + offset1].xyz[1] - grid2->verts[l + offset2].xyz[1]) > .1) continue;
-						if ( fabs(grid1->verts[grid1->width * k + offset1].xyz[2] - grid2->verts[l + offset2].xyz[2]) > .1) continue;
-						// ok the points are equal and should have the same lod error
-						grid2->widthLodError[l] = grid1->heightLodError[k];
-						touch = qtrue;
+						if (m) offset2 = (grid2->height-1) * grid2->width;
+						else offset2 = 0;
+						if (R_MergedWidthPoints(grid2, offset2)) continue;
+						for ( l = 1; l < grid2->width-1; l++) {
+						//
+							if ( fabs(grid1->verts[grid1->width * k + offset1].xyz[0] - grid2->verts[l + offset2].xyz[0]) > .1) continue;
+							if ( fabs(grid1->verts[grid1->width * k + offset1].xyz[1] - grid2->verts[l + offset2].xyz[1]) > .1) continue;
+							if ( fabs(grid1->verts[grid1->width * k + offset1].xyz[2] - grid2->verts[l + offset2].xyz[2]) > .1) continue;
+							// ok the points are equal and should have the same lod error
+							grid2->widthLodError[l] = grid1->heightLodError[k];
+							touch = qtrue;
+						}
 					}
-				}
-				for (m = 0; m < 2; m++) {
+					for (m = 0; m < 2; m++) {
 
-					if (m) offset2 = grid2->width-1;
-					else offset2 = 0;
-					if (R_MergedHeightPoints(grid2, offset2)) continue;
-					for ( l = 1; l < grid2->height-1; l++) {
-					//
-						if ( fabs(grid1->verts[grid1->width * k + offset1].xyz[0] - grid2->verts[grid2->width * l + offset2].xyz[0]) > .1) continue;
-						if ( fabs(grid1->verts[grid1->width * k + offset1].xyz[1] - grid2->verts[grid2->width * l + offset2].xyz[1]) > .1) continue;
-						if ( fabs(grid1->verts[grid1->width * k + offset1].xyz[2] - grid2->verts[grid2->width * l + offset2].xyz[2]) > .1) continue;
-						// ok the points are equal and should have the same lod error
-						grid2->heightLodError[l] = grid1->heightLodError[k];
-						touch = qtrue;
+						if (m) offset2 = grid2->width-1;
+						else offset2 = 0;
+						if (R_MergedHeightPoints(grid2, offset2)) continue;
+						for ( l = 1; l < grid2->height-1; l++) {
+						//
+							if ( fabs(grid1->verts[grid1->width * k + offset1].xyz[0] - grid2->verts[grid2->width * l + offset2].xyz[0]) > .1) continue;
+							if ( fabs(grid1->verts[grid1->width * k + offset1].xyz[1] - grid2->verts[grid2->width * l + offset2].xyz[1]) > .1) continue;
+							if ( fabs(grid1->verts[grid1->width * k + offset1].xyz[2] - grid2->verts[grid2->width * l + offset2].xyz[2]) > .1) continue;
+							// ok the points are equal and should have the same lod error
+							grid2->heightLodError[l] = grid1->heightLodError[k];
+							touch = qtrue;
+						}
 					}
 				}
 			}
+			if (touch) {
+				grid2->lodFixed = 2;
+				grid2->lodParent = grid1;
+				grid2->lodNextSurface = start;
+				grid1 = grid2;
+				goto nextGrid;
+			}
 		}
-		if (touch) {
-			grid2->lodFixed = 2;
-			R_FixSharedVertexLodError_r ( start, grid2 );
-			//NOTE: this would be correct but makes things really slow
-			//grid2->lodFixed = 1;
-		}
+		parent = grid1->lodParent;
+		grid1->lodParent = NULL;
+		grid1->lodNextSurface = 0;
+		grid1 = parent;
+nextGrid: ;
 	}
 }
 
@@ -729,8 +740,8 @@ void R_FixSharedVertexLodError( void ) {
 			continue;
 		//
 		grid1->lodFixed = 2;
-		// recursively fix other patches in the same LOD group
-		R_FixSharedVertexLodError_r( i + 1, grid1);
+		// fix other patches in the same LOD group with constant C stack
+		R_FixSharedVertexLodErrorWalk( i + 1, grid1);
 	}
 }
 
