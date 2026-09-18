@@ -492,6 +492,10 @@ QVMs while any P0 item is open.
         before replacing the shared root; failure keeps every prior array/fixup
         byte and success releases the prior logical record;
         see [setup evidence](bot-weapon-setup-validation.md).
+  - [x] Weapon weights stage complete config/index pairs, keep prior bytes
+        on source/allocation failure and safely reuse cached aliases; repeated
+        cleanup clears both roots and native evaluation stays;
+        see [weight evidence](bot-weapon-weight-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 

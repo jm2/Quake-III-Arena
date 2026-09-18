@@ -394,8 +394,19 @@ int *WeaponWeightIndex(weightconfig_t *wwc, weaponconfig_t *wc)
 {
 	int *index, i;
 
+	if (!wwc || !wc || wc->numweapons < 0 ||
+			(unsigned long)wc->numweapons > (unsigned long)INT_MAX / sizeof(int))
+	{
+		botimport.Print(PRT_ERROR, "invalid weapon weight index configuration\n");
+		return NULL;
+	}
 	//initialize item weight index
 	index = (int *) GetClearedMemory(sizeof(int) * wc->numweapons);
+	if (!index)
+	{
+		botimport.Print(PRT_ERROR, "couldn't allocate weapon weight index\n");
+		return NULL;
+	}
 
 	for (i = 0; i < wc->numweapons; i++)
 	{
@@ -417,6 +428,8 @@ void BotFreeWeaponWeights(int weaponstate)
 	if (!ws) return;
 	if (ws->weaponweightconfig) FreeWeightConfig(ws->weaponweightconfig);
 	if (ws->weaponweightindex) FreeMemory(ws->weaponweightindex);
+	ws->weaponweightconfig = NULL;
+	ws->weaponweightindex = NULL;
 } //end of the function BotFreeWeaponWeights
 //===========================================================================
 //
@@ -427,19 +440,29 @@ void BotFreeWeaponWeights(int weaponstate)
 int BotLoadWeaponWeights(int weaponstate, char *filename)
 {
 	bot_weaponstate_t *ws;
+	weightconfig_t *candidate;
+	int *index;
 
 	ws = BotWeaponStateFromHandle(weaponstate);
 	if (!ws) return BLERR_CANNOTLOADWEAPONWEIGHTS;
-	BotFreeWeaponWeights(weaponstate);
-	//
-	ws->weaponweightconfig = ReadWeightConfig(filename);
-	if (!ws->weaponweightconfig)
-	{
-		botimport.Print(PRT_FATAL, "couldn't load weapon config %s\n", filename);
-		return BLERR_CANNOTLOADWEAPONWEIGHTS;
-	} //end if
 	if (!weaponconfig) return BLERR_CANNOTLOADWEAPONCONFIG;
-	ws->weaponweightindex = WeaponWeightIndex(ws->weaponweightconfig, weaponconfig);
+	candidate = ReadWeightConfig(filename);
+	if (!candidate)
+	{
+		botimport.Print(PRT_FATAL, "couldn't load weapon config %s\n", filename ? filename : "<NULL>");
+		return BLERR_CANNOTLOADWEAPONWEIGHTS;
+	}
+	index = WeaponWeightIndex(candidate, weaponconfig);
+	if (!index)
+	{
+		if (candidate != ws->weaponweightconfig) FreeWeightConfig(candidate);
+		return BLERR_CANNOTLOADWEAPONWEIGHTS;
+	}
+	if (ws->weaponweightconfig && ws->weaponweightconfig != candidate)
+		FreeWeightConfig(ws->weaponweightconfig);
+	if (ws->weaponweightindex) FreeMemory(ws->weaponweightindex);
+	ws->weaponweightconfig = candidate;
+	ws->weaponweightindex = index;
 	return BLERR_NOERROR;
 } //end of the function BotLoadWeaponWeights
 //===========================================================================
