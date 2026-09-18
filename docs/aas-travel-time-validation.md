@@ -36,11 +36,11 @@ Both Retro68 products rebuild with zero compiler diagnostics and valid PPC PEFs:
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,758,211 | `46973b98dc41e4dc8be21d202a82bf24192bcb71590a4c189c335d5c3c2ec5c1` |
-| Quake3_TeamArena | 3,906,785 | `a267979bdce49de64aef65c79bbbdb68b37413fff4befc77de0a3343c1a6e691` |
+| Quake3 | 3,758,211 | `7bcfef5a3bb080450320b0a127b45e978db9b5580153b5752576310c5f88bd4a` |
+| Quake3_TeamArena | 3,906,785 | `85d7ed88be88ace84a9e2bfc8c6b670ed7b591e214c71476b7513150b964eec3` |
 
-The artifacts include the final portal/cluster dummy-only-root and native
-isolated-goal routing guards. Integrated distance/cache/isolated-routing
+The artifacts include the final portal/cluster empty-dummy ownership checks
+and native isolated-goal routing guards. Integrated distance/cache/isolated-routing
 sanitizers pass after merging the final source.
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 
