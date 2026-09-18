@@ -1406,17 +1406,22 @@ static void SkipShaderTail( char **text, unsigned int depth ) {
 			if ( *data ) data++;
 			continue;
 		}
-		if ( *data == '{' ) depth++;
-		else if ( *data == '}' ) depth--;
-		/* COM_ParseExt consumes an unquoted token through its next whitespace. */
-		while ( *data && *data > ' ' ) data++;
+		/* Only complete unquoted brace tokens change COM_ParseExt nesting. */
+		{
+			char *token = data;
+			while ( *data && *data > ' ' ) data++;
+			if ( data == token + 1 ) {
+				if ( token[0] == '{' ) depth++;
+				else if ( token[0] == '}' ) depth--;
+			}
+		}
 	}
 	*text = depth ? NULL : data;
 }
 
 static void SkipShaderDefinition( char **text ) {
 	char *token = COM_ParseExt( text, qtrue );
-	if ( token[0] == '{' ) SkipShaderTail( text, 1 );
+	if ( token[0] == '{' && !token[1] ) SkipShaderTail( text, 1 );
 }
 
 /*

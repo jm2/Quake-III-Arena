@@ -5,7 +5,8 @@ an excess stage through the native invalid-shader fallback path. Consume the
 remaining open stage/shader using whitespace/token boundaries, quoted strings,
 line/block comments and nested braces; stop safely at EOF. Shader lookup and
 both archive-indexing passes share that skip logic, so following definitions
-remain discoverable even after quoted braces in a rejected shader.
+remain discoverable even after quoted braces or brace-prefixed filename tokens
+in a rejected shader. Only standalone unquoted braces change nesting.
 
 Valid stage operations, native eight-stage capacity, default caching and
 commercial 1.32c text/module/syscall layouts remain unchanged. Do not invoke
@@ -20,6 +21,10 @@ covers 0–10 stages and the following shader: preserve valid stage image,
 RGB/alpha, blend/depth and scroll modifiers, reject invalid counts, keep
 following labels synchronized and parse the following body. Native zero-stage
 fog/sky exceptions remain accepted.
+
+The Codex follow-up reproduces failed recovery for `map }foo` and `map {foo`
+before the correction. Native recovery, lookup and both archive hash passes
+now cover each prefix, paired prefixes, and a valid stage with these names.
 
 Excess-stage tails cover quoted/embedded braces, comments/nesting, unused video
 maps and truncated comment/string/blocks. Native registration accepts/caches
@@ -38,8 +43,8 @@ PEFs, using temporary toolchain libraries from [loading evidence](qvm-loading-va
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,733,351 | `7405e6b60195414e36d2aacd9590be4184afb53f0c939062ce33772dfd5a815c` |
-| Quake3_TeamArena | 3,886,021 | `caf5641b642b93da0d60c4d1d666a74fcadd9bd8ab37c581cd886309f0da468d` |
+| Quake3 | 3,733,351 | `f790c97ef8612db2f710ce21a43f55d2f22dd4d17b0cf2802d1a9f94c9b3a7fe` |
+| Quake3_TeamArena | 3,886,021 | `1b872f48282df29713f2a917537aa0fc8016436170d112c594eb5f636e24e30e` |
 
 ## Remaining acceptance
 

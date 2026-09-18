@@ -73,14 +73,16 @@ static void TailCases(void) {
 	const char *tails[]={
 		"{\nvideoMap forbidden.roq\n}\n}\ntests/following\n{\n{\nmap $whiteimage\n}\n}\n",
 		"{\nmap \"}\"\nmap textures/{embedded}\n/* } { */\n// } {\n{ nested }\n}\n{ ignored }\n}\ntests/following\n{\n{\nmap $whiteimage\n}\n}\n",
+		"{\nmap }foo\n}\n}\ntests/following\n{\n{\nmap $whiteimage\n}\n}\n",
+		"{\nmap {foo\n}\n}\ntests/following\n{\n{\nmap $whiteimage\n}\n}\n",
 		"{\nvideoMap never-open.roq\n",
 		"{\n/* unterminated { }",
 		"{\nmap \"unterminated { }"
 	};
-	for(mode=0;mode<5;mode++) {
+	for(mode=0;mode<7;mode++) {
 		text=Build(8);tail=strstr(archive,"}\ntests/following");Check(tail!=NULL,"native overflowing-tail fixture");strcpy(tail,tails[mode]);COM_ParseExt(&text,qtrue);ResetParser();before=videos;
 		Check(!ParseShader(&text) && videos==before,"excess stages skip cinematic/resource parsing and fall back");
-		if(mode<2) { Check(!strcmp(COM_ParseExt(&text,qtrue),"tests/following"),"comments/quotes/nesting preserve following label");ResetParser();Check(ParseShader(&text),"following shader survives skipped malformed tail"); }
+		if(mode<4) { Check(!strcmp(COM_ParseExt(&text,qtrue),"tests/following"),"comments/quotes/nesting preserve following label");ResetParser();Check(ParseShader(&text),"following shader survives skipped malformed tail"); }
 		else Check(text==NULL,"truncated/comment/quote tail stops safely at EOF");
 	}
 }
@@ -101,15 +103,24 @@ int main(void) {
 	ResetParser();text="{\nsurfaceParm fog\n}\n";Check(ParseShader(&text),"native zero-stage fog remains valid");
 	ResetParser();text="{\nskyparms - 512 -\n}\n";Check(ParseShader(&text) && shader.isSky,"native zero-stage sky remains valid");
 	Registration();
-	Release();tr.whiteImage=&white;Build(8);
-	text=strstr(archive,"}\ntests/following");Check(text!=NULL,"quoted overflow archive fixture");
-	strcpy(text,"{\nmap \"}\"\n/* { } */\n}\n}\ntests/following\n{\n{\nmap $whiteimage\n}\n}\n");s_shaderText=archive;
-	Check(R_FindShader("tests/material",LIGHTMAP_NONE,qtrue)->defaultShader,"quoted excess stage registers bounded fallback");
-	Check(!R_FindShader("tests/following",LIGHTMAP_NONE,qtrue)->defaultShader,"native lookup skips quoted braces in preceding invalid shader");
-	Release();tr.whiteImage=&white;ri.FS_ListFiles=ListScripts;ri.FS_FreeFileList=FreeScriptList;ri.FS_ReadFile=ReadScript;ri.FS_FreeFile=FreeScript;
-	ScanAndLoadShaderFiles();
-	Check(scriptReads==1 && scriptFrees==1 && listFrees==1 && !scriptFile,"native shader archive indexing frees script/list ownership");
-	Check(R_FindShader("tests/material",LIGHTMAP_NONE,qtrue)->defaultShader,"indexed oversized shader uses bounded fallback");
-	Check(!R_FindShader("tests/following",LIGHTMAP_NONE,qtrue)->defaultShader,"both native hash passes preserve following definition with quotes/comments");
+	for(i=0;i<5;i++) {
+		int bucket,beforeReads=scriptReads,beforeFrees=scriptFrees,beforeLists=listFrees;
+		const char *maps[]={"map \"}\"\n/* { } */", "map }foo", "map {foo", "map }foo\nmap {foo", "map }foo\nmap {foo"};
+		Release();tr.whiteImage=&white;
+		for(bucket=0;bucket<MAX_SHADERTEXT_HASH;bucket++)shaderTextHashTable[bucket]=emptyHash;
+		Build(i==4?1:8);text=strstr(archive,"}\ntests/following");Check(text!=NULL,"brace-token archive fixture");
+		if(i==4) {
+			text=strstr(archive,"map $whiteimage");Check(text!=NULL,"valid brace-token stage fixture");
+			snprintf(text,sizeof(archive)-(text-archive),"%s\n}\n}\ntests/following\n{\n{\nmap $whiteimage\n}\n}\n",maps[i]);
+		} else snprintf(text,sizeof(archive)-(text-archive),"{\n%s\n}\n}\ntests/following\n{\n{\nmap $whiteimage\n}\n}\n",maps[i]);
+		s_shaderText=archive;
+		Check(R_FindShader("tests/material",LIGHTMAP_NONE,qtrue)->defaultShader==(i!=4),"brace-token stage registers native valid/fallback result");
+		Check(!R_FindShader("tests/following",LIGHTMAP_NONE,qtrue)->defaultShader,"native lookup skips quoted and brace-prefixed filename tokens");
+		Release();tr.whiteImage=&white;ri.FS_ListFiles=ListScripts;ri.FS_FreeFileList=FreeScriptList;ri.FS_ReadFile=ReadScript;ri.FS_FreeFile=FreeScript;
+		ScanAndLoadShaderFiles();
+		Check(scriptReads==beforeReads+1 && scriptFrees==beforeFrees+1 && listFrees==beforeLists+1 && !scriptFile,"native shader archive indexing frees script/list ownership");
+		Check(R_FindShader("tests/material",LIGHTMAP_NONE,qtrue)->defaultShader==(i!=4),"indexed brace-token shader uses native valid/fallback result");
+		Check(!R_FindShader("tests/following",LIGHTMAP_NONE,qtrue)->defaultShader,"both native hash passes preserve following definition with brace-prefixed filename tokens");
+	}
 	Release();puts("Native shader zero-to-ten stages, synchronization, EOF and registration/cache checks passed (issue #46)");return 0;
 }
