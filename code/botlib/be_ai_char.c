@@ -573,9 +573,13 @@ int BotInterpolateCharacters(int handle1, int handle2, float desiredskill)
 	if (handle > MAX_CLIENTS) return 0;
 	out = (bot_character_t *) GetClearedMemory(sizeof(bot_character_t) +
 					MAX_CHARACTERISTICS * sizeof(bot_characteristic_t));
+	if (!out)
+	{
+		botimport.Print(PRT_ERROR, "could not allocate interpolated character\n");
+		return 0;
+	} //end if
 	out->skill = desiredskill;
 	strcpy(out->filename, ch1->filename);
-	botcharacters[handle] = out;
 
 	scale = (float) (desiredskill - ch1->skill) / (ch2->skill - ch1->skill);
 	for (i = 0; i < MAX_CHARACTERISTICS; i++)
@@ -594,11 +598,19 @@ int BotInterpolateCharacters(int handle1, int handle2, float desiredskill)
 		} //end else if
 		else if (ch1->c[i].type == CT_STRING)
 		{
-			out->c[i].type = CT_STRING;
 			out->c[i].value.string = (char *) GetMemory(strlen(ch1->c[i].value.string)+1);
+			if (!out->c[i].value.string)
+			{
+				botimport.Print(PRT_ERROR, "could not allocate interpolated characteristic string\n");
+				BotFreeCharacterStrings(out);
+				FreeMemory(out);
+				return 0;
+			} //end if
 			strcpy(out->c[i].value.string, ch1->c[i].value.string);
+			out->c[i].type = CT_STRING;
 		} //end else if
 	} //end for
+	botcharacters[handle] = out;
 	return handle;
 } //end of the function BotInterpolateCharacters
 //===========================================================================

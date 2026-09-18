@@ -347,6 +347,10 @@ QVMs while any P0 item is open.
         definitions copied by existing sources and exposes only remaining
         originals to later sources; native duplicate/case semantics remain;
         see [registry evidence](bot-global-validation.md).
+  - [x] Character interpolation publishes only complete header/string owners,
+        releases partial output after nullable imports and preserves input
+        characters and ordinary native values;
+        see [interpolation evidence](bot-interpolation-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
