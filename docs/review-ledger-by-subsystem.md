@@ -580,6 +580,10 @@ implementation or check, without implying issue completion.
         readiness survives game VM resets through an existing syscall query. Retail
         void ABI, prior pool bytes and native positive counts remain;
         see [pool evidence](bot-level-pool-validation.md).
+  - [x] Map metadata stages checked locations/camps and publishes roots with
+        the complete level pool; nullable failure preserves all prior bytes,
+        cleans private owners and propagates through the checked map API;
+        see [metadata evidence](bot-map-info-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
