@@ -366,6 +366,81 @@ static qboolean AAS_ValidateLumps( const aas_header_t *header, int fileLength ) 
 	return qtrue;
 }
 
+/* Native data is checked after endian conversion and before publication. */
+static qboolean AAS_FiniteFloat(float value)
+{
+	union { float value; unsigned int bits; } representation;
+	volatile unsigned int bits;
+	representation.value = value;
+	bits = representation.bits;
+	return (bits & 0x7f800000u) != 0x7f800000u;
+}
+
+static qboolean AAS_IndexRange(int first, int count, int size)
+{
+	return first >= 0 && count >= 0 && first <= size && count <= size - first;
+}
+
+static qboolean AAS_SignedIndex(int index, int size)
+{
+	if (index == INT_MIN) return qfalse;
+	if (index < 0) index = -index;
+	return index < size;
+}
+
+static qboolean AAS_ValidateGeometry(void)
+{
+	int i, axis;
+	for (i = 0; i < aasworld.numbboxes; i++)
+	{
+		for (axis = 0; axis < 3; axis++)
+			if (!AAS_FiniteFloat(aasworld.bboxes[i].mins[axis]) ||
+				!AAS_FiniteFloat(aasworld.bboxes[i].maxs[axis]) ||
+				aasworld.bboxes[i].mins[axis] > aasworld.bboxes[i].maxs[axis])
+				return qfalse;
+	}
+	for (i = 0; i < aasworld.numvertexes; i++)
+		for (axis = 0; axis < 3; axis++)
+			if (!AAS_FiniteFloat(aasworld.vertexes[i][axis])) return qfalse;
+	for (i = 0; i < aasworld.numplanes; i++)
+	{
+		aas_plane_t *plane = &aasworld.planes[i];
+		if (plane->type < 0 || plane->type > 5 || !AAS_FiniteFloat(plane->dist))
+			return qfalse;
+		for (axis = 0; axis < 3; axis++)
+			if (!AAS_FiniteFloat(plane->normal[axis])) return qfalse;
+	}
+	for (i = 0; i < aasworld.numedges; i++)
+		for (axis = 0; axis < 2; axis++)
+			if (aasworld.edges[i].v[axis] < 0 ||
+				aasworld.edges[i].v[axis] >= aasworld.numvertexes) return qfalse;
+	for (i = 0; i < aasworld.edgeindexsize; i++)
+		if (!AAS_SignedIndex(aasworld.edgeindex[i], aasworld.numedges)) return qfalse;
+	for (i = 0; i < aasworld.numfaces; i++)
+	{
+		aas_face_t *face = &aasworld.faces[i];
+		if (!AAS_IndexRange(face->firstedge, face->numedges, aasworld.edgeindexsize) ||
+			face->frontarea < 0 || face->frontarea >= aasworld.numareas ||
+			face->backarea < 0 || face->backarea >= aasworld.numareas ||
+			face->planenum < 0 || face->planenum >= aasworld.numplanes ||
+			((i || aasworld.numareas > 1) && (face->planenum ^ 1) >= aasworld.numplanes)) return qfalse;
+	}
+	for (i = 0; i < aasworld.faceindexsize; i++)
+		if (!AAS_SignedIndex(aasworld.faceindex[i], aasworld.numfaces)) return qfalse;
+	for (i = 0; i < aasworld.numareas; i++)
+	{
+		aas_area_t *area = &aasworld.areas[i];
+		if (area->areanum != i ||
+			!AAS_IndexRange(area->firstface, area->numfaces, aasworld.faceindexsize))
+			return qfalse;
+		for (axis = 0; axis < 3; axis++)
+			if (!AAS_FiniteFloat(area->mins[axis]) || !AAS_FiniteFloat(area->maxs[axis]) ||
+				!AAS_FiniteFloat(area->center[axis]) || area->mins[axis] > area->maxs[axis])
+				return qfalse;
+	}
+	return qtrue;
+}
+
 int AAS_LoadAASFile(char *filename)
 {
 	fileHandle_t fp;
@@ -512,6 +587,12 @@ int AAS_LoadAASFile(char *filename)
 	if (!aasworld.clusters) { AAS_DumpAASData(); return BLERR_CANNOTREADAASLUMP; }
 	//swap everything
 	AAS_SwapAASData();
+	if (!AAS_ValidateGeometry()) {
+		AAS_Error("invalid aas geometry references or numeric fields\n");
+		botimport.FS_FCloseFile(fp);
+		AAS_DumpAASData();
+		return BLERR_CANNOTREADAASLUMP;
+	}
 	//aas file is loaded
 	aasworld.loaded = qtrue;
 	//close the file
