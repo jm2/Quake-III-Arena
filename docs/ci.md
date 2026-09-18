@@ -254,6 +254,7 @@ bash tests/run_bot_memory_tests.sh
 bash tests/run_aas_node_tests.sh
 bash tests/run_aas_reachability_tests.sh
 bash tests/run_aas_portal_tests.sh
+bash tests/run_aas_travel_time_tests.sh
 bash tests/run_bot_zone_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
@@ -399,3 +400,9 @@ imports and bot adapters under release/debug metadata and normal/optimized
 sanitizers. It checks payload/header/trailer/alignment costs, ownership and
 nullable rejection before native allocator expansion can overflow. CI also
 invokes this runner with explicit Clang.
+
+The area travel-time runner extracts actual native area classification and
+conversion bodies with strict source seams and uses the real vector length.
+Literal walk/crouch/swim, minimum-time and signed/uint16 boundary goldens retain
+legacy results. Nonfinite inputs and finite overflowing derived distances reject
+before integer casts under normal and release fast-math sanitizers.

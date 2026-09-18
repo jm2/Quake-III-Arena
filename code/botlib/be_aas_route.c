@@ -476,6 +476,7 @@ unsigned short int AAS_AreaTravelTime(int areanum, vec3_t start, vec3_t end)
 	int intdist;
 	float dist;
 	vec3_t dir;
+	union { float value; unsigned int bits; } representation;
 
 	VectorSubtract(start, end, dir);
 	dist = VectorLength(dir);
@@ -486,6 +487,10 @@ unsigned short int AAS_AreaTravelTime(int areanum, vec3_t start, vec3_t end)
 	//normal walk area
 	else dist *= DISTANCEFACTOR_WALK;
 	//
+	representation.value = dist;
+	// Fast-math-safe finite test; 2^31 is the first unrepresentable positive int.
+	if ((representation.bits & 0x7f800000u) == 0x7f800000u ||
+		dist >= 2147483648.0f) return USHRT_MAX;
 	intdist = (int) dist;
 	//make sure the distance isn't zero
 	if (intdist <= 0) intdist = 1;

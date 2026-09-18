@@ -394,6 +394,8 @@ implementation or check, without implying issue completion.
   - [x] Portal/cluster indices, local area slots, spans and inverse ownership
         validate before loaded; native side ordering and unclustered roots
         retain bytes; see [portal evidence](aas-portal-validation.md).
+- Native derived area travel times check finite/signed casts while preserving
+  defined legacy results; see [travel-time evidence](aas-travel-time-validation.md).
   - [ ] Validate the complete file and graph before setting `loaded`.
 - [ ] [#48 — bot preprocessor/token/path bounds](https://github.com/jm2/Quake-III-Arena/issues/48)
   - [x] Several upstream primitive/preprocessor/diagnostic bounds fixes are
