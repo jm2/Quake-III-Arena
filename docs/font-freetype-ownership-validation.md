@@ -42,6 +42,10 @@ headers (pkg-config module version 26.6.20), replacing only those legacy include
 imports with the standard header interface in a disposable copy. This proves
 API type compatibility, not real font/raster or target FreeType acceptance.
 
+The parent shader correction now retains both specialized iterators for
+identity/skipped alpha. Both products and the affected suite were rerun after
+carrying that reviewed fix into this step.
+
 All four affected font/skin/shader sanitizer runners, nine Python checks,
 Bash syntax and diff checks pass without diagnostics. Runner 40 is registered
 in portable CI. Both shipped Retro68 products build without diagnostics and
@@ -49,8 +53,8 @@ validate as PPC PEFs with FreeType disabled.
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,737,425 | `05b31c77e5c49e25985086f401f1ae5d3809a41661438b1b925e4dc91441ea44` |
-| Quake3_TeamArena | 3,885,999 | `fc7e78b43e78b34abb478f1a66cd729f804dbcd06761edb9d3df053a4723ff6b` |
+| Quake3 | 3,737,425 | `02bb702802404fa2bd0331612a1abbdef25b34cce574a303c261ba23211e850d` |
+| Quake3_TeamArena | 3,885,999 | `400c5fea2a88b845346adc733af143b3c75fbfb22e2d45ad2ae338fb09caf166` |
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 
