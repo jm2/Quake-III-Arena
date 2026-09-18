@@ -479,3 +479,14 @@ and without an existing node, plus two failed replacement variants, preserve
 prior dictionary/value/flags ownership and retry. Invalid pointer inputs have
 native missing-value defaults, and successful cleanup physically frees all
 owners. Auditing every direct pointer-factory consumer remains separate work.
+
+The builtin runner includes the complete actual native preprocessor and its
+token copy/free/error helpers. Literal date/time/line/file expansions retain
+their text, native types/subtypes, whitespace and source-location metadata.
+Repeated expansions borrow unchanged runtime time storage. Failed time
+conversion releases the copied token, reports an error and retries safely;
+empty/unknown expansions release their unused copy. Nullable copies keep the
+native fatal diagnostic and return no token if that diagnostic returns.
+Maximum valid filenames remain accepted. Six original actual-body failure
+proofs cover invalid static frees, null conversions, an unused copy leak and
+null token access. GCC and Clang run normal/release sanitizer modes in CI.
