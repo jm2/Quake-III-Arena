@@ -1382,7 +1382,6 @@ static int PS_CheckFileComments(script_t *script)
 {
 	const char *p = script->buffer;
 	int line = 1;
-	char quote;
 
 	while (*p)
 	{
@@ -1405,19 +1404,12 @@ static int PS_CheckFileComments(script_t *script)
 			}
 			p += 2;
 		}
-		else if (*p == '"' || *p == '\'')
+		//COM_Compress quotes only double-quoted regions, without escape handling.
+		else if (*p == '"')
 		{
-			quote = *p++;
-			while (*p && *p != quote)
-			{
-				if (*p == '\\' && p[1])
-				{
-					p++;
-					if (*p == '\n' && line < INT_MAX) line++;
-					p++;
-				}
-				else if (*p++ == '\n' && line < INT_MAX) line++;
-			}
+			p++;
+			while (*p && *p != '"')
+				if (*p++ == '\n' && line < INT_MAX) line++;
 			if (*p) p++;
 		}
 		else if (*p++ == '\n' && line < INT_MAX) line++;

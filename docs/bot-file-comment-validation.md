@@ -5,8 +5,10 @@ report it. File/source/include callers can accept a truncated prefix, and a comp
 selected character can publish despite a malformed file. Raw memory lexer checks
 do not cover this path.
 
-Validate block-comment closure before compression, respecting native quoted text,
-escapes and line comments. Malformed files retain raw-line diagnostics, close the
+Validate block-comment closure before compression, matching native compression double-quote
+and line-comment rules. Compression does not interpret escapes or single quotes;
+the scan deliberately uses those exact delimiters so erased comments cannot hide
+behind different quote classification. Malformed files retain raw-line diagnostics, close the
 file and free script/punctuation owners before returning failure. Valid files keep
 the exact existing compression output and untouched lexer initialization state.
 Commercial 1.32c public imports/syscalls/protocols and retail formats remain compatible.
@@ -15,7 +17,10 @@ Commercial 1.32c public imports/syscalls/protocols and retail formats remain com
 
 Six original actual-body proofs reproduce direct boundary/multiline file loads,
 source creation, complete-prefix character publication and both include forms.
-Fixed roots reject with original raw line numbers and no physical retained owner.
+Two pre-review proofs additionally reproduce complete-prefix publication after
+escaped double quotes and single quotes; both now reject with no retained owner.
+The original 1,035 valid-byte/token corpus still passes. Fixed roots reject with
+original raw line numbers and no physical retained owner.
 Quoted includes retain their native second fallback attempt; angle includes try
 once. Both reject malformed children, preserve parent source status and recover to
 the synchronized next token. Raw memory lexer diagnostics remain sticky and native
@@ -35,8 +40,8 @@ fixture. Both PPC products build with zero diagnostics and valid PEF headers:
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,779,493 | `cffe2f8a7dc865df1c6dc88b9365d472f3559f8e351a7c0f82900eab07f71597` |
-| Quake3_TeamArena | 3,928,067 | `0d00b387bffa88a0a9d8e017b2e17ae70bdb886ce7f434242408866b5e4e973c` |
+| Quake3 | 3,779,493 | `61beca427d98366248ab83c17c3d203ea85aad2f9dacc5102c09dd0bbbc240b1` |
+| Quake3_TeamArena | 3,928,067 | `fb9884484adde342b93aa90e3afaee44fc5fa28a4275a0ac5f2cd5202700362a` |
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 

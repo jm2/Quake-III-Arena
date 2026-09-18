@@ -6,12 +6,12 @@ static char diagnostic[2048];
 static void QDECL FilePrint(int level,char *format,...){va_list args;size_t length=strlen(diagnostic);va_start(args,format);vsnprintf(diagnostic+length,sizeof(diagnostic)-length,format,args);va_end(args);if(level==PRT_ERROR||level==PRT_FATAL)errors++;else if(level==PRT_WARNING)warnings++;else Check(level==PRT_MESSAGE,"native file print severity");}
 static void FileReset(const char *text){Reset(text);botimport.Print=FilePrint;diagnostic[0]=0;}
 static void FileBad(int entry){
-    const char *text=entry==0?"/*":entry==1?"native /*\nunclosed\n":entry==2?"native /**":"skill 4 { 0 42 } /*\nunclosed\n";
+    const char *text=entry==0?"/*":entry==1?"native /*\nunclosed\n":entry==2?"native /**":entry==6?"skill 4 { 0 42 } \"x\\\" /*":entry==7?"skill 4 { 0 42 } '/*":"skill 4 { 0 42 } /*\nunclosed\n";
     FileReset(text);
     if(entry<2)Check(!LoadScriptFile("bad.c"),"malformed block comment rejects direct file import");
     else if(entry==2)Check(!LoadSourceFile("bad.c"),"malformed block comment rejects source import");
     else Check(!BotLoadCharacterFromFile("bad.c",4),"malformed comment cannot publish a complete-prefix character");
-    Check(errors==1+(entry==3)&&opens==1&&fileReads==1&&closes==1&&!liveOwners&&!numtokens&&strstr(diagnostic,"unterminated block comment")&&strstr(diagnostic,entry==1||entry==3?"line 3:":"line 1:"),"malformed file retains raw line diagnostics and physically frees closed script/punctuation owners");
+    Check(errors==1+(entry>=3)&&opens==1&&fileReads==1&&closes==1&&!liveOwners&&!numtokens&&strstr(diagnostic,"unterminated block comment")&&strstr(diagnostic,entry==1||entry==3?"line 3:":"line 1:"),"malformed file retains raw line diagnostics and physically frees closed script/punctuation owners");
 }
 static void FileInclude(int quoted){
     const char *body=quoted?"#include \"bad.c\"\nnext":"#include <bad.c>\nnext";source_t *source;token_t token;
@@ -45,4 +45,4 @@ static void FileGoldens(void){
 #ifndef Q3_FILE_COMMENT_ENTRY
 #define Q3_FILE_COMMENT_ENTRY main
 #endif
-int Q3_FILE_COMMENT_ENTRY(int argc,char **argv){int i;if(argc>1){i=atoi(argv[1]);if(i<4)FileBad(i);else if(i==4)FileInclude(0);else if(i==5)FileInclude(1);else FileGoldens();return 0;}for(i=0;i<4;i++)FileBad(i);FileInclude(0);FileInclude(1);FileMemory();FileGoldens();Golden("bots/native.c");puts("Real file-comment validation, native compressed bytes/token metadata, included recovery and publication owners passed (issue #48)");return 0;}
+int Q3_FILE_COMMENT_ENTRY(int argc,char **argv){int i;if(argc>1){i=atoi(argv[1]);if(i<4)FileBad(i);else if(i==4)FileInclude(0);else if(i==5)FileInclude(1);else if(i==6||i==7)FileBad(i);else FileGoldens();return 0;}for(i=0;i<4;i++)FileBad(i);FileBad(6);FileBad(7);FileInclude(0);FileInclude(1);FileMemory();FileGoldens();Golden("bots/native.c");puts("Real file-comment validation, native compressed bytes/token metadata, included recovery and publication owners passed (issue #48)");return 0;}
