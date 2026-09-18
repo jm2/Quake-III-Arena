@@ -49,7 +49,7 @@ These comparisons do not claim a complete advisory audit of the old library.
 
 ## Validation
 
-ASan/UBSan runs the actual portable renderer and the complete bundled codec.
+A standalone public-header compile check and ASan/UBSan run the actual portable renderer and the complete bundled codec.
 Input allocations end exactly at four alignments. Cases cover every prefix
 of a small real JPEG, all invalid input sizes 0–4095, actual valid files and
 source refills around 4096/8192, marker skips crossing EOF, repeated/empty
@@ -66,14 +66,6 @@ checks cleanup before errors/warnings, no partial file write and unchanged
 caller pixels. Direct allocation-hook and output-capacity guards reject
 fictitious huge spans before reading or allocating them. BMP/TGA regressions,
 Python tests and both Mac products are checked after the final source changes.
-
-Nine Python tests, all affected image fixtures and Bash syntax pass. Both
-Retro68 products build without compiler diagnostics and validate as PPC PEFs
-using the temporary loader libraries recorded in [loading evidence](qvm-loading-validation.md).
-
-| Product | PEF bytes | SHA-256 |
-| --- | ---: | --- |
-| Quake3 | 3,669,919 | `564fe7ba265d96f3437f0f882dd787db47d74c55fa728986437f8304ed8ccfa4` |
 
 Nine Python tests, all affected image fixtures and Bash syntax pass. Both
 Retro68 products build without compiler diagnostics and validate as PPC PEFs
