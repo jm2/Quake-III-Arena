@@ -189,6 +189,8 @@ QVMs while any P0 item is open.
         with constant C stack space; see [box-query evidence](bsp-box-query-validation.md).
   - [x] Projected-mark queries use validated renderer decision parents with
         native filtering/order and constant stack; see [mark evidence](bsp-mark-query-validation.md).
+  - [x] Swept collision traversal uses bounded pending segments, preserving
+        stock clipping/pruning and cleaning OOM; see [trace evidence](bsp-trace-validation.md).
 - [ ] [#46 — enforce shader/skin/font limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
       — **high**, fixed-array writes and unsafe serialized resources.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)

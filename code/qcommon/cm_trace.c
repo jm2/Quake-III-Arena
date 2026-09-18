@@ -20,6 +20,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 #include "cm_local.h"
+#include <limits.h>
 
 // always use bbox vs. bbox collision and never capsule vs. bbox or vice versa
 //#define ALWAYS_BBOX_VS_BBOX
@@ -1022,119 +1023,140 @@ trace volumes it is possible to hit something in a later leaf with
 a smaller intercept fraction.
 ==================
 */
-void CM_TraceThroughTree( traceWork_t *tw, int num, float p1f, float p2f, vec3_t p1, vec3_t p2) {
-	cNode_t		*node;
-	cplane_t	*plane;
-	float		t1, t2, offset;
-	float		frac, frac2;
-	float		idist;
-	vec3_t		mid;
-	int			side;
-	float		midf;
+typedef struct {
+	int node;
+	float startFraction,endFraction;
+	vec3_t start,end;
+} cmTraceFrame_t;
 
-	if (tw->trace.fraction <= p1f) {
-		return;		// already hit something nearer
-	}
+/* Save pending far segments explicitly; ordinary traces use only inline space. */
+void CM_TraceThroughTree( traceWork_t *tw, int num, float p1f, float p2f, vec3_t p1, vec3_t p2 ) {
+	cmTraceFrame_t inlineFrames[64],current,*frames=inlineFrames,*grown,*far;
+	size_t count=0,capacity=64,newCapacity,maxFrames;
+	cNode_t *node;
+	cplane_t *plane;
+	float t1,t2,offset,frac,frac2,idist,midf;
+	vec3_t mid;
+	int side;
 
-	// if < 0, we are in a leaf node
-	if (num < 0) {
-		CM_TraceThroughLeaf( tw, &cm.leafs[-1-num] );
-		return;
-	}
-
-	//
-	// find the point distances to the seperating plane
-	// and the offset for the size of the box
-	//
-	node = cm.nodes + num;
-	plane = node->plane;
-
-	// adjust the plane distance apropriately for mins/maxs
-	if ( plane->type < 3 ) {
-		t1 = p1[plane->type] - plane->dist;
-		t2 = p2[plane->type] - plane->dist;
-		offset = tw->extents[plane->type];
-	} else {
-		t1 = DotProduct (plane->normal, p1) - plane->dist;
-		t2 = DotProduct (plane->normal, p2) - plane->dist;
-		if ( tw->isPoint ) {
-			offset = 0;
-		} else {
-#if 0 // bk010201 - DEAD
-			// an axial brush right behind a slanted bsp plane
-			// will poke through when expanded, so adjust
-			// by sqrt(3)
-			offset = fabs(tw->extents[0]*plane->normal[0]) +
-				fabs(tw->extents[1]*plane->normal[1]) +
-				fabs(tw->extents[2]*plane->normal[2]);
-
-			offset *= 2;
-			offset = tw->maxOffset;
-#endif
-			// this is silly
-			offset = 2048;
+	current.node=num;current.startFraction=p1f;current.endFraction=p2f;
+	VectorCopy(p1,current.start);VectorCopy(p2,current.end);
+	maxFrames=cm.numNodes>0?(size_t)cm.numNodes:0;
+	for ( ;; ) {
+		num=current.node;p1f=current.startFraction;p2f=current.endFraction;
+		p1=current.start;p2=current.end;
+		if ( tw->trace.fraction<=p1f ) goto nextTrace;
+		if ( num<0 ) {
+			CM_TraceThroughLeaf(tw,&cm.leafs[-1-num]);
+			goto nextTrace;
 		}
+		//
+		// find the point distances to the seperating plane
+		// and the offset for the size of the box
+		//
+		node = cm.nodes + num;
+		plane = node->plane;
+
+		// adjust the plane distance apropriately for mins/maxs
+		if ( plane->type < 3 ) {
+			t1 = p1[plane->type] - plane->dist;
+			t2 = p2[plane->type] - plane->dist;
+			offset = tw->extents[plane->type];
+		} else {
+			t1 = DotProduct (plane->normal, p1) - plane->dist;
+			t2 = DotProduct (plane->normal, p2) - plane->dist;
+			if ( tw->isPoint ) {
+				offset = 0;
+			} else {
+	#if 0 // bk010201 - DEAD
+				// an axial brush right behind a slanted bsp plane
+				// will poke through when expanded, so adjust
+				// by sqrt(3)
+				offset = fabs(tw->extents[0]*plane->normal[0]) +
+					fabs(tw->extents[1]*plane->normal[1]) +
+					fabs(tw->extents[2]*plane->normal[2]);
+
+				offset *= 2;
+				offset = tw->maxOffset;
+	#endif
+				// this is silly
+				offset = 2048;
+			}
+		}
+		if ( t1>=offset+1 && t2>=offset+1 ) {
+			current.node=node->children[0];
+			continue;
+		}
+		if ( t1<-offset-1 && t2<-offset-1 ) {
+			current.node=node->children[1];
+			continue;
+		}
+		// put the crosspoint SURFACE_CLIP_EPSILON pixels on the near side
+		if ( t1 < t2 ) {
+			idist = 1.0/(t1-t2);
+			side = 1;
+			frac2 = (t1 + offset + SURFACE_CLIP_EPSILON)*idist;
+			frac = (t1 - offset + SURFACE_CLIP_EPSILON)*idist;
+		} else if (t1 > t2) {
+			idist = 1.0/(t1-t2);
+			side = 0;
+			frac2 = (t1 - offset - SURFACE_CLIP_EPSILON)*idist;
+			frac = (t1 + offset + SURFACE_CLIP_EPSILON)*idist;
+		} else {
+			side = 0;
+			frac = 1;
+			frac2 = 0;
+		}
+
+		// move up to the node
+		if ( frac < 0 ) {
+			frac = 0;
+		}
+		if ( frac > 1 ) {
+			frac = 1;
+		}
+
+		midf = p1f + (p2f - p1f)*frac;
+
+		mid[0] = p1[0] + frac*(p2[0] - p1[0]);
+		mid[1] = p1[1] + frac*(p2[1] - p1[1]);
+		mid[2] = p1[2] + frac*(p2[2] - p1[2]);
+		/* At most one far frame is pending for each validated decision node. */
+		if ( count==capacity ) {
+			newCapacity=capacity<maxFrames/2?capacity*2:maxFrames;
+			if ( newCapacity<=capacity || newCapacity>(INT_MAX-4096)/sizeof(*frames) ) {
+				if ( frames!=inlineFrames ) free(frames);
+				Com_Error(ERR_DROP,"CM_TraceThroughTree: trace frame storage exceeds native capacity");
+				return;
+			}
+			grown=malloc(newCapacity*sizeof(*frames));
+			if ( !grown ) {
+				if ( frames!=inlineFrames ) free(frames);
+				Com_Error(ERR_DROP,"CM_TraceThroughTree: cannot allocate trace frame storage");
+				return;
+			}
+			Com_Memcpy(grown,frames,count*sizeof(*frames));
+			if ( frames!=inlineFrames ) free(frames);
+			frames=grown;capacity=newCapacity;
+		}
+		far=&frames[count++];
+		far->node=node->children[side^1];far->endFraction=p2f;
+		if ( frac2<0 ) frac2=0;
+		if ( frac2>1 ) frac2=1;
+		far->startFraction=p1f+(p2f-p1f)*frac2;
+		far->start[0]=p1[0]+frac2*(p2[0]-p1[0]);
+		far->start[1]=p1[1]+frac2*(p2[1]-p1[1]);
+		far->start[2]=p1[2]+frac2*(p2[2]-p1[2]);
+		VectorCopy(p2,far->end);
+		current.node=node->children[side];current.endFraction=midf;
+		VectorCopy(mid,current.end);
+		continue;
+
+nextTrace:
+		if ( !count ) break;
+		current=frames[--count];
 	}
-
-	// see which sides we need to consider
-	if ( t1 >= offset + 1 && t2 >= offset + 1 ) {
-		CM_TraceThroughTree( tw, node->children[0], p1f, p2f, p1, p2 );
-		return;
-	}
-	if ( t1 < -offset - 1 && t2 < -offset - 1 ) {
-		CM_TraceThroughTree( tw, node->children[1], p1f, p2f, p1, p2 );
-		return;
-	}
-
-	// put the crosspoint SURFACE_CLIP_EPSILON pixels on the near side
-	if ( t1 < t2 ) {
-		idist = 1.0/(t1-t2);
-		side = 1;
-		frac2 = (t1 + offset + SURFACE_CLIP_EPSILON)*idist;
-		frac = (t1 - offset + SURFACE_CLIP_EPSILON)*idist;
-	} else if (t1 > t2) {
-		idist = 1.0/(t1-t2);
-		side = 0;
-		frac2 = (t1 - offset - SURFACE_CLIP_EPSILON)*idist;
-		frac = (t1 + offset + SURFACE_CLIP_EPSILON)*idist;
-	} else {
-		side = 0;
-		frac = 1;
-		frac2 = 0;
-	}
-
-	// move up to the node
-	if ( frac < 0 ) {
-		frac = 0;
-	}
-	if ( frac > 1 ) {
-		frac = 1;
-	}
-		
-	midf = p1f + (p2f - p1f)*frac;
-
-	mid[0] = p1[0] + frac*(p2[0] - p1[0]);
-	mid[1] = p1[1] + frac*(p2[1] - p1[1]);
-	mid[2] = p1[2] + frac*(p2[2] - p1[2]);
-
-	CM_TraceThroughTree( tw, node->children[side], p1f, midf, p1, mid );
-
-
-	// go past the node
-	if ( frac2 < 0 ) {
-		frac2 = 0;
-	}
-	if ( frac2 > 1 ) {
-		frac2 = 1;
-	}
-		
-	midf = p1f + (p2f - p1f)*frac2;
-
-	mid[0] = p1[0] + frac2*(p2[0] - p1[0]);
-	mid[1] = p1[1] + frac2*(p2[1] - p1[1]);
-	mid[2] = p1[2] + frac2*(p2[2] - p1[2]);
-
-	CM_TraceThroughTree( tw, node->children[side^1], midf, p2f, mid, p2 );
+	if ( frames!=inlineFrames ) free(frames);
 }
 
 
