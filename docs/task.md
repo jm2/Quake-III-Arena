@@ -450,6 +450,9 @@ QVMs while any P0 item is open.
         stages nullable cache/hunk imports before replacing world state and
         preserves prior entities on failure; native defaults and truncation stay;
         see [setup evidence](aas-setup-validation.md).
+  - [x] Entity proximity compares both float coordinate magnitudes directly;
+        defined native constant-40 decisions remain and unsafe integer casts
+        disappear; see [proximity evidence](aas-nearest-distance-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
