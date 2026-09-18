@@ -8,6 +8,12 @@ retain a cached alias while its new index stages. BotFreeItemWeights now clears
 both roots. Private index inputs, item array and signed allocation costs are
 checked before allocation or writes. Successful classname mapping stays native.
 
+Codex identified cached data being freed after a reload-policy change during
+replacement. The shared cleanup now follows actual cache ownership for both goal
+and weapon states; [owner evidence](bot-weight-cache-validation.md) includes
+120 original failures and separate native goldens. The current PPC artifacts
+below include both the pair publication and shared cleanup changes.
+
 ## Validation
 
 Actual goal/fuzzy/parser/libvar/allocator bodies cover twenty nullable imports
@@ -43,17 +49,17 @@ ledger/manifest checks and diff checks pass. Physical host alignment follows
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,796,783 | `ef1d56b00afd672d1ac747d04e47b1758e414e86771df96c26a2ce4db2fb7f83` |
-| Quake3_TeamArena | 3,945,357 | `d6e87f2be4f3dcb7b7681d3fcd97f51f67162c6eb16068ed81990389ca900202` |
+| Quake3 | 3,796,783 | `c4c386dd0434e27838e7b97819984b03d8f7fcb72e504c62fbce2994097e5b3d` |
+| Quake3_TeamArena | 3,945,357 | `f69820cc7c5dc24e21a092272ba1543efea7be4b89b18311973ac502c534da63` |
 
 Both PPC products build with zero diagnostics and valid PEF headers. Temporary
 toolchain libraries: [loading evidence](qvm-loading-validation.md). Commercial
-1.32c public layouts/imports/syscalls, native protocol defaults, cache policy and
+1.32c public layouts/imports/syscalls, native protocol defaults, loading policy and
 valid classname mapping/evaluation remain unchanged.
 
 ## Remaining acceptance
 
-Keep #48 open for active index rebuilding across item-table replacement, weight
-cache ownership across policy changes, further public consumers, complete world/
+Keep #48 open for active index rebuilding across item-table replacement, further public
+consumers, complete world/
 library transactions and aggregate expression/parse/recursion/memory budgets.
 Retail/Mac OS 9 execution is deferred.

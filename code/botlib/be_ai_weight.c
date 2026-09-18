@@ -141,7 +141,12 @@ void FreeWeightConfig2(weightconfig_t *config)
 //===========================================================================
 void FreeWeightConfig(weightconfig_t *config)
 {
-	if (!LibVarGetValue("bot_reloadcharacters")) return;
+	int i;
+
+	if (!config) return;
+	//Cache ownership survives later changes to the reload policy.
+	for (i = 0; i < MAX_WEIGHT_FILES; i++)
+		if (weightFileList[i] == config) return;
 	FreeWeightConfig2(config);
 } //end of the function FreeWeightConfig
 //===========================================================================
