@@ -53,8 +53,14 @@ ignored patch/flare fields. Actual collision loading accepts 256 submodels;
 arena and remains covered. These fixtures do not execute renderer payload
 loading or the native patch-generation algorithm.
 
-Both BSP ASan/UBSan fixtures, nine Python checks and both Retro68 builds will
-be recorded after integration of the current merged syscall stack.
+Both BSP ASan/UBSan fixtures, nine Python checks and Bash syntax pass. Both
+Retro68 products build without compiler diagnostics and validate as PPC PEFs
+using the temporary libraries from [loading evidence](qvm-loading-validation.md).
+
+| Product | PEF bytes | SHA-256 |
+| --- | ---: | --- |
+| Quake3 | 3,708,115 | `329ac4ae65dc4e8c6aeda785e8fde23467ea032d96646a4232fc0d74a9f5ccd9` |
+| Quake3_TeamArena | 3,856,689 | `608e8e5ae9a247d1527f2c00758dd004da6cf4fab44a447d832a603ca186361b` |
 
 ## Remaining acceptance
 
@@ -63,3 +69,7 @@ derived geometry, renderer capacity checks, entity/grid parsing and complete
 transactional publication remain outstanding. Valid references do not make
 untrusted BSP payloads safe yet. Retail collision/rendering and Mac OS 9 live
 acceptance are deferred to the user's follow-up session.
+
+Merged master `4fd62bd`, including all reviewed bot syscall steps, is
+integrated. The affected sanitizer fixtures, nine Python checks and both
+product builds pass; the table records the current integrated artifacts.
