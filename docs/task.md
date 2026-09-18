@@ -343,6 +343,10 @@ QVMs while any P0 item is open.
         script/table/dictionary/global-copy owners; native byte classification
         and punctuation indexing avoid signed high-byte indexes;
         see [source evidence](bot-source-validation.md).
+  - [x] Individual global definition deletion unlinks before freeing, preserves
+        definitions copied by existing sources and exposes only remaining
+        originals to later sources; native duplicate/case semantics remain;
+        see [registry evidence](bot-global-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 

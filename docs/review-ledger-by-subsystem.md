@@ -447,6 +447,10 @@ implementation or check, without implying issue completion.
         script/table/dictionary/global-copy owners; native byte classification
         and punctuation indexing avoid signed high-byte indexes;
         see [source evidence](bot-source-validation.md).
+  - [x] Individual global definition deletion unlinks before freeing, preserves
+        definitions copied by existing sources and exposes only remaining
+        originals to later sources; native duplicate/case semantics remain;
+        see [registry evidence](bot-global-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)

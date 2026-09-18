@@ -1495,14 +1495,19 @@ int PC_AddGlobalDefine(char *string)
 //============================================================================
 int PC_RemoveGlobalDefine(char *name)
 {
-	define_t *define;
+	define_t *define, **link;
 
-	define = PC_FindDefine(globaldefines, name);
-	if (define)
+	if (!name) return qfalse;
+	for (link = &globaldefines; *link; link = &(*link)->next)
 	{
-		PC_FreeDefine(define);
-		return qtrue;
-	} //end if
+		define = *link;
+		if (!strcmp(define->name, name))
+		{
+			*link = define->next;
+			PC_FreeDefine(define);
+			return qtrue;
+		}
+	} //end for
 	return qfalse;
 } //end of the function PC_RemoveGlobalDefine
 //============================================================================

@@ -80,7 +80,10 @@ static void LargestNullable(int memory) {
     Check(!source&&requests==1&&!liveOwners&&!numtokens&&!fileReads,"last signed buffer cost remains representable and propagates a nullable import");Check(memory?(!opens&&!closes):(opens==1&&closes==1),"large nullable file import closes the opened handle");
 }
 static void PathOverflow(void) {SourceReset("");PC_SetBaseFolder("prefix");Check(!LoadSourceFile("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")&&!opens&&!requests&&!formatWarnings,"full native source path rejects before lookup/truncation");}
-int main(int argc,char **argv) {
+#ifndef Q3_SOURCE_ENTRY
+#define Q3_SOURCE_ENTRY main
+#endif
+int Q3_SOURCE_ENTRY(int argc,char **argv) {
     if(argc>1){int proof=atoi(argv[1]);if(proof==0)BaseFailure(0,1);else if(proof==1)BaseFailure(0,2);else if(proof==2)BaseFailure(0,3);else if(proof==3)BaseFailure(0,4);else if(proof==4)Short();else if(proof==5)InvalidCost(0,INT_MAX);else if(proof==6)BaseFailure(1,2);else if(proof==7)Names();else if(proof==8)HighByte();else if(proof==9)Globals(1,5);else if(proof==10)Globals(1,6);else if(proof==11)Globals(1,9);else if(proof==12)PathOverflow();else InvalidCost(1,-1);}
     else {int memory,position;for(memory=0;memory<2;memory++){Plain(memory,0);Plain(memory,1);for(position=1;position<=4;position++)BaseFailure(memory,position);InvalidCost(memory,-1);InvalidCost(memory,INT_MAX);LargestNullable(memory);}Short();Names();MemoryMacros();HighByte();Globals(0,0);Globals(1,0);puts("Real native source owner transactions, file costs/reads, memory punctuation and copied-global rollback passed (issue #48)");}
     return 0;
