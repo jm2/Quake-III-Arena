@@ -267,7 +267,8 @@ int Export_BotLibLoadMap(const char *mapname)
 	errnum = AAS_LoadMap(mapname);
 	if (errnum != BLERR_NOERROR) return errnum;
 	//initialize the items in the level
-	BotInitLevelItems();		//be_ai_goal.h
+	errnum = BotInitLevelItemsChecked();
+	if (errnum != BLERR_NOERROR) return errnum;
 	BotSetBrushModelTypes();	//be_ai_move.h
 	//
 	botimport.Print(PRT_MESSAGE, "-------------------------------------\n");

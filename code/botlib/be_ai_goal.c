@@ -616,7 +616,7 @@ void BotInitInfoEntities(void)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-void BotInitLevelItems(void)
+int BotInitLevelItemsChecked(void)
 {
 	int i, spawnflags, value;
 	char classname[MAX_EPAIRKEY];
@@ -627,15 +627,15 @@ void BotInitLevelItems(void)
 	bsp_trace_t trace;
 
 	//A failed pool replacement must preserve prior lists and map information.
-	if (!InitLevelItemHeap()) return;
+	if (!InitLevelItemHeap()) return BLERR_LIBRARYNOTSETUP;
 	//initialize the map locations and camp spots
 	BotInitInfoEntities();
 	//
 	ic = itemconfig;
-	if (!ic) return;
+	if (!ic) return BLERR_NOERROR;
 
 	//if there's no AAS file loaded
-	if (!AAS_Loaded()) return;
+	if (!AAS_Loaded()) return BLERR_NOERROR;
 
 	//update the modelindexes of the item info
 	for (i = 0; i < ic->numiteminfo; i++)
@@ -693,7 +693,7 @@ void BotInitLevelItems(void)
 		} //end if
 
 		li = AllocLevelItem();
-		if (!li) return;
+		if (!li) return BLERR_LIBRARYNOTSETUP;
 		//
 		li->number = ++numlevelitems;
 		li->timeout = 0;
@@ -748,6 +748,12 @@ void BotInitLevelItems(void)
 		AddLevelItemToList(li);
 	} //end for
 	botimport.Print(PRT_MESSAGE, "found %d level items\n", numlevelitems);
+	return BLERR_NOERROR;
+}
+
+void BotInitLevelItems(void)
+{
+	(void)BotInitLevelItemsChecked();
 } //end of the function BotInitLevelItems
 //===========================================================================
 //

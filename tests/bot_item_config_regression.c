@@ -1,7 +1,9 @@
 /* Actual item factory, structure/parser bodies and engine allocator metadata. */
 #include Q3_ITEM_CONFIG_SOURCE
+#ifndef Q3_ITEM_NATIVE_INTERFACE
 botlib_import_t botimport;
 botlib_globals_t botlibglobals;
+#endif
 extern int numtokens;
 static void *heap[64],*hunk[16],*heapRaw[64],*hunkRaw[16];
 static unsigned long engineOffset;

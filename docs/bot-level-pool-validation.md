@@ -7,7 +7,9 @@ The public initializer clears map information before noticing no heap failure.
 Validate complete native counts and signed payload cost before integer conversion.
 Stage cleared pool storage and its complete free chain before replacing heap/free/
 active lists and count. Propagate the private failure before public map-information
-reset. Prior pool/list bytes survive failure; complete shared cache variables retain
+reset. The engine map API uses an internal checked initializer, returns an existing
+nonzero error on pool failure and skips brush/success handling. The retail void
+export/syscall remains unchanged. Prior pool/list bytes survive failure; complete shared cache variables retain
 native retry ownership. Existing 256 default, positive fractional truncation,
 allocation/free/list behavior, commercial 1.32c interfaces and protocol remain.
 
@@ -34,14 +36,18 @@ Public success uses a synthetic empty BSP; runtime navigation queries assert unr
 Clang ASan/UBSan/float-cast-overflow and optimized GCC pass six normal/fast/debug/
 tracked allocator modes without diagnostics. Actual goal/structure/source/allocator
 bodies compile; host callback alignment uses measured ownership prefixes as documented
-in [item evidence](bot-item-config-validation.md). Five ledger/manifest checks, Bash
+in [item evidence](bot-item-config-validation.md). Seven pre-review actual map-API proofs reproduce six nullable imports and NaN
+count reporting false success; native success, setup/AAS early gates pass original
+and fixed. Actual engine map API tests pass all six allocator modes with both
+compilers and check native retry/call order, retained prior bytes and brush skipping.
+Five ledger/manifest checks, Bash
 syntax and diff checks pass; GCC/Clang CI runs the fixture. Both PPC products build
 with zero diagnostics and valid PEF headers:
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,783,853 | `c660a219cbef1fe62c72f0a2fd36f74ae062031da8f3cb7f8b16eb0e70b0b961` |
-| Quake3_TeamArena | 3,932,427 | `349c46b60bc03332810d8bc7954d0eaafe2b9196d6e4e12c1e810eae5397f823` |
+| Quake3 | 3,783,853 | `ec2f27c42d1665c6e2701127235e6a2c5cc838a5d5ef22e6bc02d9da7750ab01` |
+| Quake3_TeamArena | 3,932,427 | `badd437da96f062ef418dec05d2a3075b7853caa456ec3cf8b20d90bd985bbf6` |
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 
