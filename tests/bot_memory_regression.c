@@ -10,7 +10,7 @@ static void Check(int condition,const char *message) {if(!condition){fprintf(std
 #ifndef Com_Memset
 void Com_Memset(void *out,int value,size_t n) {memset(out,value,n);}
 #endif
-static void QDECL Print(int type,char *format,...) {(void)type;(void)format;}
+static void QDECL Print(int type,char *format,...) {Check(type!=PRT_FATAL,"nullable cleanup must not emit fatal diagnostics");(void)format;}
 static void *Allocate(int size,int fromHunk) {void *p;requests++;lastRequest=size;if(requests==failRequest)return NULL;Check(size>=0&&size<=1024,"signed bounded import allocation contract");p=malloc(size?size:1);Check(p!=NULL,"fixture allocation");memset(p,0xa5,size);if(fromHunk){Check(hunkCount<64,"bounded physical arena model");hunk[hunkCount++]=p;}return p;}
 static void *Heap(int size) {return Allocate(size,0);}
 static void *Hunk(int size) {return Allocate(size,1);}
@@ -33,7 +33,14 @@ static void EmptyTracking(void) {
 #endif
 }
 static void Reset(void) {while(hunkCount)free(hunk[--hunkCount]);requests=frees=failRequest=lastRequest=0;EmptyTracking();}
-static void Successes(void) {int kind;unsigned long size;for(kind=0;kind<4;kind++)for(size=0;size<=65;size++){unsigned char *p;unsigned long i;Reset();p=Call(kind,size);Check(p!=NULL&&requests==1&&lastRequest>(int)size,"native zero-to-65-byte payload plus ownership header");for(i=0;i<size;i++)Check(p[i]==((kind&1)?0:0xa5),"native raw/cleared payload behavior retained");memset(p,0x5a,size);FreeMemory(p);Check(frees==(kind<2),"heap physically releases and hunk retains arena bytes");EmptyTracking();}Reset();}
+static int PrefixSize(void) {
+#ifdef MEMORYMANEGER
+ return (int)sizeof(memoryblock_t);
+#else
+ return (int)sizeof(unsigned long int);
+#endif
+}
+static void Successes(void) {int kind;unsigned long size;for(kind=0;kind<4;kind++)for(size=0;size<=65;size++){unsigned char *p;unsigned long i;Reset();p=Call(kind,size);Check(p!=NULL&&requests==1&&lastRequest==(int)size+PrefixSize(),"native zero-to-65-byte payload plus ownership header");for(i=0;i<size;i++)Check(p[i]==((kind&1)?0:0xa5),"native raw/cleared payload behavior retained");memset(p,0x5a,size);FreeMemory(p);Check(frees==(kind<2),"heap physically releases and hunk retains arena bytes");EmptyTracking();}Reset();}
 static void Failures(void) {int kind;const unsigned long invalid[]={ULONG_MAX,(unsigned long)INT_MAX,(unsigned long)INT_MAX+1ul};size_t i;for(kind=0;kind<4;kind++){Reset();failRequest=1;Check(Call(kind,31)==NULL&&requests==1&&!hunkCount&&!frees,"all nullable imports propagate failure without writes/ownership");EmptyTracking();for(i=0;i<sizeof(invalid)/sizeof(invalid[0]);i++){Reset();Check(Call(kind,invalid[i])==NULL&&!requests&&!frees&&!hunkCount,"unsigned/prefix/signed import overflow rejects before allocation");EmptyTracking();}}Reset();FreeMemory(NULL);Check(!frees&&!requests,"nullable cleanup has no arena effects");EmptyTracking();}
 #ifdef MEMORYMANEGER
 static void AccountingFailures(void) {int kind;for(kind=0;kind<4;kind++){Reset();allocatedmemory=INT_MAX;Check(Call(kind,16)==NULL&&!requests,"tracked allocation counter overflow rejects");allocatedmemory=0;totalmemorysize=INT_MAX;Check(Call(kind,16)==NULL&&!requests,"tracked total counter overflow rejects");totalmemorysize=0;numblocks=INT_MAX;Check(Call(kind,16)==NULL&&!requests,"tracked block counter overflow rejects");numblocks=0;}Reset();}
