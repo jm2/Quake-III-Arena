@@ -21,8 +21,8 @@ CodeRabbit finding resolved. After fixes, re-run affected checks and obtain
 a renewed clean current-head Codex review. Do not interpret absent, pending,
 failed or unavailable CI/Codex review as clean. CodeRabbit rate limits or
 skipped reviews do not replace the required Codex review; the user does not
-require waiting for a follow-up CodeRabbit review once every finding is
-resolved and the CI/Codex gate passes.
+require waiting for a follow-up CodeRabbit review during rate-limit backoff
+once every finding is resolved and the CI/Codex gate passes.
 Keep issues open when a merged step covers only part of their acceptance
 criteria, and link the PR and remaining evidence in the issue.
 
