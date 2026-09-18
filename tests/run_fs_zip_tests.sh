@@ -11,7 +11,7 @@ with zipfile.ZipFile(sys.argv[1], "w", compression=zipfile.ZIP_DEFLATED) as arch
 PY_ZIP
 for Q3_TEST_MODE in normal fast; do
     Q3_TEST_FLAGS=()
-    if [[ "$Q3_TEST_MODE" == fast ]]; then Q3_TEST_FLAGS=(-DQ3_VM_FASTMEM); fi
+    if [[ "$Q3_TEST_MODE" == fast ]]; then Q3_TEST_FLAGS=(-O2 -DNDEBUG -ffast-math); fi
     "${CC:-cc}" -std=gnu99 -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
         -fsanitize=address,undefined "${Q3_TEST_FLAGS[@]}" \
         "$Q3_TEST_ROOT/tests/fs_zip_regression.c" \
