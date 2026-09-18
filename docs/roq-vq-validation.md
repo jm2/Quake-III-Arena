@@ -40,8 +40,8 @@ the temporary libraries in [loading evidence](qvm-loading-validation.md).
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,661,535 | `ede8253ac0bd53eb328b27af7c3b40b9e569e943e8c73633cafa9226d50f5334` |
-| Quake3_TeamArena | 3,810,109 | `c69f717fef88bdd760950cbb50a7b19e1473e016693b96e6352fc71907962a21` |
+| Quake3 | 3,669,869 | `4d3a07a2bc2199879c3ddff44f7c1a62037f0554bfead06d97c1ddfe721bcb10` |
+| Quake3_TeamArena | 3,818,443 | `b32865699c0ca706d51bc4850c3ef25c3d144e08606bf5da33437b0ea0cb0ad0` |
 
 ## Remaining acceptance
 
@@ -50,3 +50,7 @@ playback passes, including looping, previews, videoMap, audio and malformed
 movie termination on target. These synthetic checks do not establish retail
 content/image-quality/performance acceptance. #14 still tracks the cinematic
 bypass, and #29 tracks broader security provenance/regression assurance.
+
+After integrating reviewed master through #64/#68 and the stream console
+shutdown fix, all three RoQ sanitizer fixtures, eight Python checks and both
+Retro68 products pass. The table records these integrated artifacts.
