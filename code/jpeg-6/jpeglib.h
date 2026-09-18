@@ -13,6 +13,9 @@
 #ifndef JPEGLIB_H
 #define JPEGLIB_H
 
+#include <stddef.h>	/* size_t in public memory/source interfaces */
+#include <stdio.h>	/* FILE in public stdio interfaces */
+
 typedef unsigned char boolean;
 /*
  * First we include the configuration files that record how this

@@ -12,6 +12,8 @@ for Q3_JPEG_PATH in "$Q3_TEST_ROOT"/code/jpeg-6/*.c; do
     esac
     Q3_JPEG_SOURCES+=("$Q3_JPEG_PATH")
 done
+# Public callers can include jpeglib.h without engine or private library headers.
+printf '#include "%s"\n' "$Q3_TEST_ROOT/code/jpeg-6/jpeglib.h" | "${CC:-cc}" -x c -fsyntax-only -
 "${CC:-cc}" -std=gnu99 -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
     -fsanitize=address,undefined "$Q3_TEST_ROOT/tests/jpeg_io_regression.c" \
     "${Q3_JPEG_SOURCES[@]}" -Wl,--gc-sections -lm -o "$Q3_TEST_DIR/jpeg"
