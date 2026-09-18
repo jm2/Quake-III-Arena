@@ -35,6 +35,13 @@ PEFs.
 | Quake3 | 3,745,895 | `c4322cc29e9bb6d3bf9ca1aed9ce02995109270d698a3d83d91fe5a4f9f51e62` |
 | Quake3_TeamArena | 3,894,469 | `8c509fc48392d91cfe916559e03d2d08f026df01ce80b529f5603289c7261d11` |
 
+After integration of current master through #120, all three native AAS sanitizer
+suites pass again and both PPC builds retain the same sizes with zero diagnostics.
+Combined-source hashes are
+`5bc36b97515dd812b0900fc88ca4e47bb9b6c7ecd4b975cd4169695773ce0307`
+(base) and `b8b80f2fbdc615aec8c1bf0e40044a50547b161a70d6d630a46d647086093fe6`
+(Team Arena). The earlier table records the original candidate build.
+
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 
 ## Remaining acceptance

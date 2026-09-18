@@ -367,6 +367,9 @@ implementation or check, without implying issue completion.
   - [x] Cloud tables stage completely, preserve stable native results and use
         wide geometry for finite overflow; rejected definitions retain prior
         cloud state; see [cloud evidence](cloud-coordinate-validation.md).
+  - [x] Rejected definitions and missing textures cache a complete native
+        default material with discarded prefix metadata; see
+        [fallback evidence](shader-fallback-validation.md).
   - [ ] Complete derived rendering conversions.
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.
@@ -457,8 +460,10 @@ implementation or check, without implying issue completion.
       same exact-head CI/Codex/resolved-finding gate.
 - [x] Sky subdivisions/shared cloud mesh #116 merged at `e59b66d` after
       the same exact-head CI/Codex/resolved-finding gate.
-- [ ] Gate cloud math/publication and review rejected material fallback;
-      retain renderer transaction/capacity and deferred acceptance gates.
+- [x] Cloud math/publication #117 merged at `c4251e7` after the same
+      exact-head CI/Codex/resolved-finding gate.
+- [ ] Gate complete native fallback and continue renderer/AAS/preprocessor
+      root causes; retain deferred acceptance.
 - [ ] Finish renderer aggregate capacity/full transactional publication and
       remaining query/candidate costs for #45. Keep deferred acceptance open.
 - [x] Cross-build the full local security/UI/filesystem patch set as base and

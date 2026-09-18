@@ -28,6 +28,13 @@ header validation.
 | Quake3 | 3,745,889 | `04240fa6381fdf53fafc0647ac8ea2356bee5600fd007a796e74f759666ffa0b` |
 | Quake3_TeamArena | 3,894,463 | `646d05d0804013ef88961171197bbc70bd93660b6b589dcd4983b199e65bd43c` |
 
+After integration of current master through #119, both native AAS sanitizer
+suites pass again and both PPC builds retain the same sizes with zero diagnostics.
+Combined-source hashes are
+`5a66d061987ff926c94a55c8a911997dcde432cf814164364828160bd82d4aec`
+(base) and `317a43e69f67e8f1e68395ed0e727792ac708e0d6c68a2da8808513d27a8a06c`
+(Team Arena). The earlier table records the original candidate build.
+
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 
 ## Remaining acceptance

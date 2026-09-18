@@ -21,7 +21,8 @@ backEndData_t *backEndData[SMP_FRAMES]={&commands,&commands};
 static image_t white;
 static void *owned[512];
 static int allocations,videos;
-static int traceImages,imageFinds,skyInitializations;
+static int traceImages,imageFinds,skyInitializations,missingImageCalls;
+static const char *missingImageName;
 static char imageNames[16][MAX_QPATH];
 static float skyHeight;
 static char archive[64000];
@@ -34,8 +35,8 @@ void QDECL Com_Error(int level,const char *format,...) { (void)level;(void)forma
 void QDECL Com_Printf(const char *format,...) { (void)format; }
 static void QDECL Print(int level,const char *format,...) { (void)level;(void)format; }
 static void *Allocate(int size,ha_pref preference) { void *p;Check(size>=0 && size<100000 && preference==h_low && allocations<512,"bounded native shader allocation");p=calloc(1,size?size:1);Check(p!=NULL,"shader fixture allocation");owned[allocations++]=p;return p; }
-static void Release(void) { while(allocations)free(owned[--allocations]);memset(&tr,0,sizeof(tr));memset(hashTable,0,sizeof(hashTable));memset(shaderTextHashTable,0,sizeof(shaderTextHashTable));s_shaderText=NULL;s_shaderTextIndexed=qfalse; }
-image_t *R_FindImageFile(const char *name,qboolean mipmap,qboolean picmip,int wrap) { (void)mipmap;(void)picmip;(void)wrap;if(traceImages){Check(imageFinds<16,"bounded sky import trace");Q_strncpyz(imageNames[imageFinds++],name,MAX_QPATH);}return &white; }
+static void Release(void) { while(allocations)free(owned[--allocations]);memset(&tr,0,sizeof(tr));tr.defaultImage=tr.whiteImage=&white;memset(hashTable,0,sizeof(hashTable));memset(shaderTextHashTable,0,sizeof(shaderTextHashTable));s_shaderText=NULL;s_shaderTextIndexed=qfalse; }
+image_t *R_FindImageFile(const char *name,qboolean mipmap,qboolean picmip,int wrap) { (void)mipmap;(void)picmip;(void)wrap;if(missingImageName&&!strcmp(name,missingImageName)){missingImageCalls++;return NULL;}if(traceImages){Check(imageFinds<16,"bounded sky import trace");Q_strncpyz(imageNames[imageFinds++],name,MAX_QPATH);}return &white; }
 void R_InitSkyTexCoords(float height) { if(traceImages){skyInitializations++;skyHeight=height;} }
 void R_SyncRenderThread(void) { Check(0,"unexpected threaded import"); }
 void RB_StageIteratorGeneric(void) {}
@@ -94,7 +95,7 @@ static void Registration(void) {
 	for(count=0;count<=10;count++) {
 		Release();tr.whiteImage=&white;text=Build(count);s_shaderText=text;
 		material=R_FindShader("tests/material",LIGHTMAP_NONE,qtrue);
-		Check(material && material->defaultShader==!(count>0 && count<=MAX_SHADER_STAGES) && material->numUnfoggedPasses==(count>MAX_SHADER_STAGES?MAX_SHADER_STAGES:count),"native registration caches bounded valid/default shader");
+		Check(material && material->defaultShader==!(count>0 && count<=MAX_SHADER_STAGES) && material->numUnfoggedPasses==((count>0&&count<=MAX_SHADER_STAGES)?count:1),"native registration caches bounded valid/default shader");
 		before=allocations;Check(R_FindShader("tests/material",LIGHTMAP_NONE,qtrue)==material && allocations==before,"native valid/default cache reuse");
 		following=R_FindShader("tests/following",LIGHTMAP_NONE,qtrue);Check(following && !following->defaultShader && following->numUnfoggedPasses==1,"native following shader registration after invalid definition");
 	}
@@ -404,11 +405,32 @@ static void CloudPublication(void) {
     ResetParser();traceImages=1;skyInitializations=0;text="{\nskyparms - 512 -\nskyparms - 1024 -\n}";Check(ParseShader(&text)&&skyInitializations==1&&skyHeight==1024,"accepted definition publishes final native cloud layer once");traceImages=0;
 }
 
+static void MissingFallback(void) {
+    shader_t *material;int before;
+    Release();missingImageName="tests/missing.tga";missingImageCalls=0;
+    material=R_FindShader("tests/missing",LIGHTMAP_BY_VERTEX,qtrue);
+    Check(material->defaultShader&&material->numUnfoggedPasses==1&&material->stages[0]->bundle[0].image[0]==tr.defaultImage&&!material->isSky&&!material->numDeforms,"missing implicit texture uses complete native default material");
+    before=allocations;Check(R_FindShader("TESTS/MISSING",LIGHTMAP_2D,qtrue)==material&&before==allocations&&missingImageCalls==1&&!RE_RegisterShader("tests/missing"),"missing image caches one fallback across native lighting modes");missingImageName=NULL;
+}
+
+static void RejectedFallback(void) {
+    const char *bodies[]={"{\nskyparms - 1024 -\nunknownField\n}","{\nfogparms ( 0.1 0.2 0.3 ) 32\nunknownField\n}","{\ndeformVertexes move 1 2 3 sin 0 1 0 1\nunknownField\n}","{\n{\nmap $whiteimage\nrgbGen vertex\n}\n{\nmap $whiteimage\ntcMod scale nan 2\n}\n}","{\npolygonOffset\ncull none\nsort blend\nunknownField\n}"};
+    shader_t *material;int before;size_t i;
+    for(i=0;i<sizeof(bodies)/sizeof(bodies[0]);i++) {
+        Release();tr.defaultImage=tr.whiteImage=&white;snprintf(archive,sizeof(archive),"tests/rejected\n%s\ntests/following\n{\n{\nmap $whiteimage\n}\n}\n",bodies[i]);s_shaderText=archive;
+        material=R_FindShader("tests/rejected",LIGHTMAP_NONE,qtrue);
+        Check(material->defaultShader&&!strcmp(material->name,"tests/rejected")&&material->numUnfoggedPasses==1&&!material->isSky&&!material->numDeforms&&!material->polygonOffset&&!material->contentFlags,"rejected definition discards every parsed prefix and uses native default material");
+        Check(material->lightmapIndex==LIGHTMAP_NONE&&material->stages[0]->bundle[0].image[0]==tr.defaultImage&&!material->stages[0]->bundle[0].numTexMods&&material->optimalStageIteratorFunc==RB_StageIteratorGeneric,"fallback uses native default texture/state/iterator");
+        before=allocations;Check(R_FindShader("TESTS/REJECTED",LIGHTMAP_BY_VERTEX,qtrue)==material&&allocations==before&&!RE_RegisterShader("tests/rejected"),"invalid name cache and exported zero handle retained");
+        Check(!R_FindShader("tests/following",LIGHTMAP_NONE,qtrue)->defaultShader,"healthy following shader survives prefix discard");
+    }
+}
+
 int main(int argc,char **argv) {
-	int i;char *text;ri.Printf=Print;ri.Hunk_Alloc=Allocate;ri.CIN_PlayCinematic=Video;ri.Error=Com_Error;tr.whiteImage=&white;
+	int i;char *text;ri.Printf=Print;ri.Hunk_Alloc=Allocate;ri.CIN_PlayCinematic=Video;ri.Error=Com_Error;tr.defaultImage=tr.whiteImage=&white;
 	for(i=0;i<MAX_SHADERTEXT_HASH;i++)shaderTextHashTable[i]=emptyHash;
-	if(argc>1) {int proof=atoi(argv[1]);if(proof==100){CloudPublication();return 0;}if(proof<3)ConstantVectors(proof);else if(proof<8)WaveModifiers(proof-3);else if(proof<13)Metadata(proof-8);else PublicInputs(proof-13);Release();return 0;}
-	PublicInputs(-1);CloudPublication();Metadata(-1);WaveModifiers(-1);ConstantVectors(-1);AlphaIdentity();AlphaWaves();FastAlpha();NativeStages();TailCases();
+	if(argc>1) {int proof=atoi(argv[1]);if(proof==102){MissingFallback();return 0;}if(proof==101){RejectedFallback();return 0;}if(proof==100){CloudPublication();return 0;}if(proof<3)ConstantVectors(proof);else if(proof<8)WaveModifiers(proof-3);else if(proof<13)Metadata(proof-8);else PublicInputs(proof-13);Release();return 0;}
+	PublicInputs(-1);CloudPublication();RejectedFallback();MissingFallback();Metadata(-1);WaveModifiers(-1);ConstantVectors(-1);AlphaIdentity();AlphaWaves();FastAlpha();NativeStages();TailCases();
 	ResetParser();text="{\nsurfaceParm fog\n}\n";Check(ParseShader(&text),"native zero-stage fog remains valid");
 	ResetParser();text="{\nskyparms - 512 -\n}\n";Check(ParseShader(&text) && shader.isSky,"native zero-stage sky remains valid");
 	Registration();
