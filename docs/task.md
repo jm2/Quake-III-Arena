@@ -146,6 +146,9 @@ QVMs while any P0 item is open.
   - [x] Actual read/seek paths bound requests, offsets and private accounting
         before arithmetic or handle access; ordinary behavior and physical
         teardown have [native evidence](fs-buffer-bounds-validation.md).
+  - [x] Remaining close/tell/length/write/flush paths validate live exclusive
+        handles and ordinary FILE ownership; payloads, errors and final-slot
+        release have [native evidence](fs-handle-api-validation.md).
   - [ ] Complete remaining metadata/open/read/handle paths and retail PK3
         acceptance before closing the issue.
 - [ ] [#41 — bound RoQ chunks, dimensions, audio output, and cursors](https://github.com/jm2/Quake-III-Arena/issues/41)

@@ -29,9 +29,16 @@ static void Check(int condition, const char *message) {
     }
 }
 
+#ifdef Q3_ZIP_ERROR_HOOK
+static void FixtureErrorHook(int level);
+#endif
+
 void QDECL Com_Error(int level, const char *format, ...) {
     (void)level;
     (void)format;
+#ifdef Q3_ZIP_ERROR_HOOK
+    FixtureErrorHook(level);
+#endif
     Check(0,"unexpected engine fatal/drop");
 }
 

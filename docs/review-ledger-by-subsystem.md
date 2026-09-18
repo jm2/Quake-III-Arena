@@ -251,6 +251,8 @@ implementation or check, without implying issue completion.
         have [physical owner/stream checks](fs-zip-entry-validation.md).
   - [x] Read/seek request, offset, handle and accounting bounds have actual
         [native behavior checks](fs-buffer-bounds-validation.md).
+  - [x] Close/tell/length/write/flush ownership and exclusive handle bounds
+        have actual [FILE/ZIP checks](fs-handle-api-validation.md).
   - [ ] Complete remaining handle/read/metadata and retail acceptance paths.
 - [ ] [#37 — connection/netchan lacks challenge binding](https://github.com/jm2/Quake-III-Arena/issues/37)
   - [x] User selected commercial 1.32c compatibility in the style of
