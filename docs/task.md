@@ -680,8 +680,8 @@ QVMs while any P0 item is open.
 
 ## Exact continuation point
 
-Current source is master `a0364783c25e7b242e2c0324275cb9df0086239e`, through
-merged #170, with the independent host-timeout step #180. The [continuation evidence](review-continuation-2026-09-18.md)
+Current source is master `31a6554caa3c941d6657d664849511e27233089d`, through
+merged #172, with the independent host-timeout step #180. The [continuation evidence](review-continuation-2026-09-18.md)
 records the refreshed 52-issue inventory, pending stack and its current gates.
 All 52 issue-level entries remain open; nested implementation checks cover only
 the stated work. The milestones below retain their dated source evidence.
@@ -694,14 +694,17 @@ the stated work. The milestones below retain their dated source evidence.
       documentation finding was fixed before renewed review and fresh CI.
 - [x] Host-timeout step #180 merged after all four CI checks, completed clean
       Codex and resolved findings; every required check remains mandatory.
+- [x] Projectile model descriptor #172 merged after the same four-job
+      exact-head CI/clean Codex/resolved-finding gate.
 - [ ] Merge eligible independent steps and the pending dependency chain,
       rechecking four successful Portable CI jobs, completed clean current-head
       Codex and all resolved CodeRabbit findings immediately before each merge.
 - [ ] Require all fresh CI checks on the workflow-only timeout revisions;
       product source/PPC evidence is unchanged and renewed Codex is clean.
-- [ ] Continue chat reply/expansion/dictionary/cache consumers, full library/
-      world transactions and aggregate resource/work limits; keep broad
-      acceptance and deferred live testing open.
+- [ ] Merge the validated weapon/chat/dictionary/cache/state steps and
+      filesystem/ZIP steps in dependency order. Continue remaining nullable
+      consumers, full library/world transactions and aggregate resource/work
+      limits; keep broad acceptance and deferred live testing open.
 
 - [x] Reconcile all 52 open issues against `204fe36`, existing test coverage,
       and July evidence; retain their current priorities and closure gates.

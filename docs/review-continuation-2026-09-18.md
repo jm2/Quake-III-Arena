@@ -1,6 +1,6 @@
 # Review continuation evidence — 2026-09-18
 
-Snapshot source: master `7f1e8168688ca393b2097c22508db998768b1c0b`,
+Historical opening snapshot source: master `7f1e8168688ca393b2097c22508db998768b1c0b`,
 through merged PR #148. GitHub issue/PR inventory refreshed at 2026-09-18 20:24 UTC.
 All 52 original issues remain open, with no additional open issue. This records
 implementation evidence and next actions; it does not replace issue acceptance.
@@ -172,3 +172,52 @@ Query its exact current head and review/CI gates directly before merging.
 | #188 | `d9e4746a260589d6c9cf5a7d614784da02cf5ee2` | 0/4 |
 | #189 | `efecb0331d36e148a3ed4e392d8804b1a5f91016` | 0/4 |
 | #190 | `4b1bcaeae12c23c634cc97ee37dd9824a662ee03` | 0/4 |
+
+
+## Latest continuation evidence
+
+Refreshed at 2026-09-18 23:15 UTC. Actual master is `31a6554caa3c941d6657d664849511e27233089d` through #172 and independent #180. All 52 original issues remain open; no additional open issue exists. Earlier dated snapshots and source SHA references are historical.
+
+#172 merged after all four exact-head CI checks, completed clean Codex and a fresh full CodeRabbit/thread check. CodeRabbit's subsequent actual #173 review identified an outside-diff setup rollback finding. The prepared #174 fix was combined into #173 and validated with both config/setup suites under both compilers and both rebuilt PPC products. #174 is merged into that feature branch, not master. Combined #173 has renewed completed clean Codex with every finding addressed; all four new CI checks remain required. Retarget #175 to master only after #173 merges.
+
+#171's latest workflow conflict is resolved against current master, retaining every master regression and putting the five retail QVM recipe syntax checks in a separate step. All six complete source QVMs retain retail headers/hashes, both PPC products rebuilt without diagnostics, and shared/projectile checks pass both compilers. Renewed exact-head Codex completed clean. Fresh CI remains required.
+
+#175–#193 retain completed clean exact-head Codex, actual original failure proofs, separate native goldens, native allocator/ownership checks and both zero-diagnostic PPC products. #194 stages both goal/movement state factories across all 64 slots. #195 stages goal weight/index pairs and resolves Codex's policy-transition ownership finding by detecting actual shared cache membership for both goal and weapon consumers. #196 preserves exact/any-skill/tolerance character cache hits when all 64 slots are full. All three have completed clean Codex and resolved findings; full world/library/aggregate and physical hunk recovery remain open.
+
+#197–#203 address actual ZIP allocator types/products, buffered slot ownership, complete mount metadata/costs, independent decoder and physical cursors, real hostile-size/truncation acceptance, bounded read/seek/accounting and remaining FILE/handle operations. Original actual-body failure proofs and separate native goldens accompany each step. Source steps have both zero-diagnostic PPC products; tests-only #201 references #200's unchanged product evidence. Codex's #200 physical-cursor and #201 incomplete streamed-cap findings are fixed/resolved with renewed clean reviews. Both streamed cap payloads now verify every byte through refills and stable EOF. #202 also has completed clean Codex. #203 is newly opened and its completed clean review remains required. Retail PK3/Mac OS 9 execution stays deferred.
+
+Several required GitHub jobs remain queued; the table records the current mix of completed, running and queued checks. Do not infer a cause, repeatedly restart queues, or waive any gate. CodeRabbit was requested on every PR; the agreed hourly follow-up policy remains. Read every full formal review, including outside-diff findings, and query every thread after Codex completion immediately before any merge.
+
+The ledger PR is omitted to avoid a self-referential stale SHA. Query its own exact head and current CI/review gates directly. This dated table records scheduling only.
+
+| PR | Exact head | Successful Portable CI checks | Other jobs |
+| --- | --- | ---: | --- |
+| #171 | `067464edfec1d558e5af7bc375a170727d7d36ce` | 0/4 | QUEUED |
+| #173 | `874f448410a67ae4d478830d042477f7fc3f7741` | 0/4 | QUEUED |
+| #175 | `d9e3236a105ccb8e85459cf248e56334f2bd58da` | 4/4 | None |
+| #176 | `ba2d426e85a7121321b3feeb0b524f17e437cf5d` | 4/4 | None |
+| #177 | `a86892d86e04804548aef91aff8de62b1588b90e` | 4/4 | None |
+| #178 | `5f9f557d5ab406bd439737b57d4db70162142b6f` | 4/4 | None |
+| #179 | `5d9a47f4fb8a7bd0f9eb85b02914af595afb36db` | 4/4 | None |
+| #181 | `494e70e6099d81b2d58f9ea8cbe27b5497aab8da` | 4/4 | None |
+| #183 | `09c2b22ecbf182d4091d5e2e9d378c27b270ced9` | 4/4 | None |
+| #184 | `f153e8944ea8bbe5a7a9e0096cf9cbc4b625ac7b` | 4/4 | None |
+| #185 | `431c889f467c7eff0737360ece35e2a5b0f6e1d9` | 4/4 | None |
+| #186 | `22cee573d7e6c3dfff95733d406c6e8d50c7d74d` | 4/4 | None |
+| #187 | `942999b901493d972979b62c31c352f64c070b68` | 4/4 | None |
+| #188 | `d9e4746a260589d6c9cf5a7d614784da02cf5ee2` | 2/4 | QUEUED |
+| #189 | `efecb0331d36e148a3ed4e392d8804b1a5f91016` | 3/4 | QUEUED |
+| #190 | `4b1bcaeae12c23c634cc97ee37dd9824a662ee03` | 2/4 | IN_PROGRESS, QUEUED |
+| #191 | `527c05be4c800214ffbe2c69e5026496d3cdac77` | 3/4 | QUEUED |
+| #192 | `79245e6ba5aaae9693ce07811d1cc6704e899a55` | 1/4 | IN_PROGRESS, QUEUED |
+| #193 | `a0386e823b357b64c06ed8df15c53d05d1c7b147` | 2/4 | QUEUED |
+| #194 | `90918bfc4d7c748a05ce5677e1ba632ff630fb21` | 0/4 | QUEUED |
+| #195 | `3097d5a4044d80ec79d4cd56151fbb9561882e88` | 0/4 | QUEUED |
+| #196 | `93b6bfa0bb5b83b0b31476283b3be5d24fdca855` | 0/4 | QUEUED |
+| #197 | `58c89fee2abd0fa8a25aaa42e095fe73341d2582` | 0/4 | QUEUED |
+| #198 | `39c23778b2502a914d3c09ad9ab3b40ea24a8aab` | 0/4 | QUEUED |
+| #199 | `ed5407b9578bd1214c2fa438f4758b7b826a55ab` | 0/4 | QUEUED |
+| #200 | `adac2c8da2d063db44f7c32c80469a5318790f7b` | 0/4 | QUEUED |
+| #201 | `d683017fd4495c98ceb3c28fc7c8b83723d6096f` | 0/4 | QUEUED |
+| #202 | `7c188f1f80a6f0a09c299f98800e213815b48005` | 0/4 | QUEUED |
+| #203 | `1941de0c4cd215e2f8682810b8e20b75d5286f32` | 0/4 | QUEUED |
