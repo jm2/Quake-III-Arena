@@ -42,8 +42,28 @@ PR head while retaining checks on the merged default branch.
   - checks full-width loads, legacy masked stores, ARG boundaries, block-copy
     bounds/overlap, and bounded syscall argument snapshots;
   - checks wrapping integer arithmetic, division/modulo traps, shift counts,
-    and float conversion limits. Syscall-specific pointer/range checks and
-    VM call marshalling remain incomplete;
+    and float conversion limits;
+  - checks native/compiled/interpreted VM dispatch with empty, partial, and
+    twelve-parameter calls, zero padding, single argument evaluation, and
+    invalid counts, and faulted VM re-entry;
+  - checks common MEMSET/MEMCPY/STRNCPY trap ranges, overlap, null/negative/
+    oversized buffers, terminating sources at image boundaries, and VM
+    destination return values;
+  - checks typed syscall buffer alignment, bounded strings, array-size
+    arithmetic, nullable query/reset arguments, and nonempty string outputs;
+  - exercises the real UI CD-key and parser filename outputs with exact-sized
+    allocations;
+  - exercises the real cgame polygon-batch and fragment filters to check
+    dimension multiplication, complete array ranges, empty submissions, and
+    rejection before renderer callbacks;
+  - exercises actual server game-data registration and persistent access with
+    private strides, saved client capacities, controlled index/slot rejection,
+    and unchanged registration on failure;
+  - checks native debug-polygon point limits, invalid handles, and zero-point
+    line reservation;
+  - checks returned connection-denial strings in the owning VM with a
+    different active VM, boundary termination, aliases, and optional NULL.
+    Botlib syscall families still need range checks;
   - checks actual RoQ open/run/stop, chunk capacities and short reads, final
     payloads, embedded packet boundaries/nesting, mono/stereo expansion limits,
     malformed looping movies, and cleanup before the first frame;
@@ -66,6 +86,12 @@ bash tests/run_host_c_tests.sh
 bash tests/run_vm_loading_tests.sh
 bash tests/run_vm_bytecode_tests.sh
 bash tests/run_vm_runtime_tests.sh
+bash tests/run_vm_call_tests.sh
+bash tests/run_vm_memory_trap_tests.sh
+bash tests/run_ui_syscall_tests.sh
+bash tests/run_cgame_syscall_tests.sh
+bash tests/run_server_core_syscall_tests.sh
+bash tests/run_vm_returned_string_tests.sh
 bash tests/run_roq_stream_tests.sh
 bash tests/run_roq_frame_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help

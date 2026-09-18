@@ -321,11 +321,27 @@ void	VM_Free( vm_t *vm );
 void	VM_Clear(void);
 vm_t	*VM_Restart( vm_t *vm );
 
-int		QDECL VM_Call( vm_t *vm, int callNum, ... );
+#define MAX_VMMAIN_ARGS 13 // command plus twelve retail vmMain parameters
+int VM_CallArgs( vm_t *vm, int callNum, const int *args, int argCount );
+// C99 array initializers carry the supplied count and evaluate each argument
+// once. The leading zero keeps empty calls valid; sizeof does not evaluate it.
+#define VM_Call(vm, callNum, ...) \
+	VM_CallArgs( (vm), (callNum), (const int[]){0, ##__VA_ARGS__} + 1, \
+	             sizeof((const int[]){0, ##__VA_ARGS__}) / sizeof(int) - 1 )
 
 void	VM_Debug( int level );
 
 void	*VM_ArgPtr( int intValue );
+void VM_ErrorForVM( vm_t *vm, const char *message );
+void VM_Error( const char *message );
+void *VM_CheckedArgPtr( int value, int length, int alignment, qboolean nullable );
+char *VM_CheckedArgString( int value, qboolean nullable );
+char *VM_CheckedExplicitString( vm_t *vm, int value, qboolean nullable );
+void *VM_CheckedArgArray( int value, int count, int elementSize );
+void *VM_CheckedStringBuffer( int value, int length, qboolean nullable );
+void VM_MemoryFill( int dest, int value, int length );
+void VM_MemoryCopy( int dest, int source, int length );
+int VM_StringCopy( int dest, int source, int length );
 void	*VM_ExplicitArgPtr( vm_t *vm, int intValue );
 
 /*
