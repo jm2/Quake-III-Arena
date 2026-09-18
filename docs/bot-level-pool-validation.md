@@ -8,8 +8,11 @@ Validate complete native counts and signed payload cost before integer conversio
 Stage cleared pool storage and its complete free chain before replacing heap/free/
 active lists and count. Propagate the private failure before public map-information
 reset. The engine map API uses an internal checked initializer, returns an existing
-nonzero error on pool failure and skips brush/success handling. The retail void
-export/syscall remains unchanged. Prior pool/list bytes survive failure; complete shared cache variables retain
+nonzero error on pool failure and skips brush/success handling. The game loader
+checks this status before bot resets/deathmatch setup. Failed setup or load disables
+bot creation/frames for that map; human initialization continues with a warning.
+Successful reload restores readiness; tournament restart cannot revive a failed map.
+The retail void export/syscall remains unchanged. Prior pool/list bytes survive failure; complete shared cache variables retain
 native retry ownership. Existing 256 default, positive fractional truncation,
 allocation/free/list behavior, commercial 1.32c interfaces and protocol remain.
 
@@ -40,14 +43,25 @@ in [item evidence](bot-item-config-validation.md). Seven pre-review actual map-A
 count reporting false success; native success, setup/AAS early gates pass original
 and fixed. Actual engine map API tests pass all six allocator modes with both
 compilers and check native retry/call order, retained prior bytes and brush skipping.
+Two additional pre-review game-loader/initializer failure proofs fail in four
+base/missionpack normal/fast configurations. Separate original successful map/game
+initialization, tournament restart and bots-disabled goldens pass. Fixed actual
+game load/setup/shutdown/initializer bodies pass with both compilers in those four
+configurations, checking empty/occupied prior bot bytes, two engine error codes,
+retry and native resets. Frame/client checks preserve their exact entry prefixes
+up to the first import and use a success sentinel; complete bodies are PPC-built.
+Both changed game files also compile to baseq3/missionpack QVM bytecode assembly
+with the repository legacy compiler built as a 32-bit host tool. A full game QVM
+build reaches a pre-existing missing QVM-libc strrchr dependency in q_shared.c;
+that build blocker is a separate follow-up, not completed acceptance here.
 Five ledger/manifest checks, Bash
 syntax and diff checks pass; GCC/Clang CI runs the fixture. Both PPC products build
 with zero diagnostics and valid PEF headers:
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,783,853 | `ec2f27c42d1665c6e2701127235e6a2c5cc838a5d5ef22e6bc02d9da7750ab01` |
-| Quake3_TeamArena | 3,932,427 | `badd437da96f062ef418dec05d2a3075b7853caa456ec3cf8b20d90bd985bbf6` |
+| Quake3 | 3,783,881 | `580564dd2c90ba861196356f794b8775b962f9c3f0cf16630847eaebf181e337` |
+| Quake3_TeamArena | 3,932,455 | `18efc09345b9b8ea7c8703d626afccc1613388d2b0aafb3d2a731f59961a979d` |
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 
