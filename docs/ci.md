@@ -168,6 +168,11 @@ The native skin runner exercises complete default/plain surface allocations,
 name and 32-surface/token boundaries, malformed exact input prefixes, file
 ownership and valid/default cache reuse through the actual entry points.
 
+The actual legacy font runner checks the unchanged 20,548-byte little-endian
+layout, signed words, 256 glyph names/handles, all short input lengths and FS
+alignments, malformed names/floats, publication boundaries, cache capacity and
+balanced file ownership. FreeType generation is a separate follow-up.
+
 ## Run the portable checks locally
 
 ```sh
@@ -214,6 +219,7 @@ bash tests/run_hunk_allocation_tests.sh
 bash tests/run_bsp_lod_tests.sh
 bash tests/run_shader_stage_tests.sh
 bash tests/run_skin_capacity_tests.sh
+bash tests/run_font_layout_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 

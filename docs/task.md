@@ -221,7 +221,10 @@ QVMs while any P0 item is open.
   - [x] Default/single-shader skins allocate complete native surfaces; safe
         names, 32-surface/token limits and balanced file ownership have
         [native skin evidence](skin-capacity-validation.md).
-  - [ ] Complete font bounds/layout/ownership and remaining shader
+  - [x] Retail legacy font records decode bytewise from the actual FS length,
+        validate fixed names/floats before imports and release input; see
+        [layout/ownership evidence](font-legacy-layout-validation.md).
+  - [ ] Complete FreeType generation ownership and remaining shader
         semantic/file-allocation checks.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
       — **high**, server OOB access/infinite traversal.

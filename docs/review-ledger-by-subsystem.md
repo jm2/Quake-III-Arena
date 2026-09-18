@@ -327,7 +327,10 @@ implementation or check, without implying issue completion.
   - [x] Default/single-shader skins allocate complete native surfaces; safe
         names, 32-surface/token limits and balanced file ownership have
         [native skin evidence](skin-capacity-validation.md).
-  - [ ] Complete font bounds/layout/ownership and remaining shader
+  - [x] Retail legacy font records decode bytewise from the actual FS length,
+        validate fixed names/floats before imports and release input; see
+        [layout/ownership evidence](font-legacy-layout-validation.md).
+  - [ ] Complete FreeType generation ownership and remaining shader
         semantic/file-allocation checks.
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.
