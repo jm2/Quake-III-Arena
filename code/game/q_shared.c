@@ -66,8 +66,8 @@ void COM_StripExtension( const char *in, char *out, int destsize ) {
 		return;
 	}
 
-	dot = strrchr( in, '.' );
-	slash = strrchr( in, '/' );
+	dot = Q_strrchr( in, '.' );
+	slash = Q_strrchr( in, '/' );
 	if ( dot && ( !slash || slash < dot ) && destsize > dot - in ) {
 		destsize = dot - in + 1;
 	}
