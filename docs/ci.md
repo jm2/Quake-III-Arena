@@ -110,6 +110,8 @@ PR head while retaining checks on the merged default branch.
   - executes actual MD4 registration, complete layout validation, native endian
     conversion and animation skinning, with variable weights, LOD/surface
     progress, bones/back references, extreme frame indexes and tess bases;
+  - checks actual facet winding ownership on every missing border, full
+    clipping and invalid bounds, plus exact native copies of zero to 64 points;
   - executes actual collision patch/winding refinement with captured native
     output, subdivision overflow rejection on both axes and all four FS
     alignments, plus workspace failure cleanup before world/checksum changes;
@@ -180,6 +182,7 @@ bash tests/run_bsp_model_capacity_tests.sh
 bash tests/run_bsp_trace_tests.sh
 bash tests/run_bsp_world_tests.sh
 bash tests/run_bsp_patch_grid_tests.sh
+bash tests/run_bsp_winding_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 

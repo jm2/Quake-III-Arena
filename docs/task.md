@@ -196,6 +196,8 @@ QVMs while any P0 item is open.
         [world evidence](bsp-world-validation.md).
   - [x] Collision patch refinement fits the native grid before map reset, with
         [native goldens and ownership evidence](bsp-patch-grid-validation.md).
+  - [x] Missing facet borders release native winding storage; copies use the
+        actual header/point size; see [ownership evidence](bsp-winding-validation.md).
 - [ ] [#46 — enforce shader/skin/font limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
       — **high**, fixed-array writes and unsafe serialized resources.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
