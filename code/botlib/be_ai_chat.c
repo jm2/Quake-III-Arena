@@ -1077,56 +1077,66 @@ static void BotReplaceReplySynonymsSized(char *string, unsigned long int context
 //===========================================================================
 int BotLoadChatMessage(source_t *source, char *chatmessagestring)
 {
-	char *ptr;
 	token_t token;
+	char staged[MAX_MESSAGE_SIZE], component[MAX_MESSAGE_SIZE], *value;
+	size_t used = 0, bytes;
 
-	ptr = chatmessagestring;
-	*ptr = 0;
-	//
-	while(1)
+	if (!source || !chatmessagestring)
+	{
+		botimport.Print(PRT_ERROR, "missing encoded message source/output\n");
+		return qfalse;
+	}
+	staged[0] = 0;
+	while (1)
 	{
 		if (!PC_ExpectAnyToken(source, &token)) return qfalse;
-		//fixed string
 		if (token.type == TT_STRING)
 		{
 			StripDoubleQuotes(token.string);
-			if (strlen(ptr) + strlen(token.string) + 1 > MAX_MESSAGE_SIZE)
-			{
-				SourceError(source, "chat message too long\n");
-				return qfalse;
-			} //end if
-			strcat(ptr, token.string);
-		} //end else if
-		//variable string
+			value = token.string;
+		}
 		else if (token.type == TT_NUMBER && (token.subtype & TT_INTEGER))
 		{
-			if (strlen(ptr) + 7 > MAX_MESSAGE_SIZE)
+			if (token.intvalue >= MAX_MATCHVARIABLES)
 			{
-				SourceError(source, "chat message too long\n");
+				SourceError(source, "chat variable exceeds native slot range");
 				return qfalse;
-			} //end if
-			sprintf(&ptr[strlen(ptr)], "%cv%ld%c", ESCAPE_CHAR, token.intvalue, ESCAPE_CHAR);
-		} //end if
-		//random string
+			}
+			component[0] = ESCAPE_CHAR;
+			component[1] = 'v';
+			component[2] = '0' + token.intvalue;
+			component[3] = ESCAPE_CHAR;
+			component[4] = 0;
+			value = component;
+		}
 		else if (token.type == TT_NAME)
 		{
-			if (strlen(ptr) + 7 > MAX_MESSAGE_SIZE)
-			{
-				SourceError(source, "chat message too long\n");
-				return qfalse;
-			} //end if
-			sprintf(&ptr[strlen(ptr)], "%cr%s%c", ESCAPE_CHAR, token.string, ESCAPE_CHAR);
-		} //end else if
+			bytes = strlen(token.string);
+			if (bytes > sizeof(component) - 4) goto toolong;
+			component[0] = ESCAPE_CHAR;
+			component[1] = 'r';
+			Com_Memcpy(component + 2, token.string, bytes);
+			component[bytes + 2] = ESCAPE_CHAR;
+			component[bytes + 3] = 0;
+			value = component;
+		}
 		else
 		{
-			SourceError(source, "unknown message component %s\n", token.string);
+			SourceError(source, "unknown message component %s", token.string);
 			return qfalse;
-		} //end else
+		}
+		bytes = strlen(value);
+		if (bytes >= sizeof(staged) - used) goto toolong;
+		Com_Memcpy(staged + used, value, bytes + 1);
+		used += bytes;
 		if (PC_CheckTokenString(source, ";")) break;
 		if (!PC_ExpectTokenString(source, ",")) return qfalse;
-	} //end while
-	//
+	}
+	strcpy(chatmessagestring, staged);
 	return qtrue;
+toolong:
+	SourceError(source, "chat message too long");
+	return qfalse;
 } //end of the function BotLoadChatMessage
 //===========================================================================
 //
