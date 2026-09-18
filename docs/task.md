@@ -333,8 +333,13 @@ QVMs while any P0 item is open.
         reject without partial output, and release private argument/output
         chains after overflow, malformed arguments or nullable token copies;
         see [macro evidence](bot-macro-validation.md).
-  - [ ] Finish expression bounds, character
-        paths/indexes, and allocation cleanup.
+  - [x] Character filenames check complete native prefix/path costs, indexes
+        80 and larger reject before narrowing/assignment, and selected skill
+        EOF/nullable character-string imports release partial owners; real
+        quote stripping handles overlap and empty text;
+        see [character evidence](bot-character-validation.md).
+  - [ ] Finish expression bounds, remaining character/source allocation
+        consumers, and aggregate parser work/recursion limits.
 
 ## P1 — high-impact security, runtime, and release blockers
 
