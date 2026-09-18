@@ -104,8 +104,11 @@ QVMs while any P0 item is open.
         after calls return; see [return evidence](qvm-returned-string-validation.md).
   - [x] User approved the original string length as the safe in-place limit
         for the size-less legacy synonym syscall; preserve the 1.32c ABI and
-        skip growing replacements when they cannot fit. The implementation
-        remains in PR #66 until its merge gates pass.
+        skip growing replacements when they cannot fit. This merged in PR #66.
+  - [x] Botlib common/navigation trap ranges, empty output capacities, and
+        allocated client indices have [sanitizer regressions](qvm-botlib-navigation-validation.md).
+  - [x] Bot chat buffers, cumulative variables, bounded in-place synonyms,
+        and embedded match spans have [sanitizer regressions](qvm-botlib-chat-validation.md).
   - [ ] Complete remaining syscall pointer/range checks and retain valid PPC
         QVM compatibility during deferred live acceptance.
 - [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)
@@ -352,11 +355,11 @@ QVMs while any P0 item is open.
       #37, as supported by Quake3e/ioquake3; no mandatory incompatible fields.
 - [x] User authorized host tests and cross-builds without retail assets or a
       Mac OS 9 environment; live acceptance is deferred to a follow-up session.
-- [x] QVM steps #54–#64 and single-run CI #68 are merged at master
-      `1745dea`, each after successful CI, clean completed Codex review and
+- [x] QVM steps #54–#66 and single-run CI #68 are merged at master
+      `43e9f4a`, each after successful CI, clean completed Codex review and
       resolved CodeRabbit findings.
-- [ ] Finish gated bot syscall PRs #65–#67/#69 and RoQ/image/JPEG/MD3 PRs
-      #70–#77. Keep their parent issues open through remaining acceptance.
+- [ ] Finish gated bot syscall PRs #67/#69 and RoQ/image/JPEG/model/BSP
+      PRs #70–#77/#79/#80. Keep their parent issues open through remaining acceptance.
 - [ ] Record and execute the deferred retail/target compatibility checks when
       the user provides the assets and test environment.
 

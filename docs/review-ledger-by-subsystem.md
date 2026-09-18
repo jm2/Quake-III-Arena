@@ -224,6 +224,10 @@ implementation or check, without implying issue completion.
         capacities have [sanitizer regressions](qvm-server-core-validation.md).
   - [x] Returned connection-denial strings have
         [ownership and termination regressions](qvm-returned-string-validation.md).
+  - [x] Botlib common/navigation trap ranges, empty output capacities, and
+        allocated client indices have [sanitizer regressions](qvm-botlib-navigation-validation.md).
+  - [x] Bot chat buffers, cumulative variables, bounded in-place synonyms,
+        and embedded match spans have [sanitizer regressions](qvm-botlib-chat-validation.md).
   - [ ] Complete remaining syscall pointer/range handling before accepting
         untrusted QVMs.
 - [ ] [#36 — oversized/truncated PK3 entries](https://github.com/jm2/Quake-III-Arena/issues/36)
