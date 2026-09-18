@@ -204,8 +204,8 @@ implementation or check, without implying issue completion.
 - [ ] [#35 — interpreted QVM validation and sandbox bounds](https://github.com/jm2/Quake-III-Arena/issues/35)
   - [x] Create/restart header, file-range, allocation arithmetic, and restart
         size/image checks have host ASan/UBSan regressions and both Retro68 builds;
-        see [loader evidence](qvm-loading-validation.md). Runtime interpreter,
-        syscall hardening, and retail target compatibility remain open.
+        see [loader evidence](qvm-loading-validation.md). Final syscall completeness
+        audit and retail target compatibility remain open.
   - [x] Validate opcode/operand boundaries and conditional branch targets
         before interpreter setup; see [bytecode evidence](qvm-bytecode-validation.md).
   - [x] Runtime stack/control-flow checks and faulted shutdown re-entry have
@@ -274,7 +274,8 @@ implementation or check, without implying issue completion.
         LOD registration have [host regressions](md3-layout-validation.md).
   - [x] Complete MD4 layout/weight/index validation before allocation and native
         conversion has [host/build evidence](md4-layout-validation.md).
-  - [ ] Complete gated model merges and deferred retail/PPC acceptance.
+  - [x] MD3/MD4 steps #77/#79 merged after all current-head CI/review gates.
+  - [ ] Complete deferred commercial 1.32c model/mod and PPC live acceptance.
 - [ ] [#45 — BSP lumps/cross-references are not validated transactionally](https://github.com/jm2/Quake-III-Arena/issues/45)
   - [x] Shared collision/renderer header and lump-layout preflight has
         [host/build evidence](bsp-header-validation.md).
@@ -381,6 +382,12 @@ implementation or check, without implying issue completion.
 
 ## Exact continuation point
 
+- [x] Current progress reconciled at master `95a6c18` on 2026-09-18: steps
+      #70–#77/#79–#82 and assessment #78 are merged after CI/review gates.
+- [ ] Merge dependent BSP steps #83–#91 only after successful current-head
+      CI, clean completed Codex and resolved CodeRabbit findings; host/PPC
+      checks already pass. Finish derived geometry/facets, aggregate budgets
+      and complete transactional publication for #45.
 - [x] Cross-build the full local security/UI/filesystem patch set as base and
       Team Arena, validate both PEFs, then return configuration to base-only.
 - [x] Run a clean rebuild with captured output and classify warnings.

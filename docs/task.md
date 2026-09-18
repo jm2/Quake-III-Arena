@@ -154,10 +154,10 @@ QVMs while any P0 item is open.
   - [ ] Complete deferred retail 1.32c JPEG and screenshot acceptance.
 - [ ] [#44 — validate MD3/MD4 layouts before allocation or swapping](https://github.com/jm2/Quake-III-Arena/issues/44)
       — **high**, malformed model memory corruption/hangs.
-  - [ ] Merge the MD3 and MD4 validation steps after their current-head gates;
-        host fixtures exercise full layouts, native conversion, staging cleanup,
-        tag/frame bounds and actual MD4 skinning. Retail/PPC live acceptance
-        remains deferred.
+  - [x] MD3 step [#77](https://github.com/jm2/Quake-III-Arena/pull/77) and
+        MD4 step [#79](https://github.com/jm2/Quake-III-Arena/pull/79) merged
+        after their current-head CI/review gates. Host fixtures cover full
+        layouts, native conversion, cleanup, tag/frame bounds and MD4 skinning.
   - [x] Complete MD3 layout validation before copying/swapping and staged
         LOD registration have [host regressions](md3-layout-validation.md).
   - [x] Complete MD4 layout/weight/index validation before allocation and native
@@ -425,8 +425,12 @@ QVMs while any P0 item is open.
 - [x] QVM steps #54–#67/#69 and single-run CI #68 are merged at master
       `4fd62bd`, each after successful CI, clean completed Codex review and
       resolved CodeRabbit findings.
-- [ ] Finish gated RoQ/image/JPEG/model/BSP PRs #70–#77/#79/#80.
-      Keep their parent issues open through remaining acceptance.
+- [x] RoQ/image/JPEG/model/BSP steps #70–#77/#79–#82 and assessment #78
+      are merged at master `95a6c18`, after the same current-head CI/review gates.
+- [ ] Finish gated BSP PRs #83–#91, in dependency order; affected host checks
+      and both PPC builds pass, while queued CI still holds their merges.
+- [ ] Finish #45 derived geometry/facet bounds, aggregate map/query budgets
+      and complete transactional publication; keep parent acceptance open.
 - [ ] Record and execute the deferred retail/target compatibility checks when
       the user provides the assets and test environment.
 
