@@ -20,7 +20,10 @@
 #include "jpeglib.h"
 #include "jmemsys.h"		/* import the system-dependent declarations */
 
-#include "../renderer/tr_local.h"
+#include "../game/q_shared.h"
+#include "../renderer/tr_public.h"
+#include "../renderer/tr_image_cursor.h"
+extern refimport_t ri;
 
 /*
  * Memory allocation and ri.Freeing are controlled by the regular library
@@ -30,7 +33,9 @@
 GLOBAL void *
 jpeg_get_small (j_common_ptr cinfo, size_t sizeofobject)
 {
-  return (void *) ri.Malloc(sizeofobject);
+  (void)cinfo;
+  if (sizeofobject > R_IMAGE_MAX_BYTES) return NULL;
+  return (void *) ri.Malloc((int)sizeofobject);
 }
 
 GLOBAL void
@@ -50,7 +55,9 @@ jpeg_free_small (j_common_ptr cinfo, void * object, size_t sizeofobject)
 GLOBAL void FAR *
 jpeg_get_large (j_common_ptr cinfo, size_t sizeofobject)
 {
-  return (void FAR *) ri.Malloc(sizeofobject);
+  (void)cinfo;
+  if (sizeofobject > R_IMAGE_MAX_BYTES) return NULL;
+  return (void FAR *) ri.Malloc((int)sizeofobject);
 }
 
 GLOBAL void

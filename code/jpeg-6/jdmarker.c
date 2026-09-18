@@ -520,21 +520,17 @@ get_dht (j_decompress_ptr cinfo)
 
     length -= count;
 
-    if (index & 0x10) {		/* AC table definition */
-      index -= 0x10;
-      htblptr = &cinfo->ac_huff_tbl_ptrs[index];
-    } else {			/* DC table definition */
-      htblptr = &cinfo->dc_huff_tbl_ptrs[index];
-    }
-
-    if (index < 0 || index >= NUM_HUFF_TBLS)
+    if ((index & 0x0f) >= NUM_HUFF_TBLS || (index & 0xe0))
       ERREXIT1(cinfo, JERR_DHT_INDEX, index);
+    htblptr = index & 0x10 ? &cinfo->ac_huff_tbl_ptrs[index & 0x0f]
+                          : &cinfo->dc_huff_tbl_ptrs[index & 0x0f];
 
     if (*htblptr == NULL)
       *htblptr = jpeg_alloc_huff_table((j_common_ptr) cinfo);
   
     MEMCOPY((*htblptr)->bits, bits, SIZEOF((*htblptr)->bits));
-    MEMCOPY((*htblptr)->huffval, huffval, SIZEOF((*htblptr)->huffval));
+    MEMZERO((*htblptr)->huffval, SIZEOF((*htblptr)->huffval));
+    MEMCOPY((*htblptr)->huffval, huffval, count * SIZEOF(UINT8));
   }
 
   INPUT_SYNC(cinfo);

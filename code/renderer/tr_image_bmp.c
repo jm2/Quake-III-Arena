@@ -49,7 +49,7 @@ static qboolean R_DecodeBMP( const byte *buffer, unsigned int length, byte **pic
 	     planes != 1 || compression || (depth != 8 && depth != 16 && depth != 24 && depth != 32) ) return qfalse;
 	topDown = (rawHeight & 0x80000000u) != 0;
 	rows = topDown ? 0u - rawHeight : rawHeight;
-	if ( !columns || columns > INT_MAX || !rows || rows > INT_MAX || rows > (INT_MAX / 4u) / columns ) return qfalse;
+	if ( !columns || columns > INT_MAX || !rows || rows > INT_MAX || rows > (R_IMAGE_MAX_BYTES / 4u) / columns ) return qfalse;
 	if ( depth == 8 ) {
 		paletteCount = colors ? colors : 256;
 		if ( paletteCount > 256 || !R_ImageBytes(&cursor, paletteCount * 4, &palette) ) return qfalse;

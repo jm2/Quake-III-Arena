@@ -101,9 +101,9 @@ start_pass_huff_decoder (j_decompress_ptr cinfo)
       ERREXIT1(cinfo, JERR_NO_HUFF_TABLE, actbl);
     /* Compute derived values for Huffman tables */
     /* We may do this more than once for a table, but it's not expensive */
-    jpeg_make_d_derived_tbl(cinfo, cinfo->dc_huff_tbl_ptrs[dctbl],
+    jpeg_make_d_derived_tbl(cinfo, TRUE, cinfo->dc_huff_tbl_ptrs[dctbl],
 			    & entropy->dc_derived_tbls[dctbl]);
-    jpeg_make_d_derived_tbl(cinfo, cinfo->ac_huff_tbl_ptrs[actbl],
+    jpeg_make_d_derived_tbl(cinfo, FALSE, cinfo->ac_huff_tbl_ptrs[actbl],
 			    & entropy->ac_derived_tbls[actbl]);
     /* Initialize DC predictions to 0 */
     entropy->saved.last_dc_val[ci] = 0;
@@ -125,7 +125,7 @@ start_pass_huff_decoder (j_decompress_ptr cinfo)
  */
 
 GLOBAL void
-jpeg_make_d_derived_tbl (j_decompress_ptr cinfo, JHUFF_TBL * htbl,
+jpeg_make_d_derived_tbl (j_decompress_ptr cinfo, boolean isDC, JHUFF_TBL * htbl,
 			 d_derived_tbl ** pdtbl)
 {
   d_derived_tbl *dtbl;
@@ -148,8 +148,11 @@ jpeg_make_d_derived_tbl (j_decompress_ptr cinfo, JHUFF_TBL * htbl,
 
   p = 0;
   for (l = 1; l <= 16; l++) {
-    for (i = 1; i <= (int) htbl->bits[l]; i++)
+    if (p + (int)htbl->bits[l] > 256) ERREXIT(cinfo, JERR_BAD_HUFF_TABLE);
+    for (i = 1; i <= (int) htbl->bits[l]; i++) {
+      if (isDC && htbl->huffval[p] > 15) ERREXIT(cinfo, JERR_BAD_HUFF_TABLE);
       huffsize[p++] = (char) l;
+    }
   }
   huffsize[p] = 0;
   
@@ -164,6 +167,8 @@ jpeg_make_d_derived_tbl (j_decompress_ptr cinfo, JHUFF_TBL * htbl,
       huffcode[p++] = code;
       code++;
     }
+    /* Reject oversubscribed trees and forbidden all-ones codes before lookahead writes. */
+    if (code >= (1u << si)) ERREXIT(cinfo, JERR_BAD_HUFF_TABLE);
     code <<= 1;
     si++;
   }
@@ -365,7 +370,7 @@ jpeg_huff_decode (bitread_working_state * state,
 
 #ifdef AVOID_TABLES
 
-#define HUFF_EXTEND(x,s)  ((x) < (1<<((s)-1)) ? (x) + (((-1)<<(s)) + 1) : (x))
+#define HUFF_EXTEND(x,s)  ((x) < (1<<((s)-1)) ? (x) + (1 - (1<<(s))) : (x))
 
 #else
 
@@ -375,11 +380,11 @@ static const int extend_test[16] =   /* entry n is 2**(n-1) */
   { 0, 0x0001, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080,
     0x0100, 0x0200, 0x0400, 0x0800, 0x1000, 0x2000, 0x4000 };
 
-static const int extend_offset[16] = /* entry n is (-1 << n) + 1 */
-  { 0, ((-1)<<1) + 1, ((-1)<<2) + 1, ((-1)<<3) + 1, ((-1)<<4) + 1,
-    ((-1)<<5) + 1, ((-1)<<6) + 1, ((-1)<<7) + 1, ((-1)<<8) + 1,
-    ((-1)<<9) + 1, ((-1)<<10) + 1, ((-1)<<11) + 1, ((-1)<<12) + 1,
-    ((-1)<<13) + 1, ((-1)<<14) + 1, ((-1)<<15) + 1 };
+static const int extend_offset[16] = /* entry n is 1 - (1 << n) */
+  { 0, 1 - (1<<1), 1 - (1<<2), 1 - (1<<3), 1 - (1<<4),
+    1 - (1<<5), 1 - (1<<6), 1 - (1<<7), 1 - (1<<8),
+    1 - (1<<9), 1 - (1<<10), 1 - (1<<11), 1 - (1<<12),
+    1 - (1<<13), 1 - (1<<14), 1 - (1<<15) };
 
 #endif /* AVOID_TABLES */
 

@@ -18,7 +18,7 @@ PR head while retaining checks on the merged default branch.
     link for every confirmed issue #1 through #52, allowing both open and
     completed checkboxes as the queue is worked down;
   - checks portable image decoders are included in Unix Make/Cons, Visual
-    Studio, Xcode source phases and lint manifests.
+    Studio, Xcode source phases and lint manifests, including the sole standard JPEG compressor APIs.
 - `Packaging tools (Python 3.11)` and `(Python 3.14)`
   - validate AppleDouble entry offsets, resource data, Finder type/creator,
     and bundle flag;
@@ -95,7 +95,11 @@ PR head while retaining checks on the merged default branch.
     extents, maximum dimensions, and nonfatal failure ownership;
   - checks the actual TGA loader at four alignments with every small-file
     prefix, raw/gray/RLE pixels, IDs, packets crossing rows, native origin
-    behavior, extreme dimensions, and cleanup before errors.
+    behavior, extreme dimensions, and cleanup before errors;
+  - executes the actual JPEG renderer and bundled codec with exact input
+    allocations, every small-file prefix, short files/refill boundaries,
+    grayscale/RGB pixels, malformed tables/dimensions, complete cleanup,
+    tiny screenshots, growing output and injected allocation failures.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -128,6 +132,7 @@ bash tests/run_roq_vq_tests.sh
 bash tests/run_bmp_cursor_tests.sh
 bash tests/run_pcx_cursor_tests.sh
 bash tests/run_tga_cursor_tests.sh
+bash tests/run_jpeg_io_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 

@@ -266,7 +266,9 @@ implementation or check, without implying issue completion.
 - [ ] [#43 — JPEG I/O is not length-aware and APIs are duplicated](https://github.com/jm2/Quake-III-Arena/issues/43)
   - [x] Local RGBA output allocation/dimension validation fixes one deterministic
         overwrite.
-  - [ ] Replace the source/destination managers and duplicate APIs.
+  - [x] Checked source/destination managers, recovery and sole compression
+        APIs have [host regressions](jpeg-io-validation.md).
+  - [ ] Complete deferred retail JPEG/screenshot acceptance.
 - [ ] [#44 — MD3/MD4 layouts are not validated](https://github.com/jm2/Quake-III-Arena/issues/44)
 - [ ] [#45 — BSP lumps/cross-references are not validated transactionally](https://github.com/jm2/Quake-III-Arena/issues/45)
 - [ ] [#46 — shader/skin/font fixed limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)

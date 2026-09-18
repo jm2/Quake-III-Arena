@@ -22,6 +22,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #ifndef TR_IMAGE_CURSOR_H
 #define TR_IMAGE_CURSOR_H
 
+#include <limits.h>
+/* Keep signed allocator header/alignment additions below INT_MAX. */
+#define R_IMAGE_MAX_BYTES (INT_MAX - 4096u)
+
 /* Include q_shared.h before this private header. */
 typedef struct {
 	const byte *data;

@@ -1,4 +1,4 @@
-"""Issue #42: keep portable image decoders linked in every existing renderer target."""
+"""Issues #42/#43: keep portable image decoders linked in every existing renderer target."""
 from pathlib import Path
 import re
 import unittest
@@ -33,15 +33,19 @@ class RendererBuildManifests(unittest.TestCase):
         self.assertEqual(len(required_phases), len(original_builds))
         self.assertGreater(len(required_phases), 0)
 
-        for path in sorted((ROOT / "code/renderer").glob("tr_image_*.c")):
+        self.assertNotIn("path = jload.c;", xcode)
+        self.assertFalse((ROOT / "code/jpeg-6/jload.c").exists())
+        image_modules = sorted((ROOT / "code/renderer").glob("tr_image_*.c"))
+        for path in image_modules + [ROOT / "code/jpeg-6/jcapistd.c"]:
             with self.subTest(decoder=path.name):
                 for directory in ("client", "q3static"):
                     self.assertIn(f"$(B)/{directory}/{path.stem}.o \\", makefile)
                     self.assertRegex(makefile, re.escape(f"$(B)/{directory}/{path.stem}.o")
-                                     + r"\s*:\s*" + re.escape(f"$(RDIR)/{path.name}"))
-                self.assertIn(f"../renderer/{path.name}", cons)
-                self.assertIn(path.name, visual_sources)
-                self.assertIn(f"renderer\\{path.name}", lint)
+                                     + r"\s*:\s*" + re.escape(f"$({'RDIR' if path.parent.name == 'renderer' else 'JPDIR'})/{path.name}"))
+                self.assertIn(f"../{path.parent.name}/{path.name}", cons)
+                self.assertIn(path.name if path.parent.name == "renderer" else f"..\\jpeg-6\\{path.name}", visual_sources)
+                if path.parent.name == "renderer":
+                    self.assertIn(f"renderer\\{path.name}", lint)
                 ref = reference(path.name)
                 decoder_builds = {key for key, body in objects.items()
                                   if "isa = PBXBuildFile;" in body and f"fileRef = {ref};" in body}
