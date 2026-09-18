@@ -776,3 +776,12 @@ line diagnostics; included failures preserve synchronized parent recovery. The
 1,035 valid cases retain native compressed bytes and actual token metadata across
 quotes/escapes/line comments/block lengths/newlines. Raw memory lexer behavior and
 native characters remain. GCC/Clang run normal/release fast-math sanitizers.
+
+The compressed-file EOF runner compiles real file/source/include/conditional and
+lexer bodies with physical ownership. Five original-body proofs expose stale
+nonempty/empty EOF intervals, retained root frames/skip state and active/skipped
+child conditions that survive script release. Fixed EOF updates reclaim exhausted
+child frames/scripts, preserve complete parent frame bytes/skip and recover native
+body/endif/tail token order. Repeated root EOF warns once and retains only complete
+source owners. The original 1,035 compressed-byte/token comparisons and unchanged
+noncompacting source EOF pass. GCC/Clang run normal/release fast-math sanitizers.

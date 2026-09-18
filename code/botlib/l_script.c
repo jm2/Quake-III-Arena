@@ -1528,6 +1528,7 @@ script_t *LoadScriptFile(const char *filename)
 			return NULL;
 		}
 		script->length = COM_Compress(script->buffer);
+		script->end_p = script->buffer + script->length;
 	}
 
 	return script;

@@ -542,6 +542,10 @@ implementation or check, without implying issue completion.
         diagnostics; malformed root/include/character imports release all owners
         while valid files retain native compressed bytes and token metadata;
         see [file-comment evidence](bot-file-comment-validation.md).
+  - [x] Compressed files update the EOF pointer to their complete new length;
+        exhausted roots/includes unwind conditional frames and skip state while
+        preserving native bytes/tokens and complete parent recovery;
+        see [file EOF evidence](bot-file-eof-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
