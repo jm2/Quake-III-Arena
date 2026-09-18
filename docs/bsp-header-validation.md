@@ -8,13 +8,20 @@ header copy is published. Renderer loading uses this local native header
 instead of swapping the FS file header in place.
 
 Lump offsets/lengths are nonnegative and fit the file by subtraction.
-Nonempty payloads follow the header; complete typed arrays and byte-based
-lightmap/lightgrid sizes fit the version-46 limits in qfiles.h. Native word
+Nonempty payloads follow the header; typed arrays and byte-based
+lightmap/lightgrid sizes contain complete records. Native word
 lumps align to four bytes and nonempty lumps do not overlap. Visibility has
 a complete eight-byte header and enough bytes for every declared PVS row,
 including the bits needed by its cluster count. Zero/end empty-lump offsets
 and byte-aligned entity/lightmap/lightgrid payloads remain accepted.
 Native payload readers still rely on the aligned allocation returned by FS.
+
+Compiler utility defaults in qfiles.h are not on-disk format caps. Each loader
+checks its actual native array sizes and reserved elements against signed
+allocation capacity, including combined renderer nodes/leaves, its doubled plane storage and
+the collision box hull. The shared check uses division/subtraction before any
+product. Raised shader/vertex/plane/map-compiler budgets remain supported.
+Visibility storage fits the file without imposing its compiler byte budget.
 
 On malformed layouts, both loaders free the input before controlled ERR_DROP.
 Collision loading retains the previous map, checksum and patch ownership;
@@ -26,17 +33,21 @@ without reading beyond the declared bytes.
 
 ASan/UBSan exercises shared validation and actual CM_LoadMap with exact-sized
 FS inputs. A minimal native collision-map golden checks loaded arrays,
-checksum/cache behavior, ownership and a nonterminated entity lump copied
-with a bounded terminator. Every header prefix at all four input alignments
+checksum/cache behavior, 1025 shader records, ownership and a nonterminated
+entity lump copied with a bounded terminator. Every header prefix at all four input alignments
 rejects before allocation/checksum/reset and retains the loaded collision map.
 All-lump native-header goldens execute the bytewise validator at four alignments.
 
 Malformed cases cover every lump's negative/huge offsets and lengths,
-header overlap, out-of-file spans, wrong strides, native alignment and format
-count caps, overlapping sections, short visibility headers and insufficient
+header overlap, out-of-file spans, wrong strides, native alignment,
+overlapping sections, short visibility headers and insufficient
 PVS rows. NULL/negative/huge lengths, missing and negative-length FS results,
 unchanged failed output headers and empty entity termination are also checked.
-The fixture owns/releases every hunk and asserts input release before errors.
+Allocation boundary checks cover exact capacity, one extra element, reserved
+slots, impossible reservations and zero element sizes without large allocations.
+Header goldens also exceed every qfiles.h utility default and use an 8 MiB
+PVS payload. The fixture owns/releases every hunk and asserts input release
+before errors.
 It does not execute renderer payload loading or establish payload validity.
 
 The BSP fixture and nine Python checks pass. Both Retro68 products build
@@ -46,13 +57,13 @@ previous runner and invokes the new header fixture.
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,691,143 | `ed4836c30b0e7e9c525b5f32b85bd4805f7d3f17b77ec3941f85cc6115ce5ff7` |
-| Quake3_TeamArena | 3,839,717 | `7ebcf1f08141a2f9e3741cbbfe873edbf72b59c13265c079440854565636982b` |
+| Quake3 | 3,695,267 | `1ea39685cbd1efcf5bcbc5151922cb08b67ec951a5a1308468a1ed6695fe55d9` |
+| Quake3_TeamArena | 3,843,841 | `756ba8df9cc3e6752408746e1331e6c9ac9b21d8374690cb4ecc4e657e78448f` |
 
 ## Remaining acceptance
 
 Keep #45 open. Payload cross references, graph/cycle validation, geometry
-counts/products, finite values, renderer allocation sizes and complete
+counts/products, finite values, geometry-dependent allocation sizes and complete
 transactional publication still need validation before allocation/reset.
 A valid header with malformed payload can still reach unsafe legacy paths;
 this step does not establish safety for untrusted maps. Commercial 1.32c

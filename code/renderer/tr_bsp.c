@@ -1790,6 +1790,22 @@ RE_LoadWorldMap
 Called directly from cgame
 =================
 */
+/** Match the renderer's direct lump arrays using its actual native structure sizes. */
+static const char *R_ValidateBSPAllocations(const dheader_t *header) {
+	const bspArrayAllocation_t arrays[]={
+		{header->lumps[LUMP_SHADERS].filelen/sizeof(dshader_t),sizeof(dshader_t),0},
+		{header->lumps[LUMP_LIGHTMAPS].filelen/(LIGHTMAP_WIDTH*LIGHTMAP_HEIGHT*3),sizeof(image_t *),1},
+		{header->lumps[LUMP_PLANES].filelen/sizeof(dplane_t),2*sizeof(cplane_t),0},
+		{header->lumps[LUMP_FOGS].filelen/sizeof(dfog_t),sizeof(fog_t),1},
+		{header->lumps[LUMP_SURFACES].filelen/sizeof(dsurface_t),sizeof(msurface_t),0},
+		{header->lumps[LUMP_LEAFSURFACES].filelen/4,sizeof(msurface_t *),0},
+		{header->lumps[LUMP_NODES].filelen/sizeof(dnode_t)+header->lumps[LUMP_LEAFS].filelen/sizeof(dleaf_t),sizeof(mnode_t),0},
+		{header->lumps[LUMP_MODELS].filelen/sizeof(dmodel_t),sizeof(bmodel_t),0},
+		{header->lumps[LUMP_ENTITIES].filelen,1,1}
+	};
+	return BSP_ValidateAllocations(arrays,sizeof(arrays)/sizeof(arrays[0]));
+}
+
 void RE_LoadWorldMap( const char *name ) {
 	int			length;
 	dheader_t	validatedHeader, *header = &validatedHeader;
@@ -1808,6 +1824,7 @@ void RE_LoadWorldMap( const char *name ) {
 	}
 
 	error = BSP_ValidateHeader(buffer,length,header);
+	if ( !error ) error = R_ValidateBSPAllocations(header);
 	if ( error ) {
 		ri.FS_FreeFile(buffer);
 		ri.Error(ERR_DROP,"RE_LoadWorldMap: %s: %s",name,error);

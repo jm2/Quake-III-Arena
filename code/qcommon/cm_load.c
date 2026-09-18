@@ -568,6 +568,24 @@ CM_LoadMap
 Loads in the map and all submodels
 ==================
 */
+/** Match every direct collision array allocation, including the reserved box hull. */
+static const char *CM_ValidateBSPAllocations(const dheader_t *header) {
+	const bspArrayAllocation_t arrays[]={
+		{header->lumps[LUMP_SHADERS].filelen/sizeof(dshader_t),sizeof(dshader_t),0},
+		{header->lumps[LUMP_LEAFS].filelen/sizeof(dleaf_t),sizeof(cLeaf_t),BOX_LEAFS},
+		{header->lumps[LUMP_LEAFBRUSHES].filelen/4,sizeof(int),BOX_BRUSHES},
+		{header->lumps[LUMP_LEAFSURFACES].filelen/4,sizeof(int),0},
+		{header->lumps[LUMP_PLANES].filelen/sizeof(dplane_t),sizeof(cplane_t),BOX_PLANES},
+		{header->lumps[LUMP_BRUSHSIDES].filelen/sizeof(dbrushside_t),sizeof(cbrushside_t),BOX_SIDES},
+		{header->lumps[LUMP_BRUSHES].filelen/sizeof(dbrush_t),sizeof(cbrush_t),BOX_BRUSHES},
+		{header->lumps[LUMP_MODELS].filelen/sizeof(dmodel_t),sizeof(cmodel_t),0},
+		{header->lumps[LUMP_NODES].filelen/sizeof(dnode_t),sizeof(cNode_t),0},
+		{header->lumps[LUMP_SURFACES].filelen/sizeof(dsurface_t),sizeof(cPatch_t *),0},
+		{header->lumps[LUMP_ENTITIES].filelen,1,1}
+	};
+	return BSP_ValidateAllocations(arrays,sizeof(arrays)/sizeof(arrays[0]));
+}
+
 void CM_LoadMap( const char *name, qboolean clientload, int *checksum ) {
 	int				*buf = NULL;
 	const char		*error;
@@ -605,6 +623,7 @@ void CM_LoadMap( const char *name, qboolean clientload, int *checksum ) {
 	}
 
 	error = BSP_ValidateHeader(buf,length,&header);
+	if ( !error ) error = CM_ValidateBSPAllocations(&header);
 	if ( error ) {
 		FS_FreeFile(buf);
 		Com_Error(ERR_DROP,"CM_LoadMap: %s: %s",name,error);

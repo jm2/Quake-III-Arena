@@ -95,7 +95,8 @@ PR head while retaining checks on the merged default branch.
     conversion and animation skinning, with variable weights, LOD/surface
     progress, bones/back references, extreme frame indexes and tess bases;
   - checks the shared collision/renderer BSP header preflight and actual
-    collision loading with exact input, every header prefix, lump caps/ranges,
+    collision loading with exact input, every header prefix, lump ranges/strides,
+    actual native allocation sizes and raised map-compiler budgets,
     visibility rows, cleanup before errors and retained world state.
 
 GitHub Actions dependencies are pinned to exact release commits, and

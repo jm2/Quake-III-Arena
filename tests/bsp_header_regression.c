@@ -54,11 +54,11 @@ static void RejectHeader(void) {
 	RejectCM();
 }
 /** A minimal native collision map exercises successful loading, checksum and entity termination. */
-static void BuildCM(void) {
+static void BuildCM(int shaders) {
 	int position=sizeof(dheader_t),i,j,offset; Empty();
-	Lump(LUMP_SHADERS,position,sizeof(dshader_t));memset(source+position,0,sizeof(dshader_t));memcpy(source+position,"textures/test",14);Word(position+68,1);position+=sizeof(dshader_t);
+	Lump(LUMP_SHADERS,position,shaders*sizeof(dshader_t));memset(source+position,0,shaders*sizeof(dshader_t));for(i=0;i<shaders;i++) { memcpy(source+position+i*72,"textures/test",14);Word(position+i*72+68,1); }position+=shaders*sizeof(dshader_t);
 	Lump(LUMP_PLANES,position,12*sizeof(dplane_t));memset(source+position,0,12*sizeof(dplane_t));
-	for(i=0;i<12;i++) { Float(position+i*16+((i/4)%3)*4,i%4<2?-1:1);Float(position+i*16+12,1); }position+=12*sizeof(dplane_t);
+	for(i=0;i<12;i++) { Float(position+i*16+((i/4)%3)*4,(i%4==0 || i%4==3)?-1:1);Float(position+i*16+12,i%2?-1:1); }position+=12*sizeof(dplane_t);
 	Lump(LUMP_NODES,position,sizeof(dnode_t));memset(source+position,0,sizeof(dnode_t));Word(position+4,0xffffffffu);Word(position+8,0xffffffffu);position+=sizeof(dnode_t);
 	Lump(LUMP_LEAFS,position,sizeof(dleaf_t));memset(source+position,0,sizeof(dleaf_t));Word(position+offsetof(dleaf_t,numLeafBrushes),1);position+=sizeof(dleaf_t);
 	Lump(LUMP_LEAFBRUSHES,position,4);Word(position,0);position+=4;
@@ -75,8 +75,8 @@ int main(void) {
 	const unsigned int caps[HEADER_LUMPS]={262144,1024,131072,131072,131072,131072,262144,1024,32768,131072,524288,524288,256,131072,8388608/49152,1048576,2097152};
 	const unsigned int bad[]={0x80000000u,0xffffffffu,0x7fffffffu};
 	Check(sizeof(dheader_t)==144,"disk header size");
-	BuildCM();readable=advertised=sourceSize;CM_LoadMap("good.bsp",qfalse,&checksum);
-	Check(frees==1 && checksums==1 && clears==1 && floods==1 && !strcmp(cm.name,"good.bsp") && cm.numLeafs==1 && cm.numSubModels==1 && cm.numBrushes==1 && cm.numClusters==1 && !strcmp(cm.entityString,"abc") && cm.numEntityChars==3,"native collision map golden");
+	BuildCM(1025);readable=advertised=sourceSize;CM_LoadMap("good.bsp",qfalse,&checksum);
+	Check(frees==1 && checksums==1 && clears==1 && floods==1 && !strcmp(cm.name,"good.bsp") && cm.numLeafs==1 && cm.numSubModels==1 && cm.numBrushes==1 && cm.numShaders==1025 && cm.numClusters==1 && !strcmp(cm.entityString,"abc") && cm.numEntityChars==3,"native collision map golden");
 	readBefore=reads;CM_LoadMap("good.bsp",qtrue,&i);Check(i==checksum && reads==readBefore,"native cached client checksum");
 	for(alignment=0;alignment<4;alignment++) {
 		Empty();position=144;
@@ -92,7 +92,7 @@ int main(void) {
 		Empty();Lump(i,sourceSize,1);RejectHeader();
 		if(strides[i]>1) { Empty();Lump(i,144,strides[i]-1);sourceSize+=strides[i];RejectHeader(); }
 		if(i!=LUMP_ENTITIES && i!=LUMP_LIGHTMAPS && i!=LUMP_LIGHTGRID) { Empty();Lump(i,145,strides[i]);sourceSize=148+strides[i];RejectHeader(); }
-		Empty();oldSize=(caps[i]+1)*strides[i];Lump(i,144,oldSize);sourceSize=144+oldSize;Check(sourceSize<=sizeof(source),"cap fixture capacity");RejectHeader();
+		Empty();oldSize=(caps[i]+1)*strides[i];Lump(i,144,oldSize);sourceSize=144+oldSize;Check(sourceSize<=sizeof(source),"raised-limit fixture capacity");if(i==LUMP_VISIBILITY) { Word(144,0);Word(148,0); }Check(!BSP_ValidateHeader(source,sourceSize,&header),"compiler defaults must not cap the runtime file format");
 	}
 	Empty();Lump(LUMP_SHADERS,144,72);Lump(LUMP_FOGS,144,72);sourceSize=216;RejectHeader();
 	for(i=1;i<8;i++) { Empty();Lump(LUMP_VISIBILITY,144,i);sourceSize=144+i;RejectHeader(); }
@@ -102,6 +102,12 @@ int main(void) {
 	Empty();Lump(LUMP_ENTITIES,144,1);sourceSize=145;source[144]='x';Check(!BSP_ValidateHeader(source,sourceSize,&header),"byte entity lump");
 	Lump(LUMP_ENTITIES,0,0);Lump(LUMP_VISIBILITY,sourceSize,0);Check(!BSP_ValidateHeader(source,sourceSize,&header),"zero/end empty lumps");
 	memset(&header,0xa5,sizeof(header));before=header;Check(BSP_ValidateHeader(NULL,144,&header) && BSP_ValidateHeader(source,-1,&header) && BSP_ValidateHeader(source,INT_MAX,&header) && BSP_ValidateHeader(source,144,NULL) && !memcmp(&header,&before,sizeof(header)),"invalid API lengths/output");
+	/* Exercise exact signed-allocation boundaries and reservation arithmetic without allocating. */
+	for(i=0;i<4;i++) {
+		const unsigned int sizes[]={1,4,20,40,112};bspArrayAllocation_t array;array.elementSize=sizes[i];array.extraElements=12;array.count=(INT_MAX-4096u)/array.elementSize-12;
+		Check(!BSP_ValidateAllocations(&array,1),"exact allocation capacity");array.count++;Check(BSP_ValidateAllocations(&array,1)!=NULL,"allocation overflow boundary");array.count=0;array.extraElements=0xffffffffu;Check(BSP_ValidateAllocations(&array,1)!=NULL,"reservation overflow");array.elementSize=0;Check(BSP_ValidateAllocations(&array,1)!=NULL,"zero allocation size");
+	}
+	Empty();Lump(LUMP_VISIBILITY,144,8+8192*1024);sourceSize=144+8+8192*1024;Word(144,8192);Word(148,1024);Check(!BSP_ValidateHeader(source,sourceSize,&header),"raised PVS byte budget");
 	previous=cm;readable=144;advertised=-1;missing=0;expectError=1;freeBefore=frees;
 	if(!setjmp(errorJump)) { CM_LoadMap("negative.bsp",qfalse,&checksum);Check(0,"negative FS length accepted"); }expectError=0;Check(frees==freeBefore+1 && !memcmp(&cm,&previous,sizeof(cm)),"negative length cleanup/world retention");
 	missing=1;expectError=1;freeBefore=frees;if(!setjmp(errorJump)) { CM_LoadMap("missing.bsp",qfalse,&checksum);Check(0,"missing input accepted"); }expectError=0;Check(frees==freeBefore && !memcmp(&cm,&previous,sizeof(cm)),"missing file retained world");missing=0;

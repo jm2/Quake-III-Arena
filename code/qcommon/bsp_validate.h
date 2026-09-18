@@ -20,12 +20,6 @@ static const char *BSP_ValidateHeader(const void *buffer,int length,dheader_t *h
 		4,4,sizeof(dmodel_t),sizeof(dbrush_t),sizeof(dbrushside_t),sizeof(drawVert_t),
 		4,sizeof(dfog_t),sizeof(dsurface_t),LIGHTMAP_WIDTH*LIGHTMAP_HEIGHT*3,8,1
 	};
-	static const unsigned int limits[HEADER_LUMPS]={
-		MAX_MAP_ENTSTRING,MAX_MAP_SHADERS,MAX_MAP_PLANES,MAX_MAP_NODES,MAX_MAP_LEAFS,
-		MAX_MAP_LEAFFACES,MAX_MAP_LEAFBRUSHES,MAX_MAP_MODELS,MAX_MAP_BRUSHES,MAX_MAP_BRUSHSIDES,
-		MAX_MAP_DRAW_VERTS,MAX_MAP_DRAW_INDEXES,MAX_MAP_FOGS,MAX_MAP_DRAW_SURFS,
-		MAX_MAP_LIGHTING/(LIGHTMAP_WIDTH*LIGHTMAP_HEIGHT*3),MAX_MAP_LIGHTGRID/8,MAX_MAP_VISIBILITY
-	};
 	const byte *data=buffer;
 	dheader_t validated;
 	unsigned int offsets[HEADER_LUMPS],sizes[HEADER_LUMPS],i,j,offset,size,clusters,rowBytes;
@@ -38,7 +32,7 @@ static const char *BSP_ValidateHeader(const void *buffer,int length,dheader_t *h
 		size=BSP_FileWord(data+offsetof(dheader_t,lumps)+i*sizeof(lump_t)+offsetof(lump_t,filelen));
 		if(offset>(unsigned int)length || size>(unsigned int)length-offset ||
 		   (size && offset<sizeof(dheader_t))) return "BSP lump outside file";
-		if(size%strides[i] || size/strides[i]>limits[i]) return "invalid BSP lump size/count";
+		if(size%strides[i]) return "invalid BSP lump size";
 		/* Text, RGB lightmaps and lightgrid samples use byte loads; other lumps use words. */
 		if(size && i!=LUMP_ENTITIES && i!=LUMP_LIGHTMAPS && i!=LUMP_LIGHTGRID && offset%4) return "unaligned BSP lump";
 		offsets[i]=offset; sizes[i]=size;
@@ -51,10 +45,25 @@ static const char *BSP_ValidateHeader(const void *buffer,int length,dheader_t *h
 		if(sizes[LUMP_VISIBILITY]<8) return "truncated BSP visibility header";
 		clusters=BSP_FileWord(data+offsets[LUMP_VISIBILITY]);
 		rowBytes=BSP_FileWord(data+offsets[LUMP_VISIBILITY]+4);
-		if(clusters>MAX_MAP_LEAFS || rowBytes>MAX_MAP_VISIBILITY ||
+		if(clusters>INT_MAX-63u || rowBytes>INT_MAX ||
 		   rowBytes<(clusters+7)/8 || (clusters && rowBytes>(sizes[LUMP_VISIBILITY]-8)/clusters)) return "invalid BSP visibility dimensions";
 	}
 	*header=validated;
+	return NULL;
+}
+
+
+/* Sizes come from actual caller types, including pointer widths and reserved elements. */
+typedef struct { unsigned int count, elementSize, extraElements; } bspArrayAllocation_t;
+
+/** Reject signed hunk/zone allocation overflow without imposing compiler utility limits. */
+static const char *BSP_ValidateAllocations(const bspArrayAllocation_t *arrays,unsigned int count) {
+	unsigned int i,capacity;
+	for(i=0;i<count;i++) {
+		if(!arrays[i].elementSize) return "invalid BSP allocation element size";
+		capacity=(INT_MAX-4096u)/arrays[i].elementSize;
+		if(arrays[i].extraElements>capacity || arrays[i].count>capacity-arrays[i].extraElements) return "BSP native array allocation overflow";
+	}
 	return NULL;
 }
 
