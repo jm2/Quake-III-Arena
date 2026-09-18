@@ -332,6 +332,7 @@ int VM_CallArgs( vm_t *vm, int callNum, const int *args, int argCount );
 void	VM_Debug( int level );
 
 void	*VM_ArgPtr( int intValue );
+qboolean VM_IsNative( vm_t *vm );
 void VM_ErrorForVM( vm_t *vm, const char *message );
 void VM_Error( const char *message );
 void *VM_CheckedArgPtr( int value, int length, int alignment, qboolean nullable );

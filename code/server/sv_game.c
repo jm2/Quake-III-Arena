@@ -25,6 +25,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "../game/botlib.h"
 #include "../game/be_aas.h"
+#include "../game/be_ai_chat.h"
 
 botlib_export_t	*botlib_export;
 
@@ -475,7 +476,155 @@ static int SV_BotLibNavigationCalls( int *args ) {
 	}
 }
 
-/** Dispatch game traps with checked core/navigation pointers; botlib EA/AI remain under review. */
+/** Check a terminated chat string; the legacy synonym API never grows its original span. */
+static char *SV_GameBotChatMessage( int value ) {
+	char *message = VM_CheckedArgString( value, qfalse );
+	if ( strlen(message) >= MAX_MESSAGE_SIZE ) {
+		VM_Error( "Bot chat message is too long" );
+		return NULL;
+	}
+	return message;
+}
+
+/** Check nullable chat variables and their combined size before native concatenation. */
+static void SV_GameBotChatVariables( int *args, int start, char **variables, int used ) {
+	int i;
+	for ( i = 0; i < MAX_MATCHVARIABLES; i++ ) {
+		size_t length;
+		variables[i] = VM_CheckedArgString( args[start+i], qtrue );
+		if ( !variables[i] ) continue;
+		length = strlen(variables[i]);
+		if ( length >= (size_t)(MAX_MESSAGE_SIZE - used) ) {
+			VM_Error( "Bot chat variables are too long" );
+			return;
+		}
+		used += length;
+	}
+}
+
+/** Validate the selected match span inside its fixed embedded string before native use. */
+static bot_match_t *SV_GameBotMatch( int value, int variable ) {
+	bot_match_t *match = VM_CheckedArgPtr( value, sizeof(bot_match_t), 4, qfalse );
+	char *end = memchr( match->string, '\0', sizeof(match->string) );
+	int offset, length;
+	if ( variable < 0 || variable >= MAX_MATCHVARIABLES || !end ) {
+		VM_Error( "Bot match variable out of range" );
+		return NULL;
+	}
+	offset = match->variables[variable].offset;
+	length = match->variables[variable].length;
+	if ( offset >= 0 && (length < 0 || offset > end - match->string || length > end - match->string - offset) ) {
+		VM_Error( "Bot match span out of range" );
+		return NULL;
+	}
+	return match;
+}
+
+/* Console-message link pointers are 32-bit fields in the retail QVM ABI. */
+typedef struct {
+	int handle;
+	float time;
+	int type;
+	char message[MAX_MESSAGE_SIZE];
+	int prev, next;
+} qvmBotConsoleMessage_t;
+typedef char qvmBotConsoleMessageSizeCheck[(sizeof(qvmBotConsoleMessage_t) == 276) ? 1 : -1];
+
+/** Marshal native console messages into the fixed QVM layout without native links or padding. */
+static int SV_GameBotConsoleMessage( int state, int value ) {
+	bot_consolemessage_t native;
+	qvmBotConsoleMessage_t *output;
+	int result;
+	if ( VM_IsNative(gvm) ) {
+		return botlib_export->ai.BotNextConsoleMessage( state, VM_CheckedArgPtr( value, sizeof(native), 4, qfalse ) );
+	}
+	output = VM_CheckedArgPtr( value, sizeof(*output), 4, qfalse );
+	memset( &native, 0, sizeof(native) );
+	result = botlib_export->ai.BotNextConsoleMessage( state, &native );
+	if ( result ) {
+		output->handle = native.handle;
+		output->time = native.time;
+		output->type = native.type;
+		memcpy( output->message, native.message, sizeof(output->message) );
+		output->message[MAX_MESSAGE_SIZE-1] = '\0';
+		output->prev = output->next = 0;
+	}
+	return result;
+}
+
+/** Dispatch bot chat traps with complete buffers and bounded embedded metadata. */
+static int SV_BotLibChatCalls( int *args ) {
+	if ( !botlib_export ) {
+		VM_Error( "Botlib API is unavailable" );
+		return -1;
+	}
+	switch( args[0] ) {
+	case BOTLIB_AI_ALLOC_CHAT_STATE:
+		return botlib_export->ai.BotAllocChatState();
+	case BOTLIB_AI_FREE_CHAT_STATE:
+		botlib_export->ai.BotFreeChatState( args[1] );
+		return 0;
+	case BOTLIB_AI_QUEUE_CONSOLE_MESSAGE:
+		botlib_export->ai.BotQueueConsoleMessage( args[1], args[2], VMAS(3) );
+		return 0;
+	case BOTLIB_AI_REMOVE_CONSOLE_MESSAGE:
+		botlib_export->ai.BotRemoveConsoleMessage( args[1], args[2] );
+		return 0;
+	case BOTLIB_AI_NEXT_CONSOLE_MESSAGE:
+		return SV_GameBotConsoleMessage( args[1], args[2] );
+	case BOTLIB_AI_NUM_CONSOLE_MESSAGE:
+		return botlib_export->ai.BotNumConsoleMessages( args[1] );
+	case BOTLIB_AI_INITIAL_CHAT: {
+		char *type = VMAS(2), *variables[MAX_MATCHVARIABLES];
+		SV_GameBotChatVariables( args, 4, variables, 0 );
+		botlib_export->ai.BotInitialChat( args[1], type, args[3], variables[0], variables[1], variables[2], variables[3], variables[4], variables[5], variables[6], variables[7] );
+		return 0;
+	}
+	case BOTLIB_AI_NUM_INITIAL_CHATS:
+		return botlib_export->ai.BotNumInitialChats( args[1], VMAS(2) );
+	case BOTLIB_AI_REPLY_CHAT: {
+		char *message = SV_GameBotChatMessage( args[2] );
+		char *variables[MAX_MATCHVARIABLES];
+		SV_GameBotChatVariables( args, 5, variables, strlen(message) );
+		return botlib_export->ai.BotReplyChat( args[1], message, args[3], args[4], variables[0], variables[1], variables[2], variables[3], variables[4], variables[5], variables[6], variables[7] );
+	}
+	case BOTLIB_AI_CHAT_LENGTH:
+		return botlib_export->ai.BotChatLength( args[1] );
+	case BOTLIB_AI_ENTER_CHAT:
+		botlib_export->ai.BotEnterChat( args[1], args[2], args[3] );
+		return 0;
+	case BOTLIB_AI_GET_CHAT_MESSAGE:
+		botlib_export->ai.BotGetChatMessage( args[1], VMAB(2, args[3]), args[3] );
+		return 0;
+	case BOTLIB_AI_STRING_CONTAINS:
+		return botlib_export->ai.StringContains( VMASN(1), VMASN(2), args[3] );
+	case BOTLIB_AI_FIND_MATCH:
+		return botlib_export->ai.BotFindMatch( VMAS(1), VMAP(2, bot_match_t), args[3] );
+	case BOTLIB_AI_MATCH_VARIABLE:
+		botlib_export->ai.BotMatchVariable( SV_GameBotMatch( args[1], args[2] ), args[2], VMAB(3, args[4]), args[4] );
+		return 0;
+	case BOTLIB_AI_UNIFY_WHITE_SPACES:
+		botlib_export->ai.UnifyWhiteSpaces( VMAS(1) );
+		return 0;
+	case BOTLIB_AI_REPLACE_SYNONYMS:
+		botlib_export->ai.BotReplaceSynonyms( SV_GameBotChatMessage( args[1] ), args[2] );
+		return 0;
+	case BOTLIB_AI_LOAD_CHAT_FILE:
+		return botlib_export->ai.BotLoadChatFile( args[1], VMAS(2), VMAS(3) );
+	case BOTLIB_AI_SET_CHAT_GENDER:
+		botlib_export->ai.BotSetChatGender( args[1], args[2] );
+		return 0;
+	case BOTLIB_AI_SET_CHAT_NAME:
+		botlib_export->ai.BotSetChatName( args[1], VMAS(2), args[3] );
+		return 0;
+
+	default:
+		VM_Error( "Bad botlib chat trap" );
+		return -1;
+	}
+}
+
+/** Dispatch game traps with checked core/navigation/chat pointers; other botlib families remain under review. */
 int SV_GameSystemCalls( int *args ) {
 	switch( args[0] ) {
 	case G_PRINT:
@@ -756,56 +905,26 @@ int SV_GameSystemCalls( int *args ) {
 		return 0;
 
 	case BOTLIB_AI_ALLOC_CHAT_STATE:
-		return botlib_export->ai.BotAllocChatState();
 	case BOTLIB_AI_FREE_CHAT_STATE:
-		botlib_export->ai.BotFreeChatState( args[1] );
-		return 0;
 	case BOTLIB_AI_QUEUE_CONSOLE_MESSAGE:
-		botlib_export->ai.BotQueueConsoleMessage( args[1], args[2], VMA(3) );
-		return 0;
 	case BOTLIB_AI_REMOVE_CONSOLE_MESSAGE:
-		botlib_export->ai.BotRemoveConsoleMessage( args[1], args[2] );
-		return 0;
 	case BOTLIB_AI_NEXT_CONSOLE_MESSAGE:
-		return botlib_export->ai.BotNextConsoleMessage( args[1], VMA(2) );
 	case BOTLIB_AI_NUM_CONSOLE_MESSAGE:
-		return botlib_export->ai.BotNumConsoleMessages( args[1] );
 	case BOTLIB_AI_INITIAL_CHAT:
-		botlib_export->ai.BotInitialChat( args[1], VMA(2), args[3], VMA(4), VMA(5), VMA(6), VMA(7), VMA(8), VMA(9), VMA(10), VMA(11) );
-		return 0;
 	case BOTLIB_AI_NUM_INITIAL_CHATS:
-		return botlib_export->ai.BotNumInitialChats( args[1], VMA(2) );
 	case BOTLIB_AI_REPLY_CHAT:
-		return botlib_export->ai.BotReplyChat( args[1], VMA(2), args[3], args[4], VMA(5), VMA(6), VMA(7), VMA(8), VMA(9), VMA(10), VMA(11), VMA(12) );
 	case BOTLIB_AI_CHAT_LENGTH:
-		return botlib_export->ai.BotChatLength( args[1] );
 	case BOTLIB_AI_ENTER_CHAT:
-		botlib_export->ai.BotEnterChat( args[1], args[2], args[3] );
-		return 0;
 	case BOTLIB_AI_GET_CHAT_MESSAGE:
-		botlib_export->ai.BotGetChatMessage( args[1], VMA(2), args[3] );
-		return 0;
 	case BOTLIB_AI_STRING_CONTAINS:
-		return botlib_export->ai.StringContains( VMA(1), VMA(2), args[3] );
 	case BOTLIB_AI_FIND_MATCH:
-		return botlib_export->ai.BotFindMatch( VMA(1), VMA(2), args[3] );
 	case BOTLIB_AI_MATCH_VARIABLE:
-		botlib_export->ai.BotMatchVariable( VMA(1), args[2], VMA(3), args[4] );
-		return 0;
 	case BOTLIB_AI_UNIFY_WHITE_SPACES:
-		botlib_export->ai.UnifyWhiteSpaces( VMA(1) );
-		return 0;
 	case BOTLIB_AI_REPLACE_SYNONYMS:
-		botlib_export->ai.BotReplaceSynonyms( VMA(1), args[2] );
-		return 0;
 	case BOTLIB_AI_LOAD_CHAT_FILE:
-		return botlib_export->ai.BotLoadChatFile( args[1], VMA(2), VMA(3) );
 	case BOTLIB_AI_SET_CHAT_GENDER:
-		botlib_export->ai.BotSetChatGender( args[1], args[2] );
-		return 0;
 	case BOTLIB_AI_SET_CHAT_NAME:
-		botlib_export->ai.BotSetChatName( args[1], VMA(2), args[3] );
-		return 0;
+		return SV_BotLibChatCalls( args );
 
 	case BOTLIB_AI_RESET_GOAL_STATE:
 		botlib_export->ai.BotResetGoalState( args[1] );
