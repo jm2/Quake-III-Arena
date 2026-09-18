@@ -149,6 +149,11 @@ QVMs while any P0 item is open.
   - [ ] Complete deferred commercial 1.32c model/mod and PPC live acceptance.
 - [ ] [#45 — validate BSP lumps and cross-references transactionally](https://github.com/jm2/Quake-III-Arena/issues/45)
       — **high**, malformed map corruption, graph hangs, and partial state.
+  - [x] Shared collision/renderer header and full lump-layout preflight precedes
+        checksum, allocation or world reset; [header evidence](bsp-header-validation.md)
+        covers exact inputs and collision ownership/state.
+  - [ ] Complete all payload cross-reference, graph and geometry validation
+        before publishing a map; retain deferred retail/PPC map acceptance.
 - [ ] [#46 — enforce shader/skin/font limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
       — **high**, fixed-array writes and unsafe serialized resources.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)

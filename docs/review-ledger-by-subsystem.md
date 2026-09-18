@@ -262,8 +262,14 @@ implementation or check, without implying issue completion.
 - [ ] [#44 — MD3/MD4 layouts are not validated](https://github.com/jm2/Quake-III-Arena/issues/44)
   - [x] Complete MD3 layout validation before copying/swapping and staged
         LOD registration have [host regressions](md3-layout-validation.md).
-  - [ ] Complete MD4 layout/weight/index validation and deferred retail/PPC acceptance.
+  - [x] Complete MD4 layout/weight/index validation before allocation and native
+        conversion has [host/build evidence](md4-layout-validation.md).
+  - [ ] Complete gated model merges and deferred retail/PPC acceptance.
 - [ ] [#45 — BSP lumps/cross-references are not validated transactionally](https://github.com/jm2/Quake-III-Arena/issues/45)
+  - [x] Shared collision/renderer header and lump-layout preflight has
+        [host/build evidence](bsp-header-validation.md).
+  - [ ] Finish payload references, graph/geometry checks and full transactional
+        loading, then deferred retail/PPC map acceptance.
 - [ ] [#46 — shader/skin/font fixed limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.

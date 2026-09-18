@@ -22,6 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // tr_map.c
 
 #include "tr_local.h"
+#include "../qcommon/bsp_validate.h"
 
 /*
 
@@ -1790,13 +1791,27 @@ Called directly from cgame
 =================
 */
 void RE_LoadWorldMap( const char *name ) {
-	int			i;
-	dheader_t	*header;
-	byte		*buffer;
+	int			length;
+	dheader_t	validatedHeader, *header = &validatedHeader;
+	const char	*error;
+	byte		*buffer = NULL;
 	byte		*startMarker;
 
 	if ( tr.worldMapLoaded ) {
 		ri.Error( ERR_DROP, "ERROR: attempted to redundantly load world map\n" );
+	}
+
+	// load it
+    length = ri.FS_ReadFile( name, (void **)&buffer );
+	if ( !buffer ) {
+		ri.Error (ERR_DROP, "RE_LoadWorldMap: %s not found", name);
+	}
+
+	error = BSP_ValidateHeader(buffer,length,header);
+	if ( error ) {
+		ri.FS_FreeFile(buffer);
+		ri.Error(ERR_DROP,"RE_LoadWorldMap: %s: %s",name,error);
+		return;
 	}
 
 	// set default sun direction to be used if it isn't
@@ -1809,11 +1824,6 @@ void RE_LoadWorldMap( const char *name ) {
 
 	tr.worldMapLoaded = qtrue;
 
-	// load it
-    ri.FS_ReadFile( name, (void **)&buffer );
-	if ( !buffer ) {
-		ri.Error (ERR_DROP, "RE_LoadWorldMap: %s not found", name);
-	}
 
 	// clear tr.world so if the level fails to load, the next
 	// try will not look at the partially loaded version
@@ -1828,19 +1838,7 @@ void RE_LoadWorldMap( const char *name ) {
 	startMarker = ri.Hunk_Alloc(0, h_low);
 	c_gridVerts = 0;
 
-	header = (dheader_t *)buffer;
-	fileBase = (byte *)header;
-
-	i = LittleLong (header->version);
-	if ( i != BSP_VERSION ) {
-		ri.Error (ERR_DROP, "RE_LoadWorldMap: %s has wrong version number (%i should be %i)", 
-			name, i, BSP_VERSION);
-	}
-
-	// swap all the lumps
-	for (i=0 ; i<sizeof(dheader_t)/4 ; i++) {
-		((int *)header)[i] = LittleLong ( ((int *)header)[i]);
-	}
+	fileBase = buffer;
 
 	// load into heap
 	R_LoadShaders( &header->lumps[LUMP_SHADERS] );

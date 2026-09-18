@@ -93,7 +93,10 @@ PR head while retaining checks on the merged default branch.
     indexes, finite metadata, native format limits, LOD staging and fallback;
   - executes actual MD4 registration, complete layout validation, native endian
     conversion and animation skinning, with variable weights, LOD/surface
-    progress, bones/back references, extreme frame indexes and tess bases.
+    progress, bones/back references, extreme frame indexes and tess bases;
+  - checks the shared collision/renderer BSP header preflight and actual
+    collision loading with exact input, every header prefix, lump caps/ranges,
+    visibility rows, cleanup before errors and retained world state.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -125,6 +128,7 @@ bash tests/run_tga_cursor_tests.sh
 bash tests/run_jpeg_io_tests.sh
 bash tests/run_md3_layout_tests.sh
 bash tests/run_md4_layout_tests.sh
+bash tests/run_bsp_header_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
