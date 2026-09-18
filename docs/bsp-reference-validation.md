@@ -12,7 +12,8 @@ Leaf surface/brush indices and spans, model surface/brush spans, fog brushes
 and visible sides, and surface shader/fog/type references validate by
 subtraction before products or pointer construction. Consumed vertex/index
 spans and surface-local indices fit their arrays. Leaves support opaque -1
-clusters and the fixed retail area visibility bit vector; cluster counts fit
+clusters, including area -1 for opaque leaves, and the fixed retail area
+visibility bit vector; cluster counts fit
 native novis allocation arithmetic and declared PVS rows. Collision rejects
 more than its existing MAX_SUBMODELS limit before allocation.
 
@@ -21,6 +22,11 @@ array fields. Those unused fields remain ignored. The four retail negative
 lightmap selectors remain supported; positive unavailable lightmaps retain
 R_FindShader's existing vertex-light fallback. Adjustable compiler utility
 budgets are not introduced as format caps.
+
+The [original compiler area assignment](https://github.com/id-Software/Quake-III-Arena/blob/master/q3map/portals.c)
+and [leaf writer](https://github.com/id-Software/Quake-III-Arena/blob/master/q3map/writebsp.c)
+retain area -1 for opaque leaves. Visible leaves require an addressable retail
+area bit; a negative visible area would reach a negative renderer mask index.
 
 ## Validation
 
@@ -40,7 +46,7 @@ alignments before checksum, hunk allocation, map reset or patch clearing.
 The previous loaded map and caller checksum remain unchanged; FS ownership is
 released before controlled ERR_DROP.
 
-Valid cases preserve area 255, opaque clusters, zero-length spans at array
+Valid cases preserve area 255, opaque clusters with area 0 or -1, zero-length spans at array
 ends, all four negative lightmap selectors, positive lightmap fallback and
 ignored patch/flare fields. Actual collision loading accepts 256 submodels;
 257 rejects before state changes. The inherited header fixture uses the same

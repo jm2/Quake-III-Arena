@@ -68,7 +68,9 @@ static const char *BSP_ValidateReferences(const void *buffer,const dheader_t *h)
 		if(cluster!=0xffffffffu && (cluster>INT_MAX-4096u-64 ||
 		   (h->lumps[LUMP_VISIBILITY].filelen && cluster>=visClusters))) return "invalid BSP leaf cluster";
 		/* The retail area-visibility ABI has a fixed MAX_MAP_AREA_BYTES bit vector. */
-		if(BSP_FileWord(record+offsetof(dleaf_t,area))>=MAX_MAP_AREA_BYTES*8) return "invalid BSP leaf area";
+		value=BSP_FileWord(record+offsetof(dleaf_t,area));
+		/* Original compilers leave opaque leaves unassigned to an area. */
+		if(value>=MAX_MAP_AREA_BYTES*8 && !(value==0xffffffffu && cluster==0xffffffffu)) return "invalid BSP leaf area";
 		if(!BSP_ReferenceSpan(BSP_FileWord(record+offsetof(dleaf_t,firstLeafSurface)),BSP_FileWord(record+offsetof(dleaf_t,numLeafSurfaces)),leafSurfaces) ||
 		   !BSP_ReferenceSpan(BSP_FileWord(record+offsetof(dleaf_t,firstLeafBrush)),BSP_FileWord(record+offsetof(dleaf_t,numLeafBrushes)),leafBrushes)) return "invalid BSP leaf span";
 	}

@@ -65,6 +65,7 @@ int main(void) {
 	for(i=0;i<5;i++) { int required[]={LUMP_SHADERS,LUMP_PLANES,LUMP_NODES,LUMP_LEAFS,LUMP_MODELS};Restore();Word(12+required[i]*8,0);RejectReferences(); }
 	Restore();Word(At(LUMP_LEAFS,0,sizeof(dleaf_t))+offsetof(dleaf_t,area),255);AcceptReferences();LoadGolden("area255.bsp");Check(cm.numAreas==256,"retail area mask boundary");
 	Restore();Word(At(LUMP_LEAFS,0,sizeof(dleaf_t))+offsetof(dleaf_t,cluster),0xffffffffu);AcceptReferences();LoadGolden("opaque.bsp");
+	Word(At(LUMP_LEAFS,0,sizeof(dleaf_t))+offsetof(dleaf_t,area),0xffffffffu);AcceptReferences();LoadGolden("opaque-unassigned.bsp");Check(cm.numAreas==0,"opaque leaf area -1 convention preserved");
 	for(i=0;i<4;i++) { Restore();Word(At(LUMP_SURFACES,1,sizeof(dsurface_t))+offsetof(dsurface_t,lightmapNum),0xfffffffcu+i);AcceptReferences(); }
 	Restore();Word(At(LUMP_SURFACES,1,sizeof(dsurface_t))+offsetof(dsurface_t,lightmapNum),0x7fffffffu);AcceptReferences();
 	Restore();Word(At(LUMP_LEAFS,0,sizeof(dleaf_t))+offsetof(dleaf_t,firstLeafSurface),3);Word(At(LUMP_LEAFS,0,sizeof(dleaf_t))+offsetof(dleaf_t,numLeafSurfaces),0);AcceptReferences();
