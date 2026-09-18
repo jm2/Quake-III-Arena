@@ -325,7 +325,11 @@ QVMs while any P0 item is open.
         copied tokens on failed/empty expansion while retaining native token
         text, types and location metadata;
         see [builtin evidence](bot-builtin-validation.md).
-  - [ ] Finish token merge/stringize, include paths, character
+  - [x] Include paths append complete strings with NUL capacity, reject overflow
+        and incomplete angle directives without partial lookups, preserve
+        next-line tokens and release recursively rejected scripts;
+        see [include evidence](bot-include-validation.md).
+  - [ ] Finish token merge/stringize, character
         paths/indexes, and allocation cleanup.
 
 ## P1 — high-impact security, runtime, and release blockers

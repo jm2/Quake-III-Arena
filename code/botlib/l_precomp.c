@@ -218,7 +218,7 @@ void PC_PopIndent(source_t *source, int *type, int *skip)
 // Returns:					-
 // Changes Globals:		-
 //============================================================================
-void PC_PushScript(source_t *source, script_t *script)
+int PC_PushScript(source_t *source, script_t *script)
 {
 	script_t *s;
 
@@ -227,12 +227,13 @@ void PC_PushScript(source_t *source, script_t *script)
 		if (!Q_stricmp(s->filename, script->filename))
 		{
 			SourceError(source, "%s recursively included", script->filename);
-			return;
+			return qfalse;
 		} //end if
 	} //end for
 	//push the script on the script stack
 	script->next = source->scriptstack;
 	source->scriptstack = script;
+	return qtrue;
 } //end of the function PC_PushScript
 //============================================================================
 //
@@ -964,7 +965,7 @@ void PC_ConvertPath(char *path)
 		if ((*ptr == '\\' || *ptr == '/') &&
 				(*(ptr+1) == '\\' || *(ptr+1) == '/'))
 		{
-			strcpy(ptr, ptr+1);
+			memmove(ptr, ptr+1, strlen(ptr));
 		} //end if
 		else
 		{
@@ -978,6 +979,15 @@ void PC_ConvertPath(char *path)
 		ptr++;
 	} //end while
 } //end of the function PC_ConvertPath
+
+/* Append only a complete string, including its terminator. */
+static int PC_AppendString(char *output, size_t capacity, const char *input)
+{
+	size_t used = strlen(output), length = strlen(input);
+	if (used >= capacity || length >= capacity - used) return qfalse;
+	memcpy(output + used, input, length + 1);
+	return qtrue;
+}
 //============================================================================
 //
 // Parameter:				-
@@ -989,6 +999,7 @@ int PC_Directive_include(source_t *source)
 	script_t *script;
 	token_t token;
 	char path[MAX_PATH];
+	int overflow, closed, filename;
 #ifdef QUAKE
 	foundfile_t file;
 #endif //QUAKE
@@ -1002,6 +1013,7 @@ int PC_Directive_include(source_t *source)
 	} //end if
 	if (token.linescrossed > 0)
 	{
+		PC_UnreadSourceToken(source, &token);
 		SourceError(source, "#include without file name");
 		return qfalse;
 	} //end if
@@ -1012,14 +1024,21 @@ int PC_Directive_include(source_t *source)
 		script = LoadScriptFile(token.string);
 		if (!script)
 		{
-			strcpy(path, source->includepath);
-			strcat(path, token.string);
+			path[0] = '\0';
+			if (!PC_AppendString(path, sizeof(path), source->includepath) ||
+				!PC_AppendString(path, sizeof(path), token.string))
+			{
+				SourceError(source, "#include path too long");
+				return qfalse;
+			} //end if
 			script = LoadScriptFile(path);
 		} //end if
 	} //end if
 	else if (token.type == TT_PUNCTUATION && *token.string == '<')
 	{
-		strcpy(path, source->includepath);
+		path[0] = '\0';
+		overflow = !PC_AppendString(path, sizeof(path), source->includepath);
+		closed = filename = 0;
 		while(PC_ReadSourceToken(source, &token))
 		{
 			if (token.linescrossed > 0)
@@ -1027,16 +1046,25 @@ int PC_Directive_include(source_t *source)
 				PC_UnreadSourceToken(source, &token);
 				break;
 			} //end if
-			if (token.type == TT_PUNCTUATION && *token.string == '>') break;
-			if (strlen(path) + strlen(token.string) < MAX_PATH) {
-				strcat(path, token.string);
-			}
+			if (token.type == TT_PUNCTUATION && *token.string == '>')
+			{
+				closed = 1;
+				break;
+			} //end if
+			if (*token.string) filename = 1;
+			if (!overflow && !PC_AppendString(path, sizeof(path), token.string)) overflow = 1;
 		} //end while
-		if (*token.string != '>')
+		if (!closed)
 		{
 			SourceWarning(source, "#include missing trailing >");
+			return qfalse;
 		} //end if
-		if (!strlen(path))
+		if (overflow)
+		{
+			SourceError(source, "#include path too long");
+			return qfalse;
+		} //end if
+		if (!filename)
 		{
 			SourceError(source, "#include without file name between < >");
 			return qfalse;
@@ -1067,7 +1095,11 @@ int PC_Directive_include(source_t *source)
 		return qfalse;
 #endif //SCREWUP
 	} //end if
-	PC_PushScript(source, script);
+	if (!PC_PushScript(source, script))
+	{
+		FreeScript(script);
+		return qfalse;
+	} //end if
 	return qtrue;
 } //end of the function PC_Directive_include
 //============================================================================
@@ -2975,13 +3007,25 @@ void PC_UnreadToken(source_t *source, token_t *token)
 //============================================================================
 void PC_SetIncludePath(source_t *source, char *path)
 {
-	strncpy(source->includepath, path, MAX_PATH);
-	//add trailing path seperator
-	if (source->includepath[strlen(source->includepath)-1] != '\\' &&
-		source->includepath[strlen(source->includepath)-1] != '/')
+	char copy[sizeof(source->includepath)];
+	size_t length;
+	copy[0] = '\0';
+	if (!PC_AppendString(copy, sizeof(copy), path))
 	{
-		strcat(source->includepath, PATHSEPERATOR_STR);
+		SourceError(source, "include prefix too long");
+		return;
 	} //end if
+	length = strlen(copy);
+	//add trailing path seperator
+	if (length && copy[length-1] != '\\' && copy[length-1] != '/')
+	{
+		if (!PC_AppendString(copy, sizeof(copy), PATHSEPERATOR_STR))
+		{
+			SourceError(source, "include prefix too long");
+			return;
+		} //end if
+	} //end if
+	memcpy(source->includepath, copy, strlen(copy) + 1);
 } //end of the function PC_SetIncludePath
 //============================================================================
 //
