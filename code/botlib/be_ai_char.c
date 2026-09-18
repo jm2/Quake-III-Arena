@@ -507,12 +507,6 @@ int BotLoadCachedCharacter(char *charfile, float skill, int reload)
 		return 0;
 	} //end if
 
-	//find a free spot for a character
-	for (handle = 1; handle <= MAX_CLIENTS; handle++)
-	{
-		if (!botcharacters[handle]) break;
-	} //end for
-	if (handle > MAX_CLIENTS) return 0;
 	//try to load a cached character with the given skill
 	if (!reload)
 	{
@@ -524,6 +518,12 @@ int BotLoadCachedCharacter(char *charfile, float skill, int reload)
 		} //end if
 	} //end else
 	//
+	//find a free spot for a character
+	for (handle = 1; handle <= MAX_CLIENTS; handle++)
+	{
+		if (!botcharacters[handle]) break;
+	} //end for
+	if (handle > MAX_CLIENTS) return 0;
 	intskill = (int) (skill + 0.5);
 	//try to load the character with the given skill
 	ch = BotLoadCharacterFromFile(charfile, intskill);
