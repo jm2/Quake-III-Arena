@@ -508,6 +508,11 @@ QVMs while any P0 item is open.
         without prior-byte changes; shutdown releases the final client slot and
         clears both console roots while valid properties/FIFO values stay;
         see [chat lifecycle evidence](bot-chat-state-validation.md).
+  - [x] Console pools check native counts/cost and all nullable imports,
+        migrate complete queued messages before root replacement, and reject
+        capacity/shape errors before arena use; chat setup propagates failure
+        before dictionary mutation, preserving the void helper and native values;
+        see [console pool evidence](bot-chat-pool-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 

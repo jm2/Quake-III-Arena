@@ -203,6 +203,7 @@ bot_chatstate_t *botchatstates[MAX_CLIENTS+1];
 //console message heap
 bot_consolemessage_t *consolemessageheap = NULL;
 bot_consolemessage_t *freeconsolemessages = NULL;
+static int consolemessageheapcount;
 //list with match strings
 bot_matchtemplate_t *matchtemplates = NULL;
 //list with synonyms
@@ -239,26 +240,106 @@ bot_chatstate_t *BotChatStateFromHandle(int handle)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
+static int InitConsoleMessageHeapChecked(void)
+{
+	int i, j, max_messages, used = 0;
+	libvar_t *variable;
+	unsigned int bits;
+	volatile unsigned int representation;
+	bot_consolemessage_t *candidate, *message, *previous;
+	bot_consolemessage_t *first[MAX_CLIENTS + 1] = { NULL };
+	bot_consolemessage_t *last[MAX_CLIENTS + 1] = { NULL };
+	bot_chatstate_t *cs;
+
+	variable = LibVar("max_messages", "1024");
+	if (!variable)
+	{
+		botimport.Print(PRT_ERROR, "couldn't initialize max_messages\n");
+		return qfalse;
+	}
+	Com_Memcpy(&bits, &variable->value, sizeof(bits));
+	representation = bits;
+	if ((representation & 0x7f800000U) == 0x7f800000U ||
+			(double)variable->value < INT_MIN || (double)variable->value > INT_MAX)
+	{
+		botimport.Print(PRT_ERROR, "invalid max_messages\n");
+		return qfalse;
+	}
+	max_messages = (int)variable->value;
+	if (max_messages < 1 || (unsigned long)max_messages >
+			(unsigned long)INT_MAX / sizeof(bot_consolemessage_t))
+	{
+		botimport.Print(PRT_ERROR, "invalid console message heap size\n");
+		return qfalse;
+	}
+	// Validate complete existing queues before acquiring persistent storage.
+	for (i = 1; i <= MAX_CLIENTS; i++)
+	{
+		cs = botchatstates[i];
+		if (!cs) continue;
+		if (cs->numconsolemessages < 0 || cs->numconsolemessages > max_messages - used ||
+				cs->numconsolemessages > consolemessageheapcount - used ||
+				(!consolemessageheap && cs->numconsolemessages)) goto invalidqueue;
+		previous = NULL;
+		message = cs->firstmessage;
+		for (j = 0; j < cs->numconsolemessages; j++)
+		{
+			if (!message || message->prev != previous) goto invalidqueue;
+			previous = message;
+			message = message->next;
+		}
+		if (message || previous != cs->lastmessage) goto invalidqueue;
+		used += cs->numconsolemessages;
+	}
+	candidate = (bot_consolemessage_t *) GetClearedHunkMemory(
+			(unsigned long)max_messages * sizeof(bot_consolemessage_t));
+	if (!candidate)
+	{
+		botimport.Print(PRT_ERROR, "couldn't allocate console message heap\n");
+		return qfalse;
+	}
+	used = 0;
+	for (i = 1; i <= MAX_CLIENTS; i++)
+	{
+		cs = botchatstates[i];
+		if (!cs || !cs->numconsolemessages) continue;
+		first[i] = &candidate[used];
+		message = cs->firstmessage;
+		for (j = 0; j < cs->numconsolemessages; j++, used++)
+		{
+			candidate[used] = *message;
+			candidate[used].prev = j ? &candidate[used - 1] : NULL;
+			candidate[used].next = j + 1 < cs->numconsolemessages ? &candidate[used + 1] : NULL;
+			message = message->next;
+		}
+		last[i] = &candidate[used - 1];
+	}
+	for (j = used; j < max_messages; j++)
+	{
+		candidate[j].prev = j > used ? &candidate[j - 1] : NULL;
+		candidate[j].next = j + 1 < max_messages ? &candidate[j + 1] : NULL;
+	}
+	if (consolemessageheap) FreeMemory(consolemessageheap);
+	consolemessageheap = candidate;
+	consolemessageheapcount = max_messages;
+	freeconsolemessages = used < max_messages ? &candidate[used] : NULL;
+	for (i = 1; i <= MAX_CLIENTS; i++)
+	{
+		cs = botchatstates[i];
+		if (!cs) continue;
+		cs->firstmessage = first[i];
+		cs->lastmessage = last[i];
+	}
+	return qtrue;
+
+invalidqueue:
+	botimport.Print(PRT_ERROR, "console message queues do not fit the complete heap\n");
+	return qfalse;
+}
+
 void InitConsoleMessageHeap(void)
 {
-	int i, max_messages;
-
-	if (consolemessageheap) FreeMemory(consolemessageheap);
-	//
-	max_messages = (int) LibVarValue("max_messages", "1024");
-	consolemessageheap = (bot_consolemessage_t *) GetClearedHunkMemory(max_messages *
-												sizeof(bot_consolemessage_t));
-	consolemessageheap[0].prev = NULL;
-	consolemessageheap[0].next = &consolemessageheap[1];
-	for (i = 1; i < max_messages-1; i++)
-	{
-		consolemessageheap[i].prev = &consolemessageheap[i - 1];
-		consolemessageheap[i].next = &consolemessageheap[i + 1];
-	} //end for
-	consolemessageheap[max_messages-1].prev = &consolemessageheap[max_messages-2];
-	consolemessageheap[max_messages-1].next = NULL;
-	//pointer to the free console messages
-	freeconsolemessages = consolemessageheap;
+	InitConsoleMessageHeapChecked();
 } //end of the function InitConsoleMessageHeap
 //===========================================================================
 // allocate one console message from the heap
@@ -3045,6 +3126,8 @@ int BotSetupChatAI(void)
 	int starttime = Sys_MilliSeconds();
 #endif //DEBUG
 
+	if (!InitConsoleMessageHeapChecked()) return BLERR_LIBRARYNOTSETUP;
+
 	file = LibVarString("synfile", "syn.c");
 	synonyms = BotLoadSynonyms(file);
 	file = LibVarString("rndfile", "rnd.c");
@@ -3058,7 +3141,6 @@ int BotSetupChatAI(void)
 		replychats = BotLoadReplyChat(file);
 	} //end if
 
-	InitConsoleMessageHeap();
 
 #ifdef DEBUG
 	botimport.Print(PRT_MESSAGE, "setup chat AI %d msec\n", Sys_MilliSeconds() - starttime);
@@ -3096,6 +3178,7 @@ void BotShutdownChatAI(void)
 	if (consolemessageheap) FreeMemory(consolemessageheap);
 	consolemessageheap = NULL;
 	freeconsolemessages = NULL;
+	consolemessageheapcount = 0;
 	if (matchtemplates) BotFreeMatchTemplates(matchtemplates);
 	matchtemplates = NULL;
 	if (randomstrings) FreeMemory(randomstrings);

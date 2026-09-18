@@ -97,6 +97,7 @@ static void ConsoleShutdown(void)
     ChatEnd();
 }
 
+#ifndef Q3_CHAT_STATE_NO_MAIN
 int main(int argc, char **argv)
 {
     int proof;
@@ -112,3 +113,5 @@ int main(int argc, char **argv)
     puts("Actual chat nullable handles, last native slot, FIFO values, stale-root clearing and physical/logical shutdown pass (issue #48)");
     return 0;
 }
+
+#endif /* Q3_CHAT_STATE_NO_MAIN */
