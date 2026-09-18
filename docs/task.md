@@ -285,6 +285,9 @@ QVMs while any P0 item is open.
       — **high**, parser fixed-buffer corruption/invalid cleanup.
   - [x] Several primitive, diagnostic, and preprocessor bounds fixes are
         locally ported.
+  - [x] Bot allocation adapters check signed import/prefix sizes, propagate
+        nullable clearing and accept null cleanup while retaining heap/hunk
+        ownership; see [allocator evidence](bot-memory-validation.md).
   - [ ] Finish token merge/stringize, include paths, time macros, character
         paths/indexes, and allocation cleanup.
 

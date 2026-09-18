@@ -250,6 +250,8 @@ bash tests/run_aas_layout_tests.sh
 bash tests/run_aas_endian_tests.sh
 bash tests/run_aas_writer_tests.sh
 bash tests/run_aas_geometry_tests.sh
+bash tests/run_bot_memory_tests.sh
+bash tests/run_bot_zone_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
@@ -326,6 +328,13 @@ reject before loaded publication and clear partial logical ownership. Normal
 and release fast-math sanitizer configurations both run in CI. Node termination,
 routing references and derived runtime math/budgets remain follow-on work.
 
+The native bot allocator runner compiles shipped, debug and optional tracked
+implementations. Zero-to-65-byte raw/cleared allocations retain ownership-prefix
+and payload behavior. Nullable imports, unsigned/header/signed-length overflow
+and null cleanup cannot write or acquire ownership; tracked counter limits also
+reject before imports. Heap releases physically and hunk releases logically.
+This does not prove that every bot-parser caller handles allocation failure.
+
 ## What this CI does not prove
 
 Portable CI does not compile a PowerPC PEF, preserve/inspect a Classic resource
@@ -358,3 +367,9 @@ The next CI layers should be:
 When adding a regression for a GitHub issue, name the issue in the test and
 update its nested checkbox in [task.md](task.md); leave the issue-level
 checkbox open until all required target evidence exists.
+
+The bot-zone runner exercises the actual native zone allocator, engine bot
+imports and bot adapters under release/debug metadata and normal/optimized
+sanitizers. It checks payload/header/trailer/alignment costs, ownership and
+nullable rejection before native allocator expansion can overflow. CI also
+invokes this runner with explicit Clang.

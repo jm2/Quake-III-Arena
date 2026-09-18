@@ -389,6 +389,9 @@ implementation or check, without implying issue completion.
 - [ ] [#48 — bot preprocessor/token/path bounds](https://github.com/jm2/Quake-III-Arena/issues/48)
   - [x] Several upstream primitive/preprocessor/diagnostic bounds fixes are
         locally ported.
+  - [x] Bot allocation adapters check signed import/prefix sizes, propagate
+        nullable clearing and accept null cleanup while retaining heap/hunk
+        ownership; see [allocator evidence](bot-memory-validation.md).
   - [ ] Finish token merging, include paths, time macros, character paths, and
         allocation cleanup.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)

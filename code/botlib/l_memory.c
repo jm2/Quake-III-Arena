@@ -44,6 +44,16 @@ int allocatedmemory;
 int totalmemorysize;
 int numblocks;
 
+/* Engine allocator imports take signed int byte counts. */
+static qboolean MemoryAllocationSize(unsigned long size, unsigned long header,
+                                     int *request)
+{
+	if (header > INT_MAX || size > (unsigned long)INT_MAX - header)
+		return qfalse;
+	*request = (int)(size + header);
+	return qtrue;
+}
+
 #ifdef MEMORYMANEGER
 
 typedef struct memoryblock_s
@@ -100,8 +110,15 @@ void *GetMemory(unsigned long size)
 {
 	void *ptr;
 	memoryblock_t *block;
+	int request;
   assert(botimport.GetMemory); // bk001129 - was NULL'ed
-	ptr = botimport.GetMemory(size + sizeof(memoryblock_t));
+	if (!MemoryAllocationSize(size, sizeof(memoryblock_t), &request) ||
+		request > INT_MAX - (int)sizeof(memoryblock_t) ||
+		allocatedmemory < 0 || allocatedmemory > INT_MAX - request ||
+		totalmemorysize < 0 || totalmemorysize > INT_MAX - request - (int)sizeof(memoryblock_t) ||
+		numblocks < 0 || numblocks == INT_MAX) return NULL;
+	ptr = botimport.GetMemory(request);
+	if (!ptr) return NULL;
 	block = (memoryblock_t *) ptr;
 	block->id = MEM_ID;
 	block->ptr = (char *) ptr + sizeof(memoryblock_t);
@@ -135,7 +152,7 @@ void *GetClearedMemory(unsigned long size)
 #else
 	ptr = GetMemory(size);
 #endif //MEMDEBUG
-	Com_Memset(ptr, 0, size);
+	if (ptr) Com_Memset(ptr, 0, size);
 	return ptr;
 } //end of the function GetClearedMemory
 //===========================================================================
@@ -152,8 +169,15 @@ void *GetHunkMemory(unsigned long size)
 {
 	void *ptr;
 	memoryblock_t *block;
+	int request;
 
-	ptr = botimport.HunkAlloc(size + sizeof(memoryblock_t));
+	if (!MemoryAllocationSize(size, sizeof(memoryblock_t), &request) ||
+		request > INT_MAX - (int)sizeof(memoryblock_t) ||
+		allocatedmemory < 0 || allocatedmemory > INT_MAX - request ||
+		totalmemorysize < 0 || totalmemorysize > INT_MAX - request - (int)sizeof(memoryblock_t) ||
+		numblocks < 0 || numblocks == INT_MAX) return NULL;
+	ptr = botimport.HunkAlloc(request);
+	if (!ptr) return NULL;
 	block = (memoryblock_t *) ptr;
 	block->id = HUNK_ID;
 	block->ptr = (char *) ptr + sizeof(memoryblock_t);
@@ -187,7 +211,7 @@ void *GetClearedHunkMemory(unsigned long size)
 #else
 	ptr = GetHunkMemory(size);
 #endif //MEMDEBUG
-	Com_Memset(ptr, 0, size);
+	if (ptr) Com_Memset(ptr, 0, size);
 	return ptr;
 } //end of the function GetClearedHunkMemory
 //===========================================================================
@@ -232,6 +256,7 @@ void FreeMemory(void *ptr)
 {
 	memoryblock_t *block;
 
+	if (!ptr) return;
 	block = BlockFromPointer(ptr, "FreeMemory");
 	if (!block) return;
 	UnlinkMemoryBlock(block);
@@ -344,8 +369,10 @@ void *GetMemory(unsigned long size)
 {
 	void *ptr;
 	unsigned long int *memid;
+	int request;
 
-	ptr = botimport.GetMemory(size + sizeof(unsigned long int));
+	if (!MemoryAllocationSize(size, sizeof(unsigned long int), &request)) return NULL;
+	ptr = botimport.GetMemory(request);
 	if (!ptr) return NULL;
 	memid = (unsigned long int *) ptr;
 	*memid = MEM_ID;
@@ -369,7 +396,7 @@ void *GetClearedMemory(unsigned long size)
 #else
 	ptr = GetMemory(size);
 #endif //MEMDEBUG
-	Com_Memset(ptr, 0, size);
+	if (ptr) Com_Memset(ptr, 0, size);
 	return ptr;
 } //end of the function GetClearedMemory
 //===========================================================================
@@ -386,8 +413,10 @@ void *GetHunkMemory(unsigned long size)
 {
 	void *ptr;
 	unsigned long int *memid;
+	int request;
 
-	ptr = botimport.HunkAlloc(size + sizeof(unsigned long int));
+	if (!MemoryAllocationSize(size, sizeof(unsigned long int), &request)) return NULL;
+	ptr = botimport.HunkAlloc(request);
 	if (!ptr) return NULL;
 	memid = (unsigned long int *) ptr;
 	*memid = HUNK_ID;
@@ -411,7 +440,7 @@ void *GetClearedHunkMemory(unsigned long size)
 #else
 	ptr = GetHunkMemory(size);
 #endif //MEMDEBUG
-	Com_Memset(ptr, 0, size);
+	if (ptr) Com_Memset(ptr, 0, size);
 	return ptr;
 } //end of the function GetClearedHunkMemory
 //===========================================================================
@@ -424,6 +453,7 @@ void FreeMemory(void *ptr)
 {
 	unsigned long int *memid;
 
+	if (!ptr) return;
 	memid = (unsigned long int *) ((char *) ptr - sizeof(unsigned long int));
 
 	if (*memid == MEM_ID)
