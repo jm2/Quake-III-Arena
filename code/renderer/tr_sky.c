@@ -384,6 +384,25 @@ static void DrawSkySide( struct image_s *image, const int mins[2], const int max
 	}
 }
 
+/* Clamp finite side coordinates before subdivision multiplication/conversion.
+ * The native quarter-cell rounding is unchanged inside the visible cube. */
+static qboolean SnapSkyBounds( int side ) {
+	int axis;
+	for ( axis = 0; axis < 2; axis++ ) {
+		if ( !R_FiniteFloat(sky_mins[axis][side]) || !R_FiniteFloat(sky_maxs[axis][side]) ) return qfalse;
+	}
+	for ( axis = 0; axis < 2; axis++ ) {
+		float low = sky_mins[axis][side], high = sky_maxs[axis][side];
+		if ( low < -1 ) low = -1;
+		else if ( low > 1 ) low = 1;
+		if ( high < -1 ) high = -1;
+		else if ( high > 1 ) high = 1;
+		sky_mins[axis][side] = floor( low * HALF_SKY_SUBDIVISIONS ) / HALF_SKY_SUBDIVISIONS;
+		sky_maxs[axis][side] = ceil( high * HALF_SKY_SUBDIVISIONS ) / HALF_SKY_SUBDIVISIONS;
+	}
+	return qtrue;
+}
+
 static void DrawSkyBox( shader_t *shader )
 {
 	int		i;
@@ -398,10 +417,7 @@ static void DrawSkyBox( shader_t *shader )
 		int sky_mins_subd[2], sky_maxs_subd[2];
 		int s, t;
 
-		sky_mins[0][i] = floor( sky_mins[0][i] * HALF_SKY_SUBDIVISIONS ) / HALF_SKY_SUBDIVISIONS;
-		sky_mins[1][i] = floor( sky_mins[1][i] * HALF_SKY_SUBDIVISIONS ) / HALF_SKY_SUBDIVISIONS;
-		sky_maxs[0][i] = ceil( sky_maxs[0][i] * HALF_SKY_SUBDIVISIONS ) / HALF_SKY_SUBDIVISIONS;
-		sky_maxs[1][i] = ceil( sky_maxs[1][i] * HALF_SKY_SUBDIVISIONS ) / HALF_SKY_SUBDIVISIONS;
+		if ( !SnapSkyBounds(i) ) continue;
 
 		if ( ( sky_mins[0][i] >= sky_maxs[0][i] ) ||
 			 ( sky_mins[1][i] >= sky_maxs[1][i] ) )
@@ -458,10 +474,26 @@ static void FillCloudySkySide( const int mins[2], const int maxs[2], qboolean ad
 {
 	int s, t;
 	int vertexStart = tess.numVertexes;
-	int tHeight, sWidth;
+	int tHeight, sWidth, vertexCount, indexCount;
 
+	if ( mins[0] < -HALF_SKY_SUBDIVISIONS || mins[1] < -HALF_SKY_SUBDIVISIONS ||
+		 maxs[0] > HALF_SKY_SUBDIVISIONS || maxs[1] > HALF_SKY_SUBDIVISIONS ||
+		 mins[0] > maxs[0] || mins[1] > maxs[1] ) {
+		ri.Error( ERR_DROP, "Invalid bounds in FillCloudySkySide()\n" );
+		return;
+	}
 	tHeight = maxs[1] - mins[1] + 1;
 	sWidth = maxs[0] - mins[0] + 1;
+	vertexCount = tHeight * sWidth;
+	indexCount = addIndexes ? (tHeight - 1) * (sWidth - 1) * 6 : 0;
+	/* The final entries are backend overflow sentinels, not writable slots. */
+	if ( tess.numVertexes < 0 || tess.numVertexes >= SHADER_MAX_VERTEXES ||
+		 vertexCount >= SHADER_MAX_VERTEXES - tess.numVertexes ||
+		 tess.numIndexes < 0 || tess.numIndexes >= SHADER_MAX_INDEXES ||
+		 indexCount >= SHADER_MAX_INDEXES - tess.numIndexes ) {
+		ri.Error( ERR_DROP, "Cloud geometry capacity exceeded in FillCloudySkySide()\n" );
+		return;
+	}
 
 	for ( t = mins[1]+HALF_SKY_SUBDIVISIONS; t <= maxs[1]+HALF_SKY_SUBDIVISIONS; t++ )
 	{
@@ -473,10 +505,6 @@ static void FillCloudySkySide( const int mins[2], const int maxs[2], qboolean ad
 
 			tess.numVertexes++;
 
-			if ( tess.numVertexes >= SHADER_MAX_VERTEXES )
-			{
-				ri.Error( ERR_DROP, "SHADER_MAX_VERTEXES hit in FillCloudySkySide()\n" );
-			}
 		}
 	}
 
@@ -542,10 +570,7 @@ static void FillCloudBox( const shader_t *shader, int stage )
 			}
 		}
 
-		sky_mins[0][i] = floor( sky_mins[0][i] * HALF_SKY_SUBDIVISIONS ) / HALF_SKY_SUBDIVISIONS;
-		sky_mins[1][i] = floor( sky_mins[1][i] * HALF_SKY_SUBDIVISIONS ) / HALF_SKY_SUBDIVISIONS;
-		sky_maxs[0][i] = ceil( sky_maxs[0][i] * HALF_SKY_SUBDIVISIONS ) / HALF_SKY_SUBDIVISIONS;
-		sky_maxs[1][i] = ceil( sky_maxs[1][i] * HALF_SKY_SUBDIVISIONS ) / HALF_SKY_SUBDIVISIONS;
+		if ( !SnapSkyBounds(i) ) continue;
 
 		if ( ( sky_mins[0][i] >= sky_maxs[0][i] ) ||
 			 ( sky_mins[1][i] >= sky_maxs[1][i] ) )
@@ -604,7 +629,6 @@ static void FillCloudBox( const shader_t *shader, int stage )
 */
 void R_BuildCloudData( shaderCommands_t *input )
 {
-	int			i;
 	shader_t	*shader;
 
 	shader = input->shader;
@@ -618,15 +642,9 @@ void R_BuildCloudData( shaderCommands_t *input )
 	tess.numIndexes = 0;
 	tess.numVertexes = 0;
 
-	if ( input->shader->sky.cloudHeight )
-	{
-		for ( i = 0; i < MAX_SHADER_STAGES; i++ )
-		{
-			if ( !tess.xstages[i] ) {
-				break;
-			}
-			FillCloudBox( input->shader, i );
-		}
+	/* Every stage uses the same indexed geometry. Later copies were unindexed. */
+	if ( input->shader->sky.cloudHeight && tess.xstages && tess.xstages[0] ) {
+		FillCloudBox( input->shader, 0 );
 	}
 }
 

@@ -245,6 +245,7 @@ bash tests/run_font_layout_tests.sh
 bash tests/run_font_freetype_tests.sh
 bash tests/run_shader_archive_tests.sh
 bash tests/run_shader_runtime_tests.sh
+bash tests/run_sky_bounds_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
@@ -260,6 +261,16 @@ coordinate's non-finite/extreme values and actual waveform, bulge and diffuse
 consumers check overflow handling; all 8,192 native fog samples retain their
 density and non-finite coordinates return zero. Graphics imports and target GPU behavior remain
 deferred.
+
+The native sky runner compares complete graphics traces and cloud vertex/UV/index
+arrays with pre-fix native bodies across 1,122 finite bounds cases in normal and
+release fast-math sanitizers. Non-finite sides skip before conversion; finite
+extremes clamp to the cube before multiplication. Zero through eight stages share
+one indexed cloud mesh, preserving draw geometry. Invalid grid/count/capacity
+cases reject before buffer/counter writes and preserve backend sentinel slots.
+The runner extracts the unchanged native Q_acos body from common.c into TMPDIR;
+its exact source seam fails if the signature stops matching. Graphics callbacks
+are isolated and do not claim live GPU acceptance.
 
 ## What this CI does not prove
 
