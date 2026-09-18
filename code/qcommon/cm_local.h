@@ -25,6 +25,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "cm_polylib.h"
 
 #define	MAX_SUBMODELS			256
+#define CM_MAX_PATCH_GRID_SIZE 129
 #define	BOX_MODEL_HANDLE		255
 #define CAPSULE_MODEL_HANDLE	254
 

@@ -22,7 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // tr_map.c
 
 #include "tr_local.h"
-#include "../qcommon/bsp_references.h"
+#include "../qcommon/bsp_geometry.h"
 
 /*
 
@@ -337,16 +337,12 @@ static void ParseFace( dsurface_t *ds, drawVert_t *verts, msurface_t *surf, int 
 	}
 
 	numPoints = LittleLong( ds->numVerts );
-	if (numPoints > MAX_FACE_POINTS) {
-		ri.Printf( PRINT_WARNING, "WARNING: MAX_FACE_POINTS exceeded: %i\n", numPoints);
-    numPoints = MAX_FACE_POINTS;
-    surf->shader = tr.defaultShader;
-	}
+
 
 	numIndexes = LittleLong( ds->numIndexes );
 
 	// create the srfSurfaceFace_t
-	sfaceSize = ( int ) &((srfSurfaceFace_t *)0)->points[numPoints];
+	sfaceSize = offsetof(srfSurfaceFace_t,points) + numPoints * sizeof(cv->points[0]);
 	ofsIndexes = sfaceSize;
 	sfaceSize += sizeof( int ) * numIndexes;
 
@@ -1820,6 +1816,20 @@ static const char *R_ValidateBSPAllocations(const dheader_t *header) {
 	return BSP_ValidateAllocations(arrays,sizeof(arrays)/sizeof(arrays[0]));
 }
 
+/** Face and triangle copies ultimately use the fixed native shader tessellation arrays. */
+static const char *R_ValidateBSPGeometry(const void *buffer,const dheader_t *header) {
+	const byte *base=buffer,*record;unsigned int i,count,type,vertices,indexes;const char *error;
+	error=BSP_ValidateGeometry(buffer,header,MAX_GRID_SIZE,MAX_PATCH_SIZE*MAX_PATCH_SIZE);if(error) return error;
+	count=header->lumps[LUMP_SURFACES].filelen/sizeof(dsurface_t);
+	for(i=0;i<count;i++) {
+		record=base+header->lumps[LUMP_SURFACES].fileofs+i*sizeof(dsurface_t);type=BSP_FileWord(record+offsetof(dsurface_t,surfaceType));
+		if(type!=MST_PLANAR && type!=MST_TRIANGLE_SOUP) continue;
+		vertices=BSP_FileWord(record+offsetof(dsurface_t,numVerts));indexes=BSP_FileWord(record+offsetof(dsurface_t,numIndexes));
+		if(vertices>=SHADER_MAX_VERTEXES || indexes>=SHADER_MAX_INDEXES || (type==MST_PLANAR && !vertices)) return "BSP surface exceeds native tessellation storage";
+	}
+	return NULL;
+}
+
 void RE_LoadWorldMap( const char *name ) {
 	int			length;
 	dheader_t	validatedHeader, *header = &validatedHeader;
@@ -1840,6 +1850,7 @@ void RE_LoadWorldMap( const char *name ) {
 	error = BSP_ValidateHeader(buffer,length,header);
 	if ( !error ) error = R_ValidateBSPAllocations(header);
 	if ( !error ) error = BSP_ValidateReferences(buffer,header);
+	if ( !error ) error = R_ValidateBSPGeometry(buffer,header);
 	if ( error ) {
 		ri.FS_FreeFile(buffer);
 		ri.Error(ERR_DROP,"RE_LoadWorldMap: %s: %s",name,error);

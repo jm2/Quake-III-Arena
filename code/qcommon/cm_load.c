@@ -22,7 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // cmodel.c -- model loading
 
 #include "cm_local.h"
-#include "bsp_references.h"
+#include "bsp_geometry.h"
 
 #ifdef BSPC
 
@@ -626,6 +626,7 @@ void CM_LoadMap( const char *name, qboolean clientload, int *checksum ) {
 	if ( !error ) error = CM_ValidateBSPAllocations(&header);
 	if ( !error && header.lumps[LUMP_MODELS].filelen/sizeof(dmodel_t)>MAX_SUBMODELS ) error = "MAX_SUBMODELS exceeded";
 	if ( !error ) error = BSP_ValidateReferences(buf,&header);
+	if ( !error ) error = BSP_ValidateGeometry(buf,&header,CM_MAX_PATCH_GRID_SIZE,MAX_PATCH_VERTS);
 	if ( error ) {
 		FS_FreeFile(buf);
 		Com_Error(ERR_DROP,"CM_LoadMap: %s: %s",name,error);
