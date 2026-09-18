@@ -648,3 +648,13 @@ signed/unsigned 32-bit integer word patterns retain stored bits. Oversized raw,
 macro and included floats/words reject before character publication, release
 prior strings and all physical source/table/dictionary/token owners, and can
 retry. Both GCC/Clang normal and release fast-math sanitizers run the fixture.
+
+
+The skill runner links actual public/cached character/source/lexer/libvar/core
+bodies. Quarter-step requested skills, finite extremes and signed infinities
+retain native one/five clamps and cohort interpolation/cache values. Cached
+rounding, exact cache hits and any-skill fallback retain behavior through safe
+signed endpoints. Invalid NaN/public or non-finite/unrepresentable cached skills
+reject in cold/occupied/reload states without file/heap activity or mutation of
+any cached header/field/string/slot. Both GCC/Clang normal and release fast-math
+sanitizers run the fixture.

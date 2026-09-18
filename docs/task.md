@@ -383,6 +383,10 @@ QVMs while any P0 item is open.
         oversized native integer words before publication; prior strings/source
         owners release, while valid float and 32-bit word patterns remain;
         see [publication evidence](bot-character-numeric-validation.md).
+  - [x] Requested NaN skills and unsafe cached skill casts reject before imports
+        while native finite/infinity clamps, rounding/fallback/cache behavior and
+        all existing character/string owners remain;
+        see [skill evidence](bot-character-skill-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 

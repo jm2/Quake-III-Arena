@@ -487,6 +487,13 @@ int BotLoadCachedCharacter(char *charfile, float skill, int reload)
 #endif //DEBUG
 	if (!BotCharacterFilePathValid(charfile)) return 0;
 
+	if (!BotCharacterFloatFinite(&skill) ||
+			(double) skill + 0.5 < INT_MIN || (double) skill + 0.5 > INT_MAX)
+	{
+		botimport.Print(PRT_ERROR, "invalid cached character skill\n");
+		return 0;
+	} //end if
+
 	//find a free spot for a character
 	for (handle = 1; handle <= MAX_CLIENTS; handle++)
 	{
@@ -684,6 +691,19 @@ int BotLoadCharacter(char *charfile, float skill)
 {
 	int firstskill, secondskill, handle;
 	if (!BotCharacterFilePathValid(charfile)) return 0;
+
+	if (!BotCharacterFloatFinite(&skill))
+	{
+		unsigned int bits;
+		Com_Memcpy(&bits, &skill, sizeof(bits));
+		if ((bits & 0x7fffffffu) > 0x7f800000u)
+		{
+			botimport.Print(PRT_ERROR, "invalid character skill\n");
+			return 0;
+		} //end if
+		//retain native signed infinity clamps without floating comparisons
+		skill = (bits & 0x80000000u) ? 1.0f : 5.0f;
+	} //end if
 
 	//make sure the skill is in the valid range
 	if (skill < 1.0) skill = 1.0;
