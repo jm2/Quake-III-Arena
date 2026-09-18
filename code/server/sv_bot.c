@@ -287,6 +287,7 @@ BotImport_GetMemory
 void *BotImport_GetMemory(int size) {
 	void *ptr;
 
+	if ( Z_AllocationSize( size ) < 0 ) return NULL;
 	ptr = Z_TagMalloc( size, TAG_BOTLIB );
 	return ptr;
 }
@@ -306,6 +307,7 @@ BotImport_HunkAlloc
 =================
 */
 void *BotImport_HunkAlloc( int size ) {
+	if ( Hunk_AllocationSize( size ) < 0 ) return NULL;
 	if( Hunk_CheckMark() ) {
 		Com_Error( ERR_DROP, "SV_Bot_HunkAlloc: Alloc with marks already set\n" );
 	}

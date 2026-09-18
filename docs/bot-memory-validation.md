@@ -51,3 +51,30 @@ per-caller allocation handling. This makes adapters safe; a parser that assumes
 non-null storage still needs its own failure path. Native allocator imports can
 also raise engine errors instead of returning NULL. No physical hunk rollback,
 complete parser transaction or live retail/Mac OS 9 execution is claimed.
+
+## Native engine overhead follow-up
+
+Codex identified the downstream native zone header/trailer/alignment overflow
+at the signed import boundary. Z_AllocationSize now previews the real native
+zone cost, including optional debug metadata; Z_TagMalloc rejects invalid
+expansion before list or ownership changes. Bot imports return null when that
+zone cost or Hunk_AllocationSize cannot fit. Import signatures and retail QVM
+syscall layouts are unchanged.
+
+An original actual-body proof fails on signed alignment overflow. The new
+fixture includes the real zone allocator and bot adapters and extracts the
+unchanged-signature engine imports through strict source seams. It checks raw/
+cleared zero-to-65-byte payloads through both ownership prefixes, exact costs,
+physical release, fragment/coalescing ownership, signed-limit/null rejection and
+unchanged zone state. Release/debug metadata and normal/optimized Clang sanitizer
+configurations pass for native zone and hunk import boundaries. Whole common.c
+host inclusion emits existing warnings in unused 32-bit startup/crash bodies;
+changed allocator/import bodies and both PPC builds have zero diagnostics.
+The allocator/hunk seams and nine Python checks remain passing.
+
+These supersede the earlier allocator artifacts:
+
+| Product | PEF bytes | SHA-256 |
+| --- | ---: | --- |
+| Quake3 | 3,750,003 | `7da12d2a9a825fd0b2b4340f2c13f2dccfab216ce0c3082a800b53946dedf99c` |
+| Quake3_TeamArena | 3,898,577 | `1381c22182355cdc5a5868936c4c596fcf983bfa3b061a4f1f351b6df3f4a6f4` |
