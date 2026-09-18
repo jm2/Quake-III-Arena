@@ -1421,19 +1421,20 @@ int FS_Read( void *buffer, int len, fileHandle_t f ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
 	}
 
-	if ( !f ) {
+	if ( f <= 0 || f >= MAX_FILE_HANDLES || len <= 0 || !buffer ) {
 		return 0;
 	}
+	if (!fsh[f].buffer && !fsh[f].handleFiles.file.o)
+		return 0;
 
 	buf = (byte *)buffer;
-	fs_readCount += len;
+	if (fs_readCount > INT_MAX - len) fs_readCount = INT_MAX;
+	else fs_readCount += len;
 
     // Antigravity: Buffered read override
     if (fsh[f].buffer) {
-        int copyLen = len;
-        if (fsh[f].bufferPos + copyLen > fsh[f].bufferLen) {
-            copyLen = fsh[f].bufferLen - fsh[f].bufferPos;
-        }
+        int remainingBytes = fsh[f].bufferLen - fsh[f].bufferPos;
+        int copyLen = len < remainingBytes ? len : remainingBytes;
         if (copyLen > 0) {
             memcpy(buffer, fsh[f].buffer + fsh[f].bufferPos, copyLen);
             fsh[f].bufferPos += copyLen;
@@ -1551,18 +1552,31 @@ int FS_Seek( fileHandle_t f, long offset, int origin ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
 		return -1;
 	}
+	if (f <= 0 || f >= MAX_FILE_HANDLES ||
+		(!fsh[f].buffer && !fsh[f].handleFiles.file.o))
+		return -1;
 
     // Antigravity: Buffered seek
     if (fsh[f].buffer) {
         int newPos = 0;
         switch( origin ) {
-        case FS_SEEK_SET: newPos = offset; break;
-        case FS_SEEK_CUR: newPos = fsh[f].bufferPos + offset; break;
-        case FS_SEEK_END: newPos = fsh[f].bufferLen + offset; break;
+        case FS_SEEK_SET:
+            if (offset <= 0) newPos = 0;
+            else if (offset >= fsh[f].bufferLen) newPos = fsh[f].bufferLen;
+            else newPos = (int)offset;
+            break;
+        case FS_SEEK_CUR:
+            if (offset > fsh[f].bufferLen - fsh[f].bufferPos) newPos = fsh[f].bufferLen;
+            else if (offset < -fsh[f].bufferPos) newPos = 0;
+            else newPos = fsh[f].bufferPos + (int)offset;
+            break;
+        case FS_SEEK_END:
+            if (offset >= 0) newPos = fsh[f].bufferLen;
+            else if (offset < -fsh[f].bufferLen) newPos = 0;
+            else newPos = fsh[f].bufferLen + (int)offset;
+            break;
         default: return -1;
         }
-        if (newPos < 0) newPos = 0;
-        if (newPos > fsh[f].bufferLen) newPos = fsh[f].bufferLen;
         fsh[f].bufferPos = newPos;
         return 0;
     }

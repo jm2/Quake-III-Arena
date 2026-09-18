@@ -249,6 +249,8 @@ implementation or check, without implying issue completion.
         [stream checks](fs-zip-reopen-validation.md).
   - [x] Real cap/signed/unsigned ZIP sizes, bad opens and truncated payloads
         have [physical owner/stream checks](fs-zip-entry-validation.md).
+  - [x] Read/seek request, offset, handle and accounting bounds have actual
+        [native behavior checks](fs-buffer-bounds-validation.md).
   - [ ] Complete remaining handle/read/metadata and retail acceptance paths.
 - [ ] [#37 — connection/netchan lacks challenge binding](https://github.com/jm2/Quake-III-Arena/issues/37)
   - [x] User selected commercial 1.32c compatibility in the style of
