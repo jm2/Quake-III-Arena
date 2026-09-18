@@ -1018,7 +1018,8 @@ int PC_ExpandDefineIntoSource(source_t *source, token_t *deftoken, define_t *def
 		source->tokens = firsttoken;
 		return qtrue;
 	} //end if
-	return qfalse;
+	//A complete empty expansion consumes the macro; callers continue reading.
+	return qtrue;
 } //end of the function PC_ExpandDefineIntoSource
 //============================================================================
 //
