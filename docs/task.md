@@ -239,7 +239,10 @@ QVMs while any P0 item is open.
   - [x] Constant shader colors validate before byte conversion, preserve native
         valid rounding and propagate vector failures; see
         [constant/vector evidence](shader-constant-vector-validation.md).
-  - [ ] Complete remaining shader definition/index and semantic checks.
+  - [x] Archive definitions/index walks stay within their own file and preserve
+        native duplicate priority across empty/multiple files; see
+        [index isolation evidence](shader-file-index-validation.md).
+  - [ ] Complete remaining shader numeric/semantic checks.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
       — **high**, server OOB access/infinite traversal.
   - [x] Local mover model boundary/look-up fixes cross-build.

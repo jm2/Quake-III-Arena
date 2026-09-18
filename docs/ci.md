@@ -116,7 +116,8 @@ PR head while retaining checks on the merged default branch.
     malformed/non-finite color/texture vectors and 1,021 native byte goldens,
     under both normal sanitizer and optimized release-fast-math configurations;
   - executes native shader archive initialization, checked file/aggregate sizes,
-    reverse input release, empty startup/restarts, native paths and 4,096-file cap;
+    reverse input release, empty startup/restarts, native paths and 4,096-file cap,
+    malformed-file isolation and 768 stock duplicate/missing lookup goldens;
   - compares patch LOD propagation with 401 tiny stock-recursive oracles and
     passes a 4,096-patch chain with a 512 KB stack and no traversal allocation;
   - checks native planar face distances for finite-source product/sum/cancellation
