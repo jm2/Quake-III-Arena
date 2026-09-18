@@ -422,6 +422,9 @@ implementation or check, without implying issue completion.
   - [x] Native numeric libvars preserve valid decimal values and reject malformed
         fractions/unrepresentable floats without trailing-NUL overread or signed
         divisor overflow; see [numeric evidence](bot-libvar-validation.md).
+  - [x] Libvar value/name costs and nullable allocations preserve dictionary and
+        prior value ownership on failure; aliased replacements clone before
+        release; see [ownership evidence](bot-libvar-ownership-validation.md).
   - [ ] Finish token merging, include paths, time macros, character paths, and
         allocation cleanup.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)

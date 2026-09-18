@@ -49,6 +49,7 @@ char *LibVarGetString(char *var_name);
 //gets the value of the library variable with the given name
 float LibVarGetValue(char *var_name);
 //creates the library variable if not existing already and returns it
+//returns NULL if input/allocation cannot create a variable
 libvar_t *LibVar(char *var_name, char *value);
 //creates the library variable if not existing already and returns the value
 float LibVarValue(char *var_name, char *value);
