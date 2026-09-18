@@ -856,6 +856,8 @@ void Characteristic_String(int character, int index, char *buf, int size)
 {
 	bot_character_t *ch;
 
+	if (!buf || size <= 0) return;
+
 	ch = BotCharacterFromHandle(character);
 	if (!ch) return;
 	//check if the index is in range
