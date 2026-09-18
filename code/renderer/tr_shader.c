@@ -113,13 +113,29 @@ void R_RemapShader(const char *shaderName, const char *newShaderName, const char
 }
 
 /* Integer representation checks remain effective under release -ffast-math. */
-static qboolean ShaderFinite( double value ) {
+static uint64_t ShaderNumberBits( double value ) {
 	uint64_t bits;
 	volatile uint64_t representation;
 	Com_Memcpy( &bits, &value, sizeof(bits) );
 	/* Prevent optimizers from replacing the bit test with finite-math assumptions. */
 	representation = bits;
-	return (representation & UINT64_C(0x7ff0000000000000)) != UINT64_C(0x7ff0000000000000);
+	return representation;
+}
+
+static qboolean ShaderFinite( double value ) {
+	return (ShaderNumberBits(value) & UINT64_C(0x7ff0000000000000)) != UINT64_C(0x7ff0000000000000);
+}
+
+static qboolean ShaderFloatValue( double value, float *output ) {
+	if ( !ShaderFinite(value) || value < -FLT_MAX || value > FLT_MAX ) return qfalse;
+	*output = (float)value;
+	return qtrue;
+}
+
+static qboolean ShaderFloat( const char *token, float *output ) {
+	if ( token[0] && ShaderFloatValue( atof(token), output ) ) return qtrue;
+	ri.Printf( PRINT_WARNING, "WARNING: invalid numeric parm '%s' in shader '%s'\n", token, shader.name );
+	return qfalse;
 }
 
 /*
@@ -333,7 +349,7 @@ static genFunc_t NameToGenFunc( const char *funcname )
 ParseWaveForm
 ===================
 */
-static void ParseWaveForm( char **text, waveForm_t *wave )
+static qboolean ParseWaveForm( char **text, waveForm_t *wave )
 {
 	char *token;
 
@@ -341,7 +357,7 @@ static void ParseWaveForm( char **text, waveForm_t *wave )
 	if ( token[0] == 0 )
 	{
 		ri.Printf( PRINT_WARNING, "WARNING: missing waveform parm in shader '%s'\n", shader.name );
-		return;
+		return qfalse;
 	}
 	wave->func = NameToGenFunc( token );
 
@@ -350,33 +366,34 @@ static void ParseWaveForm( char **text, waveForm_t *wave )
 	if ( token[0] == 0 )
 	{
 		ri.Printf( PRINT_WARNING, "WARNING: missing waveform parm in shader '%s'\n", shader.name );
-		return;
+		return qfalse;
 	}
-	wave->base = atof( token );
+	if ( !ShaderFloat( token, &wave->base ) ) return qfalse;
 
 	token = COM_ParseExt( text, qfalse );
 	if ( token[0] == 0 )
 	{
 		ri.Printf( PRINT_WARNING, "WARNING: missing waveform parm in shader '%s'\n", shader.name );
-		return;
+		return qfalse;
 	}
-	wave->amplitude = atof( token );
+	if ( !ShaderFloat( token, &wave->amplitude ) ) return qfalse;
 
 	token = COM_ParseExt( text, qfalse );
 	if ( token[0] == 0 )
 	{
 		ri.Printf( PRINT_WARNING, "WARNING: missing waveform parm in shader '%s'\n", shader.name );
-		return;
+		return qfalse;
 	}
-	wave->phase = atof( token );
+	if ( !ShaderFloat( token, &wave->phase ) ) return qfalse;
 
 	token = COM_ParseExt( text, qfalse );
 	if ( token[0] == 0 )
 	{
 		ri.Printf( PRINT_WARNING, "WARNING: missing waveform parm in shader '%s'\n", shader.name );
-		return;
+		return qfalse;
 	}
-	wave->frequency = atof( token );
+	if ( !ShaderFloat( token, &wave->frequency ) ) return qfalse;
+	return qtrue;
 }
 
 
@@ -385,19 +402,18 @@ static void ParseWaveForm( char **text, waveForm_t *wave )
 ParseTexMod
 ===================
 */
-static void ParseTexMod( char *_text, shaderStage_t *stage )
+static qboolean ParseTexMod( char *_text, shaderStage_t *stage )
 {
 	const char *token;
 	char **text = &_text;
-	texModInfo_t *tmi;
+	texModInfo_t parsed, *tmi = &parsed;
 
-	if ( stage->bundle[0].numTexMods == TR_MAX_TEXMODS ) {
-		ri.Error( ERR_DROP, "ERROR: too many tcMod stages in shader '%s'\n", shader.name );
-		return;
+	if ( stage->bundle[0].numTexMods >= TR_MAX_TEXMODS ) {
+		ri.Printf( PRINT_WARNING, "WARNING: too many tcMod stages in shader '%s'\n", shader.name );
+		return qfalse;
 	}
 
-	tmi = &stage->bundle[0].texMods[stage->bundle[0].numTexMods];
-	stage->bundle[0].numTexMods++;
+	Com_Memset( &parsed, 0, sizeof(parsed) );
 
 	token = COM_ParseExt( text, qfalse );
 
@@ -410,30 +426,30 @@ static void ParseTexMod( char *_text, shaderStage_t *stage )
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing tcMod turb parms in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->wave.base = atof( token );
+		if ( !ShaderFloat( token, &tmi->wave.base ) ) return qfalse;
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing tcMod turb in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->wave.amplitude = atof( token );
+		if ( !ShaderFloat( token, &tmi->wave.amplitude ) ) return qfalse;
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing tcMod turb in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->wave.phase = atof( token );
+		if ( !ShaderFloat( token, &tmi->wave.phase ) ) return qfalse;
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing tcMod turb in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->wave.frequency = atof( token );
+		if ( !ShaderFloat( token, &tmi->wave.frequency ) ) return qfalse;
 
 		tmi->type = TMOD_TURBULENT;
 	}
@@ -446,17 +462,17 @@ static void ParseTexMod( char *_text, shaderStage_t *stage )
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing scale parms in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->scale[0] = atof( token );
+		if ( !ShaderFloat( token, &tmi->scale[0] ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing scale parms in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->scale[1] = atof( token );
+		if ( !ShaderFloat( token, &tmi->scale[1] ) ) return qfalse;
 		tmi->type = TMOD_SCALE;
 	}
 	//
@@ -468,16 +484,16 @@ static void ParseTexMod( char *_text, shaderStage_t *stage )
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing scale scroll parms in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->scroll[0] = atof( token );
+		if ( !ShaderFloat( token, &tmi->scroll[0] ) ) return qfalse;
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing scale scroll parms in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->scroll[1] = atof( token );
+		if ( !ShaderFloat( token, &tmi->scroll[1] ) ) return qfalse;
 		tmi->type = TMOD_SCROLL;
 	}
 	//
@@ -489,7 +505,7 @@ static void ParseTexMod( char *_text, shaderStage_t *stage )
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing stretch parms in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
 		tmi->wave.func = NameToGenFunc( token );
 
@@ -497,33 +513,33 @@ static void ParseTexMod( char *_text, shaderStage_t *stage )
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing stretch parms in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->wave.base = atof( token );
+		if ( !ShaderFloat( token, &tmi->wave.base ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing stretch parms in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->wave.amplitude = atof( token );
+		if ( !ShaderFloat( token, &tmi->wave.amplitude ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing stretch parms in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->wave.phase = atof( token );
+		if ( !ShaderFloat( token, &tmi->wave.phase ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing stretch parms in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->wave.frequency = atof( token );
+		if ( !ShaderFloat( token, &tmi->wave.frequency ) ) return qfalse;
 		
 		tmi->type = TMOD_STRETCH;
 	}
@@ -536,49 +552,49 @@ static void ParseTexMod( char *_text, shaderStage_t *stage )
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing transform parms in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->matrix[0][0] = atof( token );
+		if ( !ShaderFloat( token, &tmi->matrix[0][0] ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing transform parms in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->matrix[0][1] = atof( token );
+		if ( !ShaderFloat( token, &tmi->matrix[0][1] ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing transform parms in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->matrix[1][0] = atof( token );
+		if ( !ShaderFloat( token, &tmi->matrix[1][0] ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing transform parms in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->matrix[1][1] = atof( token );
+		if ( !ShaderFloat( token, &tmi->matrix[1][1] ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing transform parms in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->translate[0] = atof( token );
+		if ( !ShaderFloat( token, &tmi->translate[0] ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing transform parms in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->translate[1] = atof( token );
+		if ( !ShaderFloat( token, &tmi->translate[1] ) ) return qfalse;
 
 		tmi->type = TMOD_TRANSFORM;
 	}
@@ -591,9 +607,9 @@ static void ParseTexMod( char *_text, shaderStage_t *stage )
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing tcMod rotate parms in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		tmi->rotateSpeed = atof( token );
+		if ( !ShaderFloat( token, &tmi->rotateSpeed ) ) return qfalse;
 		tmi->type = TMOD_ROTATE;
 	}
 	//
@@ -606,7 +622,10 @@ static void ParseTexMod( char *_text, shaderStage_t *stage )
 	else
 	{
 		ri.Printf( PRINT_WARNING, "WARNING: unknown tcMod '%s' in shader '%s'\n", token, shader.name );
+		return qfalse;
 	}
+	stage->bundle[0].texMods[stage->bundle[0].numTexMods++] = parsed;
+	return qtrue;
 }
 
 
@@ -703,7 +722,7 @@ static qboolean ParseStage( shaderStage_t *stage, char **text )
 				ri.Printf( PRINT_WARNING, "WARNING: missing parameter for 'animMmap' keyword in shader '%s'\n", shader.name );
 				return qfalse;
 			}
-			stage->bundle[0].imageAnimationSpeed = atof( token );
+			if ( !ShaderFloat( token, &stage->bundle[0].imageAnimationSpeed ) ) return qfalse;
 
 			// parse up to MAX_IMAGE_ANIMATIONS animations
 			while ( 1 ) {
@@ -842,7 +861,7 @@ static qboolean ParseStage( shaderStage_t *stage, char **text )
 
 			if ( !Q_stricmp( token, "wave" ) )
 			{
-				ParseWaveForm( text, &stage->rgbWave );
+				if ( !ParseWaveForm( text, &stage->rgbWave ) ) return qfalse;
 				stage->rgbGen = CGEN_WAVEFORM;
 			}
 			else if ( !Q_stricmp( token, "const" ) )
@@ -913,7 +932,7 @@ static qboolean ParseStage( shaderStage_t *stage, char **text )
 
 			if ( !Q_stricmp( token, "wave" ) )
 			{
-				ParseWaveForm( text, &stage->alphaWave );
+				if ( !ParseWaveForm( text, &stage->alphaWave ) ) return qfalse;
 				stage->alphaGen = AGEN_WAVEFORM;
 			}
 			else if ( !Q_stricmp( token, "const" ) )
@@ -960,7 +979,7 @@ static qboolean ParseStage( shaderStage_t *stage, char **text )
 				}
 				else
 				{
-					shader.portalRange = atof( token );
+					if ( !ShaderFloat( token, &shader.portalRange ) ) return qfalse;
 				}
 			}
 			else
@@ -1013,17 +1032,24 @@ static qboolean ParseStage( shaderStage_t *stage, char **text )
 		else if ( !Q_stricmp( token, "tcMod" ) )
 		{
 			char buffer[1024] = "";
+			size_t used = 0;
 
 			while ( 1 )
 			{
 				token = COM_ParseExt( text, qfalse );
 				if ( token[0] == 0 )
 					break;
-				Q_strcat( buffer, sizeof(buffer), token );
-				Q_strcat( buffer, sizeof(buffer), " " );
+				{
+					size_t length = strlen(token);
+					if ( length + 1 >= sizeof(buffer) - used ) return qfalse;
+					Com_Memcpy( buffer + used, token, length );
+					used += length;
+					buffer[used++] = ' ';
+					buffer[used] = 0;
+				}
 			}
 
-			ParseTexMod( buffer, stage );
+			if ( !ParseTexMod( buffer, stage ) ) return qfalse;
 
 			continue;
 		}
@@ -1101,7 +1127,7 @@ deformVertexes autoSprite2
 deformVertexes text[0-7]
 ===============
 */
-static void ParseDeform( char **text ) {
+static qboolean ParseDeform( char **text ) {
 	char	*token;
 	deformStage_t	*ds;
 
@@ -1109,12 +1135,12 @@ static void ParseDeform( char **text ) {
 	if ( token[0] == 0 )
 	{
 		ri.Printf( PRINT_WARNING, "WARNING: missing deform parm in shader '%s'\n", shader.name );
-		return;
+		return qfalse;
 	}
 
-	if ( shader.numDeforms == MAX_SHADER_DEFORMS ) {
+	if ( shader.numDeforms >= MAX_SHADER_DEFORMS ) {
 		ri.Printf( PRINT_WARNING, "WARNING: MAX_SHADER_DEFORMS in '%s'\n", shader.name );
-		return;
+		return qfalse;
 	}
 
 	ds = &shader.deforms[ shader.numDeforms ];
@@ -1122,17 +1148,17 @@ static void ParseDeform( char **text ) {
 
 	if ( !Q_stricmp( token, "projectionShadow" ) ) {
 		ds->deformation = DEFORM_PROJECTION_SHADOW;
-		return;
+		return qtrue;
 	}
 
 	if ( !Q_stricmp( token, "autosprite" ) ) {
 		ds->deformation = DEFORM_AUTOSPRITE;
-		return;
+		return qtrue;
 	}
 
 	if ( !Q_stricmp( token, "autosprite2" ) ) {
 		ds->deformation = DEFORM_AUTOSPRITE2;
-		return;
+		return qtrue;
 	}
 
 	if ( !Q_stricmpn( token, "text", 4 ) ) {
@@ -1143,7 +1169,7 @@ static void ParseDeform( char **text ) {
 			n = 0;
 		}
 		ds->deformation = DEFORM_TEXT0 + n;
-		return;
+		return qtrue;
 	}
 
 	if ( !Q_stricmp( token, "bulge" ) )	{
@@ -1151,28 +1177,28 @@ static void ParseDeform( char **text ) {
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing deformVertexes bulge parm in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		ds->bulgeWidth = atof( token );
+		if ( !ShaderFloat( token, &ds->bulgeWidth ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing deformVertexes bulge parm in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		ds->bulgeHeight = atof( token );
+		if ( !ShaderFloat( token, &ds->bulgeHeight ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing deformVertexes bulge parm in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		ds->bulgeSpeed = atof( token );
+		if ( !ShaderFloat( token, &ds->bulgeSpeed ) ) return qfalse;
 
 		ds->deformation = DEFORM_BULGE;
-		return;
+		return qtrue;
 	}
 
 	if ( !Q_stricmp( token, "wave" ) )
@@ -1181,22 +1207,25 @@ static void ParseDeform( char **text ) {
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing deformVertexes parm in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
 
-		if ( atof( token ) != 0 )
 		{
-			ds->deformationSpread = 1.0f / atof( token );
-		}
-		else
-		{
-			ds->deformationSpread = 100.0f;
-			ri.Printf( PRINT_WARNING, "WARNING: illegal div value of 0 in deformVertexes command for shader '%s'\n", shader.name );
+			double value = atof(token);
+			if ( !ShaderFinite(value) || value < -FLT_MAX || value > FLT_MAX ) return qfalse;
+			if ( ShaderNumberBits(value) & UINT64_C(0x7fffffffffffffff) ) {
+				/* Also reject double subnormals under release flush-to-zero modes. */
+				if ( value > -1.0 / FLT_MAX && value < 1.0 / FLT_MAX ) return qfalse;
+				if ( !ShaderFloatValue( 1.0f / value, &ds->deformationSpread ) ) return qfalse;
+			} else {
+				ds->deformationSpread = 100.0f;
+				ri.Printf( PRINT_WARNING, "WARNING: illegal div value of 0 in deformVertexes command for shader '%s'\n", shader.name );
+			}
 		}
 
-		ParseWaveForm( text, &ds->deformationWave );
+		if ( !ParseWaveForm( text, &ds->deformationWave ) ) return qfalse;
 		ds->deformation = DEFORM_WAVE;
-		return;
+		return qtrue;
 	}
 
 	if ( !Q_stricmp( token, "normal" ) )
@@ -1205,20 +1234,20 @@ static void ParseDeform( char **text ) {
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing deformVertexes parm in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		ds->deformationWave.amplitude = atof( token );
+		if ( !ShaderFloat( token, &ds->deformationWave.amplitude ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing deformVertexes parm in shader '%s'\n", shader.name );
-			return;
+			return qfalse;
 		}
-		ds->deformationWave.frequency = atof( token );
+		if ( !ShaderFloat( token, &ds->deformationWave.frequency ) ) return qfalse;
 
 		ds->deformation = DEFORM_NORMALS;
-		return;
+		return qtrue;
 	}
 
 	if ( !Q_stricmp( token, "move" ) ) {
@@ -1228,17 +1257,18 @@ static void ParseDeform( char **text ) {
 			token = COM_ParseExt( text, qfalse );
 			if ( token[0] == 0 ) {
 				ri.Printf( PRINT_WARNING, "WARNING: missing deformVertexes parm in shader '%s'\n", shader.name );
-				return;
+				return qfalse;
 			}
-			ds->moveVector[i] = atof( token );
+			if ( !ShaderFloat( token, &ds->moveVector[i] ) ) return qfalse;
 		}
 
-		ParseWaveForm( text, &ds->deformationWave );
+		if ( !ParseWaveForm( text, &ds->deformationWave ) ) return qfalse;
 		ds->deformation = DEFORM_MOVE;
-		return;
+		return qtrue;
 	}
 
 	ri.Printf( PRINT_WARNING, "WARNING: unknown deformVertexes subtype '%s' found in shader '%s'\n", token, shader.name );
+	return qfalse;
 }
 
 
@@ -1550,7 +1580,7 @@ static qboolean ParseShader( char **text )
 			tr.sunDirection[2] = sin( b );
 		}
 		else if ( !Q_stricmp( token, "deformVertexes" ) ) {
-			ParseDeform( text );
+			if ( !ParseDeform( text ) ) return qfalse;
 			continue;
 		}
 		else if ( !Q_stricmp( token, "tesssize" ) ) {
