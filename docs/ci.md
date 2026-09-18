@@ -171,7 +171,13 @@ ownership and valid/default cache reuse through the actual entry points.
 The actual legacy font runner checks the unchanged 20,548-byte little-endian
 layout, signed words, 256 glyph names/handles, all short input lengths and FS
 alignments, malformed names/floats, publication boundaries, cache capacity and
-balanced file ownership. FreeType generation is a separate follow-up.
+balanced file ownership.
+
+The enabled native FreeType ownership runner replaces only unavailable legacy
+header imports in a disposable source copy. API/FS/graphics imports are isolated;
+all native bodies remain unchanged. It checks face-before-input shutdown,
+bitmap/page/file ownership, controlled failure/default output, checked requests
+and repeated library init/shutdown. It does not test a real rasterizer.
 
 The actual shader fixture also covers native identity-alpha skip and matching
 multitexture alpha/RGB waves, rejects changes without mutating stages, and
@@ -224,6 +230,7 @@ bash tests/run_bsp_lod_tests.sh
 bash tests/run_shader_stage_tests.sh
 bash tests/run_skin_capacity_tests.sh
 bash tests/run_font_layout_tests.sh
+bash tests/run_font_freetype_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
