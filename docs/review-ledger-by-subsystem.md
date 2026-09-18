@@ -1,6 +1,6 @@
 # Quake III Arena Mac OS 9 subsystem evidence appendix
 
-Last updated: 2026-09-17
+Last updated: 2026-09-18
 
 This preserves the first review session's subsystem-oriented evidence and
 local-fix notes. It is not the work-order queue. Use the priority/severity
@@ -396,12 +396,14 @@ implementation or check, without implying issue completion.
 
 ## Exact continuation point
 
-- [x] Current progress reconciled at master `95a6c18` on 2026-09-18: steps
-      #70–#77/#79–#82 and assessment #78 are merged after CI/review gates.
-- [ ] Merge dependent BSP steps #83–#91 only after successful current-head
-      CI, clean completed Codex and resolved CodeRabbit findings; host/PPC
-      checks already pass. Finish derived geometry/facets, aggregate budgets
-      and complete transactional publication for #45.
+- [x] Current progress reconciled at master `cdc8c38` on 2026-09-18: BSP
+      steps #83–#91/#93–#101 and shader capacity #102 are merged after
+      successful current-head CI, clean Codex and resolved CodeRabbit findings.
+- [ ] Merge dependent skin/font/shader steps #103–#111 after their same
+      current-head gates. Queued CI holds merges; see the
+      [September 18 snapshot](review-2026-09-18.md).
+- [ ] Finish renderer aggregate capacity/full transactional publication and
+      remaining query/candidate costs for #45. Keep deferred acceptance open.
 - [x] Cross-build the full local security/UI/filesystem patch set as base and
       Team Arena, validate both PEFs, then return configuration to base-only.
 - [x] Run a clean rebuild with captured output and classify warnings.
