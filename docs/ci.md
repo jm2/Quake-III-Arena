@@ -658,3 +658,16 @@ signed endpoints. Invalid NaN/public or non-finite/unrepresentable cached skills
 reject in cold/occupied/reload states without file/heap activity or mutation of
 any cached header/field/string/slot. Both GCC/Clang normal and release fast-math
 sanitizers run the fixture.
+
+
+The interpolation numeric runner links the actual character/source/lexer/libvar/
+core bodies. Non-finite desired/endpoints, equal skills and overflowing endpoint/
+scale arithmetic reject before imports. Invalid fields/derived results reject
+with physical release of the output and any earlier copied strings. Native
+ordinary/extrapolated values and input owners remain intact; compiler
+reassociation may retain a complete mathematically finite zero for extreme
+opposite fields. Missing second-skill fallback returns the existing available
+character. A variadic log interface renders the actual dump, including floating
+skill text. Representation checks and fixture input words use volatile integer
+materialization to prevent release finite-math assumptions from erasing tests.
+Both GCC/Clang normal and release fast-math sanitizers run the fixture.

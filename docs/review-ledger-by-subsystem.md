@@ -491,6 +491,10 @@ implementation or check, without implying issue completion.
         while native finite/infinity clamps, rounding/fallback/cache behavior and
         all existing character/string owners remain;
         see [skill evidence](bot-character-skill-validation.md).
+  - [x] Interpolation rejects invalid endpoint/scale/result representations,
+        releases staged output after numeric failure, preserves available equal
+        fallback endpoints, and formats floating skill logs with matching types;
+        see [blend evidence](bot-interpolation-numeric-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)

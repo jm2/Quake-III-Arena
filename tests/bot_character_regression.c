@@ -37,7 +37,13 @@ void QDECL Com_Error(int level,const char *format,...) {
     (void)format;
 }
 void QDECL Com_Printf(const char *format,...) {(void)format;formatWarnings++;}
-void QDECL Log_Write(char *format,...) {(void)format;}
+void QDECL Log_Write(char *format,...) {
+#ifdef Q3_CHARACTER_LOG_HOOK
+    va_list args;va_start(args,format);Q3_CHARACTER_LOG_HOOK(format,args);va_end(args);
+#else
+    (void)format;
+#endif
+}
 static void QDECL Print(int level,char *format,...) {(void)format;if(level==PRT_ERROR||level==PRT_FATAL)errors++;else if(level==PRT_WARNING)warnings++;else Check(level==PRT_MESSAGE,"native print severity");}
 static int Open(const char *path,fileHandle_t *file,fsMode_t mode) {Check(mode==FS_READ&&strlen(path)<sizeof(openedPath),"complete fitting native VFS path");strcpy(openedPath,path);opens++;*file=1;return (int)strlen(fileText);}
 static int Read(void *out,int length,fileHandle_t file) {Check(file==1&&length==(int)strlen(fileText),"complete native fixture read");memcpy(out,fileText,length);fileReads++;return length;}
