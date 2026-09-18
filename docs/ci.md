@@ -110,6 +110,9 @@ PR head while retaining checks on the merged default branch.
   - executes actual MD4 registration, complete layout validation, native endian
     conversion and animation skinning, with variable weights, LOD/surface
     progress, bones/back references, extreme frame indexes and tess bases;
+  - independently measures complete native collision-map allocations and checks
+    exact aggregate fits and four-alignment over-budget rejection, including
+    derived visibility/areas/inline indexes and actual repeated patch output;
   - executes the actual permanent allocator in release/debug modes, checking
     native cacheline/header costs, both banks, live temporary capacity, exact
     fits and failure ownership at negative/signed-maximum boundaries;

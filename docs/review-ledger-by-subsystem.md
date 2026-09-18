@@ -312,6 +312,9 @@ implementation or check, without implying issue completion.
         attributes and bounds; [evidence](bsp-curve-numeric-validation.md).
   - [x] Permanent hunk allocations expose checked native alignment/debug costs
         and reject before bank changes; see [allocator evidence](hunk-allocation-validation.md).
+  - [x] Aggregate collision allocations fit actual remaining hunk capacity,
+        including derived indexes/visibility and real patch geometry; see
+        [memory evidence](bsp-memory-budget-validation.md).
 - [ ] [#46 — shader/skin/font fixed limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.

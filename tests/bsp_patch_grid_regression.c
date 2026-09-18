@@ -4,6 +4,7 @@
 #include "bsp_fixture.h"
 #include "../code/qcommon/cm_patch.h"
 #include <float.h>
+#include <stdint.h>
 
 static void *gridTemporary, *zones[64];
 static int failGrid, gridAllocations, gridFrees, zoneLive;
@@ -155,6 +156,59 @@ static void RejectNumeric(void) {
 		alignment=0;
 	}
 }
+static void BudgetMap(int mode) {
+	unsigned int offset,original;int i;
+	if(mode==4 || mode==5 || mode==8)Build(mode==8?129:3,3,0,0);else BuildCM(2);
+	if(mode==1)Word(At(LUMP_LEAFS,offsetof(dleaf_t,area)),MAX_MAP_AREA_BYTES*8-1);
+	if(mode==2)Word(At(LUMP_LEAFS,offsetof(dleaf_t,cluster)),65535);
+	if(mode==3) {
+		offset=Append(LUMP_VISIBILITY,33);Word(offset,1);Word(offset+4,25);memset(source+offset+8,0x5a,25);
+	}
+	if(mode==4) {
+		original=At(LUMP_MODELS,0);offset=Append(LUMP_MODELS,4*sizeof(dmodel_t));
+		for(i=0;i<4;i++)memcpy(source+offset+i*sizeof(dmodel_t),source+original,sizeof(dmodel_t));
+	}
+	if(mode==5) {
+		original=At(LUMP_SURFACES,0);offset=Append(LUMP_SURFACES,7*sizeof(dsurface_t));
+		for(i=0;i<7;i++)memcpy(source+offset+i*sizeof(dsurface_t),source+original,sizeof(dsurface_t));
+		Word(At(LUMP_MODELS,offsetof(dmodel_t,numSurfaces)),7);
+	}
+	if(mode==6) {
+		offset=Append(LUMP_MODELS,3*sizeof(dmodel_t));
+		for(i=0;i<3;i++) { int j;for(j=0;j<3;j++) { Float(offset+i*sizeof(dmodel_t)+j*4,-1);Float(offset+i*sizeof(dmodel_t)+12+j*4,1); }Word(offset+i*sizeof(dmodel_t)+offsetof(dmodel_t,numBrushes),1); }
+	}
+	if(mode==7) { Word(At(LUMP_LEAFS,offsetof(dleaf_t,cluster)),0xffffffffu);Word(At(LUMP_LEAFS,offsetof(dleaf_t,area)),0xffffffffu); }
+}
+static void BudgetLoad(void) {
+	int checksum;readable=advertised=sourceSize;missing=0;CM_LoadMap("budget.bsp",qfalse,&checksum);
+	Check(!fileAllocation && !gridTemporary && !zoneLive,"budgeted native publication releases file/grid/windings");
+}
+static void BudgetCases(void) {
+	int mode,a,i,cost,sum,sizes[3],before[3];unsigned int used,hash=0;patchCollide_t *old=NULL;
+	for(mode=0;mode<9;mode++) {
+		FreeHunks();hunkLimit=4000000;alignment=0;BudgetMap(mode);BudgetLoad();cost=hunkUsed;sum=0;
+		for(i=0;i<allocations;i++)sum+=(int)(((int64_t)hunkSizes[i]+31)/32*32);
+		Check(cost==sum && cost>0,"budget baseline is the independent sum of actual native allocation calls");
+		if(mode==1)Check(cm.numAreas==MAX_MAP_AREA_BYTES*8,"highest ABI area includes native square portal matrix");
+		if(mode==2)Check(cm.clusterBytes==65536 && !cm.vised,"novis allocation preserves stock byte rounding");
+		if(mode==3)Check(cm.vised && cm.clusterBytes==25 && cm.visibility[24]==0x5a,"explicit vis retains header allocation and payload");
+		if(mode==4 || mode==6)Check(cm.numSubModels==(mode==4?4:3) && cm.cmodels[1].leaf.numLeafBrushes==1 && cm.cmodels[1].leaf.numLeafSurfaces==(mode==4?1:0),"inline synthesized indexes include zero-size calls");
+		if(mode==5) { Check(cm.numSurfaces==7,"all repeated native patches are published");for(i=1;i<7;i++)Check(Fingerprint(cm.surfaces[i]->pc)==Fingerprint(cm.surfaces[0]->pc),"per-patch actual geometry stays unchanged"); }
+		if(mode==7)Check(!cm.numAreas && !cm.numClusters && !cm.clusterBytes,"opaque leaf keeps zero-size derived allocations");
+		for(a=0;a<4;a++) {
+			alignment=a;used=hunkUsed;old=cm.numSurfaces?cm.surfaces[0]->pc:NULL;if(old)hash=Fingerprint(old);
+			hunkLimit=hunkUsed+cost-1;RejectCM();
+			Check(hunkUsed==used && (!old || Fingerprint(old)==hash) && !gridTemporary && !zoneLive,"one byte below actual aggregate cost retains all map memory and temporaries");
+			hunkLimit=hunkUsed+cost;alignment=0;BudgetLoad();
+			Check(hunkUsed==used+cost && Hunk_MemoryRemaining()==0,"exact aggregate capacity accepts without a worst-case patch cap");
+			if(old)Check(Fingerprint(old)==hash,"successful replacement also retains old hunk bytes");
+			alignment=a;hunkLimit=hunkUsed;RejectCM();hunkLimit=hunkUsed-1;RejectCM();
+		}
+	}
+	alignment=0;hunkLimit=4000000;memset(sizes,0xa5,sizeof(sizes));memcpy(before,sizes,sizeof(before));
+	Check(CM_ValidatePatchCollideAllocations(2,3,NULL,sizes)!=NULL && !memcmp(sizes,before,sizeof(sizes)) && !gridTemporary && !zoneLive,"failed patch allocation query publishes no sizes or ownership");
+	FreeHunks();
+}
 int main(void) {
 	Build(3,3,0,0);Load(3,3,0xe6e8e7d6u);
 	RejectNumeric();
@@ -176,6 +230,8 @@ int main(void) {
 	Check(CM_ValidatePatchCollide(2,3,NULL)!=NULL && CM_ValidatePatchCollide(4,3,(vec3_t *)source)!=NULL &&
 		CM_ValidatePatchCollide(131,3,(vec3_t *)source)!=NULL,"private generator parameter checks before source reads");
 	Check(gridAllocations==gridFrees && !fileAllocation && !zoneLive,"every grid/winding ownership released");
+	BudgetCases();
+	Check(gridAllocations==gridFrees,"all budget preflight workspaces released");
 	FreeHunks();
 	puts("BSP native patch-grid bounds, refinement goldens, caller preflight and workspace ownership regressions passed (issue #45)");
 	return 0;

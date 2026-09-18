@@ -191,6 +191,8 @@ cmodel_t	*CM_ClipHandleToModel( clipHandle_t handle );
 // cm_patch.c
 
 const char *CM_ValidatePatchCollide( int width, int height, vec3_t *points );
+// Native header/facet/plane allocation sizes; outputs publish only on success.
+const char *CM_ValidatePatchCollideAllocations( int width, int height, vec3_t *points, int sizes[3] );
 struct patchCollide_s	*CM_GeneratePatchCollide( int width, int height, vec3_t *points );
 void CM_TraceThroughPatchCollide( traceWork_t *tw, const struct patchCollide_s *pc );
 qboolean CM_PositionTestInPatchCollide( traceWork_t *tw, const struct patchCollide_s *pc );

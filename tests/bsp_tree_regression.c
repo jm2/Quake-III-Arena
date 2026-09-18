@@ -210,7 +210,7 @@ int main(void) {
 	}
 	/* Long valid trees use bounded heap/linear parent initialization, with no depth cap. */
 	FreeHunks();Build(4096);NativeLoad(4096,1,4095);BoxQueries(4096);MarkQueries(4096);
-	Build(MAX_MAP_NODES+1);Header(&header);Check(!CM_ValidateBSPAllocations(&header) && !R_ValidateBSPAllocations(&header) && !BSP_ValidateTree(source,&header) && !graphTemporary,"raised compiler node budget remains supported by native storage");
+	Build(MAX_MAP_NODES+1);Header(&header);Check(!CM_ValidateBSPAllocations(&header,NULL) && !R_ValidateBSPAllocations(&header) && !BSP_ValidateTree(source,&header) && !graphTemporary,"raised compiler node budget remains supported by native storage");
 	/* Retained collision state still answers its actual loaded deep tree after validation. */
 	{ vec3_t point={-2,0,0};checksum=CM_PointLeafnum(point);Check(checksum==1,"deep loaded native point query retained"); }
 	Check(graphAllocations==graphFrees && !graphTemporary && !fileAllocation,"all graph/input ownership released");FreeHunks();

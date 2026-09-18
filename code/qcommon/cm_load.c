@@ -578,11 +578,23 @@ CM_LoadMap
 Loads in the map and all submodels
 ==================
 */
+/* Subtract checked actual costs instead of summing attacker-controlled sizes. */
+static qboolean CM_BSPBudgetAllocation( int size, int *remaining ) {
+#ifndef BSPC
+	int cost;
+	if ( !remaining ) return qtrue;
+	cost = Hunk_AllocationSize( size );
+	if ( cost < 0 || cost > *remaining ) return qfalse;
+	*remaining -= cost;
+#endif
+	return qtrue;
+}
+
 /* Geometry/references have already checked every source span and dimension. */
-static const char *CM_ValidateBSPPatchGrids( const byte *buffer, const dheader_t *header ) {
+static const char *CM_ValidateBSPPatchGrids( const byte *buffer, const dheader_t *header, int *remaining ) {
 	const byte *surface, *vertices;
 	vec3_t points[MAX_PATCH_VERTS];
-	int i, j, k, count, width, height;
+	int i, j, k, count, width, height, sizes[3];
 	unsigned int first;
 	const char *error;
 
@@ -599,14 +611,18 @@ static const char *CM_ValidateBSPPatchGrids( const byte *buffer, const dheader_t
 				points[j][k] = BSP_GeometryFloat(vertices + j * sizeof(drawVert_t) + k * 4);
 			}
 		}
-		error = CM_ValidatePatchCollide( width, height, points );
+		error = CM_ValidatePatchCollideAllocations( width, height, points, sizes );
 		if ( error ) return error;
+		if ( !CM_BSPBudgetAllocation(sizeof(cPatch_t),remaining) ) return "collision BSP exceeds remaining hunk memory";
+		for ( j = 0 ; j < 3 ; j++ ) {
+			if ( !CM_BSPBudgetAllocation(sizes[j],remaining) ) return "collision BSP exceeds remaining hunk memory";
+		}
 	}
 	return NULL;
 }
 
 /** Match every direct collision array allocation, including the reserved box hull. */
-static const char *CM_ValidateBSPAllocations(const dheader_t *header) {
+static const char *CM_ValidateBSPAllocations(const dheader_t *header,int *remaining) {
 	const bspArrayAllocation_t arrays[]={
 		{header->lumps[LUMP_SHADERS].filelen/sizeof(dshader_t),sizeof(dshader_t),0},
 		{header->lumps[LUMP_LEAFS].filelen/sizeof(dleaf_t),sizeof(cLeaf_t),BOX_LEAFS},
@@ -620,7 +636,40 @@ static const char *CM_ValidateBSPAllocations(const dheader_t *header) {
 		{header->lumps[LUMP_SURFACES].filelen/sizeof(dsurface_t),sizeof(cPatch_t *),0},
 		{header->lumps[LUMP_ENTITIES].filelen,1,1}
 	};
-	return BSP_ValidateAllocations(arrays,sizeof(arrays)/sizeof(arrays[0]));
+	unsigned int i;
+	const char *error = BSP_ValidateAllocations(arrays,sizeof(arrays)/sizeof(arrays[0]));
+	if ( error ) return error;
+	for ( i = 0 ; i < sizeof(arrays)/sizeof(arrays[0]) ; i++ ) {
+		int size = (arrays[i].count + arrays[i].extraElements) * arrays[i].elementSize;
+		if ( !CM_BSPBudgetAllocation(size,remaining) ) return "collision BSP exceeds remaining hunk memory";
+	}
+	return NULL;
+}
+
+/* Validated leaf/model spans supply the native derived allocations. */
+static const char *CM_ValidateBSPDerivedAllocations( const byte *buffer, const dheader_t *header, int *remaining ) {
+	const byte *record;
+	unsigned int i, value, clusters = 0, areas = 0;
+	int visibility = header->lumps[LUMP_VISIBILITY].filelen;
+
+	record = buffer + header->lumps[LUMP_LEAFS].fileofs;
+	for ( i = 0 ; i < header->lumps[LUMP_LEAFS].filelen/sizeof(dleaf_t) ; i++, record += sizeof(dleaf_t) ) {
+		value = BSP_FileWord(record + offsetof(dleaf_t,cluster));
+		if ( value != 0xffffffffu && value >= clusters ) clusters = value + 1;
+		value = BSP_FileWord(record + offsetof(dleaf_t,area));
+		if ( value != 0xffffffffu && value >= areas ) areas = value + 1;
+	}
+	if ( !visibility ) visibility = (clusters + 31) & ~31u;
+	if ( !CM_BSPBudgetAllocation(areas * sizeof(cArea_t),remaining) ||
+	     !CM_BSPBudgetAllocation(areas * areas * sizeof(int),remaining) ||
+	     !CM_BSPBudgetAllocation(visibility,remaining) ) return "collision BSP exceeds remaining hunk memory";
+
+	record = buffer + header->lumps[LUMP_MODELS].fileofs + sizeof(dmodel_t);
+	for ( i = 1 ; i < header->lumps[LUMP_MODELS].filelen/sizeof(dmodel_t) ; i++, record += sizeof(dmodel_t) ) {
+		if ( !CM_BSPBudgetAllocation(BSP_FileWord(record + offsetof(dmodel_t,numBrushes)) * sizeof(int),remaining) ||
+		     !CM_BSPBudgetAllocation(BSP_FileWord(record + offsetof(dmodel_t,numSurfaces)) * sizeof(int),remaining) ) return "collision BSP exceeds remaining hunk memory";
+	}
+	return NULL;
 }
 
 void CM_LoadMap( const char *name, qboolean clientload, int *checksum ) {
@@ -628,6 +677,7 @@ void CM_LoadMap( const char *name, qboolean clientload, int *checksum ) {
 	const char		*error;
 	dheader_t		header;
 	int				length;
+	int remaining, *budget = NULL;
 	static unsigned	last_checksum;
 
 	if ( !name || !name[0] ) {
@@ -659,13 +709,18 @@ void CM_LoadMap( const char *name, qboolean clientload, int *checksum ) {
 		Com_Error (ERR_DROP, "Couldn't load %s", name);
 	}
 
+#ifndef BSPC
+	remaining = Hunk_MemoryRemaining();
+	budget = &remaining;
+#endif
 	error = BSP_ValidateHeader(buf,length,&header);
-	if ( !error ) error = CM_ValidateBSPAllocations(&header);
+	if ( !error ) error = CM_ValidateBSPAllocations(&header,budget);
 	if ( !error && header.lumps[LUMP_MODELS].filelen/sizeof(dmodel_t)>MAX_SUBMODELS ) error = "MAX_SUBMODELS exceeded";
 	if ( !error ) error = BSP_ValidateReferences(buf,&header);
 	if ( !error ) error = BSP_ValidateTree(buf,&header);
 	if ( !error ) error = BSP_ValidateGeometry(buf,&header,CM_MAX_PATCH_GRID_SIZE,MAX_PATCH_VERTS);
-	if ( !error ) error = CM_ValidateBSPPatchGrids((const byte *)buf,&header);
+	if ( !error ) error = CM_ValidateBSPDerivedAllocations((const byte *)buf,&header,budget);
+	if ( !error ) error = CM_ValidateBSPPatchGrids((const byte *)buf,&header,budget);
 	if ( error ) {
 		FS_FreeFile(buf);
 		Com_Error(ERR_DROP,"CM_LoadMap: %s: %s",name,error);
