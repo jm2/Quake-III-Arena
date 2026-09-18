@@ -729,6 +729,10 @@ expression/character/core bodies. Failed unread copies preserve complete prior
 queued token/caller bytes, record native copy-factory severity/source status and
 retry. Failed line lookahead records status without a partial queued owner.
 Conditional push failures preserve prior stack/skip bytes; if/ifdef/ifndef callers
-propagate failure, retaining native next-line token ownership. Real nested source
-conditionals and unread order pass original goldens. GCC/Clang normal and release
+propagate failure, retaining native next-line token ownership. Else/elif reuse
+complete frames without replacement imports. Failed expressions preserve prior
+frame bytes/skip and subsequent endif recovery; exhausted included scripts reject
+cross-script replacement without touching an enclosing frame. Six pre-review
+proofs reproduce these failures. Real nested else/elif source conditionals and
+unread order pass original goldens. GCC/Clang normal and release
 fast-math sanitizers run the fixture.

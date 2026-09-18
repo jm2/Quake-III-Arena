@@ -521,7 +521,8 @@ implementation or check, without implying issue completion.
         see [arithmetic evidence](bot-eval-arithmetic-validation.md).
   - [x] Failed unread-token copies preserve queued owners and record source
         status; nullable conditional pushes preserve the existing stack/skip
-        count and return failure through directive callers;
+        count and return failure through entering directives; else/elif reuse
+        complete frames and preserve failed-expression/EOF recovery;
         see [factory evidence](bot-source-factory-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.

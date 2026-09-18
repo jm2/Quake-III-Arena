@@ -1694,20 +1694,24 @@ int PC_Directive_ifndef(source_t *source)
 //============================================================================
 int PC_Directive_else(source_t *source)
 {
-	int type, skip;
+	indent_t *indent = source->indentstack;
 
-	PC_PopIndent(source, &type, &skip);
-	if (!type)
+	if (!indent || indent->script != source->scriptstack)
 	{
 		SourceError(source, "misplaced #else");
 		return qfalse;
 	} //end if
-	if (type == INDENT_ELSE)
+	if (indent->type == INDENT_ELSE)
 	{
 		SourceError(source, "#else after #else");
 		return qfalse;
 	} //end if
-	return PC_PushIndent(source, INDENT_ELSE, !skip);
+	//The same script already owns a complete frame; replacement needs no import.
+	source->skip -= indent->skip;
+	indent->type = INDENT_ELSE;
+	indent->skip = !indent->skip;
+	source->skip += indent->skip;
+	return qtrue;
 } //end of the function PC_Directive_else
 //============================================================================
 //
@@ -2643,17 +2647,34 @@ cleanup:
 int PC_Directive_elif(source_t *source)
 {
 	signed long int value;
-	int type, skip;
+	indent_t *indent;
+	script_t *script = source->scriptstack;
 
-	PC_PopIndent(source, &type, &skip);
-	if (!type || type == INDENT_ELSE)
+	indent = source->indentstack;
+	if (source->scriptstack != script || !indent ||
+			indent->script != source->scriptstack ||
+			indent->type == INDENT_ELSE)
 	{
 		SourceError(source, "misplaced #elif");
 		return qfalse;
 	} //end if
+	//Raw expression reads ignore skip. Keep the frame until evaluation succeeds.
 	if (!PC_Evaluate(source, &value, NULL, qtrue)) return qfalse;
-	skip = (value == 0);
-	return PC_PushIndent(source, INDENT_ELIF, skip);
+	//Evaluation can unwind an exhausted script. Reacquire instead of using a
+	//frame that EOF may have freed, and reject a branch without its condition.
+	indent = source->indentstack;
+	if (source->scriptstack != script || !indent ||
+			indent->script != source->scriptstack ||
+			indent->type == INDENT_ELSE)
+	{
+		SourceError(source, "conditional ended while evaluating #elif");
+		return qfalse;
+	} //end if
+	source->skip -= indent->skip;
+	indent->type = INDENT_ELIF;
+	indent->skip = (value == 0);
+	source->skip += indent->skip;
+	return qtrue;
 } //end of the function PC_Directive_elif
 //============================================================================
 //
