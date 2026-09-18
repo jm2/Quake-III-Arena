@@ -417,11 +417,9 @@ gotnewcl:
 	Q_strncpyz( newcl->userinfo, userinfo, sizeof(newcl->userinfo) );
 
 	// get the game a chance to reject this connection or modify the userinfo
-	denied = (char *)VM_Call( gvm, GAME_CLIENT_CONNECT, clientNum, qtrue, qfalse ); // firstTime = qtrue
+	denied = VM_CheckedExplicitString( gvm,
+	        VM_Call( gvm, GAME_CLIENT_CONNECT, clientNum, qtrue, qfalse ), qtrue ); // firstTime = qtrue
 	if ( denied ) {
-		// we can't just use VM_ArgPtr, because that is only valid inside a VM_Call
-		denied = VM_ExplicitArgPtr( gvm, (int)denied );
-
 		NET_OutOfBandPrint( NS_SERVER, from, "print\n%s\n", denied );
 		Com_DPrintf ("Game rejected a connection: %s.\n", denied);
 		return;

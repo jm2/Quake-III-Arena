@@ -213,8 +213,19 @@ implementation or check, without implying issue completion.
   - [x] Data-image loads/stores, ARG, BLOCK_COPY, and syscall argument
         snapshots have [execution regressions](qvm-memory-validation.md).
   - [x] Arithmetic edge cases have [execution regressions](qvm-arithmetic-validation.md).
-  - [ ] Complete syscall pointer/range and VM call argument handling before
-        accepting untrusted QVMs.
+  - [x] Native/compiled/interpreted calls use counted, zero-padded arguments;
+        see [call evidence](qvm-call-validation.md).
+  - [x] Shared memory/string syscall traps have [range regressions](qvm-memory-trap-validation.md).
+  - [x] UI syscall argument ranges and output boundaries have
+        [sanitizer regressions](qvm-ui-syscall-validation.md).
+  - [x] Cgame syscall ranges, polygon batches, and fragment capacities have
+        [sanitizer regressions](qvm-cgame-syscall-validation.md).
+  - [x] Core server traps, persistent game-data arrays, and native debug
+        capacities have [sanitizer regressions](qvm-server-core-validation.md).
+  - [x] Returned connection-denial strings have
+        [ownership and termination regressions](qvm-returned-string-validation.md).
+  - [ ] Complete remaining syscall pointer/range handling before accepting
+        untrusted QVMs.
 - [ ] [#36 — oversized/truncated PK3 entries](https://github.com/jm2/Quake-III-Arena/issues/36)
   - [x] Local code rejects unrepresentable sizes before casts, checks unzip
         opens/reads, rejects short reads, and fixes short-name suffix checks.

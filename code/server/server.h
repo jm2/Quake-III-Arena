@@ -76,6 +76,7 @@ typedef struct {
 
 	playerState_t	*gameClients;
 	int				gameClientSize;		// will be > sizeof(playerState_t) due to game private data
+	int				gameClientCount;		// capacity validated at game-data registration
 
 	int				restartTime;
 } server_t;
