@@ -580,6 +580,24 @@ QVMs while any P0 item is open.
 
 ## Exact continuation point
 
+Current source is master `7f1e8168688ca393b2097c22508db998768b1c0b`, through
+merged #148. The [continuation evidence](review-continuation-2026-09-18.md)
+records the refreshed 52-issue inventory, pending #149–#181 stack and gates.
+All 52 issue-level entries remain open; nested implementation checks cover only
+the stated work. The milestones below retain their dated source evidence.
+
+- [x] AAS portal/travel/routing/workspace/cache/init steps #126–#132 and
+      native parser/character ownership and accessor steps #133–#148 merged
+      after exact-head CI, completed clean Codex and resolved bot findings.
+- [ ] Merge eligible independent steps and the pending dependency chain,
+      rechecking four successful Portable CI jobs, completed clean current-head
+      Codex and all resolved CodeRabbit findings immediately before each merge.
+- [ ] Resolve timed-out host CI through reviewed workflow allowance/checks;
+      #180 increases the accumulated host job limit while keeping all four gates.
+- [ ] Continue chat reply/expansion/dictionary/cache consumers, full library/
+      world transactions and aggregate resource/work limits; keep broad
+      acceptance and deferred live testing open.
+
 - [x] Reconcile all 52 open issues against `204fe36`, existing test coverage,
       and July evidence; retain their current priorities and closure gates.
 - [x] Re-run the eight Python tests, q_shared ASan/UBSan harness, Bash syntax
@@ -619,8 +637,8 @@ QVMs while any P0 item is open.
       CodeRabbit findings resolved.
 - [x] Node/reachability #124–#125 merged at `86c1667` after exact-head
       CI, clean completed Codex and resolved review findings.
-- [ ] Gate portal/travel-cost/workspace steps and finish #47 runtime query, memory/
-      work budget and late-load transaction work.
+- [ ] Finish #47 runtime query, memory/work budgets and late-load
+      transactions after the merged portal/travel/workspace prerequisites.
 - [ ] Finish #45 renderer aggregate capacity and full transactional
       publication; retain remaining query/candidate costs and deferred target
       acceptance. Collision aggregate and derived geometry/facet checks are

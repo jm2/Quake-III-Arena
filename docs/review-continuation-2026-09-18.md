@@ -1,0 +1,115 @@
+# Review continuation evidence — 2026-09-18
+
+Snapshot source: master `7f1e8168688ca393b2097c22508db998768b1c0b`,
+through merged PR #148. GitHub issue/PR inventory refreshed at 2026-09-18 20:24 UTC.
+All 52 original issues remain open, with no additional open issue. This records
+implementation evidence and next actions; it does not replace issue acceptance.
+
+## Assessment
+
+Retain all 52 issues, their priorities and their acceptance criteria. The
+[initial reassessment](review-2026-09-17.md) already distinguished committed
+candidates from incomplete work. Further AAS, allocator and bot/parser steps
+have merged, so obsolete pending-merge descriptions must give way to current
+implementation status. Source/build evidence does not establish complete
+malformed-input coverage, aggregate resource budgets or target compatibility.
+
+PRs #126–#132 finish selected AAS portal, travel/routing, workspace, cache,
+initialization and cache-limit conversions. PRs #131/#133–#148 finish selected
+native variable/parser/character ownership, numeric, source-error, weight and
+getter checks. Each merged step passed its exact-head Portable CI, completed
+clean Codex review and resolution of every CodeRabbit finding. Detailed dated
+evidence remains in the subsystem documents; retain #47/#48 for broader work.
+
+The July advisory comparison in security-provenance.md is historical. #29 stays
+an assurance gate: refresh authoritative advisory/upstream provenance, map each
+accepted family to actual regressions and document exceptions. Do not infer
+complete modern-CVE coverage from the many loader/parser fixes.
+
+## Pending implementation and validation
+
+| PRs | Scope | Remaining gate |
+| --- | --- | --- |
+| #149–#162 | Character inputs/float getters, synonyms, expression ownership/arithmetic, parser factories/defines/empty expansion, movement and compressed-file boundaries | Dependency-ordered merge after current-head CI/review gates |
+| #163–#168 | AAS/action/item/structure/goal setup and proximity checks | Same merge gate; full world/aggregate acceptance remains open |
+| #169–#170 | Level-pool/map-info staging, engine/game propagation and restart readiness | Same merge gate; retail void import and unknown-variable restart compatibility retained |
+| #171 | Retail QVM source recipes and bounded formatter/print imports | Independent merge gate; real retail/module-selection acceptance remains open |
+| #172–#177 | Projectile model offset, weapon configuration/setup/weight/table publication and public consumers | Same merge gate; #172 host job exceeded its ten-minute timeout |
+| #178–#179 | Chat lifecycle and validated console-pool replacement | Same merge gate; #179's node-ownership finding is fixed and resolved |
+| #180 | Increase only the accumulated host regression job allowance to thirty minutes | Independent merge gate; four required CI checks remain mandatory |
+| #181 | Bounded public chat queue strings and input/output guards | Complete bot review and dependency-ordered merge gate |
+
+PR #179's initially reviewed helper accepted foreign, one-past, misaligned,
+stale or shared queue nodes. The revision validates aligned current-pool
+membership before dereference and uses a checked temporary bitmap for unique
+ownership across queues. All five actual-body failure proofs reproduce against
+the reviewed body; fixed checks and both PPC products pass. Codex completed a
+clean review of `5a7b809ee4b3766635dbef4837b96a8e02136770`; its CodeRabbit thread
+is resolved. Follow-up CodeRabbit hourly backoff does not waive other gates.
+
+### CI snapshot
+
+This is dated scheduling evidence, not a merge authorization. Re-query every
+current head and all review threads immediately before any merge.
+
+| PR | Exact head | Successful Portable CI checks |
+| --- | --- | ---: |
+| #149 | `48d43d6b832c96450f938138ad446deca2ebd78d` | 3/4 |
+| #150 | `05c0f61d830c7dc36a3c99ce24b7b3dc0d816587` | 4/4 |
+| #151 | `88550a9dfcc1075bdadf0d7ad6cec352dcf679cf` | 4/4 |
+| #152 | `8b159b2c43b2194633445ca31c25c09880378369` | 4/4 |
+| #153 | `ec3f80d7c5d0331fefd976624ddd5c03de6be010` | 4/4 |
+| #154 | `10dbe1de9dd657373b72a8d362014b062d6ed739` | 4/4 |
+| #155 | `8e498ea96783012ae35165406d5b349c3c073c36` | 4/4 |
+| #156 | `a9bd49a3aceb35ff551b29145e648ab613541d93` | 4/4 |
+| #157 | `6630c3c8c7d4004e3b09f266d07fc2e6222263ee` | 4/4 |
+| #158 | `a82523ed78d212c0178ed5ae377b0e7f064b0269` | 4/4 |
+| #159 | `05dc84e072dbe64f461f015ffd3a4c1d21e07a77` | 4/4 |
+| #160 | `8f8a36781c0db3dfc8414a316f6da4ed31ac5648` | 4/4 |
+| #161 | `38ee5fdad8473ddc5a09d00724569497fca34e21` | 4/4 |
+| #162 | `a282c46d7917019023f7f10af358de661adc38c5` | 4/4 |
+| #163 | `9877c1991bb38c326393453c01cadb6af4e141c7` | 4/4 |
+| #164 | `beb95f8d9e1ff5052ab56161a735372d947b2189` | 4/4 |
+| #165 | `1d10a6267b15dc9bcdd79aa1a21ebe155355b3e8` | 4/4 |
+| #166 | `7ce5c909372ad5a4b3534fc8c5645ea78388504c` | 4/4 |
+| #167 | `9d1811d3468ee875c4ee6c11cb0f030fb23e9292` | 4/4 |
+| #168 | `617a6e8a4b297fc8abd1d7a90195ee116b7780ca` | 4/4 |
+| #169 | `cd4cb789fa15855ac70f407cc44c3f17dbf811d5` | 2/4 |
+| #170 | `8f16b45bee908c7602136f0ef85ea987d44d9099` | 3/4 |
+| #171 | `a4584211aa1a9eafae0c98f9e16de70825108787` | 2/4 |
+| #172 | `d246a80d1a7a2deb0d4489a195e00d3af111a48b` | 2/4 |
+| #173 | `ea6c05b6397acdec74a130c1d5fafcdbdc104469` | 0/4 |
+| #174 | `ee6bfcfad195c449fbc7f05c0cc6e1b77bada60e` | 1/4 |
+| #175 | `8ca005c3e361e9e3dfb9def2c1f7610ece7d8a99` | 0/4 |
+| #176 | `e74e0f20187504659049d163ce276009618b6fe1` | 0/4 |
+| #177 | `1776c347bc748521593a02351db837959006910a` | 1/4 |
+| #178 | `83d1325c28290bcc282f53b5c70867e908ca78e2` | 0/4 |
+| #179 | `5a7b809ee4b3766635dbef4837b96a8e02136770` | 0/4 |
+| #180 | `3baa7ff5c6cb3d8602f176821e938b58377c1f71` | 0/4 |
+| #181 | `0d83b8212719be6442190542e6e7731b91741658` | 0/4 |
+
+## Next actions and deferred acceptance
+
+Merge eligible independent PRs and then burn down the dependency chain from
+#149, checking four successful Portable CI jobs, completed clean exact-head
+Codex review and every resolved CodeRabbit finding, including outside-diff
+findings. A pending/failed/timed-out check is a closed gate. Inspect execution
+time and workflow allowance before retrying timed-out host jobs; do not keep
+restarting queued workflows without new evidence.
+
+Continue reply/expansion and dictionary/cache consumers, then aggregate
+expression/parse/recursion/memory budgets and complete library/world
+transactions. Finish remaining renderer/AAS aggregate/query work, legacy-default
+network compatibility/security, filesystem/ZIP and message/download regressions,
+command/cvar privileges and the wider platform/build queue in docs/task.md.
+
+The user requires commercial 1.32c interfaces and legacy network compatibility
+by default, and explicitly defers retail/Mac OS 9 execution. Build both PPC
+products after engine changes. Preserve public packed layouts, syscall/table
+ABI, valid native behavior and physical engine-arena ownership. Native Windows,
+mounted HFS/Finder, legal retail assets and live Mac OS 9 checks remain acceptance
+work when their environments are available. No issue closes solely from builds.
+
+Scratch uses `${TMPDIR:-/var/tmp}`, never `/tmp`. Preserve the original untracked
+q3-logs/. Remove owned merged worktrees, then prune; retain shared toolchain or
+compiler fixtures until their dependents no longer need them.
