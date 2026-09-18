@@ -1293,8 +1293,8 @@ void AAS_FreeRoutingCaches(void)
 void AAS_UpdateAreaRoutingCache(aas_routingcache_t *areacache)
 {
 	int i, nextareanum, cluster, badtravelflags, clusterareanum, linknum;
-	int numreachabilityareas;
-	unsigned short int t, startareatraveltimes[128]; //NOTE: not more than 128 reachabilities per area allowed
+	int numreachabilityareas, startclusterareanum, numstartlinks;
+	unsigned short int t, *startareatraveltimes;
 	aas_routingupdate_t *updateliststart, *updatelistend, *curupdate, *nextupdate;
 	aas_reachability_t *reach;
 	aas_reversedreachability_t *revreach;
@@ -1313,9 +1313,14 @@ void AAS_UpdateAreaRoutingCache(aas_routingcache_t *areacache)
 	badtravelflags = ~areacache->travelflags;
 	//
 	clusterareanum = AAS_ClusterAreaNum(areacache->cluster, areacache->areanum);
-	if (clusterareanum >= numreachabilityareas) return;
+	if (clusterareanum < 0 || clusterareanum >= numreachabilityareas) return;
 	//
-	Com_Memset(startareatraveltimes, 0, sizeof(startareatraveltimes));
+	startclusterareanum = clusterareanum;
+	numstartlinks = aasworld.reversedreachability[areacache->areanum].numlinks;
+	if (numstartlinks < 0 || numstartlinks > INT_MAX / (int)sizeof(*startareatraveltimes)) return;
+	startareatraveltimes = numstartlinks ? (unsigned short *)GetClearedMemory(
+		(unsigned long)numstartlinks * sizeof(*startareatraveltimes)) : NULL;
+	if (numstartlinks && !startareatraveltimes) return;
 	//
 	curupdate = &aasworld.areaupdate[clusterareanum];
 	curupdate->areanum = areacache->areanum;
@@ -1360,7 +1365,7 @@ void AAS_UpdateAreaRoutingCache(aas_routingcache_t *areacache)
 			if (cluster > 0 && cluster != areacache->cluster) continue;
 			//get the number of the area in the cluster
 			clusterareanum = AAS_ClusterAreaNum(areacache->cluster, nextareanum);
-			if (clusterareanum >= numreachabilityareas) continue;
+			if (clusterareanum < 0 || clusterareanum >= numreachabilityareas) continue;
 			//time already travelled plus the traveltime through
 			//the current area plus the travel time from the reachability
 			t = curupdate->tmptraveltime +
@@ -1394,6 +1399,10 @@ void AAS_UpdateAreaRoutingCache(aas_routingcache_t *areacache)
 			} //end if
 		} //end for
 	} //end while
+	// The start entry previously retained a dead stack pointer after this call.
+	if (aasworld.areaupdate[startclusterareanum].areatraveltimes == startareatraveltimes)
+		aasworld.areaupdate[startclusterareanum].areatraveltimes = NULL;
+	FreeMemory(startareatraveltimes);
 } //end of the function AAS_UpdateAreaRoutingCache
 //===========================================================================
 //
