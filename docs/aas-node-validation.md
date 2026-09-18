@@ -38,6 +38,10 @@ PEFs; build manifests/logs confirm the changed bot sources compile in both.
 | Quake3 | 3,749,997 | `d401d0b9d500e987100ab854ed468f2e99fdbba30c0d3b68740eff926e872ccd` |
 | Quake3_TeamArena | 3,898,571 | `190c098c8e4a6a1ee7530679cac209185c3777ff3b235589c65563adc55fd5b1` |
 
+After integrating the #123 review fixes, all eight allocator sanitizer variants,
+node/layout/geometry checks and nine Python checks pass again. Both PPC products
+rebuild with zero compiler diagnostics and unchanged artifact hashes.
+
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 
 ## Remaining acceptance
