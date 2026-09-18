@@ -415,6 +415,10 @@ QVMs while any P0 item is open.
         avoids unused integer operations in float mode and rejects non-finite
         operands/results before publication; fractional float division remains;
         see [arithmetic evidence](bot-eval-arithmetic-validation.md).
+  - [x] Failed unread-token copies preserve queued owners and record source
+        status; nullable conditional pushes preserve the existing stack/skip
+        count and return failure through directive callers;
+        see [factory evidence](bot-source-factory-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 

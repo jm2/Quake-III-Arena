@@ -179,17 +179,23 @@ void QDECL SourceWarning(source_t *source, char *str, ...)
 // Returns:					-
 // Changes Globals:		-
 //============================================================================
-void PC_PushIndent(source_t *source, int type, int skip)
+int PC_PushIndent(source_t *source, int type, int skip)
 {
 	indent_t *indent;
 
 	indent = (indent_t *) GetMemory(sizeof(indent_t));
+	if (!indent)
+	{
+		SourceError(source, "could not allocate conditional indent");
+		return qfalse;
+	} //end if
 	indent->type = type;
 	indent->script = source->scriptstack;
 	indent->skip = (skip != 0);
 	source->skip += indent->skip;
 	indent->next = source->indentstack;
 	source->indentstack = indent;
+	return qtrue;
 } //end of the function PC_PushIndent
 //============================================================================
 //
@@ -374,6 +380,11 @@ int PC_UnreadSourceToken(source_t *source, token_t *token)
 	token_t *t;
 
 	t = PC_CopyToken(token);
+	if (!t)
+	{
+		SourceError(source, "could not unread source token");
+		return qfalse;
+	} //end if
 	t->next = source->tokens;
 	source->tokens = t;
 	return qtrue;
@@ -1653,8 +1664,7 @@ int PC_Directive_if_def(source_t *source, int type)
 	d = PC_FindDefine(source->defines, token.string);
 #endif //DEFINEHASHING
 	skip = (type == INDENT_IFDEF) == (d == NULL);
-	PC_PushIndent(source, type, skip);
-	return qtrue;
+	return PC_PushIndent(source, type, skip);
 } //end of the function PC_Directiveif_def
 //============================================================================
 //
@@ -1697,8 +1707,7 @@ int PC_Directive_else(source_t *source)
 		SourceError(source, "#else after #else");
 		return qfalse;
 	} //end if
-	PC_PushIndent(source, INDENT_ELSE, !skip);
-	return qtrue;
+	return PC_PushIndent(source, INDENT_ELSE, !skip);
 } //end of the function PC_Directive_else
 //============================================================================
 //
@@ -2644,8 +2653,7 @@ int PC_Directive_elif(source_t *source)
 	} //end if
 	if (!PC_Evaluate(source, &value, NULL, qtrue)) return qfalse;
 	skip = (value == 0);
-	PC_PushIndent(source, INDENT_ELIF, skip);
-	return qtrue;
+	return PC_PushIndent(source, INDENT_ELIF, skip);
 } //end of the function PC_Directive_elif
 //============================================================================
 //
@@ -2660,8 +2668,7 @@ int PC_Directive_if(source_t *source)
 
 	if (!PC_Evaluate(source, &value, NULL, qtrue)) return qfalse;
 	skip = (value == 0);
-	PC_PushIndent(source, INDENT_IF, skip);
-	return qtrue;
+	return PC_PushIndent(source, INDENT_IF, skip);
 } //end of the function PC_Directive
 //============================================================================
 //
