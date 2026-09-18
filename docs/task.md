@@ -255,6 +255,9 @@ QVMs while any P0 item is open.
         finite bits; noise reduces extreme finite cells before indexing while
         retaining its 256-cell period; see
         [runtime conversion evidence](shader-runtime-conversion-validation.md).
+  - [x] Sky bounds clamp before subdivision conversion; cloud assembly validates
+        capacities before writes and shares the first indexed mesh across all
+        eight stages; see [sky evidence](sky-subdivision-validation.md).
   - [ ] Complete derived rendering conversions.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
       — **high**, server OOB access/infinite traversal.
@@ -483,8 +486,10 @@ QVMs while any P0 item is open.
       `fc6c10e`, each after exact-head CI, completed clean Codex review and
       resolution of every bot finding. The [September 18 snapshot](review-2026-09-18.md)
       records the earlier queue; its dated evidence remains unchanged.
-- [ ] Gate the derived shader conversion/noise step, then finish sky/cloud
-      math and remaining renderer transaction/capacity work.
+- [x] Derived shader conversions/noise PR #115 merged at `aa25e88` after
+      exact-head CI, clean completed Codex and resolved bot findings.
+- [ ] Gate sky subdivisions/shared cloud mesh, then finish cloud-layer math
+      and remaining renderer transaction/capacity work.
 - [ ] Finish #45 renderer aggregate capacity and full transactional
       publication; retain remaining query/candidate costs and deferred target
       acceptance. Collision aggregate and derived geometry/facet checks are

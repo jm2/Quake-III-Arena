@@ -361,6 +361,9 @@ implementation or check, without implying issue completion.
         finite bits; noise reduces extreme finite cells before indexing while
         retaining its 256-cell period; see
         [runtime conversion evidence](shader-runtime-conversion-validation.md).
+  - [x] Sky bounds clamp before subdivision conversion; cloud assembly validates
+        capacities before writes and shares the first indexed mesh across all
+        eight stages; see [sky evidence](sky-subdivision-validation.md).
   - [ ] Complete derived rendering conversions.
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.
@@ -438,8 +441,10 @@ implementation or check, without implying issue completion.
 - [x] Skin/font/shader and ledger steps #103–#114 merged at `fc6c10e`
       after exact-head CI, clean completed Codex and resolved bot findings.
       The [September 18 snapshot](review-2026-09-18.md) retains the earlier queue.
-- [ ] Gate derived shader conversions/noise and finish sky/cloud math; retain
-      renderer-wide transaction/capacity and deferred acceptance gates.
+- [x] Derived shader conversions/noise #115 merged at `aa25e88` after the
+      same exact-head CI/Codex/resolved-finding gate.
+- [ ] Gate sky subdivisions/shared cloud mesh and finish cloud-layer math;
+      retain renderer transaction/capacity and deferred acceptance gates.
 - [ ] Finish renderer aggregate capacity/full transactional publication and
       remaining query/candidate costs for #45. Keep deferred acceptance open.
 - [x] Cross-build the full local security/UI/filesystem patch set as base and
