@@ -104,6 +104,8 @@ QVMs while any P0 item is open.
         and embedded match spans have [sanitizer regressions](qvm-botlib-chat-validation.md).
   - [x] Elementary-action VM arguments and native allocated client bounds
         have [sanitizer regressions](qvm-botlib-actions-validation.md).
+  - [x] Remaining bot AI structures, inventory/rank arrays, optional goals,
+        and native genetic endpoints have [sanitizer regressions](qvm-botlib-ai-validation.md).
   - [ ] Complete remaining syscall pointer/range checks and retain valid PPC
         QVM compatibility during deferred live acceptance.
 - [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)
