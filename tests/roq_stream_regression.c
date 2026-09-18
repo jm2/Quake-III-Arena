@@ -7,7 +7,8 @@
 
 static byte *source;
 static int sourceSize, advertisedSize, position, readLimit = INT_MAX;
-static int opens, closes, starts, ends, rawCalls, rawSamples, updates, failReopen;
+static int opens, closes, starts, ends, rawCalls, rawSamples, updates, failReopen, soundStops;
+static const char *commandOption = "";
 static cvar_t timescale, video;
 cvar_t *com_timescale = &timescale, *cl_inGameVideo = &video;
 clientStatic_t cls;
@@ -26,6 +27,8 @@ void Com_Memset( void *out, int value, size_t size ) { memset(out,value,size); }
 void Com_Memcpy( void *out, const void *in, size_t size ) { memcpy(out,in,size); }
 int CL_ScaledMilliseconds( void ) { return 100; }
 void Con_Close( void ) {}
+void S_StopAllSounds( void ) { soundStops++; }
+char *Cmd_Argv( int argument ) { return argument==1 ? "test.roq" : argument==2 ? (char *)commandOption : ""; }
 char *Cvar_VariableString( const char *name ) { (void)name; return ""; }
 void Cvar_Set( const char *name, const char *value ) { (void)name; (void)value; }
 void Cbuf_ExecuteText( int when, const char *text ) { (void)when; (void)text; Check(0,"nextmap side effect"); }
@@ -79,7 +82,8 @@ static void Header( byte *out, unsigned int id, unsigned int size, unsigned int 
 static void Fixture( unsigned int id, unsigned int payload, unsigned int flags, int readable ) {
 	free(source); source=malloc(readable ? readable : 1); Check(source!=NULL,"source allocation");
 	sourceSize=advertisedSize=readable; position=0; readLimit=INT_MAX;
-	opens=closes=starts=ends=rawCalls=rawSamples=updates=failReopen=0;
+	opens=closes=starts=ends=rawCalls=rawSamples=updates=failReopen=soundStops=0;
+	memset(&cls,0,sizeof(cls)); commandOption="";
 	memset(&cin,0,sizeof(cin)); memset(cinTable,0,sizeof(cinTable));
 	currentHandle=CL_handle=-1;
 	memset(source,1,readable);
@@ -157,6 +161,12 @@ int main( void ) {
 		Fixture(ZA_SOUND_MONO,2,0,18); failReopen=i;
 		handle=CIN_PlayCinematic("test.roq",0,0,32,32,CIN_loop);
 		Check(handle==0 && CIN_RunCinematic(handle)==FMV_EOF && opens==2 && closes==i && starts==1 && ends==1 && currentHandle==-1 && rawCalls==1,"failed loop reopen cleanup");
+	}
+	/* The actual console command must leave its wait loop after a pre-frame shutdown. */
+	for(i=0;i<3;i++) {
+		Fixture(ROQ_QUAD_INFO,8,0,16); advertisedSize=24; commandOption=i==1?"1":i==2?"2":"";
+		CL_PlayCinematic_f();
+		Check(currentHandle==-1 && CL_handle==-1 && cls.state==CA_DISCONNECTED && closes==1 && starts==1 && ends==1 && soundStops==1 && !cinTable[0].buf && !cinTable[0].fileName[0],"console wait loop pre-frame shutdown");
 	}
 	free(source); puts("RoQ file, packet, and audio regressions passed (issue #41)"); return 0;
 }
