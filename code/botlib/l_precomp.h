@@ -104,6 +104,7 @@ typedef struct source_s
 	define_t *defines;						//list with macro definitions
 	define_t **definehash;					//hash chain with defines
 	indent_t *indentstack;					//stack with indents
+	unsigned int errorsequence;			//private diagnostic generation for lookahead
 	int skip;								// > 0 if skipping conditional code
 	token_t token;							//last read token
 } source_t;

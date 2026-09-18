@@ -1278,6 +1278,7 @@ int GetScriptFlags(script_t *script)
 //============================================================================
 void ResetScript(script_t *script)
 {
+	script->flags &= ~(SCFL_LEXERROR | SCFL_SOURCEERROR);
 	//pointer in script buffer
 	script->script_p = script->buffer;
 	//pointer in script buffer before reading token

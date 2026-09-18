@@ -130,6 +130,7 @@ void QDECL SourceError(source_t *source, char *str, ...)
 	char text[1024];
 	va_list ap;
 
+	source->errorsequence++;
 	if (source->scriptstack) source->scriptstack->flags |= SCFL_SOURCEERROR;
 	va_start(ap, str);
 	Q_vsnprintf(text, sizeof(text), str, ap);
@@ -2852,6 +2853,7 @@ int PC_ReadToken(source_t *source, token_t *token)
 		if (token->type == TT_STRING)
 		{
 			token_t newtoken;
+			unsigned int errorsequence = source->errorsequence;
 			if (PC_ReadToken(source, &newtoken))
 			{
 				if (newtoken.type == TT_STRING)
@@ -2869,7 +2871,8 @@ int PC_ReadToken(source_t *source, token_t *token)
 					PC_UnreadToken(source, &newtoken);
 				}
 			}
-			else if (PC_SourceHasError(source)) return qfalse;
+			else if (PC_SourceErrorFlag(source, SCFL_LEXERROR) ||
+					source->errorsequence != errorsequence) return qfalse;
 		} //end if
 		//if skipping source because of conditional compilation
 		if (source->skip) continue;

@@ -601,7 +601,9 @@ root and nested include reads retain their physical stack and queued tokens;
 string lookahead rejects its outer token after a nested read error. Suppressed
 diagnostics and formatting flags preserve private status. Cached script tokens
 cannot bypass a lexical failure. Preprocessor error history survives normal
-include unwinding while native directive recovery remains available. Ordinary
+include unwinding while native directive recovery remains available. Historical
+errors do not reject later EOF strings; new lookahead errors still reject, and
+explicit script reset clears private parse status while retaining format flags. Ordinary
 one/two-level includes and EOF remain valid, with balanced file and heap owners.
 Raw-memory unterminated comments reject; file comment compression and publication
 callers remain separate acceptance work. GCC/Clang normal and release fast-math

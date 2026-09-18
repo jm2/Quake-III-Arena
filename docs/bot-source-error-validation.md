@@ -15,8 +15,11 @@ continues to work; publication callers can query the complete source status befo
 freeing it. Suppressing diagnostics or changing formatting flags cannot clear
 recorded errors. Raw-memory unterminated block comments report lexical failure.
 
-Commercial 1.32c parser/QVM/syscall/protocol/asset and structure layouts remain
-unchanged. Existing valid nested includes and native EOF retain their behavior.
+A private source diagnostic generation distinguishes newly failed lookahead
+from recoverable historical errors. Explicit script reset clears parse status
+while preserving formatting flags. Commercial 1.32c public imports/QVM/syscalls,
+protocol and asset layouts remain unchanged; the private native source receives
+one generation field. Existing valid nested includes and native EOF retain their behavior.
 
 ## Validation
 
@@ -26,7 +29,10 @@ proofs fail: malformed one/two-level includes continuing into parents, accepting
 an outer string after failed lookahead, consuming queued tokens after failure,
 losing preprocessor history on child unwinding, suppressed lexical status,
 cached-token bypass, formatting status reset and accepting a raw unterminated
-comment. Original native one/two-level include goldens also pass.
+comment. Original native one/two-level include goldens also pass. Two review-stage
+actual-body proofs expose rejected EOF strings after recoverable errors and
+failed explicit script resets. Fixed tests also reject a new lookahead error
+when earlier history already exists.
 
 Fixed tests retain failed stacks, queued owner identities, prior published token
 bytes and allocation counters across repeated reads. Normal directive recovery
@@ -44,8 +50,8 @@ Both Retro68 products rebuild with zero compiler diagnostics and valid PPC PEFs:
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,766,589 | `37f8c31ef4f1d6f64de0da0094614e385760e419982c1defcb713df5468c7240` |
-| Quake3_TeamArena | 3,919,259 | `c01ce9995e128b12065c6e50347bc72ea837c22058846d6ff90e9af7602565e4` |
+| Quake3 | 3,766,589 | `ed8c9d3b3577543b25cc7a06319bfd905e5b2f427fb45f66a44893f2e359a142` |
+| Quake3_TeamArena | 3,919,259 | `6ccd9a6217181ff215c6af952d85b1b44a05ae56f92017c837508b58ed9984ee` |
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 Source includes the checked escape/number/default/interpolation/registry/source/

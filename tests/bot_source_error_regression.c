@@ -53,13 +53,27 @@ static void ErrorFlags(void) {
 static void ErrorComment(void) {
     source_t *source=ErrorSource("\"prefix\" /* incomplete");token_t token;Check(!PC_ReadToken(source,&token)&&PC_SourceHasError(source)&&errors==1,"raw-memory unterminated comment rejects the preceding concatenation token");SourceDone(source);
 }
+static void ErrorRecovery(int nextError) {
+    source_t *source=ErrorSource(nextError?"#unknown\n\"tail\" #unknown":"#unknown\n\"tail\"");token_t token;
+    Check(!PC_ReadToken(source,&token)&&PC_SourceHasError(source)&&errors==1,"recoverable source error prepares history");
+    if(nextError)Check(!PC_ReadToken(source,&token)&&PC_SourceHasError(source)&&errors==2,"new lookahead error rejects despite existing history");
+    else Check(PC_ReadToken(source,&token)&&token.type==TT_STRING&&!strcmp(token.string,"\"tail\"")&&PC_SourceHasError(source)&&errors==1,"ordinary EOF string after recoverable error remains readable with history");
+    SourceDone(source);
+}
+static void ErrorReset(void) {
+    source_t *source=ErrorSource("head");script_t *script=source->scriptstack;token_t token;SetScriptFlags(script,SCFL_NOERRORS|SCFL_NOBINARYNUMBERS);
+    Check(!PS_ExpectTokenString(script,"missing")&&PC_SourceHasError(source)&&!errors,"valid script expectation failure records suppressed status");
+    SourceError(source,"record source history");PS_UnreadLastToken(script);ResetScript(script);
+    Check(!PC_SourceHasError(source)&&script->flags==(SCFL_NOERRORS|SCFL_NOBINARYNUMBERS)&&!script->tokenavailable&&script->line==1&&script->script_p==script->buffer,"explicit script reset clears parse status and cached cursor while preserving format flags");
+    Check(PS_ReadToken(script,&token)&&!strcmp(token.string,"head")&&!PS_ReadToken(script,&token)&&!PC_SourceHasError(source),"reset valid script reads ordinary tokens and EOF again");SourceDone(source);
+}
 static void ErrorOrdinary(int deep) {
     source_t *source=ErrorSource("head\n#include \"one.c\"\nparent");token_t token;innerText=deep?"#include \"two.c\"\nchild":"native 42";leafText="native 42";botimport.FS_FOpenFile=ErrorCatalogOpen;
     ReadGolden(source,"head",TT_NAME);ReadGolden(source,"native",TT_NAME);ReadGolden(source,"42",TT_NUMBER);if(deep)ReadGolden(source,"child",TT_NAME);ReadGolden(source,"parent",TT_NAME);
     Check(!PC_ReadToken(source,&token)&&!PC_SourceHasError(source)&&liveOwners==4&&!numtokens&&!errors&&!warnings&&opens==deep+1&&closes==opens,"native complete nested include EOF releases child owners without false error status");SourceDone(source);
 }
 int main(int argc,char **argv) {
-    if(argc>1){int proof=atoi(argv[1]);if(proof<2)ErrorInclude(proof,proof);else if(proof==2)ErrorLookahead();else if(proof==3)ErrorQueue();else if(proof==4)ErrorHistory();else if(proof==5)ErrorSilent(1);else if(proof==6)ErrorScriptCache();else if(proof==7)ErrorFlags();else if(proof==8)ErrorComment();else {ErrorOrdinary(0);ErrorOrdinary(1);}}
-    else {ErrorInclude(0,0);ErrorInclude(1,1);ErrorLookahead();ErrorQueue();ErrorHistory();ErrorSilent(0);ErrorSilent(1);ErrorScriptCache();ErrorFlags();ErrorComment();ErrorOrdinary(0);ErrorOrdinary(1);Check(!PC_SourceHasError(NULL),"missing source has no parse status");puts("Real source error status, include/lookahead stop, recovery history and owned cleanup passed (issue #48)");}
+    if(argc>1){int proof=atoi(argv[1]);if(proof<2)ErrorInclude(proof,proof);else if(proof==2)ErrorLookahead();else if(proof==3)ErrorQueue();else if(proof==4)ErrorHistory();else if(proof==5)ErrorSilent(1);else if(proof==6)ErrorScriptCache();else if(proof==7)ErrorFlags();else if(proof==8)ErrorComment();else if(proof==10)ErrorRecovery(0);else if(proof==11)ErrorReset();else if(proof==12)ErrorRecovery(1);else {ErrorOrdinary(0);ErrorOrdinary(1);}}
+    else {ErrorInclude(0,0);ErrorInclude(1,1);ErrorLookahead();ErrorQueue();ErrorHistory();ErrorSilent(0);ErrorSilent(1);ErrorScriptCache();ErrorFlags();ErrorComment();ErrorRecovery(0);ErrorRecovery(1);ErrorReset();ErrorOrdinary(0);ErrorOrdinary(1);Check(!PC_SourceHasError(NULL),"missing source has no parse status");puts("Real source error status, include/lookahead stop, recovery history and owned cleanup passed (issue #48)");}
     return 0;
 }
