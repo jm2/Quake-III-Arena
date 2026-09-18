@@ -537,3 +537,13 @@ memory macros and punctuation parse through EOF. Fourteen original actual-body
 proofs cover the previous null/cost/read/name/path/global/byte defects. GCC and
 Clang run normal/release fast-math sanitizers; other directive/indent allocations
 and aggregate parse budgets remain separate acceptance.
+
+The global registry runner executes actual definition creation/deletion, real
+source/global copying and macro expansion. Head, middle and tail deletion unlink
+the selected node before physical cleanup; prior source copies remain valid and
+later sources see only surviving originals. Parameter/body/name ownership and
+native token counts release exactly once. Missing, case-distinct and null names
+preserve the registry; duplicate removal retains native first-match behavior.
+Five original actual-body proofs expose three use-after-free paths, null-name
+lookup and failure to unlink a duplicate. GCC and Clang run normal/release
+fast-math sanitizers; remaining directive factories and parse budgets stay open.
