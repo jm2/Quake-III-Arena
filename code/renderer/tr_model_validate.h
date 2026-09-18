@@ -134,4 +134,88 @@ static const char *R_ValidateMD3( const void *buffer, int length, int *validated
 	return NULL;
 }
 
+
+/** Bound variable MD4 frames, LODs, surfaces and weights before allocating or converting. */
+static const char *R_ValidateMD4( const void *buffer, int length, int *validatedSize ) {
+	const byte *data = buffer, *lod, *surface, *entry;
+	unsigned int size, frames, bones, frameSize, lods, lodOffset, lodSize, surfaceOffset;
+	unsigned int surfaces, surfaceSize, vertices, triangles, references, vertexOffset, weights;
+	unsigned int i, j, k, lodIndex, surfaceIndex;
+	modelRange_t fileRanges[3], ranges[3];
+	if ( !data || length < (int)sizeof(md4Header_t) ) return "truncated MD4 header";
+	if ( R_MODEL_FIELD(data,md4Header_t,ident) != MD4_IDENT || R_MODEL_FIELD(data,md4Header_t,version) != MD4_VERSION ) return "invalid MD4 identification/version";
+	size = R_MODEL_FIELD(data,md4Header_t,ofsEnd);
+	frames = R_MODEL_FIELD(data,md4Header_t,numFrames);
+	bones = R_MODEL_FIELD(data,md4Header_t,numBones);
+	lods = R_MODEL_FIELD(data,md4Header_t,numLODs);
+	if ( size < sizeof(md4Header_t) || size > (unsigned int)length || size > INT_MAX - 4096u ||
+	     !frames || bones > MD4_MAX_BONES || !lods ) return "invalid MD4 size/counts";
+	frameSize = offsetof(md4Frame_t,bones) + bones * sizeof(md4Bone_t);
+	if ( !R_ModelRange(size,sizeof(md4Header_t),R_MODEL_FIELD(data,md4Header_t,ofsFrames),frames,frameSize,4,&fileRanges[0]) ) return "invalid MD4 frame span";
+	for ( i = 0; i < frames; i++ ) {
+		entry = data + fileRanges[0].offset + i * frameSize;
+		if ( !R_ModelFrame(entry) || !R_ModelFloats(entry + offsetof(md4Frame_t,bones),bones * 12) ) return "invalid MD4 frame/bones";
+	}
+	/* Bone names are unused by this renderer; zero denotes an absent optional table. */
+	fileRanges[2].offset = fileRanges[2].size = 0;
+	if ( R_MODEL_FIELD(data,md4Header_t,ofsBoneNames) &&
+	     !R_ModelRange(size,sizeof(md4Header_t),R_MODEL_FIELD(data,md4Header_t,ofsBoneNames),bones,MAX_QPATH,1,&fileRanges[2]) ) return "invalid MD4 bone-name span";
+	lodOffset = R_MODEL_FIELD(data,md4Header_t,ofsLODs);
+	if ( !R_ModelRange(size,sizeof(md4Header_t),lodOffset,lods,sizeof(md4LOD_t),4,&fileRanges[1]) ) return "invalid MD4 LOD span";
+	for ( lodIndex = 0; lodIndex < lods; lodIndex++ ) {
+		if ( sizeof(md4LOD_t) > size - lodOffset ) return "truncated MD4 LOD";
+		lod = data + lodOffset;
+		lodSize = R_MODEL_FIELD(lod,md4LOD_t,ofsEnd);
+		surfaces = R_MODEL_FIELD(lod,md4LOD_t,numSurfaces);
+		surfaceOffset = R_MODEL_FIELD(lod,md4LOD_t,ofsSurfaces);
+		if ( lodSize < sizeof(md4LOD_t) || lodSize > size - lodOffset || lodSize % 4 ||
+		     !R_ModelRange(lodSize,sizeof(md4LOD_t),surfaceOffset,surfaces,sizeof(md4Surface_t),4,&ranges[0]) ) return "invalid MD4 LOD layout";
+		for ( surfaceIndex = 0; surfaceIndex < surfaces; surfaceIndex++ ) {
+			if ( sizeof(md4Surface_t) > lodSize - surfaceOffset ) return "truncated MD4 surface";
+			surface = lod + surfaceOffset;
+			surfaceSize = R_MODEL_FIELD(surface,md4Surface_t,ofsEnd);
+			vertices = R_MODEL_FIELD(surface,md4Surface_t,numVerts);
+			triangles = R_MODEL_FIELD(surface,md4Surface_t,numTriangles);
+			references = R_MODEL_FIELD(surface,md4Surface_t,numBoneReferences);
+			if ( surfaceSize < sizeof(md4Surface_t) || surfaceSize > lodSize - surfaceOffset || surfaceSize % 4 ||
+			     vertices >= SHADER_MAX_VERTEXES || triangles >= SHADER_MAX_INDEXES / 3 || references > MD4_MAX_BONES ||
+			     R_MODEL_FIELD(surface,md4Surface_t,ofsHeader) != 0u - (lodOffset + surfaceOffset) ||
+			     !memchr(surface + offsetof(md4Surface_t,name),0,MAX_QPATH) ||
+			     !memchr(surface + offsetof(md4Surface_t,shader),0,MAX_QPATH) ) return "invalid MD4 surface header/counts";
+			if ( !R_ModelRange(surfaceSize,sizeof(md4Surface_t),R_MODEL_FIELD(surface,md4Surface_t,ofsVerts),vertices,offsetof(md4Vertex_t,weights),4,&ranges[0]) ||
+			     !R_ModelRange(surfaceSize,sizeof(md4Surface_t),R_MODEL_FIELD(surface,md4Surface_t,ofsTriangles),triangles,sizeof(md4Triangle_t),4,&ranges[1]) ||
+			     !R_ModelRange(surfaceSize,sizeof(md4Surface_t),R_MODEL_FIELD(surface,md4Surface_t,ofsBoneReferences),references,4,4,&ranges[2]) ) return "invalid MD4 surface arrays";
+			vertexOffset = ranges[0].offset;
+			for ( j = 0; j < vertices; j++ ) {
+				if ( offsetof(md4Vertex_t,weights) > surfaceSize - vertexOffset ) return "truncated MD4 vertex";
+				entry = surface + vertexOffset;
+				weights = R_MODEL_FIELD(entry,md4Vertex_t,numWeights);
+				vertexOffset += offsetof(md4Vertex_t,weights);
+				if ( weights > (surfaceSize - vertexOffset) / sizeof(md4Weight_t) || !R_ModelFloats(entry,5) ) return "invalid MD4 vertex/weights";
+				for ( k = 0; k < weights; k++ ) {
+					entry = surface + vertexOffset + k * sizeof(md4Weight_t);
+					/* Native 1.32c skinning indexes the complete frame bone array directly. */
+					if ( R_MODEL_FIELD(entry,md4Weight_t,boneIndex) >= bones ||
+					     !R_ModelFloats(entry + offsetof(md4Weight_t,boneWeight),4) ) return "invalid MD4 weight bone/data";
+				}
+				vertexOffset += weights * sizeof(md4Weight_t);
+			}
+			ranges[0].size = vertexOffset - ranges[0].offset;
+			if ( !R_ModelDisjoint(ranges,3) ) return "overlapping MD4 surface arrays";
+			for ( j = 0; j < triangles; j++ ) for ( k = 0; k < 3; k++ ) {
+				if ( R_ModelWord(surface + ranges[1].offset + j * sizeof(md4Triangle_t) + k * 4) >= vertices ) return "invalid MD4 triangle index";
+			}
+			for ( j = 0; j < references; j++ ) {
+				if ( R_ModelWord(surface + ranges[2].offset + j * 4) >= bones ) return "invalid MD4 bone reference";
+			}
+			surfaceOffset += surfaceSize;
+		}
+		lodOffset += lodSize;
+	}
+	fileRanges[1].size = lodOffset - fileRanges[1].offset;
+	if ( !R_ModelDisjoint(fileRanges,3) ) return "overlapping MD4 file sections";
+	*validatedSize = size;
+	return NULL;
+}
+
 #endif
