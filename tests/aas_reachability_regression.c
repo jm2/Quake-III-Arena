@@ -102,6 +102,7 @@ static void BadReachability(void) {
         ReachBuild(version,TRAVEL_WALK,1,3);Counters();OldWorld();ReachWord(version,geometryOffsets[8]+28+24,0);GeometryReject();
     }
 }
+#ifndef Q3_REACHABILITY_FIXTURE_ONLY
 int main(int argc,char **argv) {
     int proof=argc>1?atoi(argv[1]):-1;botimport.Print=Print;botimport.FS_FOpenFile=Open;botimport.FS_Read=Read;botimport.FS_Seek=Seek;botimport.FS_FCloseFile=Close;
     if(proof==0){ReachBuild(4,TRAVEL_WALK,1,3);Counters();OldWorld();ReachWord(4,reachOffset+44,INT_MAX);GeometryReject();}
@@ -111,3 +112,5 @@ int main(int argc,char **argv) {
     else {ValidReachability();BadReachability();SpanOwnership();OrphanRecords();puts("Native AAS reachability spans, travel-dependent fields, signed references and finite endpoints passed (issue #47)");}
     ResetArena();return 0;
 }
+
+#endif

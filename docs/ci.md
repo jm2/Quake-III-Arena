@@ -253,6 +253,7 @@ bash tests/run_aas_geometry_tests.sh
 bash tests/run_bot_memory_tests.sh
 bash tests/run_aas_node_tests.sh
 bash tests/run_aas_reachability_tests.sh
+bash tests/run_aas_portal_tests.sh
 bash tests/run_bot_zone_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
@@ -353,6 +354,13 @@ spans and aggregate reference ownership reject before loaded publication. Both
 normal and release fast-math sanitizer configurations check actual loader bodies.
 Portal/cluster references and derived routing math/work budgets remain pending.
 
+The native AAS portal runner retains literal portal/index/cluster/settings bytes,
+side ordering and unclustered roots. Signed/one-past indices, relative area slots,
+cluster area/reach counts, inverse portal ownership, missing real portal sides
+and aggregate backing spans reject before loaded publication. Both normal and
+release fast-math sanitizer configurations run; full runtime geometry/budget
+and transactional hunk acceptance remain pending.
+
 ## What this CI does not prove
 
 Portable CI does not compile a PowerPC PEF, preserve/inspect a Classic resource
@@ -391,3 +399,10 @@ imports and bot adapters under release/debug metadata and normal/optimized
 sanitizers. It checks payload/header/trailer/alignment costs, ownership and
 nullable rejection before native allocator expansion can overflow. CI also
 invokes this runner with explicit Clang.
+
+The isolated-area routing runner uses actual native clustering and routing.
+Reachability-only clustering legitimately leaves isolated nonreachable areas
+in cluster zero. Distinct start/goal queries involving those areas return
+unreachable before cache allocation or mutation; their retail AAS bytes remain
+accepted. The previous native routing body aliases another cluster's cache.
+Normal and release fast-math sanitizer configurations cover both operations.

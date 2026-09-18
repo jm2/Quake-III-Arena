@@ -286,6 +286,10 @@ QVMs while any P0 item is open.
   - [x] Reachability destinations/endpoints, area spans and aggregate reference
         ownership validate before loaded; ordinary references stay signed and
         special travel fields retain packed bits; see [reachability evidence](aas-reachability-validation.md).
+  - [x] Portal/cluster indices, local area slots, spans and inverse ownership
+        validate before loaded; native side ordering and unclustered roots
+        retain bytes, while isolated-area routes preserve cache ownership;
+        see [portal evidence](aas-portal-validation.md).
   - [ ] Validate the entire AAS file and graph before setting `loaded`.
 - [ ] [#48 — bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48)
       — **high**, parser fixed-buffer corruption/invalid cleanup.
@@ -525,8 +529,11 @@ QVMs while any P0 item is open.
       retain deferred acceptance.
 - [x] AAS layout/endian/writer PRs #119–#121 merged at `431e272` after
       exact-head CI, completed clean Codex and resolved review findings.
-- [ ] Gate geometry/allocation/node steps and finish #47 routing/reference,
-      derived runtime/budget and late-load transaction work.
+- [x] AAS geometry #122 merged at `b242458` and allocator/import #123
+      at `ed42d87`, after exact-head CI, clean completed Codex and all
+      CodeRabbit findings resolved.
+- [ ] Gate node/reachability/portal steps and finish #47 derived runtime,
+      memory/work budgets and late-load transaction work.
 - [ ] Finish #45 renderer aggregate capacity and full transactional
       publication; retain remaining query/candidate costs and deferred target
       acceptance. Collision aggregate and derived geometry/facet checks are
