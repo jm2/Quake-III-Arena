@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 
 #include "cm_local.h"
+#include <stddef.h>
 
 
 // counters are only bumped when running single threaded,
@@ -276,7 +277,7 @@ winding_t	*CopyWinding (winding_t *w)
 	winding_t	*c;
 
 	c = AllocWinding (w->numpoints);
-	size = (int)((winding_t *)0)->p[w->numpoints];
+	size = offsetof(winding_t, p) + w->numpoints * sizeof(w->p[0]);
 	Com_Memcpy (c, w, size);
 	return c;
 }
