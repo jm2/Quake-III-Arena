@@ -72,7 +72,7 @@ void RB_SurfaceAnim( md4Surface_t *surface ) {
 	int				numVerts;
 	md4Vertex_t		*v;
 	md4Bone_t		bones[MD4_MAX_BONES];
-	md4Bone_t		*bonePtr, *bone;
+	md4Bone_t		*bonePtr, *bone, *frameBones, *oldFrameBones;
 	md4Header_t		*header;
 	md4Frame_t		*frame;
 	md4Frame_t		*oldFrame;
@@ -98,6 +98,9 @@ void RB_SurfaceAnim( md4Surface_t *surface ) {
 	frame = (md4Frame_t *)((byte *)header + header->ofsFrames + frameIndex * frameSize);
 	oldFrame = (md4Frame_t *)((byte *)header + header->ofsFrames + oldFrameIndex * frameSize);
 
+	frameBones = (md4Bone_t *)((byte *)frame + offsetof(md4Frame_t,bones));
+	oldFrameBones = (md4Bone_t *)((byte *)oldFrame + offsetof(md4Frame_t,bones));
+
 	RB_CheckOverflow( surface->numVerts, surface->numTriangles * 3 );
 
 	triangles = (int *) ((byte *)surface + surface->ofsTriangles);
@@ -114,12 +117,12 @@ void RB_SurfaceAnim( md4Surface_t *surface ) {
 	//
 	if ( !backlerp ) {
 		// no lerping needed
-		bonePtr = frame->bones;
+		bonePtr = frameBones;
 	} else {
 		bonePtr = bones;
 		for ( i = 0; i < header->numBones; i++ ) for ( row = 0; row < 3; row++ ) for ( column = 0; column < 4; column++ ) {
-			bonePtr[i].matrix[row][column] = frontlerp * frame->bones[i].matrix[row][column]
-				+ backlerp * oldFrame->bones[i].matrix[row][column];
+			bonePtr[i].matrix[row][column] = frontlerp * frameBones[i].matrix[row][column]
+				+ backlerp * oldFrameBones[i].matrix[row][column];
 		}
 	}
 
