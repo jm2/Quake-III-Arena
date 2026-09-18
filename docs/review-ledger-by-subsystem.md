@@ -296,6 +296,8 @@ implementation or check, without implying issue completion.
         recursion or query allocations; [evidence](bsp-box-query-validation.md).
   - [x] Deep projected-mark queries preserve native filters/deduplication and
         bounded lists without recursion; [evidence](bsp-mark-query-validation.md).
+  - [x] Deep swept traces retain exact native clipping results with explicit
+        bounded frames and owned-growth cleanup; [evidence](bsp-trace-validation.md).
 - [ ] [#46 — shader/skin/font fixed limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.

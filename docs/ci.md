@@ -26,6 +26,8 @@ PR head while retaining checks on the merged default branch.
     dates, version fields, and CRC;
   - reject filenames that cannot be represented in MacRoman.
 - `Host C regressions (ASan/UBSan)`
+  - exercises actual swept BSP traces with stock point/box/capsule clipping
+    goldens, deep traversal/pruning and injected temporary-allocation failure;
   - builds a deliberately isolated portion of `q_shared.c`;
   - checks bounded extension stripping, formatting, and token termination
     under AddressSanitizer and UndefinedBehaviorSanitizer;
@@ -170,6 +172,7 @@ bash tests/run_bsp_geometry_tests.sh
 bash tests/run_bsp_entity_grid_tests.sh
 bash tests/run_bsp_tree_tests.sh
 bash tests/run_bsp_model_capacity_tests.sh
+bash tests/run_bsp_trace_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
