@@ -1,5 +1,11 @@
 /* Issue #45: exact FS payloads through actual collision reference preflight. */
+#include <stdlib.h>
+static void *IndexCalloc(size_t,size_t);
+#define calloc IndexCalloc
 #include "bsp_fixture.h"
+#undef calloc
+static int failNextAllocation;
+static void *IndexCalloc(size_t count,size_t size) { if(failNextAllocation) { failNextAllocation=0;return NULL; }return calloc(count,size); }
 
 static int goldenSize;
 static unsigned int At(int lump,int index,int stride) { return BSP_FileWord(source+8+lump*8)+index*stride; }
@@ -71,5 +77,26 @@ int main(void) {
 	Restore();Word(At(LUMP_LEAFS,0,sizeof(dleaf_t))+offsetof(dleaf_t,firstLeafSurface),3);Word(At(LUMP_LEAFS,0,sizeof(dleaf_t))+offsetof(dleaf_t,numLeafSurfaces),0);AcceptReferences();
 	Restore();offset=Append(LUMP_MODELS,256*sizeof(dmodel_t));Check(!BSP_ValidateHeader(source,sourceSize,&header) && !BSP_ValidateReferences(source,&header),"reference-valid 256 submodels");readable=advertised=sourceSize;CM_LoadMap("models256.bsp",qfalse,&j);Check(cm.numSubModels==256,"native submodel boundary preserved");
 	Restore();Append(LUMP_MODELS,257*sizeof(dmodel_t));Check(!BSP_ValidateHeader(source,sourceSize,&header) && !BSP_ValidateReferences(source,&header),"renderer references do not inherit collision handle cap");RejectCM();
+	/* Exhaust every alignment/length boundary against a simple independent range maximum. */
+	{
+		byte words[257*4];unsigned int begin,length,k,want,result;bspIndexRanges_t ranges;
+		for(k=0;k<257;k++) { unsigned int word=(k*73u)%997u;int b;for(b=0;b<4;b++)words[k*4+b]=word>>(8*b); }
+		Check(!BSP_BuildIndexRanges(words,257,&ranges),"range tree fixture");
+		for(begin=0;begin<257;begin++) for(length=1;length<=257-begin;length++) {
+			want=0;for(k=begin;k<begin+length;k++)if((k*73u)%997u>want)want=(k*73u)%997u;
+			result=BSP_IndexRangeMax(&ranges,begin,length);Check(result==want,"all partial/block/tree range maxima");
+		}
+		free(ranges.maxima);
+	}
+	Restore();failNextAllocation=1;RejectCM();Check(!failNextAllocation,"temporary index allocation failure retained world and input ownership");
+	/* About 16 MiB with shared spans previously caused about 69 billion repeated word scans. */
+	Restore();offset=Append(LUMP_DRAWINDEXES,524286*4);for(i=0;i<524286;i++)Word(offset+i*4,i%3);
+	offset=Append(LUMP_SURFACES,131072*sizeof(dsurface_t));
+	for(i=0;i<131072;i++) {
+		unsigned int record=offset+i*sizeof(dsurface_t);
+		Word(record+offsetof(dsurface_t,surfaceType),MST_PLANAR);Word(record+offsetof(dsurface_t,numVerts),3);Word(record+offsetof(dsurface_t,numIndexes),524286);
+		Word(record+offsetof(dsurface_t,fogNum),0xffffffffu);Word(record+offsetof(dsurface_t,lightmapNum),0xffffffffu);
+	}
+	AcceptReferences();Word(At(LUMP_DRAWINDEXES,524285,4),0xffffffffu);RejectReferences();
 	FreeHunks();puts("BSP payload reference, material and collision ownership regressions passed (issue #45)");return 0;
 }

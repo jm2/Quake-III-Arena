@@ -11,7 +11,10 @@ indices handle INT_MIN without signed negation.
 Leaf surface/brush indices and spans, model surface/brush spans, fog brushes
 and visible sides, and surface shader/fog/type references validate by
 subtraction before products or pointer construction. Consumed vertex/index
-spans and surface-local indices fit their arrays. Leaves support opaque -1
+spans and surface-local indices fit their arrays. A block range-max tree
+scans index words once and bounds each shared-span query by at most 62 edge
+words plus logarithmic tree work; overlapping spans remain supported.
+Temporary checked storage is released on success or failure before publication. Leaves support opaque -1
 clusters, including area -1 for opaque leaves, and the fixed retail area
 visibility bit vector; cluster counts fit
 native novis allocation arithmetic and declared PVS rows. Collision rejects
@@ -50,7 +53,12 @@ Valid cases preserve area 255, opaque clusters with area 0 or -1, zero-length sp
 ends, all four negative lightmap selectors, positive lightmap fallback and
 ignored patch/flare fields. Actual collision loading accepts 256 submodels;
 257 rejects before state changes. The inherited header fixture uses the same
-arena and remains covered. These fixtures do not execute renderer payload
+arena and remains covered. An approximately 16 MiB shared-span fixture uses
+131,072 surfaces and 524,286 indices; valid and final-index-invalid cases
+complete without repeated surface-count times index-count scans. Every span
+of a 257-word golden matches an independent maximum, exercising block edges
+and padded tree leaves. Injected temporary allocation failure rejects through
+actual CM_LoadMap before state changes and releases input ownership. These fixtures do not execute renderer payload
 loading or the native patch-generation algorithm.
 
 Both BSP ASan/UBSan fixtures, nine Python checks and Bash syntax pass. Both
@@ -59,8 +67,8 @@ using the temporary libraries from [loading evidence](qvm-loading-validation.md)
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,708,115 | `329ac4ae65dc4e8c6aeda785e8fde23467ea032d96646a4232fc0d74a9f5ccd9` |
-| Quake3_TeamArena | 3,856,689 | `608e8e5ae9a247d1527f2c00758dd004da6cf4fab44a447d832a603ca186361b` |
+| Quake3 | 3,712,239 | `161857210657907cd33ba9c0bf28cf05b78763873e2af282d7ebf7bd189275c3` |
+| Quake3_TeamArena | 3,860,813 | `42df0f8edc2a29a6fa7e0595ae235016668847fe52722cf3fb692570864ce1e4` |
 
 ## Remaining acceptance
 
