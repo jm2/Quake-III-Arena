@@ -63,7 +63,19 @@ PR head while retaining checks on the merged default branch.
     line reservation;
   - checks returned connection-denial strings in the owning VM with a
     different active VM, boundary termination, aliases, and optional NULL.
-    Botlib syscall families still need range checks;
+  - checks actual botlib common/navigation dispatch with bounded strings,
+    structs, complete/optional arrays, zero-capacity outputs, NULL map/entity
+    operations, and client indices bounded by actual server allocation.
+  - checks the actual bot chat dispatcher with complete output structures,
+    nullable variables and their combined capacity, bounded match metadata,
+    native synonym expansion/search bounds, and overlapping substring output.
+  - checks actual bot action dispatch into native elementary-action routines,
+    whole input output, bounded strings/vectors, separate server/bot capacities,
+    invalid native client indices, allocation arithmetic, and shutdown reset.
+  - checks remaining AI goal/move/weapon structures, retail inventory arrays,
+    bounded output strings, optional no-goal operations, genetic arrays and
+    scalar outputs, and the inclusive native random endpoint.
+    Scalar indices and indirect native accesses remain under review.
   - checks actual RoQ open/run/stop, chunk capacities and short reads, final
     payloads, embedded packet boundaries/nesting, mono/stereo expansion limits,
     malformed looping movies, and cleanup before the first frame;
@@ -92,6 +104,10 @@ bash tests/run_ui_syscall_tests.sh
 bash tests/run_cgame_syscall_tests.sh
 bash tests/run_server_core_syscall_tests.sh
 bash tests/run_vm_returned_string_tests.sh
+bash tests/run_botlib_navigation_tests.sh
+bash tests/run_botlib_chat_tests.sh
+bash tests/run_botlib_actions_tests.sh
+bash tests/run_botlib_ai_tests.sh
 bash tests/run_roq_stream_tests.sh
 bash tests/run_roq_frame_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
