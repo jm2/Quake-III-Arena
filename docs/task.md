@@ -379,6 +379,10 @@ QVMs while any P0 item is open.
         before size subtraction/copy, preserving exact native truncation/NUL
         padding for every valid capacity;
         see [string evidence](bot-character-string-validation.md).
+  - [x] Character numeric fields reject unrepresentable/non-finite floats and
+        oversized native integer words before publication; prior strings/source
+        owners release, while valid float and 32-bit word patterns remain;
+        see [publication evidence](bot-character-numeric-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
