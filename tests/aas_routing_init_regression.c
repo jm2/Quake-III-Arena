@@ -1,4 +1,5 @@
 /* Actual initialization pipeline and continuation: derived costs, ownership and publication. */
+#include <float.h>
 #include Q3_AAS_ROUTE_SOURCE
 libvar_t *saveroutingcache;
 #include Q3_AAS_INIT_CONTINUATION
@@ -12,6 +13,7 @@ static aas_portal_t portals[1];
 static aas_reachability_t reaches[3];
 static int requests,releases,failAt,cacheReads,initializedMessages,errors;
 static unsigned long lastRequest;
+static float routingLimit=4096;
 static libvar_t saveVariable;
 static int pendingReachability,cacheWrites,cacheCloses,saveResets,unlinks,invalidations;
 static struct {void *pointer;unsigned long size;} owners[32];
@@ -50,7 +52,7 @@ void QDECL AAS_Error(char *format,...) {(void)format;Check(0,"unexpected native 
 int AAS_ContinueInitReachability(float time) {(void)time;return pendingReachability;}
 void AAS_InitClustering(void) {Check(aasworld.numclusters>=1,"native completed/dummy clustering skips rebuilding with unset force flags");}
 float LibVarGetValue(char *name) {Check(!strcmp(name,"forcewrite"),"native continuation force variable");return 0;}
-float LibVarValue(char *name,char *value) {Check(!strcmp(name,"max_routingcache")&&!strcmp(value,"4096"),"native cache limit default");return 4096;}
+float LibVarValue(char *name,char *value) {Check(!strcmp(name,"max_routingcache")&&!strcmp(value,"4096"),"native cache limit default");return routingLimit;}
 void AAS_Optimize(void) {Check(0,"native optimization not forced");}
 qboolean AAS_WriteAASFile(char *name) {(void)name;Check(0,"native writer not forced");return 0;}
 int Sys_MilliSeconds(void) {return 7;}
@@ -71,7 +73,7 @@ static void Reset(int empty) {
     memset(&aasworld,0,sizeof(aasworld));memset(settings,0,sizeof(settings));memset(areas,0,sizeof(areas));memset(clusters,0,sizeof(clusters));memset(portals,0,sizeof(portals));memset(reaches,0,sizeof(reaches));memset(owners,0,sizeof(owners));
     requests=releases=failAt=cacheReads=initializedMessages=errors=0;lastRequest=0;
     memset(&saveVariable,0,sizeof(saveVariable));saveroutingcache=&saveVariable;
-    pendingReachability=cacheWrites=cacheCloses=saveResets=unlinks=invalidations=0;bot_developer=0;
+    pendingReachability=cacheWrites=cacheCloses=saveResets=unlinks=invalidations=0;bot_developer=0;routingLimit=4096;
     aasworld.numareas=aasworld.numareasettings=3;aasworld.numclusters=empty?1:2;aasworld.numportals=empty?0:1;aasworld.reachabilitysize=empty?0:3;
     aasworld.areasettings=settings;aasworld.areas=areas;aasworld.clusters=clusters;aasworld.portals=portals;aasworld.reachability=empty?NULL:reaches;
     strcpy(aasworld.mapname,"synthetic");aasworld.loaded=qtrue;
@@ -144,8 +146,19 @@ static void ShapeCosts(void) {
     Reset(0);aasworld.reachabilitysize=INT_MAX/32+1;AAS_InitReachabilityAreas();Check(!requests&&!aasworld.reachabilityareas&&!aasworld.reachabilityareaindex,"pass-area flat product rejects before either allocation");
     MatrixOverflow();
 }
+static const struct {float kilobytes;int bytes;} limitCases[]={
+    {0,0},{0.5f,0},{1,1024},{1.75f,1024},{4096,4194304},{4096.75f,4194304},
+    {2097151,2147482624},{2097151.875f,2147482624},{2097152,INT_MAX},
+    {2147483648.0f,INT_MAX},{FLT_MAX,INT_MAX},{-1,0}
+};
+static void CacheLimitCase(int index) {
+    Reset(0);routingLimit=limitCases[index].kilobytes;AAS_ContinueInit(7);
+    Check(aasworld.initialized&&aasworld.loaded&&max_routingcachesize==limitCases[index].bytes&&requests==10,"literal native cache KB/byte limit through actual initialization");
+    AAS_FreeRoutingCaches();EmptyFields();Check(!Outstanding()&&!routingcachesize,"checked cvar conversion leaves normal initialization/cleanup intact");
+}
+static void CacheLimits(void) {size_t i;for(i=0;i<sizeof(limitCases)/sizeof(limitCases[0]);i++)CacheLimitCase((int)i);}
 int main(int argc,char **argv) {
-    int i;if(argc>1){int proof=atoi(argv[1]);if(proof==0)Nullable(1);else if(proof==1){Reset(0);aasworld.numareas=aasworld.numareasettings=INT_MAX;AAS_ContinueInit(7);}else if(proof==3)FrameFailure(1);else MatrixOverflow();}
-    else {Success();for(i=1;i<=10;i++){Nullable(i);FrameFailure(i);}FramePending();EmptyDummy();ShapeCosts();puts("Native AAS routing initialization costs, nullable stages and publication passed (issue #47)");}
+    int i;if(argc>1){int proof=atoi(argv[1]);if(proof==0)Nullable(1);else if(proof==1){Reset(0);aasworld.numareas=aasworld.numareasettings=INT_MAX;AAS_ContinueInit(7);}else if(proof==3)FrameFailure(1);else if(proof==4)CacheLimitCase(8);else if(proof==5)CacheLimitCase(9);else MatrixOverflow();}
+    else {Success();for(i=1;i<=10;i++){Nullable(i);FrameFailure(i);}FramePending();EmptyDummy();ShapeCosts();CacheLimits();puts("Native AAS routing initialization costs, nullable stages and publication passed (issue #47)");}
     return 0;
 }
