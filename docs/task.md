@@ -162,6 +162,8 @@ QVMs while any P0 item is open.
         covers exact inputs and collision ownership/state.
   - [x] Shared collision/material references validate before checksum or reset;
         [reference evidence](bsp-reference-validation.md) covers exact FS mutations.
+  - [x] BSP lightmap upload reads complete RGB records and retains the legacy
+        single-source duplicate texture; [lightmap evidence](bsp-lightmap-validation.md).
   - [ ] Complete all payload cross-reference, graph and geometry validation
         before publishing a map; retain deferred retail/PPC map acceptance.
 - [ ] [#46 — enforce shader/skin/font limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
