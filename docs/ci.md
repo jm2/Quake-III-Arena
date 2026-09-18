@@ -249,6 +249,7 @@ bash tests/run_sky_bounds_tests.sh
 bash tests/run_aas_layout_tests.sh
 bash tests/run_aas_endian_tests.sh
 bash tests/run_aas_writer_tests.sh
+bash tests/run_aas_geometry_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
@@ -315,6 +316,15 @@ are discarded while the failed name remains cached, all lighting-mode probes
 reuse it, exported registration keeps returning zero, and the following healthy
 definition remains usable. Fixture bootstrap now supplies the native default
 image after each reset, matching the renderer's actual initialization contract.
+
+The native AAS geometry runner loads independent retail triangle/area byte
+layouts in both versions and both lump orders. All six legacy plane types,
+signed edge/face orientations and native flag bits retain exact payload bytes.
+Every geometric float is tested with six non-finite patterns; reference/range
+failures, INT_MIN signed references, paired-plane limits and inverted bounds
+reject before loaded publication and clear partial logical ownership. Normal
+and release fast-math sanitizer configurations both run in CI. Node termination,
+routing references and derived runtime math/budgets remain follow-on work.
 
 ## What this CI does not prove
 

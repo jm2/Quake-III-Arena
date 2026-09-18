@@ -382,6 +382,9 @@ implementation or check, without implying issue completion.
   - [x] AAS writer preserves native world bytes on every return, checks all
         writes/seeks and rejects invalid/overflowing output roots before opening;
         see [writer evidence](aas-writer-validation.md).
+  - [x] Finite geometric fields, ordered bounds and edge/face/area ranges
+        validate before loaded publication; signed orientations and six legacy
+        plane types retain native bytes; see [geometry evidence](aas-geometry-validation.md).
   - [ ] Validate the complete file and graph before setting `loaded`.
 - [ ] [#48 — bot preprocessor/token/path bounds](https://github.com/jm2/Quake-III-Arena/issues/48)
   - [x] Several upstream primitive/preprocessor/diagnostic bounds fixes are
