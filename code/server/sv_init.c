@@ -223,6 +223,7 @@ void SV_Startup( void ) {
 	SV_BoundMaxClients( 1 );
 
 	svs.clients = Z_Malloc (sizeof(client_t) * sv_maxclients->integer );
+	svs.clientCapacity = sv_maxclients->integer;
 	if ( com_dedicated->integer ) {
 		svs.numSnapshotEntities = sv_maxclients->integer * PACKET_BACKUP * 64;
 	} else {
@@ -280,6 +281,7 @@ void SV_ChangeMaxClients( void ) {
 
 	// allocate new clients
 	svs.clients = Z_Malloc ( sv_maxclients->integer * sizeof(client_t) );
+	svs.clientCapacity = sv_maxclients->integer;
 	Com_Memset( svs.clients, 0, sv_maxclients->integer * sizeof(client_t) );
 
 	// copy the clients over
