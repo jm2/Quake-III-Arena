@@ -1,13 +1,13 @@
 /* Actual bot numeric converter and variable backend: grammar, values and ownership. */
 #include Q3_LIBVAR_SOURCE
 static void *owners[16];
-static int liveOwners;
+static int liveOwners,requests,failAt;
 static void Check(int condition,const char *message) {if(!condition){fprintf(stderr,"Bot libvar regression failed: %s\n",message);exit(1);}}
 #ifndef Com_Memset
 void Com_Memset(void *out,int value,size_t size) {memset(out,value,size);}
 #endif
 void *GetMemory(unsigned long size) {
-    int i;Check(size>0&&size<=4096,"bounded exact native variable allocation");
+    int i;Check(size>0&&size<=4096,"bounded exact native variable allocation");requests++;if(requests==failAt)return NULL;
     for(i=0;i<16;i++)if(!owners[i]){owners[i]=malloc(size);Check(owners[i]!=NULL,"fixture allocation");liveOwners++;return owners[i];}
     Check(0,"bounded fixture native variable owners");return NULL;
 }
@@ -52,8 +52,48 @@ static void Invalid(void) {
     for(i=0;i<sizeof(cases)/sizeof(cases[0]);i++)Golden((char *)cases[i],0);
     memset(large,'9',sizeof(large)-1);large[sizeof(large)-1]=0;Golden(large,0);
 }
+static void OwnerReset(void) {Check(!libvarlist&&!liveOwners,"previous transaction owners released");requests=failAt=0;}
+static void Alias(int interior) {
+    libvar_t *variable;char *old;OwnerReset();variable=LibVar("alias","123.45");Check(variable!=NULL,"initial alias variable");old=variable->string;
+    LibVarSet("ALIAS",old+(interior?4:0));
+    Check(LibVarGet("alias")==variable&&!strcmp(variable->string,interior?"45":"123.45")&&liveOwners==2&&LibVarChanged("alias"),"whole/interior aliased value copied before release");
+    LibVarDeAllocAll();Check(!liveOwners,"alias transaction owners release");
+}
+static void NewFailure(int method,int existing,int position) {
+    libvar_t *previous=NULL,saved;char *previousString=NULL;int priorOwners;
+    OwnerReset();if(existing){previous=LibVar("existing","7.5");Check(previous!=NULL,"preexisting variable");LibVarSetNotModified("existing");saved=*previous;previousString=previous->string;}
+    priorOwners=liveOwners;failAt=requests+position;
+    if(method==0)Check(LibVar("new","1.25")==NULL,"failed factory returns null");
+    else if(method==1)Check(Bits(LibVarValue("new","1.25"))==0,"failed numeric getter returns native missing value");
+    else if(method==2)Check(!strcmp(LibVarString("new","1.25"),""),"failed string getter returns native missing string");
+    else LibVarSet("new","1.25");
+    Check(!LibVarGet("new")&&libvarlist==previous&&liveOwners==priorOwners,"failed creation has no published node or partial physical owner");
+    if(previous)Check(!memcmp(previous,&saved,sizeof(saved))&&previous->string==previousString&&!strcmp(previous->string,"7.5"),"preexisting node/value/flags/list remain unchanged");
+    failAt=0;Check(Bits(LibVarValue("new","1.25"))==0x3fa00000U&&liveOwners==priorOwners+2,"failed creation can retry successfully");
+    LibVarDeAllocAll();Check(!liveOwners,"retried transaction owners physically release");
+}
+static void ReplacementFailure(int aliased) {
+    libvar_t *variable,saved;char *old;int prior;
+    OwnerReset();variable=LibVar("alias","123.45");Check(variable!=NULL,"initial replacement variable");variable->flags=0x1234;LibVarSetNotModified("alias");saved=*variable;old=variable->string;prior=liveOwners;
+    failAt=requests+1;LibVarSet("alias",aliased?old+4:"45");
+    Check(!memcmp(variable,&saved,sizeof(saved))&&variable->string==old&&!strcmp(old,"123.45")&&liveOwners==prior&&!LibVarChanged("alias"),"nullable aliased replacement preserves old owner/value/flags");
+    failAt=0;LibVarSet("alias",aliased?old+4:"45");Check(!strcmp(variable->string,"45")&&Bits(variable->value)==0x42340000U&&variable->flags==0x1234&&LibVarChanged("alias")&&liveOwners==prior,"aliased replacement retries with native value/flags");
+    LibVarDeAllocAll();Check(!liveOwners,"replacement owners physically release");
+}
+static void InvalidPointers(void) {
+    int prior;libvar_t *variable;OwnerReset();prior=requests;
+    Check(LibVar(NULL,"1")==NULL&&LibVar("new",NULL)==NULL&&!strcmp(LibVarString(NULL,"1"),"")&&Bits(LibVarValue(NULL,"1"))==0,"invalid creation pointers have native missing defaults");
+    LibVarSet(NULL,"1");LibVarSet("new",NULL);Check(!libvarlist&&!liveOwners&&requests==prior,"invalid setter cannot allocate/publish a partial variable");
+    variable=LibVar("existing","2.25");Check(variable!=NULL,"existing cached variable");prior=requests;Check(LibVar("existing",NULL)==variable&&requests==prior,"cached default does not inspect unused null input");
+    LibVarSet("existing",NULL);Check(!strcmp(variable->string,"2.25")&&liveOwners==2,"invalid replacement retains old value");LibVarDeAllocAll();Check(!liveOwners,"invalid pointer cases release valid owners");
+}
+static void Ownership(void) {
+    int method,existing,position;Alias(0);Alias(1);ReplacementFailure(0);ReplacementFailure(1);
+    for(method=0;method<4;method++)for(existing=0;existing<2;existing++)for(position=1;position<=2;position++)NewFailure(method,existing,position);
+    InvalidPointers();
+}
 int main(int argc,char **argv) {
-    if(argc>1){int proof=atoi(argv[1]);if(proof==0)Trailing();else if(proof==1)LongFraction();else if(proof==2)Golden("1.x",0);else if(proof==4)Valid();else {char large[200];memset(large,'9',sizeof(large)-1);large[sizeof(large)-1]=0;Golden(large,0);}}
-    else {Valid();Trailing();LongFraction();Invalid();puts("Native bot numeric grammar, long decimal bounds, values and variable ownership passed (issue #48)");}
+    if(argc>1){int proof=atoi(argv[1]);if(proof==0)Trailing();else if(proof==1)LongFraction();else if(proof==2)Golden("1.x",0);else if(proof==4)Valid();else if(proof==5)Alias(1);else if(proof==6)NewFailure(0,0,1);else if(proof==7)NewFailure(0,0,2);else if(proof==8)ReplacementFailure(0);else {char large[200];memset(large,'9',sizeof(large)-1);large[sizeof(large)-1]=0;Golden(large,0);}}
+    else {Valid();Trailing();LongFraction();Invalid();Ownership();puts("Native bot numeric grammar, long decimal bounds, values and variable ownership passed (issue #48)");}
     return 0;
 }

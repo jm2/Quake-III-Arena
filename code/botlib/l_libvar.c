@@ -78,11 +78,28 @@ float LibVarStringValue(char *string)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
+static char *LibVarCopyString(const char *value)
+{
+	size_t length;
+	char *copy;
+	if (!value) return NULL;
+	length = strlen(value);
+	if (length > (size_t)INT_MAX - 1) return NULL;
+	copy = (char *)GetMemory(length + 1);
+	if (copy) memcpy(copy, value, length + 1);
+	return copy;
+}
+
 libvar_t *LibVarAlloc(char *var_name)
 {
 	libvar_t *v;
+	size_t length;
 
-	v = (libvar_t *) GetMemory(sizeof(libvar_t) + strlen(var_name) + 1);
+	if (!var_name) return NULL;
+	length = strlen(var_name);
+	if (length > (size_t)INT_MAX - sizeof(libvar_t) - 1) return NULL;
+	v = (libvar_t *)GetMemory(sizeof(libvar_t) + length + 1);
+	if (!v) return NULL;
 	Com_Memset(v, 0, sizeof(libvar_t));
 	v->name = (char *) v + sizeof(libvar_t);
 	strcpy(v->name, var_name);
@@ -128,6 +145,7 @@ void LibVarDeAllocAll(void)
 libvar_t *LibVarGet(char *var_name)
 {
 	libvar_t *v;
+	if (!var_name) return NULL;
 
 	for (v = libvarlist; v; v = v->next)
 	{
@@ -151,7 +169,7 @@ char *LibVarGetString(char *var_name)
 	v = LibVarGet(var_name);
 	if (v)
 	{
-		return v->string;
+		return v->string ? v->string : "";
 	} //end if
 	else
 	{
@@ -187,18 +205,18 @@ float LibVarGetValue(char *var_name)
 libvar_t *LibVar(char *var_name, char *value)
 {
 	libvar_t *v;
+	char *copy;
+	if (!var_name) return NULL;
 	v = LibVarGet(var_name);
 	if (v) return v;
-	//create new variable
+	// Complete both owners before a new variable can become visible.
+	copy = LibVarCopyString(value);
+	if (!copy) return NULL;
 	v = LibVarAlloc(var_name);
-	//variable string
-	v->string = (char *) GetMemory(strlen(value) + 1);
-	strcpy(v->string, value);
-	//the value
-	v->value = LibVarStringValue(v->string);
-	//variable is modified
+	if (!v) { FreeMemory(copy); return NULL; }
+	v->string = copy;
+	v->value = LibVarStringValue(copy);
 	v->modified = qtrue;
-	//
 	return v;
 } //end of the function LibVar
 //===========================================================================
@@ -212,7 +230,7 @@ char *LibVarString(char *var_name, char *value)
 	libvar_t *v;
 
 	v = LibVar(var_name, value);
-	return v->string;
+	return v && v->string ? v->string : "";
 } //end of the function LibVarString
 //===========================================================================
 //
@@ -225,7 +243,7 @@ float LibVarValue(char *var_name, char *value)
 	libvar_t *v;
 
 	v = LibVar(var_name, value);
-	return v->value;
+	return v ? v->value : 0;
 } //end of the function LibVarValue
 //===========================================================================
 //
@@ -236,22 +254,20 @@ float LibVarValue(char *var_name, char *value)
 void LibVarSet(char *var_name, char *value)
 {
 	libvar_t *v;
-
+	char *copy;
+	if (!var_name) return;
 	v = LibVarGet(var_name);
-	if (v)
-	{
-		FreeMemory(v->string);
-	} //end if
-	else
+	// Inputs may point into the existing value; clone before its release.
+	copy = LibVarCopyString(value);
+	if (!copy) return;
+	if (!v)
 	{
 		v = LibVarAlloc(var_name);
-	} //end else
-	//variable string
-	v->string = (char *) GetMemory(strlen(value) + 1);
-	strcpy(v->string, value);
-	//the value
-	v->value = LibVarStringValue(v->string);
-	//variable is modified
+		if (!v) { FreeMemory(copy); return; }
+	}
+	else if (v->string) FreeMemory(v->string);
+	v->string = copy;
+	v->value = LibVarStringValue(copy);
 	v->modified = qtrue;
 } //end of the function LibVarSet
 //===========================================================================

@@ -472,3 +472,10 @@ multiple, larger finite inputs and unsupported negative capacity. Original
 float-to-int and signed multiplication overflow proofs fail; checked conversion
 retains successful table initialization and cleanup. This establishes numeric
 representability; aggregate cache RAM/work budget enforcement remains separate.
+
+Libvar regressions also cover whole/interior aliased replacement and nullable
+name/value allocation. Sixteen failed new factory/getter/setter creations with
+and without an existing node, plus two failed replacement variants, preserve
+prior dictionary/value/flags ownership and retry. Invalid pointer inputs have
+native missing-value defaults, and successful cleanup physically frees all
+owners. Auditing every direct pointer-factory consumer remains separate work.
