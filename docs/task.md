@@ -141,7 +141,9 @@ QVMs while any P0 item is open.
       — **high**, deterministic image heap/OOB corruption.
   - [x] BMP headers/palettes/rows use checked byte spans and allocation
         arithmetic, with [host regressions](bmp-cursor-validation.md).
-  - [ ] Replace PCX and TGA decoding and complete deferred retail acceptance.
+  - [x] PCX header/palette/RLE bounds and complete padded rows have
+        [host regressions](pcx-cursor-validation.md).
+  - [ ] Replace TGA decoding and complete deferred retail acceptance.
 - [ ] [#43 — make JPEG I/O length-aware and remove duplicate APIs](https://github.com/jm2/Quake-III-Arena/issues/43)
       — **high**, OOB decode and link-order ambiguity.
   - [x] Local RGBA output sizing/dimension checks fix one overwrite.
