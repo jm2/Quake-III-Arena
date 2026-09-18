@@ -4,13 +4,7 @@ export TMPDIR="${TMPDIR:-/var/tmp}"
 Q3_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 Q3_TEST_DIR="$(mktemp -d -p "${TMPDIR:-/var/tmp}" q3-zip-reopen.XXXXXX)"
 trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
-python3 - "$Q3_TEST_DIR/large.pk3" <<'PY_ZIP'
-import sys, zipfile
-with zipfile.ZipFile(sys.argv[1], "w", compression=zipfile.ZIP_DEFLATED) as archive:
-    with archive.open("large.bin", "w") as entry:
-        for _ in range(32):
-            entry.write(bytes(1024 * 1024))
-PY_ZIP
+python3 "$Q3_TEST_ROOT/tests/create_fs_zip_reopen_fixtures.py" "$Q3_TEST_DIR/large.pk3"
 for Q3_TEST_MODE in normal fast; do
     Q3_TEST_FLAGS=()
     if [[ "$Q3_TEST_MODE" == fast ]]; then Q3_TEST_FLAGS=(-O2 -DNDEBUG -ffast-math); fi
