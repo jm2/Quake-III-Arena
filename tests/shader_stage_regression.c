@@ -197,11 +197,94 @@ static void ConstantVectors(int proof) {
     }
     Release();tr.whiteImage=&white;
 }
+static unsigned int NumericFingerprint(const void *data,size_t size) {
+    const unsigned char *p=data;unsigned int hash=2166136261u;while(size--) {hash^=*p++;hash*=16777619u;}return hash;
+}
+static void WaveModifiers(int proof) {
+    int i,mode,count;char body[4096],*text;shader_t *registered;
+    const char *bad[]={"nan","inf","-inf","1e400","1e39","-1e39"};
+    const char *valid[]={"turb 0.2 0.3 0.4 0.5","scale 0.5 -0.25","scroll 0.5 -0.25","stretch sin 0.2 0.3 0.4 0.5","transform 1 2 3 4 -0.5 0.25","rotate -120.5","entityTranslate"};
+    static const unsigned int tcGolden[]={0x6a70d248,0x378d5e5e,0xd586c719,0x76bc2d66,0xe602d276,0x24c57d34,0x84b4e9e2};
+    static const unsigned int deformGolden[]={0x4a1289c0,0xcde66f33,0x4c9fcd62,0x56d4dbea,0x4c8fbe27,0x104312b3,0x14395e84,0xcbb02c02};
+    const char *broken[]={"turb 0.2 0.3 0.4","scale 0.5","scroll 0.5","stretch sin 0.2 0.3 0.4","transform 1 2 3 4 5","rotate","missingType"};
+    const char *deforms[]={"projectionShadow","autosprite","autosprite2","text7","bulge 1.5 -2.5 3.5","wave 2 sin 0.2 0.3 0.4 0.5","normal 0.5 0.25","move 1 -2 3 sin 0.2 0.3 0.4 0.5"};
+    if(proof>=0 && proof<4) {
+        const char *bodies[]={"map $whiteimage\nrgbGen wave sin 0.2 0.3\n}","map $whiteimage\nrgbGen wave sin nan 0.3 0.4 0.5\n}","map $whiteimage\ntcMod scale nan 1\n}","map $whiteimage\ntcMod scale 0.5\n}"};
+        ResetParser();text=(char*)bodies[proof];Check(!ParseStage(&stages[0],&text),"invalid/missing waveform/modifier fields must reject");return;
+    }
+    for(i=0;i<7;i++) {
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\ntcMod %s\n}",valid[i]);text=body;Check(ParseStage(&stages[0],&text),"native valid texture modifier");
+        if(proof==4)printf("TC %d %08x\n",i,NumericFingerprint(&texMods[0][0],sizeof(texMods[0][0])));
+        else Check(stages[0].bundle[0].numTexMods==1 && NumericFingerprint(&texMods[0][0],sizeof(texMods[0][0]))==tcGolden[i],"complete valid modifier retains stock bytes");
+    }
+    for(i=0;i<8;i++) {
+        ResetParser();snprintf(body,sizeof(body),"{\ndeformVertexes %s\n{\nmap $whiteimage\n}\n}\n",deforms[i]);text=body;Check(ParseShader(&text),"native valid shader deformation");
+        if(proof==4)printf("DEFORM %d %08x\n",i,NumericFingerprint(&shader.deforms[0],sizeof(shader.deforms[0])));
+        else Check(shader.numDeforms==1 && NumericFingerprint(&shader.deforms[0],sizeof(shader.deforms[0]))==deformGolden[i],"complete valid deformation retains stock bytes");
+    }
+    if(proof==4)return;
+    for(count=0;count<2;count++)for(i=0;i<(count?8:7);i++) {
+        char scratch[256],words[12][48],*p;int wordCount=0,j,k;
+        strcpy(scratch,count?deforms[i]:valid[i]);p=scratch;
+        while(1) {char *word=COM_ParseExt(&p,qtrue);if(!word[0])break;Check(wordCount<12,"bounded numeric mutation fixture");Q_strncpyz(words[wordCount++],word,sizeof(words[0]));}
+        for(j=1;j<wordCount;j++)if((words[j][0]>='0' && words[j][0]<='9') || words[j][0]=='-')for(mode=0;mode<6;mode++) {
+            ResetParser();strcpy(body,count?"{\ndeformVertexes ":"map $whiteimage\ntcMod ");
+            for(k=0;k<wordCount;k++) {strcat(body,k==j?bad[mode]:words[k]);strcat(body," ");}
+            strcat(body,count?"\n{\nmap $whiteimage\n}\n}\n":"\n}");text=body;
+            Check(!(count?ParseShader(&text):ParseStage(&stages[0],&text)),"each numeric field in every modifier/deformation type rejects non-finite/overflow");
+            if(!count)Check(!stages[0].bundle[0].numTexMods,"invalid numeric modifier never publishes staging");
+        }
+    }
+    for(count=0;count<4;count++) {
+        const char *partial[]={"sin","sin 0.2","sin 0.2 0.3","sin 0.2 0.3 0.4"};
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nrgbGen wave %s\n}",partial[count]);text=body;Check(!ParseStage(&stages[0],&text),"all incomplete RGB waveform prefixes reject");
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nalphaGen wave %s\n}",partial[count]);text=body;Check(!ParseStage(&stages[0],&text),"all incomplete alpha waveform prefixes reject");
+    }
+    ResetParser();memset(&texMods[0][0],0xa5,sizeof(texMods[0][0]));text="map $whiteimage\ntcMod scale 0.5 -0.25\n}";
+    Check(ParseStage(&stages[0],&text) && NumericFingerprint(&texMods[0][0],sizeof(texMods[0][0]))==tcGolden[1],"complete modifier staging clears stale unused fields");
+    for(count=0;count<3;count++) {
+        const char *zeros[]={"0","-0","garbage"};ResetParser();snprintf(body,sizeof(body),"{\ndeformVertexes wave %s sin 0 1 0 1\n{\nmap $whiteimage\n}\n}\n",zeros[count]);text=body;
+        Check(ParseShader(&text) && shader.deforms[0].deformationSpread==100,"native zero/negative-zero/legacy atof fallback spread remains accepted");
+    }
+    for(mode=0;mode<6;mode++)for(i=0;i<4;i++) {
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nrgbGen wave sin %s %s %s %s\n}",i==0?bad[mode]:"0.2",i==1?bad[mode]:"0.3",i==2?bad[mode]:"0.4",i==3?bad[mode]:"0.5");text=body;
+        Check(!ParseStage(&stages[0],&text),"every non-finite/overflow RGB waveform field rejects");
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nalphaGen wave sin %s %s %s %s\n}",i==0?bad[mode]:"0.2",i==1?bad[mode]:"0.3",i==2?bad[mode]:"0.4",i==3?bad[mode]:"0.5");text=body;Check(!ParseStage(&stages[0],&text),"every non-finite/overflow alpha waveform field rejects");
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\ntcMod turb %s %s %s %s\n}",i==0?bad[mode]:"0.2",i==1?bad[mode]:"0.3",i==2?bad[mode]:"0.4",i==3?bad[mode]:"0.5");text=body;Check(!ParseStage(&stages[0],&text),"every non-finite/overflow turbulent modifier field rejects");
+    }
+    for(i=0;i<7;i++) {
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\ntcMod %s\n}",broken[i]);text=body;
+        Check(!ParseStage(&stages[0],&text) && !stages[0].bundle[0].numTexMods,"incomplete/unknown modifier does not publish a slot");
+    }
+    for(count=0;count<=TR_MAX_TEXMODS+1;count++) {
+        ResetParser();strcpy(body,"map $whiteimage\n");for(i=0;i<count;i++)strcat(body,"tcMod scroll 0.5 -0.25\n");strcat(body,"}");text=body;
+        Check(ParseStage(&stages[0],&text)==(count<=TR_MAX_TEXMODS) && stages[0].bundle[0].numTexMods==(count>TR_MAX_TEXMODS?TR_MAX_TEXMODS:count),"texture modifier count cap precedes access and falls back");
+    }
+    ResetParser();strcpy(body,"map $whiteimage\ntcMod scale 1 1 ");memset(body+strlen(body),'x',1500);body[strlen("map $whiteimage\ntcMod scale 1 1 ")+1500]=0;strcat(body,"\n}");text=body;
+    Check(!ParseStage(&stages[0],&text),"overlong modifier line rejects before truncation");
+    for(mode=0;mode<6;mode++) {
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nanimMap %s fixture.tga\n}",bad[mode]);text=body;Check(!ParseStage(&stages[0],&text),"invalid animation speed rejects");
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nalphaGen portal %s\n}",bad[mode]);text=body;Check(!ParseStage(&stages[0],&text),"invalid portal range rejects");
+        ResetParser();snprintf(body,sizeof(body),"{\ndeformVertexes bulge 1 %s 3\n{\nmap $whiteimage\n}\n}",bad[mode]);text=body;Check(!ParseShader(&text),"invalid deformation field rejects");
+    }
+    ResetParser();text="{\ndeformVertexes wave 1e-320 sin 0 1 0 1\n{\nmap $whiteimage\n}\n}";Check(!ParseShader(&text),"overflowed reciprocal deformation spread rejects");
+    ResetParser();text="{\ndeformVertexes normal 0.5\n{\nmap $whiteimage\n}\n}";Check(!ParseShader(&text),"missing deformation field rejects");
+    for(count=0;count<=MAX_SHADER_DEFORMS+1;count++) {
+        ResetParser();strcpy(body,"{\n");for(i=0;i<count;i++)strcat(body,"deformVertexes autosprite\n");strcat(body,"{\nmap $whiteimage\n}\n}\n");text=body;
+        Check(ParseShader(&text)==(count<=MAX_SHADER_DEFORMS),"deformation cap falls back before out-of-range access");
+    }
+    for(mode=0;mode<4;mode++) {
+        Release();tr.whiteImage=&white;snprintf(archive,sizeof(archive),"tests/material\n{\n%s\n{\nmap $whiteimage\n%s\n}\n}\ntests/following\n{\n{\nmap $whiteimage\n}\n}\n",mode==3?"deformVertexes wave 1e-320 sin 0 1 0 1":"",mode==0?"rgbGen wave sin nan 0.3 0.4 0.5":mode==1?"tcMod scale nan 1":mode==2?"tcMod scale 0.5":"");
+        s_shaderText=archive;registered=R_FindShader("tests/material",LIGHTMAP_NONE,qtrue);Check(registered->defaultShader,"invalid numeric/modifier shader uses native fallback");
+        i=allocations;Check(R_FindShader("tests/material",LIGHTMAP_NONE,qtrue)==registered && i==allocations,"invalid numeric/modifier fallback cached");Check(!R_FindShader("tests/following",LIGHTMAP_NONE,qtrue)->defaultShader,"following definition survives numeric/modifier fallback");
+    }
+    Release();tr.whiteImage=&white;
+}
 int main(int argc,char **argv) {
-	int i;char *text;ri.Printf=Print;ri.Hunk_Alloc=Allocate;ri.CIN_PlayCinematic=Video;tr.whiteImage=&white;
+	int i;char *text;ri.Printf=Print;ri.Hunk_Alloc=Allocate;ri.CIN_PlayCinematic=Video;ri.Error=Com_Error;tr.whiteImage=&white;
 	for(i=0;i<MAX_SHADERTEXT_HASH;i++)shaderTextHashTable[i]=emptyHash;
-	if(argc>1) {ConstantVectors(atoi(argv[1]));Release();return 0;}
-	ConstantVectors(-1);AlphaIdentity();AlphaWaves();FastAlpha();NativeStages();TailCases();
+	if(argc>1) {int proof=atoi(argv[1]);if(proof<3)ConstantVectors(proof);else WaveModifiers(proof-3);Release();return 0;}
+	WaveModifiers(-1);ConstantVectors(-1);AlphaIdentity();AlphaWaves();FastAlpha();NativeStages();TailCases();
 	ResetParser();text="{\nsurfaceParm fog\n}\n";Check(ParseShader(&text),"native zero-stage fog remains valid");
 	ResetParser();text="{\nskyparms - 512 -\n}\n";Check(ParseShader(&text) && shader.isSky,"native zero-stage sky remains valid");
 	Registration();

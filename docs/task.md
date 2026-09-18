@@ -242,7 +242,10 @@ QVMs while any P0 item is open.
   - [x] Archive definitions/index walks stay within their own file and preserve
         native duplicate priority across empty/multiple files; see
         [index isolation evidence](shader-file-index-validation.md).
-  - [ ] Complete remaining shader numeric/semantic checks.
+  - [x] Waveforms, texture modifiers and deformations propagate missing/non-finite
+        fields, check line/count/reciprocal limits and publish complete modifiers;
+        see [numeric staging evidence](shader-wave-texmod-validation.md).
+  - [ ] Complete remaining shader sky/sun/fog/sort and derived rendering checks.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
       — **high**, server OOB access/infinite traversal.
   - [x] Local mover model boundary/look-up fixes cross-build.
