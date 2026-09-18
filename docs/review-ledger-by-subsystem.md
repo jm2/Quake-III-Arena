@@ -483,6 +483,10 @@ implementation or check, without implying issue completion.
         before size subtraction/copy, preserving exact native truncation/NUL
         padding for every valid capacity;
         see [string evidence](bot-character-string-validation.md).
+  - [x] Character numeric fields reject unrepresentable/non-finite floats and
+        oversized native integer words before publication; prior strings/source
+        owners release, while valid float and 32-bit word patterns remain;
+        see [publication evidence](bot-character-numeric-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)

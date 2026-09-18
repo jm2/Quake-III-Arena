@@ -640,3 +640,11 @@ buffers and zero/negative/INT_MIN capacities perform no write or import. Valid
 capacity handle/index/type errors retain native diagnostics and unchanged output.
 Complete character and string owners remain intact until balanced cleanup.
 Both GCC/Clang normal and release fast-math sanitizers run the fixture.
+
+
+The character numeric runner links actual character/source/lexer/libvar/core
+bodies. Finite representable values, full FLT_MAX, subnormal narrowing and native
+signed/unsigned 32-bit integer word patterns retain stored bits. Oversized raw,
+macro and included floats/words reject before character publication, release
+prior strings and all physical source/table/dictionary/token owners, and can
+retry. Both GCC/Clang normal and release fast-math sanitizers run the fixture.

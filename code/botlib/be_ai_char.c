@@ -29,6 +29,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  *****************************************************************************/
 
+#include <float.h>
 #include <limits.h>
 #include "../game/q_shared.h"
 #include "l_log.h"
@@ -349,12 +350,40 @@ bot_character_t *BotLoadCharacterFromFile(char *charfile, int skill)
 					{
 						if (token.subtype & TT_FLOAT)
 						{
-							ch->c[index].value._float = token.floatvalue;
+							float value;
+							if (token.floatvalue < -FLT_MAX || token.floatvalue > FLT_MAX)
+							{
+								SourceError(source, "characteristic float out of range\n");
+								FreeSource(source);
+								BotFreeCharacterStrings(ch);
+								FreeMemory(ch);
+								return NULL;
+							} //end if
+							value = token.floatvalue;
+							if (!BotCharacterFloatFinite(&value))
+							{
+								SourceError(source, "characteristic float is not finite\n");
+								FreeSource(source);
+								BotFreeCharacterStrings(ch);
+								FreeMemory(ch);
+								return NULL;
+							} //end if
+							ch->c[index].value._float = value;
 							ch->c[index].type = CT_FLOAT;
 						} //end if
 						else
 						{
-							ch->c[index].value.integer = token.intvalue;
+							unsigned int value;
+							if (token.intvalue > UINT_MAX)
+							{
+								SourceError(source, "characteristic integer word out of range\n");
+								FreeSource(source);
+								BotFreeCharacterStrings(ch);
+								FreeMemory(ch);
+								return NULL;
+							} //end if
+							value = (unsigned int) token.intvalue;
+							Com_Memcpy(&ch->c[index].value.integer, &value, sizeof(value));
 							ch->c[index].type = CT_INTEGER;
 						} //end else
 					} //end if
