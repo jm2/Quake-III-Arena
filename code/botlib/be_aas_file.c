@@ -518,6 +518,64 @@ static qboolean AAS_ValidateReachability(void)
 	return qtrue;
 }
 
+static qboolean AAS_ValidateClusters(void)
+{
+	int i, side, total = 0;
+	for (i = 0; i < aasworld.numclusters; i++)
+	{
+		aas_cluster_t *cluster = &aasworld.clusters[i];
+		if (cluster->numareas < 0 || cluster->numareas > aasworld.numareas ||
+			cluster->numreachabilityareas < 0 || cluster->numreachabilityareas > cluster->numareas ||
+			!AAS_IndexRange(cluster->firstportal, cluster->numportals, aasworld.portalindexsize) ||
+			cluster->numportals > aasworld.portalindexsize - total) return qfalse;
+		total += cluster->numportals;
+	}
+	for (i = 0; i < aasworld.numportals; i++)
+	{
+		aas_portal_t *portal = &aasworld.portals[i];
+		int clusters[2] = {portal->frontcluster, portal->backcluster};
+		if (portal->areanum < 0 || portal->areanum >= aasworld.numareas ||
+			(i && !portal->areanum)) return qfalse;
+		for (side = 0; side < 2; side++)
+		{
+			int cluster = clusters[side];
+			if (cluster < 0 || cluster >= aasworld.numclusters ||
+				(cluster > 0 && (portal->clusterareanum[side] < 0 ||
+				 portal->clusterareanum[side] >= aasworld.clusters[cluster].numareas)))
+				return qfalse;
+		}
+		// Complete clustering needs both sides and inverse area ownership.
+		if (i && aasworld.numclusters > 1 &&
+			(!portal->frontcluster || !portal->backcluster ||
+			 aasworld.areasettings[portal->areanum].cluster != -i)) return qfalse;
+	}
+	for (i = 0; i < aasworld.portalindexsize; i++)
+		if (aasworld.portalindex[i] < 0 || aasworld.portalindex[i] >= aasworld.numportals)
+			return qfalse;
+	for (i = 0; i < aasworld.numareasettings; i++)
+	{
+		aas_areasettings_t *settings = &aasworld.areasettings[i];
+		int cluster = settings->cluster;
+		if (cluster > 0 && (cluster >= aasworld.numclusters ||
+			settings->clusterareanum < 0 ||
+			settings->clusterareanum >= aasworld.clusters[cluster].numareas)) return qfalse;
+		if (cluster < 0 && (!AAS_SignedIndex(cluster, aasworld.numportals) ||
+			aasworld.portals[-cluster].areanum != i)) return qfalse;
+	}
+	for (i = 1; i < aasworld.numclusters; i++)
+	{
+		aas_cluster_t *cluster = &aasworld.clusters[i];
+		int n;
+		for (n = 0; n < cluster->numportals; n++)
+		{
+			int index = aasworld.portalindex[cluster->firstportal + n];
+			aas_portal_t *portal = &aasworld.portals[index];
+			if (!index || (portal->frontcluster != i && portal->backcluster != i)) return qfalse;
+		}
+	}
+	return qtrue;
+}
+
 int AAS_LoadAASFile(char *filename)
 {
 	fileHandle_t fp;
@@ -664,7 +722,8 @@ int AAS_LoadAASFile(char *filename)
 	if (!aasworld.clusters) { AAS_DumpAASData(); return BLERR_CANNOTREADAASLUMP; }
 	//swap everything
 	AAS_SwapAASData();
-	if (!AAS_ValidateGeometry() || !AAS_ValidateNodes() || !AAS_ValidateReachability()) {
+	if (!AAS_ValidateGeometry() || !AAS_ValidateNodes() ||
+		!AAS_ValidateReachability() || !AAS_ValidateClusters()) {
 		AAS_Error("invalid aas references, numeric fields, spans or node cycles\n");
 		botimport.FS_FCloseFile(fp);
 		AAS_DumpAASData();
