@@ -580,8 +580,8 @@ QVMs while any P0 item is open.
 
 ## Exact continuation point
 
-Current source is master `bae97bac1c59479ae8516cb43ae9a19d723c25a8`, through
-merged #157. The [continuation evidence](review-continuation-2026-09-18.md)
+Current source is master `a0364783c25e7b242e2c0324275cb9df0086239e`, through
+merged #170, with the independent host-timeout step #180. The [continuation evidence](review-continuation-2026-09-18.md)
 records the refreshed 52-issue inventory, pending stack and its current gates.
 All 52 issue-level entries remain open; nested implementation checks cover only
 the stated work. The milestones below retain their dated source evidence.
@@ -589,15 +589,16 @@ the stated work. The milestones below retain their dated source evidence.
 - [x] AAS portal/travel/routing/workspace/cache/init steps #126–#130/#132 and
       native variable/parser/character steps #131/#133–#148 merged
       after exact-head CI, completed clean Codex and resolved bot findings.
-- [x] Source steps #149–#157 merged after four green exact-head CI checks,
-      completed clean Codex and every resolved review finding. #158's later
-      CodeRabbit documentation finding is fixed/resolved with renewed clean
-      Codex; its current-head CI remains required before dependent merges.
+- [x] Source steps #149–#170 merged after four green exact-head CI checks,
+      completed clean Codex and resolved findings. #158's later CodeRabbit
+      documentation finding was fixed before renewed review and fresh CI.
+- [x] Host-timeout step #180 merged after all four CI checks, completed clean
+      Codex and resolved findings; every required check remains mandatory.
 - [ ] Merge eligible independent steps and the pending dependency chain,
       rechecking four successful Portable CI jobs, completed clean current-head
       Codex and all resolved CodeRabbit findings immediately before each merge.
-- [ ] Resolve timed-out host CI through reviewed workflow allowance/checks;
-      #180 increases the accumulated host job limit while keeping all four gates.
+- [ ] Require all fresh CI checks on the workflow-only timeout revisions;
+      product source/PPC evidence is unchanged and renewed Codex is clean.
 - [ ] Continue chat reply/expansion/dictionary/cache consumers, full library/
       world transactions and aggregate resource/work limits; keep broad
       acceptance and deferred live testing open.

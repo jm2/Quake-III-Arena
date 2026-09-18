@@ -116,61 +116,57 @@ compiler fixtures until their dependents no longer need them.
 
 ## Subsequent continuation evidence
 
-Refreshed at 2026-09-18 21:00 UTC, source master `bae97bac1c59479ae8516cb43ae9a19d723c25a8` through #157.
+Refreshed at 2026-09-18 21:26 UTC, source master
+`a0364783c25e7b242e2c0324275cb9df0086239e` through #170 and independent #180.
 The earlier dated snapshot remains historical. All 52 issues remain open.
 
-PRs #149–#157 merged after four green exact-head CI checks, completed clean
-Codex and inspection of every thread/formal CodeRabbit review. A later
-CodeRabbit documentation finding on #158 was fixed and resolved; renewed
-Codex review is clean on `92ac37d41d4bf120b4efe2c153333f4e972c2777`. Its fresh
-CI gate still controls the dependent #159 onward chain.
+PRs #149–#170 and #180 merged after four green exact-head CI checks, completed
+clean Codex and fresh checks of all threads/formal CodeRabbit reviews. #158's
+later documentation finding was fixed and resolved before renewed clean Codex
+and all four fresh CI checks. Source steps #169–#170 preserve the retail void
+import and foreign-engine unknown-variable restart compatibility.
 
-The #176 host job also exceeded ten minutes. Matching #180, workflow-only
-thirty-minute allowances are on #172–#179/#181/#183/#184. Each received renewed
-completed clean Codex review on its new head with no unresolved findings.
-Product source/PPC evidence is unchanged; each new head requires all four CI
-jobs. #171's single long-queued scripts job received one failed-job retry,
-retaining its other three successful checks; no merge skips its final gate.
+Workflow-only thirty-minute host allowances are on #172–#179/#181/#183/#184,
+with renewed completed clean Codex and no unresolved findings. Product source/PPC
+evidence is unchanged; each new head requires all four fresh CI jobs. #171's
+single long-queued scripts job received one failed-job retry, retaining its other
+three successful checks; no merge skips its final gate.
 
-#183 guards remaining reply/initial/match consumers; #184 bounds combined
-optional variables; #185 stages validated complete encoded construction and
-line timing; #186 stages encoded-message components by actual cost. Each has
-original failures and separate native goldens, six-mode Clang/GCC and both
-zero-diagnostic PPC products, completed clean current-head Codex and resolved
-threads. #187 stages complete aligned random dictionaries; 56 nullable imports,
-second-pass/source rollback, 96 original failures and twelve native goldens
-pass, with both PPC products. Its completed clean bot review and CI remain
-required before merging.
+#183–#186 cover remaining chat consumers, combined variables, complete encoded
+construction/timing and measured message components. #187 stages aligned random
+dictionaries. #188 owns checked complete match pieces and keeps the source
+borrowed; CodeRabbit completed with no actionable comments and Codex is clean.
+#189 loads checked complete template containers and requires every context
+closure; Codex completed clean. Each has original failure proofs, separate native
+goldens, six-mode Clang/GCC checks and both zero-diagnostic PPC products. #187's
+Codex is also clean. Their four-job CI/dependency gates remain mandatory.
+
+#190 is open for complete reply dictionaries, nullable private owners, bounded
+combined bot names, source-error rejection and priorities representable by public
+selection. It has 198 nullable checks, 120 original failure proofs, twelve native
+goldens, six-mode Clang/GCC checks and both zero-diagnostic PPC products. Its
+current-head completed clean review remains required; it is pending at this
+snapshot. Complete initial/cache/library/world publication and aggregate parser/
+work/memory budgets remain separate work. Retail/Mac OS 9 execution is deferred.
 
 | PR | Current head | Successful Portable CI checks |
 | --- | --- | ---: |
-| #158 | `92ac37d41d4bf120b4efe2c153333f4e972c2777` | 0/4 |
-| #159 | `05dc84e072dbe64f461f015ffd3a4c1d21e07a77` | 4/4 |
-| #160 | `8f8a36781c0db3dfc8414a316f6da4ed31ac5648` | 4/4 |
-| #161 | `38ee5fdad8473ddc5a09d00724569497fca34e21` | 4/4 |
-| #162 | `a282c46d7917019023f7f10af358de661adc38c5` | 4/4 |
-| #163 | `9877c1991bb38c326393453c01cadb6af4e141c7` | 4/4 |
-| #164 | `beb95f8d9e1ff5052ab56161a735372d947b2189` | 4/4 |
-| #165 | `1d10a6267b15dc9bcdd79aa1a21ebe155355b3e8` | 4/4 |
-| #166 | `7ce5c909372ad5a4b3534fc8c5645ea78388504c` | 4/4 |
-| #167 | `9d1811d3468ee875c4ee6c11cb0f030fb23e9292` | 4/4 |
-| #168 | `617a6e8a4b297fc8abd1d7a90195ee116b7780ca` | 4/4 |
-| #169 | `cd4cb789fa15855ac70f407cc44c3f17dbf811d5` | 3/4 |
-| #170 | `8f16b45bee908c7602136f0ef85ea987d44d9099` | 4/4 |
 | #171 | `a4584211aa1a9eafae0c98f9e16de70825108787` | 3/4 |
-| #172 | `7a16e7735ea3d27384cc5d2c5cd70f84329cbf3b` | 0/4 |
+| #172 | `7a16e7735ea3d27384cc5d2c5cd70f84329cbf3b` | 1/4 |
 | #173 | `a97619f4c387a4f9ac109df6e316c60536bcfc39` | 0/4 |
-| #174 | `14523b3a211e8d506f6152604794ec65969fa96a` | 0/4 |
+| #174 | `14523b3a211e8d506f6152604794ec65969fa96a` | 1/4 |
 | #175 | `d9e3236a105ccb8e85459cf248e56334f2bd58da` | 0/4 |
 | #176 | `ba2d426e85a7121321b3feeb0b524f17e437cf5d` | 0/4 |
 | #177 | `a86892d86e04804548aef91aff8de62b1588b90e` | 0/4 |
 | #178 | `5f9f557d5ab406bd439737b57d4db70162142b6f` | 0/4 |
-| #179 | `5d9a47f4fb8a7bd0f9eb85b02914af595afb36db` | 0/4 |
-| #180 | `3baa7ff5c6cb3d8602f176821e938b58377c1f71` | 1/4 |
-| #181 | `494e70e6099d81b2d58f9ea8cbe27b5497aab8da` | 0/4 |
-| #182 | `106f7d94ac7d4a6997d36ada42e319562dff9ff8` | 0/4 |
+| #179 | `5d9a47f4fb8a7bd0f9eb85b02914af595afb36db` | 2/4 |
+| #181 | `494e70e6099d81b2d58f9ea8cbe27b5497aab8da` | 1/4 |
+| #182 | `13a5447e00f0aaf922ad6a4cd1792beca9bc4bf9` | 0/4 |
 | #183 | `09c2b22ecbf182d4091d5e2e9d378c27b270ced9` | 0/4 |
 | #184 | `f153e8944ea8bbe5a7a9e0096cf9cbc4b625ac7b` | 0/4 |
 | #185 | `431c889f467c7eff0737360ece35e2a5b0f6e1d9` | 0/4 |
 | #186 | `22cee573d7e6c3dfff95733d406c6e8d50c7d74d` | 0/4 |
 | #187 | `942999b901493d972979b62c31c352f64c070b68` | 0/4 |
+| #188 | `d9e4746a260589d6c9cf5a7d614784da02cf5ee2` | 0/4 |
+| #189 | `efecb0331d36e148a3ed4e392d8804b1a5f91016` | 0/4 |
+| #190 | `4b1bcaeae12c23c634cc97ee37dd9824a662ee03` | 0/4 |
