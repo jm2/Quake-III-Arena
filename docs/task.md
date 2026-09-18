@@ -453,6 +453,10 @@ QVMs while any P0 item is open.
   - [x] Entity proximity compares both float coordinate magnitudes directly;
         defined native constant-40 decisions remain and unsafe integer casts
         disappear; see [proximity evidence](aas-nearest-distance-validation.md).
+  - [x] Action setup stages complete input storage before replacing pointer/
+        actual capacity; nullable failure preserves usable prior payload, and
+        successful replacement releases its logical allocator record;
+        see [action setup evidence](bot-action-setup-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
