@@ -584,6 +584,9 @@ typedef struct srfGridMesh_s {
 	float			lodRadius;
 	int				lodFixed;
 	int				lodStitched;
+	// Private temporary continuation during load-time LOD propagation.
+	struct srfGridMesh_s *lodParent;
+	int lodNextSurface;
 
 	// vertexes
 	int				width, height;
