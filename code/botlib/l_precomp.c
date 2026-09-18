@@ -38,6 +38,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //#define QUAKEC
 //#define MEQCC
 
+#include <float.h>
+
 #ifdef SCREWUP
 #include <stdio.h>
 #include <stdlib.h>
@@ -1730,6 +1732,58 @@ typedef struct operator_s
 	struct operator_s *prev, *next;
 } operator_t;
 
+static int PC_EvalFloatFinite(const double *value)
+{
+	unsigned long long bits;
+	volatile unsigned long long representation;
+	Com_Memcpy(&bits, value, sizeof(bits));
+	representation = bits;
+	return (representation & 0x7ff0000000000000ULL) != 0x7ff0000000000000ULL;
+}
+
+static int PC_EvalAdd(long a, long b, long *out)
+{
+	if ((b > 0 && a > LONG_MAX - b) || (b < 0 && a < LONG_MIN - b)) return qfalse;
+	*out = a + b;
+	return qtrue;
+}
+
+static int PC_EvalSubtract(long a, long b, long *out)
+{
+	if ((b < 0 && a > LONG_MAX + b) || (b > 0 && a < LONG_MIN + b)) return qfalse;
+	*out = a - b;
+	return qtrue;
+}
+
+static int PC_EvalMultiply(long a, long b, long *out)
+{
+	unsigned long left = (unsigned long)a, right = (unsigned long)b, word, limit;
+	int negative = (a < 0) != (b < 0);
+	if (a < 0) left = 0UL - left;
+	if (b < 0) right = 0UL - right;
+	limit = (unsigned long)LONG_MAX + (negative ? 1UL : 0UL);
+	if (right && left > limit / right) return qfalse;
+	word = left * right;
+	if (negative) word = 0UL - word;
+	Com_Memcpy(out, &word, sizeof(word));
+	return qtrue;
+}
+
+static int PC_EvalShift(long value, long count, int right, long *out)
+{
+	unsigned long word = (unsigned long)value;
+	int width = sizeof(word) * CHAR_BIT;
+	if (count < 0 || count >= width) return qfalse;
+	if (right)
+	{
+		word >>= count;
+		if (value < 0 && count) word |= ~0UL << (width - count);
+	} //end if
+	else word <<= count;
+	Com_Memcpy(out, &word, sizeof(word));
+	return qtrue;
+}
+
 typedef struct value_s
 {
 	signed long int intvalue;
@@ -1811,7 +1865,7 @@ int PC_EvaluateTokens(source_t *source, token_t *tokens, signed long int *intval
 	int error = 0;
 	int lastwasvalue = 0;
 	int negativevalue = 0;
-	int questmarkintvalue = 0;
+	signed long int questmarkintvalue = 0;
 	double questmarkfloatvalue = 0;
 	int gotquestmarkvalue = qfalse;
 	int lastoperatortype = 0;
@@ -1908,16 +1962,31 @@ int PC_EvaluateTokens(source_t *source, token_t *tokens, signed long int *intval
 				} //end if
 				//v = (value_t *) GetClearedMemory(sizeof(value_t));
 				AllocValue(v);
-				if (negativevalue)
+				if (integer)
 				{
-					v->intvalue = - (signed int) t->intvalue;
-					v->floatvalue = - t->floatvalue;
+					if (negativevalue)
+					{
+						unsigned int word = 0u - (unsigned int)t->intvalue;
+						signed int native;
+						Com_Memcpy(&native, &word, sizeof(word));
+						v->intvalue = native;
+					} //end if
+					else Com_Memcpy(&v->intvalue, &t->intvalue, sizeof(v->intvalue));
 				} //end if
-				else
+				else v->intvalue = 0;
+				if (!(t->floatvalue >= -DBL_MAX && t->floatvalue <= DBL_MAX))
 				{
-					v->intvalue = t->intvalue;
-					v->floatvalue = t->floatvalue;
-				} //end else
+					SourceError(source, "expression operand exceeds double range");
+					error = 1;
+					break;
+				} //end if
+				v->floatvalue = negativevalue ? -t->floatvalue : t->floatvalue;
+				if (!integer && !PC_EvalFloatFinite(&v->floatvalue))
+				{
+					SourceError(source, "expression operand is not finite");
+					error = 1;
+					break;
+				} //end if
 				v->parentheses = parentheses;
 				v->next = NULL;
 				v->prev = lastvalue;
@@ -2124,15 +2193,29 @@ int PC_EvaluateTokens(source_t *source, token_t *tokens, signed long int *intval
 									v1->floatvalue = !v1->floatvalue; break;
 			case P_BIN_NOT:			v1->intvalue = ~v1->intvalue;
 									break;
-			case P_MUL:				v1->intvalue *= v2->intvalue;
+			case P_MUL:				if (integer && !PC_EvalMultiply(v1->intvalue, v2->intvalue, &v1->intvalue))
+									{
+										SourceError(source, "integer expression multiplication overflow");
+										error = 1;
+										break;
+									}
 									v1->floatvalue *= v2->floatvalue; break;
-			case P_DIV:				if (!v2->intvalue || !v2->floatvalue)
+			case P_DIV:				if ((integer && !v2->intvalue) || (!integer && !v2->floatvalue))
 									{
 										SourceError(source, "divide by zero in #if/#elif\n");
 										error = 1;
 										break;
 									}
-									v1->intvalue /= v2->intvalue;
+									if (integer)
+									{
+										if (v1->intvalue == LONG_MIN && v2->intvalue == -1)
+										{
+											SourceError(source, "integer expression division overflow");
+											error = 1;
+											break;
+										}
+										v1->intvalue /= v2->intvalue;
+									}
 									v1->floatvalue /= v2->floatvalue; break;
 			case P_MOD:				if (!v2->intvalue)
 									{
@@ -2140,10 +2223,26 @@ int PC_EvaluateTokens(source_t *source, token_t *tokens, signed long int *intval
 										error = 1;
 										break;
 									}
+									if (v1->intvalue == LONG_MIN && v2->intvalue == -1)
+									{
+										SourceError(source, "integer expression remainder overflow");
+										error = 1;
+										break;
+									}
 									v1->intvalue %= v2->intvalue; break;
-			case P_ADD:				v1->intvalue += v2->intvalue;
+			case P_ADD:				if (integer && !PC_EvalAdd(v1->intvalue, v2->intvalue, &v1->intvalue))
+									{
+										SourceError(source, "integer expression addition overflow");
+										error = 1;
+										break;
+									}
 									v1->floatvalue += v2->floatvalue; break;
-			case P_SUB:				v1->intvalue -= v2->intvalue;
+			case P_SUB:				if (integer && !PC_EvalSubtract(v1->intvalue, v2->intvalue, &v1->intvalue))
+									{
+										SourceError(source, "integer expression subtraction overflow");
+										error = 1;
+										break;
+									}
 									v1->floatvalue -= v2->floatvalue; break;
 			case P_LOGIC_AND:		v1->intvalue = v1->intvalue && v2->intvalue;
 									v1->floatvalue = v1->floatvalue && v2->floatvalue; break;
@@ -2161,9 +2260,19 @@ int PC_EvaluateTokens(source_t *source, token_t *tokens, signed long int *intval
 									v1->floatvalue = v1->floatvalue > v2->floatvalue; break;
 			case P_LOGIC_LESS:		v1->intvalue = v1->intvalue < v2->intvalue;
 									v1->floatvalue = v1->floatvalue < v2->floatvalue; break;
-			case P_RSHIFT:			v1->intvalue >>= v2->intvalue;
+			case P_RSHIFT:			if (!PC_EvalShift(v1->intvalue, v2->intvalue, qtrue, &v1->intvalue))
+									{
+										SourceError(source, "invalid expression right shift");
+										error = 1;
+										break;
+									}
 									break;
-			case P_LSHIFT:			v1->intvalue <<= v2->intvalue;
+			case P_LSHIFT:			if (!PC_EvalShift(v1->intvalue, v2->intvalue, qfalse, &v1->intvalue))
+									{
+										SourceError(source, "invalid expression left shift");
+										error = 1;
+										break;
+									}
 									break;
 			case P_BIN_AND:			v1->intvalue &= v2->intvalue;
 									break;
@@ -2204,6 +2313,11 @@ int PC_EvaluateTokens(source_t *source, token_t *tokens, signed long int *intval
 				break;
 			} //end if
 		} //end switch
+		if (!error && !integer && !PC_EvalFloatFinite(&v1->floatvalue))
+		{
+			SourceError(source, "floating expression result is not finite");
+			error = 1;
+		} //end if
 #ifdef DEBUG_EVAL
 		if (integer) Log_Write("result value = %d", v1->intvalue);
 		else Log_Write("result value = %f", v1->floatvalue);
@@ -2663,13 +2777,9 @@ static int PC_IntegerEvalToken(source_t *source, signed long value)
 static int PC_FloatEvalToken(source_t *source, double value)
 {
 	token_t token;
-	unsigned long long bits;
-	volatile unsigned long long representation;
 	double magnitude;
 	int length;
-	Com_Memcpy(&bits, &value, sizeof(bits));
-	representation = bits;
-	if ((representation & 0x7ff0000000000000ULL) == 0x7ff0000000000000ULL)
+	if (!PC_EvalFloatFinite(&value))
 	{
 		SourceError(source, "expression result is not finite");
 		return qfalse;

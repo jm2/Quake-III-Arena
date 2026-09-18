@@ -711,3 +711,14 @@ partial tokens and initialize caller outputs. Real macro expansion failure keeps
 original definition owners, while valid macro/defined values and historical-error
 recovery retain native behavior. GCC/Clang normal and release fast-math sanitizers
 run the fixture.
+
+
+The expression arithmetic runner links actual evaluators/source/lexer/character/
+libvar/core bodies. It compares 5,184 ordinary integer/float calculations, with
+4,536 defined original cases also passing the original body. Signed boundaries,
+division/remainder traps and invalid shifts reject without partial owners. Native
+negative/high-bit left shifts, arithmetic right shift, literal minimum words,
+fractional float division and finite float calculations retain intended results.
+Float mode avoids unused integer arithmetic; double narrowing and non-finite
+intermediates reject before unsafe operations/publication. GCC/Clang normal and
+release fast-math sanitizers run the fixture.

@@ -514,7 +514,12 @@ implementation or check, without implying issue completion.
         grammar before publication, and retain valid macro/defined values and
         historical source-error recovery;
         see [operand evidence](bot-eval-collection-validation.md).
-  - [ ] Finish expression bounds, remaining character/source allocation
+  - [x] Selected expression arithmetic checks signed add/subtract/multiply and
+        division/remainder traps, validates shifts with native word semantics,
+        avoids unused integer operations in float mode and rejects non-finite
+        operands/results before publication; fractional float division remains;
+        see [arithmetic evidence](bot-eval-arithmetic-validation.md).
+  - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
   - [x] Local pool/type/item/string checks, reload-name initialization, and
