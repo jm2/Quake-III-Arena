@@ -164,6 +164,10 @@ PR head while retaining checks on the merged default branch.
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
 
+The native skin runner exercises complete default/plain surface allocations,
+name and 32-surface/token boundaries, malformed exact input prefixes, file
+ownership and valid/default cache reuse through the actual entry points.
+
 ## Run the portable checks locally
 
 ```sh
@@ -209,6 +213,7 @@ bash tests/run_bsp_winding_tests.sh
 bash tests/run_hunk_allocation_tests.sh
 bash tests/run_bsp_lod_tests.sh
 bash tests/run_shader_stage_tests.sh
+bash tests/run_skin_capacity_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 

@@ -323,8 +323,11 @@ implementation or check, without implying issue completion.
   - [x] Shader stage capacity checks precede native array access and rejected
         definitions preserve following parse/index/cache behavior; see
         [stage evidence](shader-stage-validation.md).
-  - [ ] Complete skin/font bounds and ownership, including complete single-shader
-        surface allocation, and remaining shader semantic/file-allocation checks.
+  - [x] Default/single-shader skins allocate complete native surfaces; safe
+        names, 32-surface/token limits and balanced file ownership have
+        [native skin evidence](skin-capacity-validation.md).
+  - [ ] Complete font bounds/layout/ownership and remaining shader
+        semantic/file-allocation checks.
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.
   - [ ] Validate the complete file and graph before setting `loaded`.

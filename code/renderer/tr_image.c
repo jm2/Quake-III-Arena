@@ -1236,105 +1236,57 @@ This is unfortunate, but the skin files aren't
 compatable with our normal parsing rules.
 ==================
 */
-static char *CommaParse( char **data_p ) {
-	int c = 0, len;
-	char *data;
-	static	char	com_token[MAX_TOKEN_CHARS];
+static char *CommaParse( char **data_p, qboolean *invalid ) {
+	int c, len = 0;
+	char *data = *data_p;
+	static char com_token[MAX_TOKEN_CHARS];
 
-	data = *data_p;
-	len = 0;
 	com_token[0] = 0;
+	if ( !data ) return com_token;
 
-	// make sure incoming data is valid
-	if ( !data ) {
+	while ( 1 ) {
+		while ( *data && *data <= ' ' ) data++;
+		if ( data[0] == '/' && data[1] == '/' ) {
+			while ( *data && *data != '\n' ) data++;
+		} else if ( data[0] == '/' && data[1] == '*' ) {
+			data += 2;
+			while ( *data && !(data[0] == '*' && data[1] == '/') ) data++;
+			if ( !*data ) goto malformed;
+			data += 2;
+		} else break;
+	}
+
+	if ( !*data ) {
 		*data_p = NULL;
 		return com_token;
 	}
 
-	while ( 1 ) {
-		// skip whitespace
-		while( (c = *data) <= ' ') {
-			if( !c ) {
-				break;
-			}
-			data++;
-		}
-
-
-		c = *data;
-
-		// skip double slash comments
-		if ( c == '/' && data[1] == '/' )
-		{
-			while (*data && *data != '\n')
-				data++;
-		}
-		// skip /* */ comments
-		else if ( c=='/' && data[1] == '*' ) 
-		{
-			while ( *data && ( *data != '*' || data[1] != '/' ) ) 
-			{
-				data++;
-			}
-			if ( *data ) 
-			{
-				data += 2;
-			}
-		}
-		else
-		{
-			break;
-		}
-	}
-
-	if ( c == 0 ) {
-		return "";
-	}
-
-	// handle quoted strings
-	if (c == '\"')
-	{
+	if ( *data == '"' ) {
 		data++;
-		while (1)
-		{
-			c = *data++;
-			if (c=='\"' || !c)
-			{
-				com_token[len] = 0;
-				*data_p = ( char * ) data;
-				return com_token;
-			}
-			if (len < MAX_TOKEN_CHARS)
-			{
-				com_token[len] = c;
-				len++;
-			}
+		while ( *data && *data != '"' ) {
+			if ( len == MAX_TOKEN_CHARS - 1 ) goto malformed;
+			com_token[len++] = *data++;
 		}
-	}
-
-	// parse a regular word
-	do
-	{
-		if (len < MAX_TOKEN_CHARS)
-		{
-			com_token[len] = c;
-			len++;
-		}
+		if ( !*data ) goto malformed;
 		data++;
-		c = *data;
-	} while (c>32 && c != ',' );
-
-	if (len == MAX_TOKEN_CHARS)
-	{
-//		Com_Printf ("Token exceeded %i chars, discarded.\n", MAX_TOKEN_CHARS);
-		len = 0;
+	} else {
+		do {
+			if ( len == MAX_TOKEN_CHARS - 1 ) goto malformed;
+			com_token[len++] = *data++;
+			c = *data;
+		} while ( c > ' ' && c != ',' );
 	}
+
 	com_token[len] = 0;
+	*data_p = data;
+	return com_token;
 
-	*data_p = ( char * ) data;
+malformed:
+	*invalid = qtrue;
+	*data_p = NULL;
+	com_token[0] = 0;
 	return com_token;
 }
-
 
 /*
 ===============
@@ -1349,13 +1301,16 @@ qhandle_t RE_RegisterSkin( const char *name ) {
 	char		*text, *text_p;
 	char		*token;
 	char		surfName[MAX_QPATH];
+	size_t		nameLength;
+	qboolean	invalid = qfalse;
 
 	if ( !name || !name[0] ) {
 		Com_Printf( "Empty name passed to RE_RegisterSkin\n" );
 		return 0;
 	}
 
-	if ( strlen( name ) >= MAX_QPATH ) {
+	nameLength = strlen( name );
+	if ( nameLength >= MAX_QPATH ) {
 		Com_Printf( "Skin name exceeds MAX_QPATH\n" );
 		return 0;
 	}
@@ -1387,9 +1342,9 @@ qhandle_t RE_RegisterSkin( const char *name ) {
 	R_SyncRenderThread();
 
 	// If not a .skin file, load as a single shader
-	if ( strcmp( name + strlen( name ) - 5, ".skin" ) ) {
+	if ( nameLength < 5 || strcmp( name + nameLength - 5, ".skin" ) ) {
 		skin->numSurfaces = 1;
-		skin->surfaces[0] = ri.Hunk_Alloc( sizeof(skin->surfaces[0]), h_low );
+		skin->surfaces[0] = ri.Hunk_Alloc( sizeof(*skin->surfaces[0]), h_low );
 		skin->surfaces[0]->shader = R_FindShader( name, LIGHTMAP_NONE, qtrue );
 		return hSkin;
 	}
@@ -1403,7 +1358,7 @@ qhandle_t RE_RegisterSkin( const char *name ) {
 	text_p = text;
 	while ( text_p && *text_p ) {
 		// get surface name
-		token = CommaParse( &text_p );
+		token = CommaParse( &text_p, &invalid );
 		Q_strncpyz( surfName, token, sizeof( surfName ) );
 
 		if ( !token[0] ) {
@@ -1412,7 +1367,7 @@ qhandle_t RE_RegisterSkin( const char *name ) {
 		// lowercase the surface name so skin compares are faster
 		Q_strlwr( surfName );
 
-		if ( *text_p == ',' ) {
+		if ( text_p && *text_p == ',' ) {
 			text_p++;
 		}
 
@@ -1420,8 +1375,17 @@ qhandle_t RE_RegisterSkin( const char *name ) {
 			continue;
 		}
 		
+		if ( skin->numSurfaces == MD3_MAX_SURFACES ) {
+			invalid = qtrue;
+			break;
+		}
+
 		// parse the shader name
-		token = CommaParse( &text_p );
+		token = CommaParse( &text_p, &invalid );
+		if ( !token[0] ) {
+			invalid = qtrue;
+			break;
+		}
 
 		surf = skin->surfaces[ skin->numSurfaces ] = ri.Hunk_Alloc( sizeof( *skin->surfaces[0] ), h_low );
 		Q_strncpyz( surf->name, surfName, sizeof( surf->name ) );
@@ -1430,7 +1394,7 @@ qhandle_t RE_RegisterSkin( const char *name ) {
 	}
 
 	ri.FS_FreeFile( text );
-
+	if ( invalid ) skin->numSurfaces = 0;
 
 	// never let a skin have 0 shaders
 	if ( skin->numSurfaces == 0 ) {
@@ -1455,7 +1419,7 @@ void	R_InitSkins( void ) {
 	skin = tr.skins[0] = ri.Hunk_Alloc( sizeof( skin_t ), h_low );
 	Q_strncpyz( skin->name, "<default skin>", sizeof( skin->name )  );
 	skin->numSurfaces = 1;
-	skin->surfaces[0] = ri.Hunk_Alloc( sizeof( *skin->surfaces ), h_low );
+	skin->surfaces[0] = ri.Hunk_Alloc( sizeof( *skin->surfaces[0] ), h_low );
 	skin->surfaces[0]->shader = tr.defaultShader;
 }
 
