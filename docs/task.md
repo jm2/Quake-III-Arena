@@ -227,7 +227,10 @@ QVMs while any P0 item is open.
   - [x] Identity alpha and multitexture alpha-wave checks use their native
         alpha enums; [semantic evidence](shader-alpha-validation.md) retains
         distinct waveform passes and removes the two host enum warnings.
-  - [ ] Complete FreeType generation ownership and remaining shader
+  - [x] Enabled native FreeType flow releases faces before backing input and
+        balances temporary bitmap/page ownership on controlled failures; see
+        [ownership evidence](font-freetype-ownership-validation.md).
+  - [ ] Complete FreeType numeric/atlas/layout checks and remaining shader
         semantic/file-allocation checks.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
       — **high**, server OOB access/infinite traversal.
