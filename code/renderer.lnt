@@ -8,6 +8,7 @@ renderer\tr_draw.c
 renderer\tr_image.c
 renderer\tr_image_bmp.c
 renderer\tr_image_pcx.c
+renderer\tr_image_tga.c
 renderer\tr_init.c
 renderer\tr_light.c
 renderer\tr_main.c

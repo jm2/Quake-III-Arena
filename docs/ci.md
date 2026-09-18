@@ -92,7 +92,10 @@ PR head while retaining checks on the merged default branch.
     orientation, extended headers, dimensions, and cleanup before errors;
   - checks the actual PCX loader with exact input/output allocations, every
     small-file truncation, all palette colors, literals/runs, padded scanlines,
-    extents, maximum dimensions, and nonfatal failure ownership.
+    extents, maximum dimensions, and nonfatal failure ownership;
+  - checks the actual TGA loader at four alignments with every small-file
+    prefix, raw/gray/RLE pixels, IDs, packets crossing rows, native origin
+    behavior, extreme dimensions, and cleanup before errors.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -124,6 +127,7 @@ bash tests/run_roq_frame_tests.sh
 bash tests/run_roq_vq_tests.sh
 bash tests/run_bmp_cursor_tests.sh
 bash tests/run_pcx_cursor_tests.sh
+bash tests/run_tga_cursor_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
