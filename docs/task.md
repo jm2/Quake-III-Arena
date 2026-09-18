@@ -271,6 +271,9 @@ QVMs while any P0 item is open.
   - [x] AAS v4/v5 header/lump preflight precedes world reset; exact reads,
         seeks and allocation failures close once and clear partial logical
         owners; see [AAS layout evidence](aas-layout-validation.md).
+  - [x] Bbox coordinates use float endian conversion; independent native/swapped
+        models retain fractions, signed zero, finite extremes and existing
+        uint16 travel-time conversion; see [endian evidence](aas-endian-validation.md).
   - [ ] Validate the entire AAS file and graph before setting `loaded`.
 - [ ] [#48 — bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48)
       — **high**, parser fixed-buffer corruption/invalid cleanup.

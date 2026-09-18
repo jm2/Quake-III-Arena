@@ -376,6 +376,9 @@ implementation or check, without implying issue completion.
   - [x] AAS v4/v5 header/lump preflight precedes world reset; exact reads,
         seeks and allocation failures close once and clear partial logical
         owners; see [AAS layout evidence](aas-layout-validation.md).
+  - [x] Bbox float endian conversion retains fractional and finite extreme
+        coordinates in independent endian models; existing uint16 travel-time
+        swap remains unchanged; see [endian evidence](aas-endian-validation.md).
   - [ ] Validate the complete file and graph before setting `loaded`.
 - [ ] [#48 — bot preprocessor/token/path bounds](https://github.com/jm2/Quake-III-Arena/issues/48)
   - [x] Several upstream primitive/preprocessor/diagnostic bounds fixes are
