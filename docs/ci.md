@@ -736,3 +736,14 @@ cross-script replacement without touching an enclosing frame. Six pre-review
 proofs reproduce these failures. Real nested else/elif source conditionals and
 unread order pass original goldens. GCC/Clang normal and release
 fast-math sanitizers run the fixture.
+
+The definition runner links real macro/source/expression/lexer/libvar/character
+bodies and physical heap callbacks. Twenty-nine original actual-body proofs expose
+partial new/replacement definitions, external-factory leaks, nullable imports,
+lexical-prefix publication and prior-name parameter expansion. Fourteen malformed
+new/replacement cases preserve complete hash/header/name/token bytes and release
+staged owners. All seven new/replacement imports and nine external imports fail
+cleanly; the native 128-parameter capacity remains and 129 rejects. Original valid
+object/function/replacement/empty-marker/external macros pass separately. GCC and
+Clang run normal and release fast-math checks. Empty macro invocation is a separate
+source-reader defect, retained as outstanding work rather than claimed covered.

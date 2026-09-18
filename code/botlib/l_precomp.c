@@ -1290,87 +1290,87 @@ int PC_Directive_undef(source_t *source)
 int PC_Directive_define(source_t *source)
 {
 	token_t token, *t, *last;
-	define_t *define;
+	define_t *define = NULL, *previous;
+	unsigned int errorsequence = source->errorsequence;
 
 	if (source->skip > 0) return qtrue;
 	//
 	if (!PC_ReadLine(source, &token))
 	{
 		SourceError(source, "#define without name");
-		return qfalse;
+		goto failed;
 	} //end if
 	if (token.type != TT_NAME)
 	{
 		PC_UnreadSourceToken(source, &token);
 		SourceError(source, "expected name after #define, found %s", token.string);
-		return qfalse;
+		goto failed;
 	} //end if
 	//check if the define already exists
 #if DEFINEHASHING
-	define = PC_FindHashedDefine(source->definehash, token.string);
+	previous = PC_FindHashedDefine(source->definehash, token.string);
 #else
-	define = PC_FindDefine(source->defines, token.string);
+	previous = PC_FindDefine(source->defines, token.string);
 #endif //DEFINEHASHING
-	if (define)
+	if (previous)
 	{
-		if (define->flags & DEFINE_FIXED)
+		if (previous->flags & DEFINE_FIXED)
 		{
 			SourceError(source, "can't redefine %s", token.string);
-			return qfalse;
+			goto failed;
 		} //end if
 		SourceWarning(source, "redefinition of %s", token.string);
-		//unread the define name before executing the #undef directive
-		PC_UnreadSourceToken(source, &token);
-		if (!PC_Directive_undef(source)) return qfalse;
-		//if the define was not removed (define->flags & DEFINE_FIXED)
-#if DEFINEHASHING
-		define = PC_FindHashedDefine(source->definehash, token.string);
-#else
-		define = PC_FindDefine(source->defines, token.string);
-#endif //DEFINEHASHING
 	} //end if
 	//allocate define
 	define = (define_t *) GetMemory(sizeof(define_t) + strlen(token.string) + 1);
+	if (!define)
+	{
+		SourceError(source, "could not allocate definition");
+		goto failed;
+	} //end if
 	Com_Memset(define, 0, sizeof(define_t));
 	define->name = (char *) define + sizeof(define_t);
 	strcpy(define->name, token.string);
-	//add the define to the source
-#if DEFINEHASHING
-	PC_AddDefineToHash(define, source->definehash);
-#else //DEFINEHASHING
-	define->next = source->defines;
-	source->defines = define;
-#endif //DEFINEHASHING
 	//if nothing is defined, just return
-	if (!PC_ReadLine(source, &token)) return qtrue;
+	if (!PC_ReadLine(source, &token)) goto publish;
 	//if it is a define with parameters
 	if (!PC_WhiteSpaceBeforeToken(&token) && !strcmp(token.string, "("))
 	{
 		//read the define parameters
 		last = NULL;
-		if (!PC_CheckTokenString(source, ")"))
+		if (!PC_ReadLine(source, &token))
+		{
+			SourceError(source, "expected define parameter");
+			goto failed;
+		} //end if
+		if (strcmp(token.string, ")"))
 		{
 			while(1)
 			{
-				if (!PC_ReadLine(source, &token))
-				{
-					SourceError(source, "expected define parameter");
-					return qfalse;
-				} //end if
 				//if it isn't a name
 				if (token.type != TT_NAME)
 				{
 					SourceError(source, "invalid define parameter");
-					return qfalse;
+					goto failed;
 				} //end if
 				//
 				if (PC_FindDefineParm(define, token.string) >= 0)
 				{
 					SourceError(source, "two the same define parameters");
-					return qfalse;
+					goto failed;
+				} //end if
+				if (define->numparms >= MAX_DEFINEPARMS)
+				{
+					SourceError(source, "too many define parameters");
+					goto failed;
 				} //end if
 				//add the define parm
 				t = PC_CopyToken(&token);
+				if (!t)
+				{
+					SourceError(source, "could not copy definition token");
+					goto failed;
+				} //end if
 				PC_ClearTokenWhiteSpace(t);
 				t->next = NULL;
 				if (last) last->next = t;
@@ -1381,7 +1381,7 @@ int PC_Directive_define(source_t *source)
 				if (!PC_ReadLine(source, &token))
 				{
 					SourceError(source, "define parameters not terminated");
-					return qfalse;
+					goto failed;
 				} //end if
 				//
 				if (!strcmp(token.string, ")")) break;
@@ -1389,21 +1389,32 @@ int PC_Directive_define(source_t *source)
 				if (strcmp(token.string, ","))
 				{
 					SourceError(source, "define not terminated");
-					return qfalse;
+					goto failed;
+				} //end if
+				if (!PC_ReadLine(source, &token))
+				{
+					SourceError(source, "expected define parameter");
+					goto failed;
 				} //end if
 			} //end while
 		} //end if
-		if (!PC_ReadLine(source, &token)) return qtrue;
+		if (!PC_ReadLine(source, &token)) goto publish;
 	} //end if
 	//read the defined stuff
 	last = NULL;
 	do
 	{
 		t = PC_CopyToken(&token);
+		if (!t)
+		{
+			SourceError(source, "could not copy definition token");
+			goto failed;
+		} //end if
 		if (t->type == TT_NAME && !strcmp(t->string, define->name))
 		{
-			SourceError(source, "recursive define (removed recursion)");
-			continue;
+			SourceError(source, "recursive define");
+			PC_FreeToken(t);
+			goto failed;
 		} //end if
 		PC_ClearTokenWhiteSpace(t);
 		t->next = NULL;
@@ -1419,10 +1430,35 @@ int PC_Directive_define(source_t *source)
 				!strcmp(last->string, "##"))
 		{
 			SourceError(source, "define with misplaced ##");
-			return qfalse;
+			goto failed;
 		} //end if
 	} //end if
+publish:
+	if (PC_SourceErrorFlag(source, SCFL_LEXERROR) ||
+			source->errorsequence != errorsequence) goto failed;
+	if (previous)
+	{
+		define_t **link;
+#if DEFINEHASHING
+		for (link = &source->definehash[PC_NameHash(previous->name)];
+				*link != previous; link = &(*link)->hashnext) ;
+		*link = previous->hashnext;
+#else
+		for (link = &source->defines; *link != previous; link = &(*link)->next) ;
+		*link = previous->next;
+#endif //DEFINEHASHING
+		PC_FreeDefine(previous);
+	} //end if
+#if DEFINEHASHING
+	PC_AddDefineToHash(define, source->definehash);
+#else
+	define->next = source->defines;
+	source->defines = define;
+#endif //DEFINEHASHING
 	return qtrue;
+failed:
+	if (define) PC_FreeDefine(define);
+	return qfalse;
 } //end of the function PC_Directive_define
 //============================================================================
 //
@@ -1435,51 +1471,43 @@ define_t *PC_DefineFromString(char *string)
 	script_t *script;
 	source_t src;
 	token_t *t;
+	define_t *def = NULL;
 	int res, i;
-	define_t *def;
-
+	size_t length;
+	if (!string || !*string) return NULL;
+	length = strlen(string);
+	if (length > INT_MAX) return NULL;
 	PC_InitTokenHeap();
-
-	script = LoadScriptMemory(string, strlen(string), "*extern");
-	//create a new source
-	Com_Memset(&src, 0, sizeof(source_t));
-	strncpy(src.filename, "*extern", sizeof(src.filename) - 1);
+	script = LoadScriptMemory(string, (int)length, "*extern");
+	if (!script) return NULL;
+	Com_Memset(&src, 0, sizeof(src));
+	strcpy(src.filename, "*extern");
 	src.scriptstack = script;
 #if DEFINEHASHING
 	src.definehash = GetClearedMemory(DEFINEHASHSIZE * sizeof(define_t *));
+	if (!src.definehash)
+	{
+		FreeScript(script);
+		return NULL;
+	} //end if
 #endif //DEFINEHASHING
-	//create a define from the source
 	res = PC_Directive_define(&src);
-	//free any tokens if left
 	for (t = src.tokens; t; t = src.tokens)
 	{
-		src.tokens = src.tokens->next;
+		src.tokens = t->next;
 		PC_FreeToken(t);
 	} //end for
-#ifdef DEFINEHASHING
-	def = NULL;
+#if DEFINEHASHING
 	for (i = 0; i < DEFINEHASHSIZE; i++)
-	{
-		if (src.definehash[i])
-		{
-			def = src.definehash[i];
-			break;
-		} //end if
-	} //end for
+		if (src.definehash[i]) { def = src.definehash[i]; break; }
+	FreeMemory(src.definehash);
 #else
 	def = src.defines;
 #endif //DEFINEHASHING
-	//
-#if DEFINEHASHING
-	FreeMemory(src.definehash);
-#endif //DEFINEHASHING
-	//
+	if (PC_SourceHasError(&src)) res = qfalse;
 	FreeScript(script);
-	//if the define was created succesfully
-	if (res > 0) return def;
-	//free the define is created
-	if (src.defines) PC_FreeDefine(def);
-	//
+	if (res) return def;
+	if (def) PC_FreeDefine(def);
 	return NULL;
 } //end of the function PC_DefineFromString
 //============================================================================

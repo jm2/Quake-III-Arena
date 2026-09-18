@@ -524,6 +524,11 @@ implementation or check, without implying issue completion.
         count and return failure through entering directives; else/elif reuse
         complete frames and preserve failed-expression/EOF recovery;
         see [factory evidence](bot-source-factory-validation.md).
+  - [x] Macro definitions stage names/parameters/body tokens before dictionary
+        publication, preserve complete prior definitions on malformed/nullable
+        failures, parse parameter names without expanding prior macros and clean
+        external temporary dictionaries/scripts on every failed import;
+        see [definition evidence](bot-define-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
