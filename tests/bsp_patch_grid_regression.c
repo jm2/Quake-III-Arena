@@ -51,7 +51,7 @@ static void Build(int width,int height,int curveAxis,int amplitude) {
 	for(j=0;j<height;j++)for(i=0;i<width;i++) {
 		unsigned int vertex=offset+(j*width+i)*sizeof(drawVert_t);
 		Float(vertex,i*32);Float(vertex+4,j*32);
-		Float(vertex+8,(curveAxis==1?i:curveAxis==2?j:0)%2?amplitude:0);
+		Float(vertex+8,((curveAxis==1?i:curveAxis==2?j:curveAxis>=3?i+j:0)%2?amplitude:0)+(curveAxis==4?i*j*7:0));
 	}
 	offset=Append(LUMP_SURFACES,sizeof(dsurface_t));
 	Word(offset+offsetof(dsurface_t,fogNum),0xffffffffu);
@@ -97,9 +97,10 @@ static void Load(int width,int height,unsigned int golden) {
 		"native exact endpoint bounds and epsilon expansion");
 }
 static void Reject(int width,int height,int axis,int amplitude) {
-	int a;Build(width,height,axis,amplitude);
+	int a;unsigned int golden=Fingerprint(cm.surfaces[0]->pc);Build(width,height,axis,amplitude);
 	for(a=0;a<4;a++) {
 		alignment=a;RejectCM();
+		Check(Fingerprint(cm.surfaces[0]->pc)==golden,"retained native planes/facets after rejected preflight");
 		Check(!gridTemporary && !zoneLive,"unsafe grid rejects before world/checksum/hunk changes and releases input/workspace");
 	}
 	alignment=0;
@@ -108,7 +109,7 @@ static void RejectDirect(int width,int height,int axis) {
 	vec3_t points[MAX_PATCH_VERTS];
 	int i,j,allocBefore=allocations;
 	for(j=0;j<height;j++)for(i=0;i<width;i++) {
-		VectorSet(points[j*width+i],i*32,j*32,(axis==1?i:j)%2?4096:0);
+		VectorSet(points[j*width+i],i*32,j*32,((axis==1?i:axis==2?j:i+j)%2?(axis>=3?32:4096):0));
 	}
 	previous=cm;expectError=1;
 	if(!setjmp(errorJump)) {
@@ -119,8 +120,21 @@ static void RejectDirect(int width,int height,int axis) {
 	Check(allocations==allocBefore && !memcmp(&cm,&previous,sizeof(cm)) && !zoneLive && !gridTemporary,
 		"direct grid guard precedes hunk/facet publication");
 }
+static void RejectBudget(int width,int height,int axis,int amplitude,const char *expected) {
+	vec3_t points[MAX_PATCH_VERTS];int i,j;unsigned int offset;
+	const char *error;
+	Build(width,height,axis,amplitude);offset=BSP_FileWord(source+8+LUMP_DRAWVERTS*8);
+	for(i=0;i<width*height;i++)for(j=0;j<3;j++)points[i][j]=BSP_GeometryFloat(source+offset+i*sizeof(drawVert_t)+j*4);
+	error=CM_ValidatePatchCollide(width,height,points);
+	if(!error || strcmp(error,expected))fprintf(stderr,"Native patch preflight: expected %s, got %s\n",expected,error?error:"success");
+	Check(error && !strcmp(error,expected) && !gridTemporary && !zoneLive,"actual native budget and preflight ownership");
+	Reject(width,height,axis,amplitude);
+}
 int main(void) {
 	Build(3,3,0,0);Load(3,3,0xe6e8e7d6u);
+	RejectBudget(31,31,3,32,"MAX_FACETS");
+	RejectBudget(31,31,4,128,"MAX_PATCH_PLANES");
+	RejectDirect(31,31,3);
 	Reject(129,3,1,4096);Reject(3,129,2,4096);
 	RejectDirect(129,3,1);RejectDirect(3,129,2);
 	Build(129,3,0,0);Load(129,3,0xf006df84u);

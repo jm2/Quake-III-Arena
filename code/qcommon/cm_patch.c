@@ -418,6 +418,14 @@ PATCH COLLIDE GENERATION
 ================================================================================
 */
 
+/* -1 is a native degenerate plane; lower values are build failures. */
+enum { CM_PATCH_PLANE_LIMIT = -2, CM_PATCH_UNRESOLVABLE_PLANE = -3 };
+static const char *CM_PatchPlaneError( int plane ) {
+	if ( plane == CM_PATCH_PLANE_LIMIT ) return "MAX_PATCH_PLANES";
+	if ( plane < -1 ) return "unresolvable collision patch plane";
+	return NULL;
+}
+
 static	int				numPlanes;
 static	patchPlane_t	planes[MAX_PATCH_PLANES];
 
@@ -501,7 +509,7 @@ int CM_FindPlane2(float plane[4], int *flipped) {
 
 	// add a new plane
 	if ( numPlanes == MAX_PATCH_PLANES ) {
-		Com_Error( ERR_DROP, "MAX_PATCH_PLANES" );
+		return CM_PATCH_PLANE_LIMIT;
 	}
 
 	Vector4Copy( plane, planes[numPlanes].plane );
@@ -555,7 +563,7 @@ static int CM_FindPlane( float *p1, float *p2, float *p3 ) {
 
 	// add a new plane
 	if ( numPlanes == MAX_PATCH_PLANES ) {
-		Com_Error( ERR_DROP, "MAX_PATCH_PLANES" );
+		return CM_PATCH_PLANE_LIMIT;
 	}
 
 	Vector4Copy( plane, planes[numPlanes].plane );
@@ -611,8 +619,7 @@ static int	CM_GridPlane( int gridPlanes[MAX_GRID_SIZE][MAX_GRID_SIZE][2], int i,
 	}
 
 	// should never happen
-	Com_Error( ERR_DROP, "CM_GridPlane unresolvable" );
-	return -1;
+	return CM_PATCH_UNRESOLVABLE_PLANE;
 }
 
 /*
@@ -630,6 +637,7 @@ static int CM_EdgePlaneNum( cGrid_t *grid, int gridPlanes[MAX_GRID_SIZE][MAX_GRI
 		p1 = grid->points[i][j];
 		p2 = grid->points[i+1][j];
 		p = CM_GridPlane( gridPlanes, i, j, 0 );
+		if ( p < -1 ) return p;
 		VectorMA( p1, 4, planes[ p ].plane, up );
 		return CM_FindPlane( p1, p2, up );
 
@@ -637,6 +645,7 @@ static int CM_EdgePlaneNum( cGrid_t *grid, int gridPlanes[MAX_GRID_SIZE][MAX_GRI
 		p1 = grid->points[i][j+1];
 		p2 = grid->points[i+1][j+1];
 		p = CM_GridPlane( gridPlanes, i, j, 1 );
+		if ( p < -1 ) return p;
 		VectorMA( p1, 4, planes[ p ].plane, up );
 		return CM_FindPlane( p2, p1, up );
 
@@ -644,6 +653,7 @@ static int CM_EdgePlaneNum( cGrid_t *grid, int gridPlanes[MAX_GRID_SIZE][MAX_GRI
 		p1 = grid->points[i][j];
 		p2 = grid->points[i][j+1];
 		p = CM_GridPlane( gridPlanes, i, j, 1 );
+		if ( p < -1 ) return p;
 		VectorMA( p1, 4, planes[ p ].plane, up );
 		return CM_FindPlane( p2, p1, up );
 
@@ -651,6 +661,7 @@ static int CM_EdgePlaneNum( cGrid_t *grid, int gridPlanes[MAX_GRID_SIZE][MAX_GRI
 		p1 = grid->points[i+1][j];
 		p2 = grid->points[i+1][j+1];
 		p = CM_GridPlane( gridPlanes, i, j, 0 );
+		if ( p < -1 ) return p;
 		VectorMA( p1, 4, planes[ p ].plane, up );
 		return CM_FindPlane( p1, p2, up );
 
@@ -658,6 +669,7 @@ static int CM_EdgePlaneNum( cGrid_t *grid, int gridPlanes[MAX_GRID_SIZE][MAX_GRI
 		p1 = grid->points[i+1][j+1];
 		p2 = grid->points[i][j];
 		p = CM_GridPlane( gridPlanes, i, j, 0 );
+		if ( p < -1 ) return p;
 		VectorMA( p1, 4, planes[ p ].plane, up );
 		return CM_FindPlane( p1, p2, up );
 
@@ -665,13 +677,13 @@ static int CM_EdgePlaneNum( cGrid_t *grid, int gridPlanes[MAX_GRID_SIZE][MAX_GRI
 		p1 = grid->points[i][j];
 		p2 = grid->points[i+1][j+1];
 		p = CM_GridPlane( gridPlanes, i, j, 1 );
+		if ( p < -1 ) return p;
 		VectorMA( p1, 4, planes[ p ].plane, up );
 		return CM_FindPlane( p1, p2, up );
 
 	}
 
-	Com_Error( ERR_DROP, "CM_EdgePlaneNum: bad k" );
-	return -1;
+	return CM_PATCH_UNRESOLVABLE_PLANE;
 }
 
 /*
@@ -809,13 +821,19 @@ static qboolean CM_ValidateFacet( facet_t *facet ) {
 CM_AddFacetBevels
 ==================
 */
-void CM_AddFacetBevels( facet_t *facet ) {
+static const char *CM_AddFacetBevels( facet_t *facet ) {
 
 	int i, j, k, l;
 	int axis, dir, order, flipped;
 	float plane[4], d, newplane[4];
 	winding_t *w, *w2;
 	vec3_t mins, maxs, vec, vec2;
+	int borderCapacity = sizeof(facet->borderPlanes) / sizeof(facet->borderPlanes[0]);
+	int bevelCapacity = borderCapacity;
+#ifndef BSPC
+	bevelCapacity--; // reserve the native opposite plane
+#endif
+	if ( facet->numBorders < 0 || facet->numBorders > borderCapacity ) return "MAX_FACET_BORDERS";
 
 	Vector4Copy( planes[ facet->surfacePlane ].plane, plane );
 
@@ -832,7 +850,7 @@ void CM_AddFacetBevels( facet_t *facet ) {
 		ChopWindingInPlace( &w, plane, plane[3], 0.1f );
 	}
 	if ( !w ) {
-		return;
+		return NULL;
 	}
 
 	WindingBounds(w, mins, maxs);
@@ -862,8 +880,9 @@ void CM_AddFacetBevels( facet_t *facet ) {
 			}
 
 			if ( i == facet->numBorders ) {
-				if (facet->numBorders > 4 + 6 + 16) Com_Printf("ERROR: too many bevels\n");
+				if (facet->numBorders >= bevelCapacity) { FreeWinding(w);return "MAX_FACET_BORDERS"; }
 				facet->borderPlanes[facet->numBorders] = CM_FindPlane2(plane, &flipped);
+				if (facet->borderPlanes[facet->numBorders] < -1) { FreeWinding(w);return "MAX_PATCH_PLANES"; }
 				facet->borderNoAdjust[facet->numBorders] = 0;
 				facet->borderInward[facet->numBorders] = flipped;
 				facet->numBorders++;
@@ -924,8 +943,9 @@ void CM_AddFacetBevels( facet_t *facet ) {
 				}
 
 				if ( i == facet->numBorders ) {
-					if (facet->numBorders > 4 + 6 + 16) Com_Printf("ERROR: too many bevels\n");
+					if (facet->numBorders >= bevelCapacity) { FreeWinding(w);return "MAX_FACET_BORDERS"; }
 					facet->borderPlanes[facet->numBorders] = CM_FindPlane2(plane, &flipped);
+					if (facet->borderPlanes[facet->numBorders] < -1) { FreeWinding(w);return "MAX_PATCH_PLANES"; }
 
 					for ( k = 0 ; k < facet->numBorders ; k++ ) {
 						if (facet->borderPlanes[facet->numBorders] ==
@@ -961,6 +981,7 @@ void CM_AddFacetBevels( facet_t *facet ) {
 	FreeWinding( w );
 
 #ifndef BSPC
+	if ( facet->numBorders >= borderCapacity ) return "MAX_FACET_BORDERS";
 	//add opposite plane
 	facet->borderPlanes[facet->numBorders] = facet->surfacePlane;
 	facet->borderNoAdjust[facet->numBorders] = 0;
@@ -968,6 +989,7 @@ void CM_AddFacetBevels( facet_t *facet ) {
 	facet->numBorders++;
 #endif //BSPC
 
+	return NULL;
 }
 
 typedef enum {
@@ -982,13 +1004,14 @@ typedef enum {
 CM_PatchCollideFromGrid
 ==================
 */
-static void CM_PatchCollideFromGrid( cGrid_t *grid, patchCollide_t *pf ) {
+static const char *CM_PatchCollideFromGrid( cGrid_t *grid ) {
 	int				i, j;
 	float			*p1, *p2, *p3;
 	MAC_STATIC int				gridPlanes[MAX_GRID_SIZE][MAX_GRID_SIZE][2];
 	facet_t			*facet;
 	int				borders[4];
 	int				noAdjust[4];
+	const char *error;
 
 	numPlanes = 0;
 	numFacets = 0;
@@ -1000,11 +1023,13 @@ static void CM_PatchCollideFromGrid( cGrid_t *grid, patchCollide_t *pf ) {
 			p2 = grid->points[i+1][j];
 			p3 = grid->points[i+1][j+1];
 			gridPlanes[i][j][0] = CM_FindPlane( p1, p2, p3 );
+			if ( (error = CM_PatchPlaneError(gridPlanes[i][j][0])) != NULL ) return error;
 
 			p1 = grid->points[i+1][j+1];
 			p2 = grid->points[i][j+1];
 			p3 = grid->points[i][j];
 			gridPlanes[i][j][1] = CM_FindPlane( p1, p2, p3 );
+			if ( (error = CM_PatchPlaneError(gridPlanes[i][j][1])) != NULL ) return error;
 		}
 	}
 
@@ -1022,6 +1047,7 @@ static void CM_PatchCollideFromGrid( cGrid_t *grid, patchCollide_t *pf ) {
 			if ( borders[EN_TOP] == -1 || noAdjust[EN_TOP] ) {
 				borders[EN_TOP] = CM_EdgePlaneNum( grid, gridPlanes, i, j, 0 );
 			}
+			if ( (error = CM_PatchPlaneError(borders[EN_TOP])) != NULL ) return error;
 
 			borders[EN_BOTTOM] = -1;
 			if ( j < grid->height - 2 ) {
@@ -1033,6 +1059,7 @@ static void CM_PatchCollideFromGrid( cGrid_t *grid, patchCollide_t *pf ) {
 			if ( borders[EN_BOTTOM] == -1 || noAdjust[EN_BOTTOM] ) {
 				borders[EN_BOTTOM] = CM_EdgePlaneNum( grid, gridPlanes, i, j, 2 );
 			}
+			if ( (error = CM_PatchPlaneError(borders[EN_BOTTOM])) != NULL ) return error;
 
 			borders[EN_LEFT] = -1;
 			if ( i > 0 ) {
@@ -1044,6 +1071,7 @@ static void CM_PatchCollideFromGrid( cGrid_t *grid, patchCollide_t *pf ) {
 			if ( borders[EN_LEFT] == -1 || noAdjust[EN_LEFT] ) {
 				borders[EN_LEFT] = CM_EdgePlaneNum( grid, gridPlanes, i, j, 3 );
 			}
+			if ( (error = CM_PatchPlaneError(borders[EN_LEFT])) != NULL ) return error;
 
 			borders[EN_RIGHT] = -1;
 			if ( i < grid->width - 2 ) {
@@ -1055,9 +1083,10 @@ static void CM_PatchCollideFromGrid( cGrid_t *grid, patchCollide_t *pf ) {
 			if ( borders[EN_RIGHT] == -1 || noAdjust[EN_RIGHT] ) {
 				borders[EN_RIGHT] = CM_EdgePlaneNum( grid, gridPlanes, i, j, 1 );
 			}
+			if ( (error = CM_PatchPlaneError(borders[EN_RIGHT])) != NULL ) return error;
 
 			if ( numFacets == MAX_FACETS ) {
-				Com_Error( ERR_DROP, "MAX_FACETS" );
+				return "MAX_FACETS";
 			}
 			facet = &facets[numFacets];
 			Com_Memset( facet, 0, sizeof( *facet ) );
@@ -1078,7 +1107,7 @@ static void CM_PatchCollideFromGrid( cGrid_t *grid, patchCollide_t *pf ) {
 				facet->borderNoAdjust[3] = noAdjust[EN_LEFT];
 				CM_SetBorderInward( facet, grid, gridPlanes, i, j, -1 );
 				if ( CM_ValidateFacet( facet ) ) {
-					CM_AddFacetBevels( facet );
+					if ( (error = CM_AddFacetBevels(facet)) != NULL ) return error;
 					numFacets++;
 				}
 			} else {
@@ -1096,14 +1125,15 @@ static void CM_PatchCollideFromGrid( cGrid_t *grid, patchCollide_t *pf ) {
 						facet->borderPlanes[2] = CM_EdgePlaneNum( grid, gridPlanes, i, j, 4 );
 					}
 				}
- 				CM_SetBorderInward( facet, grid, gridPlanes, i, j, 0 );
+				if ( (error = CM_PatchPlaneError(facet->borderPlanes[2])) != NULL ) return error;
+				CM_SetBorderInward( facet, grid, gridPlanes, i, j, 0 );
 				if ( CM_ValidateFacet( facet ) ) {
-					CM_AddFacetBevels( facet );
+					if ( (error = CM_AddFacetBevels(facet)) != NULL ) return error;
 					numFacets++;
 				}
 
 				if ( numFacets == MAX_FACETS ) {
-					Com_Error( ERR_DROP, "MAX_FACETS" );
+					return "MAX_FACETS";
 				}
 				facet = &facets[numFacets];
 				Com_Memset( facet, 0, sizeof( *facet ) );
@@ -1121,16 +1151,21 @@ static void CM_PatchCollideFromGrid( cGrid_t *grid, patchCollide_t *pf ) {
 						facet->borderPlanes[2] = CM_EdgePlaneNum( grid, gridPlanes, i, j, 5 );
 					}
 				}
+				if ( (error = CM_PatchPlaneError(facet->borderPlanes[2])) != NULL ) return error;
 				CM_SetBorderInward( facet, grid, gridPlanes, i, j, 1 );
 				if ( CM_ValidateFacet( facet ) ) {
-					CM_AddFacetBevels( facet );
+					if ( (error = CM_AddFacetBevels(facet)) != NULL ) return error;
 					numFacets++;
 				}
 			}
 		}
 	}
 
-	// copy the results out
+	return NULL;
+}
+
+/* Publish only a complete native build, preserving native hunk allocation order. */
+static void CM_CopyPatchCollide( patchCollide_t *pf ) {
 	pf->numPlanes = numPlanes;
 	pf->numFacets = numFacets;
 	pf->facets = Hunk_Alloc( numFacets * sizeof( *pf->facets ), h_high );
@@ -1138,7 +1173,6 @@ static void CM_PatchCollideFromGrid( cGrid_t *grid, patchCollide_t *pf ) {
 	pf->planes = Hunk_Alloc( numPlanes * sizeof( *pf->planes ), h_high );
 	Com_Memcpy( pf->planes, planes, numPlanes * sizeof( *pf->planes ) );
 }
-
 
 /* Share the exact native refinement with the map preflight. */
 static const char *CM_RefinePatchGrid( cGrid_t *grid, int width, int height, vec3_t *points ) {
@@ -1172,10 +1206,19 @@ static const char *CM_RefinePatchGrid( cGrid_t *grid, int width, int height, vec
 const char *CM_ValidatePatchCollide( int width, int height, vec3_t *points ) {
 	cGrid_t *grid;
 	const char *error;
+	int savedPlanes = numPlanes, savedFacets = numFacets;
+	qboolean savedBlock = debugBlock;
+	vec3_t savedBlockPoints[4];
 
 	grid = malloc( sizeof( *grid ) );
 	if ( !grid ) return "collision patch preflight workspace allocation failed";
+	Com_Memcpy(savedBlockPoints,debugBlockPoints,sizeof(savedBlockPoints));
 	error = CM_RefinePatchGrid( grid, width, height, points );
+	if ( !error ) error = CM_PatchCollideFromGrid( grid );
+	numPlanes = savedPlanes;
+	numFacets = savedFacets;
+	debugBlock = savedBlock;
+	Com_Memcpy(debugBlockPoints,savedBlockPoints,sizeof(savedBlockPoints));
 	free( grid );
 	return error;
 }
@@ -1198,6 +1241,7 @@ struct patchCollide_s	*CM_GeneratePatchCollide( int width, int height, vec3_t *p
 	const char *error;
 
 	error = CM_RefinePatchGrid( &grid, width, height, points );
+	if ( !error ) error = CM_PatchCollideFromGrid( &grid );
 	if ( error ) {
 		Com_Error( ERR_DROP, "CM_GeneratePatchCollide: %s", error );
 		return NULL;
@@ -1216,8 +1260,8 @@ struct patchCollide_s	*CM_GeneratePatchCollide( int width, int height, vec3_t *p
 
 	c_totalPatchBlocks += ( grid.width - 1 ) * ( grid.height - 1 );
 
-	// generate a bsp tree for the surface
-	CM_PatchCollideFromGrid( &grid, pf );
+	// publish the complete native collision geometry
+	CM_CopyPatchCollide( pf );
 
 	// expand by one unit for epsilon purposes
 	pf->bounds[0][0] -= 1;
