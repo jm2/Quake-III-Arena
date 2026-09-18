@@ -45,7 +45,7 @@ static void SpanBuild(int version,int kind) {
     memcpy(source+areaOffset+96,source+oldArea+48,48);Word(areaOffset+96,2);
     memcpy(source+settingsOffset,source+oldSettings,56);
     memcpy(source+settingsOffset+56,source+oldSettings+28,28);
-    records=kind==0?2:kind==1?4:3;
+    records=kind==1?5:3;
     memset(source+newReach,0,records*44);
     for(i=1;i<records;i++)memcpy(source+newReach+i*44,source+oldReach+44,44);
     Word(settingsOffset+28+20,kind==1?2:1);Word(settingsOffset+28+24,kind==3?2:1);
@@ -70,6 +70,22 @@ static void SpanOwnership(void) {
         Check(workspaceRequests==2&&workspaceFrees==1&&!workspacePointer,"ownership bitmap allocation failure leaves no temporary owner");
     }
 }
+static void OrphanBuild(int version,int type) {
+    SpanBuild(version,2);ReachWord(version,geometryOffsets[8]+56+20,0);
+    ReachWord(version,reachOffset+2*44+36,type);
+    if(type==TRAVEL_ELEVATOR||type==TRAVEL_JUMPPAD||type==TRAVEL_FUNCBOB) {
+        ReachWord(version,reachOffset+2*44+4,0x81230123u);
+        ReachWord(version,reachOffset+2*44+8,0x8abc4567u);
+    }
+}
+static void OrphanRecords(void) {
+    const int types[]={TRAVEL_WALK,TRAVEL_ELEVATOR,TRAVEL_JUMPPAD,TRAVEL_FUNCBOB};
+    int version;size_t i;
+    for(version=4;version<=5;version++)for(i=0;i<sizeof(types)/sizeof(types[0]);i++) {
+        OrphanBuild(version,types[i]);Counters();OldWorld();GeometryReject();
+        Check(workspaceRequests==1&&workspaceFrees==1&&!workspacePointer,"unowned records reject before ownership workspace allocation");
+    }
+}
 static void BadReachability(void) {
     const uint32_t badFloats[]={0x7f800000u,0xff800000u,0x7fc00000u,0xffc00000u,0x7f800001u,0xff800001u};
     const uint32_t badRefs[]={0x80000000u,0x7fffffffu};int version,field;size_t i;
@@ -91,6 +107,7 @@ int main(int argc,char **argv) {
     if(proof==0){ReachBuild(4,TRAVEL_WALK,1,3);Counters();OldWorld();ReachWord(4,reachOffset+44,INT_MAX);GeometryReject();}
     else if(proof==1){ReachBuild(4,TRAVEL_WALK,1,3);Counters();OldWorld();ReachWord(4,geometryOffsets[8]+28+20,INT_MAX);GeometryReject();}
     else if(proof==2){SpanBuild(4,0);Counters();OldWorld();GeometryReject();}
-    else {ValidReachability();BadReachability();SpanOwnership();puts("Native AAS reachability spans, travel-dependent fields, signed references and finite endpoints passed (issue #47)");}
+    else if(proof==3){OrphanBuild(4,TRAVEL_ELEVATOR);Counters();OldWorld();GeometryReject();}
+    else {ValidReachability();BadReachability();SpanOwnership();OrphanRecords();puts("Native AAS reachability spans, travel-dependent fields, signed references and finite endpoints passed (issue #47)");}
     ResetArena();return 0;
 }
