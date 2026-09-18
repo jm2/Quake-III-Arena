@@ -265,6 +265,9 @@ QVMs while any P0 item is open.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
       — **high**, server OOB access/infinite traversal.
   - [x] Local mover model boundary/look-up fixes cross-build.
+  - [x] AAS v4/v5 header/lump preflight precedes world reset; exact reads,
+        seeks and allocation failures close once and clear partial logical
+        owners; see [AAS layout evidence](aas-layout-validation.md).
   - [ ] Validate the entire AAS file and graph before setting `loaded`.
 - [ ] [#48 — bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48)
       — **high**, parser fixed-buffer corruption/invalid cleanup.

@@ -246,6 +246,7 @@ bash tests/run_font_freetype_tests.sh
 bash tests/run_shader_archive_tests.sh
 bash tests/run_shader_runtime_tests.sh
 bash tests/run_sky_bounds_tests.sh
+bash tests/run_aas_layout_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
@@ -280,6 +281,16 @@ must remain within eight float epsilons for parameters and four for normalized
 UV directions; acos near an endpoint can amplify a final-bit rounding change.
 The stage fixture checks that later shader failures preserve cloud state and
 accepted duplicate sky fields publish only the final layer.
+
+The native AAS file runner checks both retail v4/plain and v5/header-obfuscated
+formats, every header prefix with actual/advertised read lengths, all fourteen
+lump range/stride classes and preflight retention of a previous world. Empty,
+sequential, reversed and mixed payload layouts retain native decoding and exact
+read/seek behavior. Short reads, seek failures and every real/dummy allocation
+failure close once and clear partial logical owners. The fixture distinguishes
+logical releases from physical arena reclamation: native hunk memory stays owned
+by the arena until reset. Graph/reference/numeric and aggregate budget checks
+remain follow-on #47 work; accepted layout fixtures are not live bot worlds.
 
 ## What this CI does not prove
 
