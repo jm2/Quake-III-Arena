@@ -256,6 +256,7 @@ void FreeMemory(void *ptr)
 {
 	memoryblock_t *block;
 
+	if (!ptr) return;
 	block = BlockFromPointer(ptr, "FreeMemory");
 	if (!block) return;
 	UnlinkMemoryBlock(block);
