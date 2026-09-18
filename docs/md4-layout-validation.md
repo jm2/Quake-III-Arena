@@ -59,11 +59,15 @@ compiler diagnostics and validate as PPC PEFs, using temporary libraries from
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,686,847 | `80aace15d015fff9ab25afca4f06d2c727d3c4051af920471b86e9dabdc15c08` |
-| Quake3_TeamArena | 3,835,421 | `b6d8b05637ccd4512fabd24ae1a878a711477b04cee55c5ab5be48fe3c6cfd52` |
+| Quake3 | 3,695,199 | `db5cf524dea019730e4bfab41533d547a57fe5fc5fc40000fe11e9f8091509d4` |
+| Quake3_TeamArena | 3,843,773 | `23c3e6165b7a21717b1d8c9fe25cd1b904bf551e46768642c19b1f4808879dbf` |
 
 ## Remaining acceptance
 
 Keep #44 open through gated MD3/MD4 merges and deferred commercial 1.32c
 model/mod animation and strict-alignment PPC runtime acceptance. Host
 regressions and cross-builds do not establish those target results.
+
+Merged master `4fd62bd`, including all reviewed bot syscall steps, is
+integrated. The affected sanitizer fixtures, nine Python checks and both
+product builds pass; the table records the current integrated artifacts.
