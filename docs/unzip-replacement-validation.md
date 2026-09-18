@@ -10,17 +10,14 @@ Private candidate owners release without changing the active decoder.
 
 Actual whole filesystem/decoder bodies read complete real ZIP32 entries. The
 fixture checks six compressed initialization imports, two stored imports and
-corrupted local headers for both methods. It records prior physical allocation
-identities, complete archive/decoder records, the complete 64 KiB input buffer,
-FILE position and OS descriptor count. Failed replacement frees no prior owner
+corrupted local headers for both methods. It covers unchanged selection, next-entry traversal and exact position setters, and records prior physical allocation identities, complete archive/decoder records, the complete 64 KiB input buffer, FILE position and OS descriptor count. Failed replacement frees no prior owner
 and preserves these bytes/cursors. The prior decoder then reads every remaining
 payload byte through EOF, including repeated stored input refills; a successful
 reopen resets the cursor and retries the native payload. All physical owners and
 descriptors close.
 
 The unchanged preceding decoder at `c73bd68` fails ten isolated cases in all
-four compiler/modes: 40 demonstrated failures. Eight separate unchanged-source
-stored/deflated valid reopen goldens pass. Original bodies remain unchanged;
+four compiler/modes: 40 demonstrated failures. The reviewed `4d648eb` head additionally fails 80 next-entry/position-setter cases because refills depend on changed archive metadata. Eight separate native goldens pass on each unchanged source. Original bodies remain unchanged;
 only the real engine allocation import can return NULL in these cases.
 
 Fixed checks pass normal/optimized-fast Clang ASan/UBSan and optimized local GCC
@@ -32,8 +29,8 @@ Both PPC products build without diagnostics and have valid PEF headers:
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,788,023 | `25e820438523463d3510a98df298702656bde1d56cd8325b4e5a72bdf14e7e45` |
-| Quake3_TeamArena | 3,936,597 | `b2f669b89d4181c121d4bf9e305973f3ef768e755e176e339cd20ecb224a0de7` |
+| Quake3 | 3,788,023 | `df0015f5a72248b3c21012398bd7f60261059d5f2c0666c9acb19f9984c6117b` |
+| Quake3_TeamArena | 3,936,597 | `3beaeff770c89f6ed6db9cd6c2913bad6cf07787f91e4952bff21db86f641082` |
 
 Source includes the preceding ZIP/metadata/decoder/handle steps and this
 replacement transaction. Toolchain libraries follow

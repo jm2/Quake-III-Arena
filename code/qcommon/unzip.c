@@ -2040,11 +2040,11 @@ extern int unzReadCurrentFile  (unzFile file, void *buf, unsigned len)
 				uReadThis = (uInt)pfile_in_zip_read_info->rest_read_compressed;
 			if (uReadThis == 0)
 				return UNZ_EOF;
-			if (s->cur_file_info.compressed_size == pfile_in_zip_read_info->rest_read_compressed)
-				if (fseek(pfile_in_zip_read_info->file,
-						  pfile_in_zip_read_info->pos_in_zipfile + 
-							 pfile_in_zip_read_info->byte_before_the_zipfile,SEEK_SET)!=0)
-					return UNZ_ERRNO;
+			/* Metadata queries can move the FILE independently of this decoder. */
+			if (fseek(pfile_in_zip_read_info->file,
+					  pfile_in_zip_read_info->pos_in_zipfile +
+					  pfile_in_zip_read_info->byte_before_the_zipfile,SEEK_SET)!=0)
+				return UNZ_ERRNO;
 			if (fread(pfile_in_zip_read_info->read_buffer,uReadThis,1,
                          pfile_in_zip_read_info->file)!=1)
 				return UNZ_ERRNO;

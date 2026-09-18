@@ -7,9 +7,16 @@ trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 python3 - "$Q3_TEST_DIR" <<'PY_ZIP'
 import sys, zipfile
 from pathlib import Path
+def pattern(i):
+    x = ((i + 1) * 2654435761) & 0xffffffff
+    x ^= x >> 16
+    x = (x * 2246822519) & 0xffffffff
+    x ^= x >> 13
+    return x & 255
 for name, method in [("native.pk3", zipfile.ZIP_DEFLATED), ("stored.pk3", zipfile.ZIP_STORED)]:
     with zipfile.ZipFile(Path(sys.argv[1]) / name, "w", compression=method) as archive:
-        archive.writestr("native.bin", bytes((i * 73 + 19) & 255 for i in range(3 * 65536 + 17)))
+        archive.writestr("native.bin", bytes(pattern(i) for i in range(3 * 65536 + 17)))
+        archive.writestr("target.bin", b"replacement\n")
 PY_ZIP
 for Q3_TEST_MODE in normal fast; do
     Q3_TEST_FLAGS=()

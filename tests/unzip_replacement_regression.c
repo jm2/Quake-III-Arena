@@ -40,13 +40,19 @@ static void FixtureFreeHook(void *owner) {
         for (i = 0; i < priorCount; i++) if (priorOwners[i] == owner) priorFreed++;
 }
 
-static int Pattern(int offset) { return (offset * 73 + 19) & 255; }
+static int Pattern(int offset) {
+    unsigned x = ((unsigned)offset + 1U) * 2654435761U;
+    x ^= x >> 16;
+    x *= 2246822519U;
+    x ^= x >> 13;
+    return x & 255;
+}
 static void Payload(const unsigned char *bytes, int size, int offset) {
     int i;
     for (i = 0; i < size; i++) Check(bytes[i] == Pattern(offset + i), "actual native pattern payload");
 }
 
-static void Active(char *path, int position) {
+static void Active(char *path, int position, int selection) {
     static unsigned char input[UNZ_BUFSIZE];
     unsigned char bytes[UNZ_BUFSIZE + 17];
     unz_s saved;
@@ -56,10 +62,23 @@ static void Active(char *path, int position) {
     long cursor;
     Begin();
     search.pack = FS_LoadZipFile(path, "native.pk3");
-    Check(search.pack && unzOpenCurrentFile(search.pack->handle) == UNZ_OK &&
+    Check(search.pack && unzGoToFirstFile(search.pack->handle) == UNZ_OK &&
+          unzOpenCurrentFile(search.pack->handle) == UNZ_OK &&
           unzReadCurrentFile(search.pack->handle, bytes, 13) == 13,
           "actual active native stored/deflated decoder");
     Payload(bytes, 13, 0);
+    if (selection) {
+        unsigned long original, target;
+        Check(unzGetCurrentFileInfoPosition(search.pack->handle, &original) == UNZ_OK &&
+              unzGoToNextFile(search.pack->handle) == UNZ_OK,
+              "actual selection changes while prior decoder is active");
+        if (selection == 2) {
+            Check(unzGetCurrentFileInfoPosition(search.pack->handle, &target) == UNZ_OK &&
+                  unzSetCurrentFileInfoPosition(search.pack->handle, original) == UNZ_OK &&
+                  unzSetCurrentFileInfoPosition(search.pack->handle, target) == UNZ_OK,
+                  "actual central position setter selects replacement with prior decoder active");
+        }
+    }
     memcpy(&saved, search.pack->handle, sizeof(saved));
     memcpy(&savedDecoder, saved.pfile_in_zip_read, sizeof(savedDecoder));
     memcpy(input, savedDecoder.read_buffer, sizeof(input));
@@ -71,8 +90,8 @@ static void Active(char *path, int position) {
     if (!position) {
         Check(!fflush(saved.file), "discard native input buffering before local header mutation");
         writer = open(path, O_RDWR);
-        Check(writer >= 0 && pread(writer, header, sizeof(header), 0) == sizeof(header) &&
-              pwrite(writer, "BAD!", sizeof(header), 0) == sizeof(header),
+        Check(writer >= 0 && pread(writer, header, sizeof(header), saved.cur_file_info_internal.offset_curfile) == sizeof(header) &&
+              pwrite(writer, "BAD!", sizeof(header), saved.cur_file_info_internal.offset_curfile) == sizeof(header),
               "actual local header corruption after prior decoder opens");
     }
     priorReleaseWatch = 1;
@@ -84,7 +103,7 @@ static void Active(char *path, int position) {
     imports = nullableCalls;
     Arm(0);
     if (!position) {
-        Check(pwrite(writer, header, sizeof(header), 0) == sizeof(header) && !close(writer) &&
+        Check(pwrite(writer, header, sizeof(header), saved.cur_file_info_internal.offset_curfile) == sizeof(header) && !close(writer) &&
               !fflush(saved.file), "native local header restored for prior reader and retry");
     }
     Check(imports >= position && zoneLive == live && FileOwners() == files &&
@@ -103,10 +122,18 @@ static void Active(char *path, int position) {
         n += got;
     }
     Check(!unzReadCurrentFile(search.pack->handle, bytes, 1) &&
-          unzOpenCurrentFile(search.pack->handle) == UNZ_OK &&
-          unzReadCurrentFile(search.pack->handle, bytes, 13) == 13,
-          "preserved native decoder reaches EOF and successful replacement retries");
-    Payload(bytes, 13, 0);
+          unzOpenCurrentFile(search.pack->handle) == UNZ_OK,
+          "preserved prior decoder reaches EOF and selected replacement retries");
+    if (selection) {
+        Check(unzReadCurrentFile(search.pack->handle, bytes, sizeof(bytes)) == 12 &&
+              !memcmp(bytes, "replacement\n", 12) &&
+              !unzReadCurrentFile(search.pack->handle, bytes, 1),
+              "successful retry reads actual newly selected native entry");
+    } else {
+        Check(unzReadCurrentFile(search.pack->handle, bytes, 13) == 13,
+              "successful same-entry replacement reads original payload");
+        Payload(bytes, 13, 0);
+    }
     Check(unzCloseCurrentFile(search.pack->handle) == UNZ_OK, "replacement decoder physically closes");
     End();
 }
@@ -116,7 +143,8 @@ static void NativeReplacementGolden(char *path) {
     int files = FileOwners();
     Begin();
     search.pack = FS_LoadZipFile(path, "native.pk3");
-    Check(search.pack && unzOpenCurrentFile(search.pack->handle) == UNZ_OK &&
+    Check(search.pack && unzGoToFirstFile(search.pack->handle) == UNZ_OK &&
+          unzOpenCurrentFile(search.pack->handle) == UNZ_OK &&
           unzReadCurrentFile(search.pack->handle, bytes, 13) == 13,
           "native valid prior decoder golden");
     Payload(bytes, 13, 0);
@@ -135,15 +163,25 @@ int main(int argc, char **argv) {
     Check(argc >= 2, "actual native replacement ZIP input");
     if (argc == 3) {
         i = atoi(argv[2]);
-        if (i <= 6) Active(argv[1], i);
+        if (i <= 6) Active(argv[1], i, 0);
+        else if (i >= 10 && i <= 16) Active(argv[1], i - 10, 1);
+        else if (i >= 20 && i <= 26) Active(argv[1], i - 20, 2);
         else NativeReplacementGolden(argv[1]);
         return 0;
     }
     Check(argc == 4 && !strcmp(argv[3], "all"), "complete stored/deflated replacement selection");
     NativeReplacementGolden(argv[1]);
     NativeReplacementGolden(argv[2]);
-    for (i = 0; i <= 6; i++) Active(argv[1], i);
-    for (i = 0; i <= 2; i++) Active(argv[2], i);
+    for (i = 0; i <= 6; i++) {
+        Active(argv[1], i, 0);
+        Active(argv[1], i, 1);
+        Active(argv[1], i, 2);
+    }
+    for (i = 0; i <= 2; i++) {
+        Active(argv[2], i, 0);
+        Active(argv[2], i, 1);
+        Active(argv[2], i, 2);
+    }
     puts("Actual active native decoder failures preserve owners, metadata, input and physical cursor");
     return 0;
 }
