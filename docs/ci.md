@@ -177,7 +177,11 @@ The enabled native FreeType ownership runner replaces only unavailable legacy
 header imports in a disposable source copy. API/FS/graphics imports are isolated;
 all native bodies remain unchanged. It checks face-before-input shutdown,
 bitmap/page/file ownership, controlled failure/default output, checked requests
-and repeated library init/shutdown. It does not test a real rasterizer.
+and repeated library init/shutdown. The same actual-body seam checks bounded
+metric arithmetic, complete uploaded glyph rectangles across zero/small/max
+sizes and pages, TGA output shapes, generated cache reuse, independent literal
+legacy LE bytes and public-reader reload of saved multi-page output. It does
+not test a real rasterizer.
 
 The actual shader fixture also covers native identity-alpha skip and matching
 multitexture alpha/RGB waves, rejects changes without mutating stages, and

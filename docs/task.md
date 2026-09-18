@@ -230,8 +230,10 @@ QVMs while any P0 item is open.
   - [x] Enabled native FreeType flow releases faces before backing input and
         balances temporary bitmap/page ownership on controlled failures; see
         [ownership evidence](font-freetype-ownership-validation.md).
-  - [ ] Complete FreeType numeric/atlas/layout checks and remaining shader
-        semantic/file-allocation checks.
+  - [x] Optional font glyph/atlas arithmetic, complete page/final-glyph output,
+        generated cache names and legacy LE serialization have
+        [generation evidence](font-atlas-legacy-output-validation.md).
+  - [ ] Complete remaining shader semantic/file-allocation checks.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
       — **high**, server OOB access/infinite traversal.
   - [x] Local mover model boundary/look-up fixes cross-build.
