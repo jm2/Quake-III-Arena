@@ -57,8 +57,8 @@ previous runner and invokes the new header fixture.
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,695,267 | `1ea39685cbd1efcf5bcbc5151922cb08b67ec951a5a1308468a1ed6695fe55d9` |
-| Quake3_TeamArena | 3,843,841 | `756ba8df9cc3e6752408746e1331e6c9ac9b21d8374690cb4ecc4e657e78448f` |
+| Quake3 | 3,699,523 | `8f74c8b4987bea07cc86c8078d6a346e2e57bc34dbcd9bff3c6ebf7a8268cda1` |
+| Quake3_TeamArena | 3,848,097 | `96282ace23efdf7b83607a6214cf2c23eb29d68ef289592715a5bde9c2a1cf4b` |
 
 ## Remaining acceptance
 
@@ -68,3 +68,7 @@ transactional publication still need validation before allocation/reset.
 A valid header with malformed payload can still reach unsafe legacy paths;
 this step does not establish safety for untrusted maps. Commercial 1.32c
 retail collision/rendering and Mac OS 9 acceptance remain deferred.
+
+Merged master `4fd62bd`, including all reviewed bot syscall steps, is
+integrated. The affected sanitizer fixtures, nine Python checks and both
+product builds pass; the table records the current integrated artifacts.
