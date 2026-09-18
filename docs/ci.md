@@ -419,3 +419,12 @@ in cluster zero. Distinct start/goal queries involving those areas return
 unreachable before cache allocation or mutation; their retail AAS bytes remain
 accepted. The previous native routing body aliases another cluster's cache.
 Normal and release fast-math sanitizer configurations cover both operations.
+
+The routing-workspace runner executes actual native area-cache updates with
+22 degree/filter goldens through 1,024 incoming links, including 128/129, and
+nullable/unrepresentable workspace failures. Scratch has exactly one checked
+heap owner and leaves no retained freed pointer. The failure runner uses actual
+area/portal cache providers and routing consumers; nullable cache/workspace
+failures preserve existing cache/LRU ownership, release unfinished owners,
+clear pending portal flags and permit successful retries. All three public
+route-provider failure paths are exercised under normal/fast-math sanitizers.
