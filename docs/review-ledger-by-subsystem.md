@@ -242,6 +242,8 @@ implementation or check, without implying issue completion.
         ZIP/read/physical-release [regressions](unzip-allocation-validation.md).
   - [x] Buffered handles preserve independent owners, cursors and all native
         slots with [physical-release checks](fs-buffered-handle-validation.md).
+  - [x] Complete ZIP mount names/metadata/counts and both-pass real-source
+        failure cleanup have [native regressions](fs-zip-mount-validation.md).
   - [ ] Add malicious ZIP fixtures and prove every handle/buffer cleanup path.
 - [ ] [#37 — connection/netchan lacks challenge binding](https://github.com/jm2/Quake-III-Arena/issues/37)
   - [x] User selected commercial 1.32c compatibility in the style of
