@@ -546,6 +546,10 @@ implementation or check, without implying issue completion.
         exhausted roots/includes unwind conditional frames and skip state while
         preserving native bytes/tokens and complete parent recovery;
         see [file EOF evidence](bot-file-eof-validation.md).
+  - [x] Elevator height checks use native floating magnitude for the float
+        barrier libvar, avoiding unsafe integer conversion and retaining tested
+        integer-barrier behavior while correcting fractional barrier decisions;
+        see [distance evidence](bot-elevator-distance-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)

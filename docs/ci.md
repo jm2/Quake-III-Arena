@@ -763,9 +763,10 @@ cover both imports of all ten required variables with empty or complete prior
 references. Fixed failures stop setup before publishing references/model bytes,
 retain only complete shared cached owners, retry, and physically release all owners.
 Original default/configured/cached reference identity and brush classifications
-remain. GCC/Clang run normal/release fast-math sanitizers. Clang exposes an existing
-integer-abs-on-float elevator warning outside this initialization change; its
-numeric behavior is retained for separate assessment.
+remain. GCC/Clang run normal/release fast-math sanitizers. The full source exposed an
+existing integer-abs-on-float elevator warning during initialization validation.
+The later [distance step](bot-elevator-distance-validation.md) corrects it; the
+current movement fixture compiles without diagnostics in both compiler modes.
 
 The file-comment runner validates actual file/source/include/character imports
 before compression can erase unterminated block comments. Six original-body proofs
