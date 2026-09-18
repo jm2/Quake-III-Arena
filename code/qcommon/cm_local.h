@@ -33,6 +33,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 typedef struct {
 	cplane_t	*plane;
 	int			children[2];		// negative numbers are leafs
+	int			parent;			// validated decision-node parent, -1 for a forest root
 } cNode_t;
 
 typedef struct {

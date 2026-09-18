@@ -185,6 +185,8 @@ QVMs while any P0 item is open.
   - [x] Lighting bytes use defined overbright arithmetic across all signed cvar
         values, preserving valid legacy RGB and geometry alpha; see
         [lighting evidence](bsp-lighting-arithmetic-validation.md).
+  - [x] Collision leaf/brush box queries traverse validated decision parents
+        with constant C stack space; see [box-query evidence](bsp-box-query-validation.md).
 - [ ] [#46 — enforce shader/skin/font limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
       — **high**, fixed-array writes and unsafe serialized resources.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)

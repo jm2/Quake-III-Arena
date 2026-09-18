@@ -137,30 +137,44 @@ CM_BoxLeafnums
 Fills in a list of all the leafs touched
 =============
 */
+/* Walk the validated decision-node parents instead of consuming C stack.
+ * Box bounds are constant throughout the native leaf/brush callbacks. */
 void CM_BoxLeafnums_r( leafList_t *ll, int nodenum ) {
-	cplane_t	*plane;
-	cNode_t		*node;
-	int			s;
+	cNode_t *node;
+	int root = nodenum, side = 0, child, completed, s;
+	qboolean entering = qtrue;
 
-	while (1) {
-		if (nodenum < 0) {
-			ll->storeLeafs( ll, nodenum );
-			return;
-		}
-	
+	if ( nodenum < 0 ) {
+		ll->storeLeafs( ll, nodenum );
+		return;
+	}
+	for ( ;; ) {
 		node = &cm.nodes[nodenum];
-		plane = node->plane;
-		s = BoxOnPlaneSide( ll->bounds[0], ll->bounds[1], plane );
-		if (s == 1) {
-			nodenum = node->children[0];
-		} else if (s == 2) {
-			nodenum = node->children[1];
+		if ( entering ) {
+			s = BoxOnPlaneSide( ll->bounds[0], ll->bounds[1], node->plane );
+			side = s == 2 ? 1 : 0;
+			child = node->children[side];
 		} else {
-			// go down both
-			CM_BoxLeafnums_r( ll, node->children[0] );
-			nodenum = node->children[1];
+			s = side == 0 ? BoxOnPlaneSide( ll->bounds[0], ll->bounds[1], node->plane ) : 1;
+			if ( side == 0 && s != 1 && s != 2 ) {
+				/* Finish the front subtree before visiting the back subtree. */
+				side = 1;
+				child = node->children[1];
+			} else {
+				if ( nodenum == root ) return;
+				completed = nodenum;
+				nodenum = node->parent;
+				side = cm.nodes[nodenum].children[0] == completed ? 0 : 1;
+				continue;
+			}
 		}
-
+		if ( child >= 0 ) {
+			nodenum = child;
+			entering = qtrue;
+		} else {
+			ll->storeLeafs( ll, child );
+			entering = qfalse;
+		}
 	}
 }
 
