@@ -2501,6 +2501,20 @@ shader_t *R_FindShaderByName( const char *name ) {
 }
 
 
+/* A rejected definition keeps its cache identity, not its parsed prefix. */
+static void InitDefaultShader( const char *name ) {
+	Com_Memset( &shader, 0, sizeof(shader) );
+	Com_Memset( stages, 0, sizeof(stages) );
+	Com_Memset( texMods, 0, sizeof(texMods) );
+	Q_strncpyz( shader.name, name, sizeof(shader.name) );
+	shader.lightmapIndex = LIGHTMAP_NONE;
+	stages[0].bundle[0].image[0] = tr.defaultImage;
+	stages[0].bundle[0].texMods = texMods[0];
+	stages[0].active = qtrue;
+	stages[0].stateBits = GLS_DEFAULT;
+}
+
+
 /*
 ===============
 R_FindShader
@@ -2529,6 +2543,7 @@ most world construction surfaces.
 
 ===============
 */
+
 shader_t *R_FindShader( const char *name, int lightmapIndex, qboolean mipRawImage ) {
 	char		strippedName[MAX_QPATH];
 	char		fileName[MAX_QPATH];
@@ -2599,7 +2614,8 @@ shader_t *R_FindShader( const char *name, int lightmapIndex, qboolean mipRawImag
 		}
 
 		if ( !ParseShader( &shaderText ) ) {
-			// had errors, so use default shader
+			// had errors, so use the complete native default material
+			InitDefaultShader( strippedName );
 			shader.defaultShader = qtrue;
 		}
 		sh = FinishShader();
@@ -2616,6 +2632,7 @@ shader_t *R_FindShader( const char *name, int lightmapIndex, qboolean mipRawImag
 	image = R_FindImageFile( fileName, mipRawImage, mipRawImage, mipRawImage ? GL_REPEAT : GL_CLAMP );
 	if ( !image ) {
 		ri.Printf( PRINT_DEVELOPER, "Couldn't find image for shader %s\n", name );
+		InitDefaultShader( strippedName );
 		shader.defaultShader = qtrue;
 		return FinishShader();
 	}
@@ -3105,15 +3122,7 @@ static void CreateInternalShaders( void ) {
 	tr.numShaders = 0;
 
 	// init the default shader
-	Com_Memset( &shader, 0, sizeof( shader ) );
-	Com_Memset( &stages, 0, sizeof( stages ) );
-
-	Q_strncpyz( shader.name, "<default>", sizeof( shader.name ) );
-
-	shader.lightmapIndex = LIGHTMAP_NONE;
-	stages[0].bundle[0].image[0] = tr.defaultImage;
-	stages[0].active = qtrue;
-	stages[0].stateBits = GLS_DEFAULT;
+	InitDefaultShader( "<default>" );
 	tr.defaultShader = FinishShader();
 
 	// shadow shader is just a marker
