@@ -136,4 +136,5 @@ jobs:
           bash tests/run_aas_writer_tests.sh
           bash tests/run_aas_geometry_tests.sh
           bash tests/run_bot_memory_tests.sh
+          CC=clang bash tests/run_bot_memory_tests.sh
           bash tests/run_aas_node_tests.sh

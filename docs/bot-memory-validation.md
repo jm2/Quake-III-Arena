@@ -23,7 +23,9 @@ tracked variants also reject each accounting limit before invoking imports.
 Heap frees physically, while hunk frees remain logical and fixture arena bytes
 are released only at reset. Null cleanup has no allocator effects.
 
-Clang ASan/UBSan and optimized GCC checks pass in all four configurations.
+Local CC=clang ASan/UBSan and separate optimized GCC checks pass in all four
+configurations. CI runs its default cc and explicit CC=clang, each under
+normal and optimized ASan/UBSan configurations.
 All four native AAS regression runners, nine Python checks, Bash syntax and diff
 checks pass. Both Retro68 products build with zero compiler diagnostics and
 validate as PPC PEFs.
@@ -34,6 +36,13 @@ validate as PPC PEFs.
 | Quake3_TeamArena | 3,898,571 | `47132aa98ab69c39b17f3fe19ff97bb9378665b439747e331268d9d02cc45cc9` |
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
+
+After CodeRabbit review, the fixture asserts the exact ownership-prefix request
+size and rejects fatal diagnostics; tracked FreeMemory(NULL) returns before
+BlockFromPointer. Its original tracked-debug proof emits a fatal diagnostic.
+Both CI compilers now run normal/optimized variants explicitly. The follow-up
+Clang sanitizer runs pass in all eight configurations, and both PPC products
+rebuild without compiler diagnostics; their artifact hashes above are unchanged.
 
 ## Remaining acceptance
 

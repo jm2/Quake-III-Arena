@@ -11,9 +11,15 @@ for Q3_TEST_MODE in native debug tracked tracked-debug; do
         tracked) Q3_TEST_FLAGS=(-DMEMORYMANEGER) ;;
         tracked-debug) Q3_TEST_FLAGS=(-DMEMORYMANEGER -DMEMDEBUG) ;;
     esac
-    "${CC:-cc}" -std=gnu99 -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
-        -fsanitize=address,undefined "${Q3_TEST_FLAGS[@]}" \
-        "$Q3_TEST_ROOT/tests/bot_memory_regression.c" \
-        -Wl,--gc-sections -lm -o "$Q3_TEST_BINARY"
-    ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 "$Q3_TEST_BINARY"
+    for Q3_TEST_OPTIMIZATION in normal optimized; do
+        Q3_TEST_OPT_FLAGS=()
+        if [[ "$Q3_TEST_OPTIMIZATION" == optimized ]]; then
+            Q3_TEST_OPT_FLAGS=(-O2 -DNDEBUG)
+        fi
+        "${CC:-cc}" -std=gnu99 -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
+            -fsanitize=address,undefined "${Q3_TEST_FLAGS[@]}" "${Q3_TEST_OPT_FLAGS[@]}" \
+            "$Q3_TEST_ROOT/tests/bot_memory_regression.c" \
+            -Wl,--gc-sections -lm -o "$Q3_TEST_BINARY"
+        ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 "$Q3_TEST_BINARY"
+    done
 done
