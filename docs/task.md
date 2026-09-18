@@ -290,6 +290,9 @@ QVMs while any P0 item is open.
         validate before loaded; native side ordering and unclustered roots
         retain bytes, while isolated-area routes preserve cache ownership;
         see [portal evidence](aas-portal-validation.md).
+  - [x] Derived area travel times and cache sums saturate before overflowing
+        native uint16 capacity; representable speed/minimum and route costs
+        retain native results; see [travel-time evidence](aas-travel-time-validation.md).
   - [ ] Validate the entire AAS file and graph before setting `loaded`.
 - [ ] [#48 — bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48)
       — **high**, parser fixed-buffer corruption/invalid cleanup.
@@ -532,8 +535,10 @@ QVMs while any P0 item is open.
 - [x] AAS geometry #122 merged at `b242458` and allocator/import #123
       at `ed42d87`, after exact-head CI, clean completed Codex and all
       CodeRabbit findings resolved.
-- [ ] Gate node/reachability/portal steps and finish #47 derived runtime,
-      memory/work budgets and late-load transaction work.
+- [x] Node/reachability #124–#125 merged at `86c1667` after exact-head
+      CI, clean completed Codex and resolved review findings.
+- [ ] Gate portal/derived-time steps and finish #47 runtime query, memory/
+      work budget and late-load transaction work.
 - [ ] Finish #45 renderer aggregate capacity and full transactional
       publication; retain remaining query/candidate costs and deferred target
       acceptance. Collision aggregate and derived geometry/facet checks are

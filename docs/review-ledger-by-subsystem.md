@@ -395,6 +395,9 @@ implementation or check, without implying issue completion.
         validate before loaded; native side ordering and unclustered roots
         retain bytes, while isolated-area routes preserve cache ownership;
         see [portal evidence](aas-portal-validation.md).
+  - [x] Derived area travel times and cache sums saturate before overflowing
+        native uint16 capacity; representable speed/minimum and route costs
+        retain native results; see [travel-time evidence](aas-travel-time-validation.md).
   - [ ] Validate the complete file and graph before setting `loaded`.
 - [ ] [#48 — bot preprocessor/token/path bounds](https://github.com/jm2/Quake-III-Arena/issues/48)
   - [x] Several upstream primitive/preprocessor/diagnostic bounds fixes are

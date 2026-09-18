@@ -254,6 +254,7 @@ bash tests/run_bot_memory_tests.sh
 bash tests/run_aas_node_tests.sh
 bash tests/run_aas_reachability_tests.sh
 bash tests/run_aas_portal_tests.sh
+bash tests/run_aas_travel_time_tests.sh
 bash tests/run_bot_zone_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
@@ -399,6 +400,18 @@ imports and bot adapters under release/debug metadata and normal/optimized
 sanitizers. It checks payload/header/trailer/alignment costs, ownership and
 nullable rejection before native allocator expansion can overflow. CI also
 invokes this runner with explicit Clang.
+
+The area travel-time runner extracts actual native area classification and
+conversion bodies with strict source seams and uses the real vector length.
+Literal walk/crouch/swim, minimum-time and representable route costs retain
+legacy results. Nonfinite inputs and finite overflowing derived distances
+saturate before integer casts under normal and release fast-math sanitizers.
+The routing-time runner exercises actual area/portal cache updates, route
+selection and hide-area routing, replacing only cache providers and using
+the native projection body. Literal normal and maximum costs
+prove that area/crossing/reachability additions cannot wrap into cheap routes;
+nonfinite or oversized float cache starts saturate before uint16 conversion,
+and enemy-distance penalties cannot overflow casts or additions.
 
 The isolated-area routing runner uses actual native clustering and routing.
 Reachability-only clustering legitimately leaves isolated nonreachable areas
