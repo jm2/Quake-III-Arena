@@ -467,6 +467,10 @@ implementation or check, without implying issue completion.
         fail without output-byte mutation, and legacy literal/punctuation
         helpers keep quote consumption and buffer cursors bounded;
         see [escape evidence](bot-escape-validation.md).
+  - [x] Source errors retain private status through suppressed diagnostics,
+        string lookahead and include unwinding; failed lexical readers preserve
+        queued owners and cannot continue into parents;
+        see [error evidence](bot-source-error-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)

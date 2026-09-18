@@ -363,6 +363,10 @@ QVMs while any P0 item is open.
         fail without output-byte mutation, and legacy literal/punctuation
         helpers keep quote consumption and buffer cursors bounded;
         see [escape evidence](bot-escape-validation.md).
+  - [x] Source errors retain private status through suppressed diagnostics,
+        string lookahead and include unwinding; failed lexical readers preserve
+        queued owners and cannot continue into parents;
+        see [error evidence](bot-source-error-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 

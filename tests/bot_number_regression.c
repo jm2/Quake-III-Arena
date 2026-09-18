@@ -39,7 +39,7 @@ static void UnsignedBoundary(int base,int overflow) {
     else {memcpy(text,"0b",2);for(i=0;i<(int)(sizeof(unsigned long)*CHAR_BIT);i++)text[i+2]='1';text[i+2]=0;subtype=TT_BINARY;}
     if(!overflow){NumberGolden(text,text,subtype|TT_INTEGER,ULONG_MAX,(long double)ULONG_MAX);return;}
     length=(int)strlen(text);text[length++]='0';text[length]=0;strcpy(spelling,text);strcat(text," tail");
-    {script_t *script=NumberScript(text);token_t token;Check(!PS_ReadToken(script,&token)&&errors==1&&!token.intvalue&&!token.floatvalue&&!strcmp(token.string,spelling),"each base overflow rejects before wrapping");Check(PS_ReadToken(script,&token)&&token.type==TT_NAME&&!strcmp(token.string,"tail"),"rejected numeric token preserves following token");NumberEnd(script);}
+    {script_t *script=NumberScript(text);token_t token;Check(!PS_ReadToken(script,&token)&&errors==1&&!token.intvalue&&!token.floatvalue&&!strcmp(token.string,spelling),"each base overflow rejects before wrapping");Check(!strcmp(script->script_p," tail")&&!PS_ReadToken(script,&token),"rejected numeric token retains following bytes and stops later reads");NumberEnd(script);}
 }
 static void LeadingBoundary(int base) {
     char text[1025];int length=base==8?1022:1023;int subtype=base==8?TT_OCTAL:base==16?TT_HEX:TT_BINARY;
