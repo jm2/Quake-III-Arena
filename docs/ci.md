@@ -569,3 +569,15 @@ missing-file fallback remain compatible. Six original proofs isolate null copies
 early mutation and ignored caller failure; original valid goldens pass too.
 GCC/Clang normal/release sanitizer CI covers these owners; numeric/cursor bounds
 and remaining parser consumers stay open.
+
+The number runner executes real lexer tokens, the actual converter and character
+parser. Eighteen original native goldens preserve spellings/bases/suffixes and
+values. Each base retains its unsigned maximum and rejects the next overflow
+before wrap, preserving following tokens. Long leading zeros retain native
+token capacities. Trailing dots, maximum fractions, uppercase hex, malformed
+prefixes/multiple dots and finite floats beyond auxiliary integer range exercise
+conversion. Direct converter extremes exceed host long-double/divisor limits;
+real character files reject wrapped indexes and release earlier owners. Eleven
+original proofs fail; original ordinary goldens pass too. GCC/Clang normal/release
+sanitizer CI covers these paths. Consumer numeric bounds and lexical cursors stay
+open.

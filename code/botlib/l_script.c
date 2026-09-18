@@ -79,6 +79,9 @@ typedef enum {qfalse, qtrue}	qboolean;
 #define qfalse	false
 #endif //BSPC
 
+#include <float.h>
+#include <limits.h>
+
 
 #define PUNCTABLE
 
@@ -556,71 +559,99 @@ int PS_ReadName(script_t *script, token_t *token)
 // Returns:					-
 // Changes Globals:		-
 //============================================================================
-void NumberValue(char *string, int subtype, unsigned long int *intvalue,
-															long double *floatvalue)
+int NumberValue(char *string, int subtype, unsigned long int *intvalue,
+				long double *floatvalue)
 {
-	unsigned long int dotfound = 0;
+	unsigned long value = 0;
+	unsigned int base, digit;
+	int dotfound = qfalse, scaled = qfalse;
+	long double number = 0, divisor = 10, weight = 0, contribution;
 
 	*intvalue = 0;
 	*floatvalue = 0;
-	//floating point number
 	if (subtype & TT_FLOAT)
 	{
-		while(*string)
+		while (*string)
 		{
 			if (*string == '.')
 			{
-				if (dotfound) return;
-				dotfound = 10;
+				if (dotfound) return qfalse;
+				dotfound = qtrue;
 				string++;
-			} //end if
+				continue;
+			}
+			if (*string < '0' || *string > '9') return qfalse;
+			digit = *string++ - '0';
 			if (dotfound)
 			{
-				*floatvalue = *floatvalue + (long double) (*string - '0') /
-																	(long double) dotfound;
-				dotfound *= 10;
-			} //end if
+				if (scaled)
+				{
+					contribution = digit * weight;
+					weight /= 10;
+				}
+				else
+				{
+					contribution = (long double) digit / divisor;
+					if (divisor < LDBL_MAX / 10) divisor *= 10;
+					else
+					{
+						//Retain tiny fractions without overflowing their divisor.
+						scaled = qtrue;
+						weight = (1 / divisor) / 10;
+					}
+				}
+				if (number > LDBL_MAX - contribution) return qfalse;
+				number += contribution;
+			}
 			else
 			{
-				*floatvalue = *floatvalue * 10.0 + (long double) (*string - '0');
-			} //end else
-			string++;
-		} //end while
-		*intvalue = (unsigned long) *floatvalue;
-	} //end if
-	else if (subtype & TT_DECIMAL)
-	{
-		while(*string) *intvalue = *intvalue * 10 + (*string++ - '0');
-		*floatvalue = *intvalue;
-	} //end else if
+				if (number >= LDBL_MAX / 10) return qfalse;
+				number *= 10;
+				if (number > LDBL_MAX - digit) return qfalse;
+				number += digit;
+			}
+		}
+		//A finite float can exceed the range of its auxiliary integer value.
+		if (number >= (long double) ULONG_MAX) value = ULONG_MAX;
+		else value = (unsigned long) number;
+		*intvalue = value;
+		*floatvalue = number;
+		return qtrue;
+	}
+	if (subtype & TT_DECIMAL) base = 10;
 	else if (subtype & TT_HEX)
 	{
-		//step over the leading 0x or 0X
+		base = 16;
 		string += 2;
-		while(*string)
-		{
-			*intvalue <<= 4;
-			if (*string >= 'a' && *string <= 'f') *intvalue += *string - 'a' + 10;
-			else if (*string >= 'A' && *string <= 'F') *intvalue += *string - 'A' + 10;
-			else *intvalue += *string - '0';
-			string++;
-		} //end while
-		*floatvalue = *intvalue;
-	} //end else if
+		if (!*string) return qfalse;
+	}
 	else if (subtype & TT_OCTAL)
 	{
-		//step over the first zero
-		string += 1;
-		while(*string) *intvalue = (*intvalue << 3) + (*string++ - '0');
-		*floatvalue = *intvalue;
-	} //end else if
+		base = 8;
+		string++;
+	}
+#ifdef BINARYNUMBERS
 	else if (subtype & TT_BINARY)
 	{
-		//step over the leading 0b or 0B
+		base = 2;
 		string += 2;
-		while(*string) *intvalue = (*intvalue << 1) + (*string++ - '0');
-		*floatvalue = *intvalue;
-	} //end else if
+		if (!*string) return qfalse;
+	}
+#endif
+	else return qfalse;
+	while (*string)
+	{
+		if (*string >= 'a' && *string <= 'f') digit = *string - 'a' + 10;
+		else if (*string >= 'A' && *string <= 'F') digit = *string - 'A' + 10;
+		else if (*string >= '0' && *string <= '9') digit = *string - '0';
+		else return qfalse;
+		if (digit >= base || value > (ULONG_MAX - digit) / base) return qfalse;
+		value = value * base + digit;
+		string++;
+	}
+	*intvalue = value;
+	*floatvalue = value;
+	return qtrue;
 } //end of the function NumberValue
 //============================================================================
 //
@@ -648,7 +679,7 @@ int PS_ReadNumber(script_t *script, token_t *token)
 		//hexadecimal
 		while((c >= '0' && c <= '9') ||
 					(c >= 'a' && c <= 'f') ||
-					(c >= 'A' && c <= 'A'))
+					(c >= 'A' && c <= 'F'))
 		{
 			token->string[len++] = *script->script_p++;
 			if (len >= MAX_TOKEN)
@@ -725,7 +756,11 @@ int PS_ReadNumber(script_t *script, token_t *token)
 	} //end for
 	token->string[len] = '\0';
 #ifdef NUMBERVALUE
-	NumberValue(token->string, token->subtype, &token->intvalue, &token->floatvalue);
+	if (!NumberValue(token->string, token->subtype, &token->intvalue, &token->floatvalue))
+	{
+		ScriptError(script, "invalid or unrepresentable number %s", token->string);
+		return 0;
+	} //end if
 #endif //NUMBERVALUE
 	if (!(token->subtype & TT_FLOAT)) token->subtype |= TT_INTEGER;
 	return 1;
