@@ -37,33 +37,48 @@ void SV_GamePrint( const char *string ) {
 
 // these functions must be used instead of pointer arithmetic, because
 // the game allocates gentities with private information after the server shared part
-int	SV_NumForGentity( sharedEntity_t *ent ) {
-	int		num;
-
-	num = ( (byte *)ent - (byte *)sv.gentities ) / sv.gentitySize;
-
-	return num;
+/** Resolve only complete entity slots inside the registered game array. */
+int SV_NumForGentity( sharedEntity_t *ent ) {
+	unsigned long offset, start = (unsigned long)sv.gentities;
+	if ( !ent || !sv.gentities || sv.gentitySize < (int)sizeof(sharedEntity_t) ||
+	     sv.num_entities < 1 || sv.num_entities > MAX_GENTITIES ||
+	     (unsigned long)ent < start ) {
+		VM_ErrorForVM( gvm, "Server game entity is not registered" );
+		return 0;
+	}
+	offset = (unsigned long)ent - start;
+	if ( offset % sv.gentitySize || offset / sv.gentitySize >= sv.num_entities ) {
+		VM_ErrorForVM( gvm, "Server game entity is not a registered slot" );
+		return 0;
+	}
+	return offset / sv.gentitySize;
 }
 
+/** Bound entity indices before applying the game module's private stride. */
 sharedEntity_t *SV_GentityNum( int num ) {
-	sharedEntity_t *ent;
-
-	ent = (sharedEntity_t *)((byte *)sv.gentities + sv.gentitySize*(num));
-
-	return ent;
+	if ( !sv.gentities || num < 0 || num >= sv.num_entities ||
+	     sv.gentitySize < (int)sizeof(sharedEntity_t) ) {
+		VM_ErrorForVM( gvm, "Server game entity index out of range" );
+		return NULL;
+	}
+	return (sharedEntity_t *)((byte *)sv.gentities + (unsigned long)sv.gentitySize * num);
 }
 
+/** Bound client indices before accessing persistent player-state storage. */
 playerState_t *SV_GameClientNum( int num ) {
-	playerState_t	*ps;
-
-	ps = (playerState_t *)((byte *)sv.gameClients + sv.gameClientSize*(num));
-
-	return ps;
+	if ( !sv.gameClients || num < 0 || num >= sv.gameClientCount ||
+	     sv.gameClientSize < (int)sizeof(playerState_t) ) {
+		VM_ErrorForVM( gvm, "Server game client index out of range" );
+		return NULL;
+	}
+	return (playerState_t *)((byte *)sv.gameClients + (unsigned long)sv.gameClientSize * num);
 }
 
-svEntity_t	*SV_SvEntityForGentity( sharedEntity_t *gEnt ) {
-	if ( !gEnt || gEnt->s.number < 0 || gEnt->s.number >= MAX_GENTITIES ) {
-		Com_Error( ERR_DROP, "SV_SvEntityForGentity: bad gEnt" );
+svEntity_t *SV_SvEntityForGentity( sharedEntity_t *gEnt ) {
+	SV_NumForGentity( gEnt );
+	if ( gEnt->s.number < 0 || gEnt->s.number >= MAX_GENTITIES ) {
+		VM_ErrorForVM( gvm, "SV_SvEntityForGentity: bad gEnt" );
+		return NULL;
 	}
 	return &sv.svEntities[ gEnt->s.number ];
 }
@@ -269,6 +284,7 @@ void SV_LocateGameData( sharedEntity_t *gEnts, int numGEntities, int sizeofGEnti
 
 	sv.gameClients = clients;
 	sv.gameClientSize = sizeofGameClient;
+	sv.gameClientCount = sv_maxclients ? sv_maxclients->integer : 0;
 }
 
 
@@ -305,118 +321,144 @@ SV_GameSystemCalls
 The module is making a system call
 ====================
 */
-//rcg010207 - see my comments in VM_DllSyscall(), in qcommon/vm.c ...
+/** Validate persistent arrays completely before replacing either registration. */
+static void SV_GameLocateData( int *args ) {
+	sharedEntity_t *entities;
+	playerState_t *clients;
+	if ( !sv_maxclients || sv_maxclients->integer < 1 || sv_maxclients->integer > MAX_CLIENTS ||
+	     args[2] < sv_maxclients->integer || args[2] > MAX_GENTITIES ||
+	     args[3] < (int)sizeof(sharedEntity_t) || (args[3] & 3) ||
+	     args[5] < (int)sizeof(playerState_t) || (args[5] & 3) ) {
+		VM_Error( "Server game data dimensions out of range" );
+		return;
+	}
+	entities = VM_CheckedArgArray( args[1], args[2], args[3] );
+	clients = VM_CheckedArgArray( args[4], sv_maxclients->integer, args[5] );
+	SV_LocateGameData( entities, args[2], args[3], clients, args[5] );
+}
+
+#define VMAS(x) VM_CheckedArgString( args[x], qfalse )
+#define VMASN(x) VM_CheckedArgString( args[x], qtrue )
+#define VMAP(x, type) VM_CheckedArgPtr( args[x], sizeof(type), 4, qfalse )
+#define VMAPN(x, type) VM_CheckedArgPtr( args[x], sizeof(type), 4, qtrue )
+#define VMAB(x, length) VM_CheckedStringBuffer( args[x], (length), qfalse )
+// Botlib families still use the legacy conversion until their next audit step.
 #if ((defined __linux__) && (defined __powerpc__))
 #define VMA(x) ((void *) args[x])
 #else
-#define	VMA(x) VM_ArgPtr(args[x])
+#define VMA(x) VM_ArgPtr(args[x])
 #endif
 
 #define	VMF(x)	((float *)args)[x]
 
+/** Dispatch core game traps with checked QVM pointers; botlib families remain under review. */
 int SV_GameSystemCalls( int *args ) {
 	switch( args[0] ) {
 	case G_PRINT:
-		Com_Printf( "%s", VMA(1) );
+		Com_Printf( "%s", VMAS(1) );
 		return 0;
 	case G_ERROR:
-		Com_Error( ERR_DROP, "%s", VMA(1) );
+		VM_Error( VMAS(1) );
 		return 0;
 	case G_MILLISECONDS:
 		return Sys_Milliseconds();
 	case G_CVAR_REGISTER:
-		Cvar_Register( VMA(1), VMA(2), VMA(3), args[4] ); 
+		Cvar_Register( VMAPN(1, vmCvar_t), VMAS(2), VMAS(3), args[4] );
 		return 0;
 	case G_CVAR_UPDATE:
-		Cvar_Update( VMA(1) );
+		Cvar_Update( VMAP(1, vmCvar_t) );
 		return 0;
 	case G_CVAR_SET:
-		Cvar_Set( (const char *)VMA(1), (const char *)VMA(2) );
+		Cvar_Set( (const char *)VMAS(1), (const char *)VMASN(2) );
 		return 0;
 	case G_CVAR_VARIABLE_INTEGER_VALUE:
-		return Cvar_VariableIntegerValue( (const char *)VMA(1) );
+		return Cvar_VariableIntegerValue( (const char *)VMAS(1) );
 	case G_CVAR_VARIABLE_STRING_BUFFER:
-		Cvar_VariableStringBuffer( VMA(1), VMA(2), args[3] );
+		Cvar_VariableStringBuffer( VMAS(1), VMAB(2, args[3]), args[3] );
 		return 0;
 	case G_ARGC:
 		return Cmd_Argc();
 	case G_ARGV:
-		Cmd_ArgvBuffer( args[1], VMA(2), args[3] );
+		Cmd_ArgvBuffer( args[1], VMAB(2, args[3]), args[3] );
 		return 0;
 	case G_SEND_CONSOLE_COMMAND:
-		Cbuf_ExecuteText( args[1], VMA(2) );
+		Cbuf_ExecuteText( args[1], VMAS(2) );
 		return 0;
 
 	case G_FS_FOPEN_FILE:
-		return FS_FOpenFileByMode( VMA(1), VMA(2), args[3] );
+		if ( args[3] < FS_READ || args[3] > FS_APPEND_SYNC ) {
+			VM_Error( "Game filesystem open mode out of range" );
+			return -1;
+		}
+		return FS_FOpenFileByMode( VMAS(1), VM_CheckedArgPtr( args[2], sizeof(fileHandle_t), 4, args[3] == FS_READ ), args[3] );
 	case G_FS_READ:
-		FS_Read2( VMA(1), args[2], args[3] );
+		FS_Read2( VM_CheckedArgPtr( args[1], args[2], 1, args[2] == 0 ), args[2], args[3] );
 		return 0;
 	case G_FS_WRITE:
-		FS_Write( VMA(1), args[2], args[3] );
+		FS_Write( VM_CheckedArgPtr( args[1], args[2], 1, args[2] == 0 ), args[2], args[3] );
 		return 0;
 	case G_FS_FCLOSE_FILE:
 		FS_FCloseFile( args[1] );
 		return 0;
 	case G_FS_GETFILELIST:
-		return FS_GetFileList( VMA(1), VMA(2), VMA(3), args[4] );
+		return FS_GetFileList( VMAS(1), VMAS(2), VMAB(3, args[4]), args[4] );
 	case G_FS_SEEK:
 		return FS_Seek( args[1], args[2], args[3] );
 
 	case G_LOCATE_GAME_DATA:
-		SV_LocateGameData( VMA(1), args[2], args[3], VMA(4), args[5] );
+		SV_GameLocateData( args );
 		return 0;
 	case G_DROP_CLIENT:
-		SV_GameDropClient( args[1], VMA(2) );
+		SV_GameDropClient( args[1], VMAS(2) );
 		return 0;
 	case G_SEND_SERVER_COMMAND:
-		SV_GameSendServerCommand( args[1], VMA(2) );
+		SV_GameSendServerCommand( args[1], VMAS(2) );
 		return 0;
 	case G_LINKENTITY:
-		SV_LinkEntity( VMA(1) );
+		SV_LinkEntity( VMAP(1, sharedEntity_t) );
 		return 0;
 	case G_UNLINKENTITY:
-		SV_UnlinkEntity( VMA(1) );
+		SV_UnlinkEntity( VMAP(1, sharedEntity_t) );
 		return 0;
 	case G_ENTITIES_IN_BOX:
-		return SV_AreaEntities( VMA(1), VMA(2), VMA(3), args[4] );
+		return SV_AreaEntities( VMAP(1, vec3_t), VMAP(2, vec3_t), VM_CheckedArgArray( args[3], args[4], sizeof(int) ), args[4] );
 	case G_ENTITY_CONTACT:
-		return SV_EntityContact( VMA(1), VMA(2), VMA(3), /*int capsule*/ qfalse );
+		return SV_EntityContact( VMAPN(1, vec3_t), VMAPN(2, vec3_t), VMAP(3, sharedEntity_t), /*int capsule*/ qfalse );
 	case G_ENTITY_CONTACTCAPSULE:
-		return SV_EntityContact( VMA(1), VMA(2), VMA(3), /*int capsule*/ qtrue );
+		return SV_EntityContact( VMAPN(1, vec3_t), VMAPN(2, vec3_t), VMAP(3, sharedEntity_t), /*int capsule*/ qtrue );
 	case G_TRACE:
-		SV_Trace( VMA(1), VMA(2), VMA(3), VMA(4), VMA(5), args[6], args[7], /*int capsule*/ qfalse );
+		SV_Trace( VMAP(1, trace_t), VMAP(2, vec3_t), VMAPN(3, vec3_t), VMAPN(4, vec3_t), VMAP(5, vec3_t), args[6], args[7], /*int capsule*/ qfalse );
 		return 0;
 	case G_TRACECAPSULE:
-		SV_Trace( VMA(1), VMA(2), VMA(3), VMA(4), VMA(5), args[6], args[7], /*int capsule*/ qtrue );
+		SV_Trace( VMAP(1, trace_t), VMAP(2, vec3_t), VMAPN(3, vec3_t), VMAPN(4, vec3_t), VMAP(5, vec3_t), args[6], args[7], /*int capsule*/ qtrue );
 		return 0;
 	case G_POINT_CONTENTS:
-		return SV_PointContents( VMA(1), args[2] );
+		return SV_PointContents( VMAP(1, vec3_t), args[2] );
 	case G_SET_BRUSH_MODEL:
-		SV_SetBrushModel( VMA(1), VMA(2) );
+		SV_SetBrushModel( VMAP(1, sharedEntity_t), VMAS(2) );
 		return 0;
 	case G_IN_PVS:
-		return SV_inPVS( VMA(1), VMA(2) );
+		return SV_inPVS( VMAP(1, vec3_t), VMAP(2, vec3_t) );
 	case G_IN_PVS_IGNORE_PORTALS:
-		return SV_inPVSIgnorePortals( VMA(1), VMA(2) );
+		return SV_inPVSIgnorePortals( VMAP(1, vec3_t), VMAP(2, vec3_t) );
 
 	case G_SET_CONFIGSTRING:
-		SV_SetConfigstring( args[1], VMA(2) );
+		SV_SetConfigstring( args[1], VMASN(2) );
 		return 0;
 	case G_GET_CONFIGSTRING:
-		SV_GetConfigstring( args[1], VMA(2), args[3] );
+		SV_GetConfigstring( args[1], VMAB(2, args[3]), args[3] );
 		return 0;
 	case G_SET_USERINFO:
-		SV_SetUserinfo( args[1], VMA(2) );
+		SV_SetUserinfo( args[1], VMASN(2) );
 		return 0;
 	case G_GET_USERINFO:
-		SV_GetUserinfo( args[1], VMA(2), args[3] );
+		SV_GetUserinfo( args[1], VMAB(2, args[3]), args[3] );
 		return 0;
 	case G_GET_SERVERINFO:
-		SV_GetServerinfo( VMA(1), args[2] );
+		SV_GetServerinfo( VMAB(1, args[2]), args[2] );
 		return 0;
 	case G_ADJUST_AREA_PORTAL_STATE:
-		SV_AdjustAreaPortalState( VMA(1), args[2] );
+		SV_AdjustAreaPortalState( VMAP(1, sharedEntity_t), args[2] );
 		return 0;
 	case G_AREAS_CONNECTED:
 		return CM_AreasConnected( args[1], args[2] );
@@ -428,14 +470,14 @@ int SV_GameSystemCalls( int *args ) {
 		return 0;
 
 	case G_GET_USERCMD:
-		SV_GetUsercmd( args[1], VMA(2) );
+		SV_GetUsercmd( args[1], VMAP(2, usercmd_t) );
 		return 0;
 	case G_GET_ENTITY_TOKEN:
 		{
 			const char	*s;
 
 			s = COM_Parse( &sv.entityParsePoint );
-			Q_strncpyz( VMA(1), s, args[2] );
+			Q_strncpyz( VMAB(1, args[2]), s, args[2] );
 			if ( !sv.entityParsePoint && !s[0] ) {
 				return qfalse;
 			} else {
@@ -444,14 +486,14 @@ int SV_GameSystemCalls( int *args ) {
 		}
 
 	case G_DEBUG_POLYGON_CREATE:
-		return BotImport_DebugPolygonCreate( args[1], args[2], VMA(3) );
+		return BotImport_DebugPolygonCreate( args[1], args[2], VM_CheckedArgArray( args[3], args[2], sizeof(vec3_t) ) );
 	case G_DEBUG_POLYGON_DELETE:
 		BotImport_DebugPolygonDelete( args[1] );
 		return 0;
 	case G_REAL_TIME:
-		return Com_RealTime( VMA(1) );
+		return Com_RealTime( VMAPN(1, qtime_t) );
 	case G_SNAPVECTOR:
-		Sys_SnapVector( VMA(1) );
+		Sys_SnapVector( VMAP(1, vec3_t) );
 		return 0;
 
 		//====================================
@@ -820,15 +862,15 @@ int SV_GameSystemCalls( int *args ) {
 		return botlib_export->ai.GeneticParentsAndChildSelection(args[1], VMA(2), VMA(3), VMA(4), VMA(5));
 
 	case TRAP_MEMSET:
-		Com_Memset( VMA(1), args[2], args[3] );
+		VM_MemoryFill( args[1], args[2], args[3] );
 		return 0;
 
 	case TRAP_MEMCPY:
-		Com_Memcpy( VMA(1), VMA(2), args[3] );
+		VM_MemoryCopy( args[1], args[2], args[3] );
 		return 0;
 
 	case TRAP_STRNCPY:
-		return (int)strncpy( VMA(1), VMA(2), args[3] );
+		return VM_StringCopy( args[1], args[2], args[3] );
 
 	case TRAP_SIN:
 		return FloatAsInt( sin( VMF(1) ) );
@@ -843,15 +885,15 @@ int SV_GameSystemCalls( int *args ) {
 		return FloatAsInt( sqrt( VMF(1) ) );
 
 	case TRAP_MATRIXMULTIPLY:
-		MatrixMultiply( VMA(1), VMA(2), VMA(3) );
+		MatrixMultiply( VMAP(1, vec3_t[3]), VMAP(2, vec3_t[3]), VMAP(3, vec3_t[3]) );
 		return 0;
 
 	case TRAP_ANGLEVECTORS:
-		AngleVectors( VMA(1), VMA(2), VMA(3), VMA(4) );
+		AngleVectors( VMAP(1, vec3_t), VMAPN(2, vec3_t), VMAPN(3, vec3_t), VMAPN(4, vec3_t) );
 		return 0;
 
 	case TRAP_PERPENDICULARVECTOR:
-		PerpendicularVector( VMA(1), VMA(2) );
+		PerpendicularVector( VMAP(1, vec3_t), VMAP(2, vec3_t) );
 		return 0;
 
 	case TRAP_FLOOR:
@@ -862,7 +904,7 @@ int SV_GameSystemCalls( int *args ) {
 
 
 	default:
-		Com_Error( ERR_DROP, "Bad game system trap: %i", args[0] );
+		VM_Error( va( "Bad game system trap: %i", args[0] ) );
 	}
 	return -1;
 }
