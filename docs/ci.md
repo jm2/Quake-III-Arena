@@ -412,3 +412,10 @@ the native projection body. Literal normal and maximum costs
 prove that area/crossing/reachability additions cannot wrap into cheap routes;
 nonfinite or oversized float cache starts saturate before uint16 conversion,
 and enemy-distance penalties cannot overflow casts or additions.
+
+The isolated-area routing runner uses actual native clustering and routing.
+Reachability-only clustering legitimately leaves isolated nonreachable areas
+in cluster zero. Distinct start/goal queries involving those areas return
+unreachable before cache allocation or mutation; their retail AAS bytes remain
+accepted. The previous native routing body aliases another cluster's cache.
+Normal and release fast-math sanitizer configurations cover both operations.

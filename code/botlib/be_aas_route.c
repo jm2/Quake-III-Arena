@@ -1664,6 +1664,9 @@ int AAS_AreaRouteToGoalArea(int areanum, vec3_t origin, int goalareanum, int tra
 		} //end if
 		return qfalse;
 	} //end if
+	// Native reachability-only clustering leaves isolated nonreachable areas unclustered.
+	if (!aasworld.areasettings[areanum].cluster ||
+		!aasworld.areasettings[goalareanum].cluster) return qfalse;
 	// make sure the routing cache doesn't grow to large
 	while(AvailableMemory() < 1 * 1024 * 1024) {
 		if (!AAS_FreeOldestCache()) break;
