@@ -354,7 +354,10 @@ implementation or check, without implying issue completion.
   - [x] Sky/sun/fog/sort metadata checks propagate numeric/path failures;
         rejected definitions retain previous sun state and valid fields/import
         order remain native; see [metadata evidence](shader-metadata-validation.md).
-  - [ ] Complete derived rendering conversions and public shader input checks.
+  - [x] Shader names/lightmap modes and image/remap inputs validate before
+        lookup/index/publication while retaining native valid cache behavior;
+        see [registration evidence](shader-registration-input-validation.md).
+  - [ ] Complete derived rendering conversions.
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.
   - [ ] Validate the complete file and graph before setting `loaded`.

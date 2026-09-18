@@ -55,7 +55,7 @@ static long generateHashValue( const char *fname, const int size ) {
 	hash = 0;
 	i = 0;
 	while (fname[i] != '\0') {
-		letter = tolower(fname[i]);
+		letter = tolower((unsigned char)fname[i]);
 		if (letter =='.') break;				// don't include extension
 		if (letter =='\\') letter = '/';		// damn path names
 		if (letter == PATH_SEP) letter = '/';		// damn path names
@@ -67,11 +67,34 @@ static long generateHashValue( const char *fname, const int size ) {
 	return hash;
 }
 
+static qboolean ShaderNameValid( const char *name ) {
+	int i;
+	if ( !name ) return qfalse;
+	for ( i = 0; i < MAX_QPATH; i++ ) {
+		if ( !name[i] ) return i != 0;
+	}
+	return qfalse;
+}
+
+static qboolean ShaderLightmapValid( int index ) {
+	return index >= 0 || index == LIGHTMAP_NONE || index == LIGHTMAP_BY_VERTEX ||
+	       index == LIGHTMAP_2D || index == LIGHTMAP_WHITEIMAGE;
+}
+
+static qboolean ShaderFloatValue( double value, float *output );
+
 void R_RemapShader(const char *shaderName, const char *newShaderName, const char *timeOffset) {
 	char		strippedName[MAX_QPATH];
 	int			hash;
 	shader_t	*sh, *sh2;
 	qhandle_t	h;
+	float remapTime = 0;
+
+	if ( !ShaderNameValid(shaderName) || !ShaderNameValid(newShaderName) ) return;
+	if ( timeOffset && !ShaderFloatValue(atof(timeOffset), &remapTime) ) {
+		ri.Printf( PRINT_WARNING, "WARNING: invalid shader remap time offset\n" );
+		return;
+	}
 
 	sh = R_FindShaderByName( shaderName );
 	if (sh == NULL || sh == tr.defaultShader) {
@@ -108,7 +131,7 @@ void R_RemapShader(const char *shaderName, const char *newShaderName, const char
 		}
 	}
 	if (timeOffset) {
-		sh2->timeOffset = atof(timeOffset);
+		sh2->timeOffset = remapTime;
 	}
 }
 
@@ -2452,7 +2475,7 @@ shader_t *R_FindShaderByName( const char *name ) {
 	int			hash;
 	shader_t	*sh;
 
-	if ( (name==NULL) || (name[0] == 0) ) {  // bk001205
+	if ( !ShaderNameValid(name) ) {
 		return tr.defaultShader;
 	}
 
@@ -2514,7 +2537,7 @@ shader_t *R_FindShader( const char *name, int lightmapIndex, qboolean mipRawImag
 	image_t		*image;
 	shader_t	*sh;
 
-	if ( name[0] == 0 ) {
+	if ( !ShaderNameValid(name) || !ShaderLightmapValid(lightmapIndex) ) {
 		return tr.defaultShader;
 	}
 
@@ -2656,6 +2679,10 @@ qhandle_t RE_RegisterShaderFromImage(const char *name, int lightmapIndex, image_
 	int			i, hash;
 	shader_t	*sh;
 
+	if ( !ShaderNameValid(name) || !ShaderLightmapValid(lightmapIndex) ) return 0;
+	if ( lightmapIndex >= 0 && lightmapIndex >= tr.numLightmaps ) {
+		lightmapIndex = LIGHTMAP_BY_VERTEX;
+	}
 	hash = generateHashValue(name, FILE_HASH_SIZE);
 	
 	//
@@ -2673,6 +2700,9 @@ qhandle_t RE_RegisterShaderFromImage(const char *name, int lightmapIndex, image_
 			return sh->index;
 		}
 	}
+
+	/* Existing cache probes need no new image; new shaders require ownership. */
+	if ( !image ) return 0;
 
 	// make sure the render thread is stopped, because we are probably
 	// going to have to upload an image
@@ -2765,11 +2795,12 @@ way to ask for different implicit lighting modes (vertex, lightmap, etc)
 qhandle_t RE_RegisterShaderLightMap( const char *name, int lightmapIndex ) {
 	shader_t	*sh;
 
-	if ( strlen( name ) >= MAX_QPATH ) {
-		Com_Printf( "Shader name exceeds MAX_QPATH\n" );
+	if ( !ShaderNameValid(name) ) {
+		Com_Printf( "Invalid shader name (empty or exceeds MAX_QPATH)\n" );
 		return 0;
 	}
 
+	if ( !ShaderLightmapValid(lightmapIndex) ) return 0;
 	sh = R_FindShader( name, lightmapIndex, qtrue );
 
 	// we want to return 0 if the shader failed to
@@ -2799,8 +2830,8 @@ way to ask for different implicit lighting modes (vertex, lightmap, etc)
 qhandle_t RE_RegisterShader( const char *name ) {
 	shader_t	*sh;
 
-	if ( strlen( name ) >= MAX_QPATH ) {
-		Com_Printf( "Shader name exceeds MAX_QPATH\n" );
+	if ( !ShaderNameValid(name) ) {
+		Com_Printf( "Invalid shader name (empty or exceeds MAX_QPATH)\n" );
 		return 0;
 	}
 
@@ -2829,8 +2860,8 @@ For menu graphics that should never be picmiped
 qhandle_t RE_RegisterShaderNoMip( const char *name ) {
 	shader_t	*sh;
 
-	if ( strlen( name ) >= MAX_QPATH ) {
-		Com_Printf( "Shader name exceeds MAX_QPATH\n" );
+	if ( !ShaderNameValid(name) ) {
+		Com_Printf( "Invalid shader name (empty or exceeds MAX_QPATH)\n" );
 		return 0;
 	}
 
