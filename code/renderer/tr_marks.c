@@ -131,23 +131,9 @@ R_BoxSurfaces_r
 
 =================
 */
-void R_BoxSurfaces_r(mnode_t *node, vec3_t mins, vec3_t maxs, surfaceType_t **list, int listsize, int *listlength, vec3_t dir) {
-
-	int			s, c;
-	msurface_t	*surf, **mark;
-
-	// do the tail recursion in a loop
-	while ( node->contents == -1 ) {
-		s = BoxOnPlaneSide( mins, maxs, node->plane );
-		if (s == 1) {
-			node = node->children[0];
-		} else if (s == 2) {
-			node = node->children[1];
-		} else {
-			R_BoxSurfaces_r(node->children[0], mins, maxs, list, listsize, listlength, dir);
-			node = node->children[1];
-		}
-	}
+static void R_BoxLeafSurfaces(mnode_t *node,vec3_t mins,vec3_t maxs,surfaceType_t **list,int listsize,int *listlength,vec3_t dir) {
+	int s,c;
+	msurface_t *surf,**mark;
 
 	// add the individual surfaces
 	mark = node->firstmarksurface;
@@ -182,6 +168,45 @@ void R_BoxSurfaces_r(mnode_t *node, vec3_t mins, vec3_t maxs, surfaceType_t **li
 			(*listlength)++;
 		}
 		mark++;
+	}
+}
+
+/* Validated decision-node parents allow constant-space front-first traversal.
+ * Shared leaves are processed through their current owner, not leaf parents. */
+void R_BoxSurfaces_r(mnode_t *node,vec3_t mins,vec3_t maxs,surfaceType_t **list,int listsize,int *listlength,vec3_t dir) {
+	mnode_t *root=node,*child,*completed;
+	int side=0,s;
+	qboolean entering=qtrue;
+
+	if ( node->contents != -1 ) {
+		R_BoxLeafSurfaces(node,mins,maxs,list,listsize,listlength,dir);
+		return;
+	}
+	for ( ;; ) {
+		if ( entering ) {
+			s=BoxOnPlaneSide(mins,maxs,node->plane);
+			side=s==2?1:0;
+			child=node->children[side];
+		} else {
+			s=side==0?BoxOnPlaneSide(mins,maxs,node->plane):1;
+			if ( side==0 && s!=1 && s!=2 ) {
+				side=1;
+				child=node->children[1];
+			} else {
+				if ( node==root ) return;
+				completed=node;
+				node=node->parent;
+				side=node->children[0]==completed?0:1;
+				continue;
+			}
+		}
+		if ( child->contents==-1 ) {
+			node=child;
+			entering=qtrue;
+		} else {
+			R_BoxLeafSurfaces(child,mins,maxs,list,listsize,listlength,dir);
+			entering=qfalse;
+		}
 	}
 }
 
