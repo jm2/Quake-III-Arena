@@ -96,10 +96,63 @@ static void Registration(void) {
 		following=R_FindShader("tests/following",LIGHTMAP_NONE,qtrue);Check(following && !following->defaultShader && following->numUnfoggedPasses==1,"native following shader registration after invalid definition");
 	}
 }
+static void AlphaIdentity(void) {
+	char *text;
+	const char *bodies[]={"map $whiteimage\nrgbGen identity\nalphaGen identity\n}", "map $whiteimage\nrgbGen lightingDiffuse\nalphaGen identity\n}", "map $whiteimage\nrgbGen vertex\nalphaGen identity\n}", "map $whiteimage\nrgbGen identity\nalphaGen vertex\n}"};
+	int mode;
+	for(mode=0;mode<4;mode++) { ResetParser();text=(char *)bodies[mode];Check(ParseStage(&stages[0],&text),"native alpha stage parses");Check(stages[0].alphaGen==(mode<2?AGEN_SKIP:mode==2?AGEN_IDENTITY:AGEN_VERTEX),"identity/diffuse can skip identity alpha while other native alpha modes remain unchanged"); }
+}
+static void Texture(unsigned int unit) { (void)unit;Check(0,"collapse must not issue graphics calls"); }
+static void AlphaWaves(void) {
+	int mode;char *text;shaderStage_t before[MAX_SHADER_STAGES];shader_t material;
+	for(mode=0;mode<8;mode++) {
+		ResetParser();text="{\n{\nmap $whiteimage\nrgbGen vertex\nalphaGen wave sin 0.2 0.3 0.4 0.5\n}\n{\nmap $whiteimage\nrgbGen vertex\nalphaGen wave sin 0.2 0.3 0.4 0.5\nblendFunc filter\n}\n}\n";
+		Check(ParseShader(&text) && stages[0].alphaGen==AGEN_WAVEFORM && stages[1].alphaGen==AGEN_WAVEFORM,"actual native waveform pair parses");
+		if(mode==1)stages[1].alphaWave.base+=1;
+		if(mode==2)stages[1].alphaWave.amplitude+=1;
+		if(mode==3)stages[1].alphaWave.phase+=1;
+		if(mode==4)stages[1].alphaWave.frequency+=1;
+		if(mode==5)stages[1].alphaWave.func=GF_SQUARE;
+		if(mode==6) { stages[0].alphaGen=stages[1].alphaGen=AGEN_PORTAL;stages[1].alphaWave.base+=1; }
+		if(mode==7) { stages[0].rgbGen=stages[1].rgbGen=CGEN_WAVEFORM;stages[1].rgbWave.base+=1; }
+		memcpy(before,stages,sizeof(before));material=shader;qglActiveTextureARB=Texture;
+		Check(CollapseMultitexture()==(mode==0 || mode==6),"only identical alpha waveforms collapse; unused portal wave fields do not block collapse");
+		if(mode==0 || mode==6)Check(shader.multitextureEnv==GL_MODULATE && stages[0].bundle[1].image[0]==&white && !stages[1].active && stages[0].alphaGen==before[0].alphaGen && !memcmp(&stages[0].alphaWave,&before[0].alphaWave,sizeof(waveForm_t)),"accepted collapse preserves native alpha/texture stage");
+		else Check(!memcmp(stages,before,sizeof(before)) && !memcmp(&shader,&material,sizeof(material)),"rejected waveform collapse leaves both stages unchanged");
+		qglActiveTextureARB=NULL;
+	}
+	for(mode=0;mode<2;mode++) {
+		shader_t *registered;int beforeAllocations;
+		Release();tr.whiteImage=&white;
+		snprintf(archive,sizeof(archive),"tests/material\n{\n{\nmap $whiteimage\nrgbGen vertex\nalphaGen wave sin 0.2 0.3 0.4 0.5\n}\n{\nmap $whiteimage\nrgbGen vertex\nalphaGen wave sin %s 0.3 0.4 0.5\nblendFunc filter\n}\n}\n",mode?"0.7":"0.2");
+		s_shaderText=archive;qglActiveTextureARB=Texture;
+		registered=R_FindShader("tests/material",LIGHTMAP_NONE,qtrue);
+		Check(!registered->defaultShader && registered->numUnfoggedPasses==(mode?2:1) && registered->stages[0]->alphaGen==AGEN_WAVEFORM,"actual shader registration retains different alpha passes and collapses identical waveforms");
+		beforeAllocations=allocations;Check(R_FindShader("tests/material",LIGHTMAP_NONE,qtrue)==registered && allocations==beforeAllocations,"waveform shader cache reuse");
+		qglActiveTextureARB=NULL;
+	}
+	Release();tr.whiteImage=&white;
+}
+static void FastAlpha(void) {
+	int kind,mode;const alphaGen_t alpha[]={AGEN_IDENTITY,AGEN_SKIP,AGEN_VERTEX,AGEN_WAVEFORM};
+	shader_t *registered;r_ignoreFastPath=&zero;
+	for(kind=0;kind<2;kind++)for(mode=0;mode<4;mode++) {
+		ResetParser();shader.numUnfoggedPasses=1;stages[0].rgbGen=kind?CGEN_IDENTITY:CGEN_LIGHTING_DIFFUSE;stages[0].alphaGen=alpha[mode];stages[0].bundle[0].tcGen=TCGEN_TEXTURE;
+		if(kind) { stages[0].bundle[1].tcGen=TCGEN_LIGHTMAP;shader.multitextureEnv=GL_MODULATE; }
+		ComputeStageIteratorFunc();
+		Check(shader.optimalStageIteratorFunc==(mode<2?(kind?RB_StageIteratorLightmappedMultitexture:RB_StageIteratorVertexLitTexture):RB_StageIteratorGeneric),"identity/skipped alpha retains eligible fast paths while varying alpha uses generic rendering");
+	}
+	Release();tr.whiteImage=&white;s_shaderText="tests/diffuse\n{\n{\nmap $whiteimage\nrgbGen lightingDiffuse\nalphaGen identity\n}\n}\n";
+	registered=R_FindShader("tests/diffuse",LIGHTMAP_NONE,qtrue);Check(!registered->defaultShader && registered->stages[0]->alphaGen==AGEN_SKIP && registered->optimalStageIteratorFunc==RB_StageIteratorVertexLitTexture,"actual explicit diffuse registration retains vertex-lit iterator after alpha skip");
+	Release();tr.whiteImage=&white;tr.numLightmaps=1;tr.lightmaps[0]=&white;qglActiveTextureARB=Texture;
+	s_shaderText="tests/lightmapped\n{\n{\nmap $whiteimage\nrgbGen identity\nalphaGen identity\n}\n{\nmap $lightmap\nrgbGen identity\nalphaGen identity\nblendFunc filter\n}\n}\n";
+	registered=R_FindShader("tests/lightmapped",0,qtrue);Check(!registered->defaultShader && registered->numUnfoggedPasses==1 && registered->stages[0]->alphaGen==AGEN_SKIP && registered->optimalStageIteratorFunc==RB_StageIteratorLightmappedMultitexture,"actual collapsed lightmapped registration retains its specialized iterator after alpha skip");
+	qglActiveTextureARB=NULL;r_ignoreFastPath=&one;Release();tr.whiteImage=&white;
+}
 int main(void) {
 	int i;char *text;ri.Printf=Print;ri.Hunk_Alloc=Allocate;ri.CIN_PlayCinematic=Video;tr.whiteImage=&white;
 	for(i=0;i<MAX_SHADERTEXT_HASH;i++)shaderTextHashTable[i]=emptyHash;
-	NativeStages();TailCases();
+	AlphaIdentity();AlphaWaves();FastAlpha();NativeStages();TailCases();
 	ResetParser();text="{\nsurfaceParm fog\n}\n";Check(ParseShader(&text),"native zero-stage fog remains valid");
 	ResetParser();text="{\nskyparms - 512 -\n}\n";Check(ParseShader(&text) && shader.isSky,"native zero-stage sky remains valid");
 	Registration();

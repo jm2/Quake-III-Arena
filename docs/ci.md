@@ -173,6 +173,10 @@ layout, signed words, 256 glyph names/handles, all short input lengths and FS
 alignments, malformed names/floats, publication boundaries, cache capacity and
 balanced file ownership. FreeType generation is a separate follow-up.
 
+The actual shader fixture also covers native identity-alpha skip and matching
+multitexture alpha/RGB waves, rejects changes without mutating stages, and
+checks real registration pass counts and cache reuse.
+
 ## Run the portable checks locally
 
 ```sh
