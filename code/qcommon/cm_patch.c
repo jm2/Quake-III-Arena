@@ -286,7 +286,7 @@ all the aproximating points are within SUBDIVIDE_DISTANCE
 from the true curve
 =================
 */
-static void CM_SubdivideGridColumns( cGrid_t *grid ) {
+static qboolean CM_SubdivideGridColumns( cGrid_t *grid ) {
 	int		i, j, k;
 
 	for ( i = 0 ; i < grid->width - 2 ;  ) {
@@ -322,6 +322,9 @@ static void CM_SubdivideGridColumns( cGrid_t *grid ) {
 		//
 		// we need to subdivide the curve
 		//
+		if ( grid->width > MAX_GRID_SIZE - 2 ) {
+			return qfalse;
+		}
 		for ( j = 0 ; j < grid->height ; j++ ) {
 			vec3_t	prev, mid, next;
 
@@ -346,6 +349,7 @@ static void CM_SubdivideGridColumns( cGrid_t *grid ) {
 		// the new aproximating point at i+1 may need to be removed
 		// or subdivided farther, so don't advance i
 	}
+	return qtrue;
 }
 
 /*
@@ -1135,6 +1139,46 @@ static void CM_PatchCollideFromGrid( cGrid_t *grid, patchCollide_t *pf ) {
 }
 
 
+/* Share the exact native refinement with the map preflight. */
+static const char *CM_RefinePatchGrid( cGrid_t *grid, int width, int height, vec3_t *points ) {
+	int i, j;
+
+	if ( width <= 2 || height <= 2 || !points ) return "bad collision patch parameters";
+	if ( !(width & 1) || !(height & 1) ) return "even collision patch dimensions";
+	if ( width > MAX_GRID_SIZE || height > MAX_GRID_SIZE ) return "collision patch source exceeds native grid";
+
+	grid->width = width;
+	grid->height = height;
+	grid->wrapWidth = qfalse;
+	grid->wrapHeight = qfalse;
+	for ( i = 0 ; i < width ; i++ ) {
+		for ( j = 0 ; j < height ; j++ ) {
+			VectorCopy( points[j*width + i], grid->points[i][j] );
+		}
+	}
+
+	CM_SetGridWrapWidth( grid );
+	if ( !CM_SubdivideGridColumns( grid ) ) return "collision patch subdivision exceeds native grid";
+	CM_RemoveDegenerateColumns( grid );
+	CM_TransposeGrid( grid );
+	CM_SetGridWrapWidth( grid );
+	if ( !CM_SubdivideGridColumns( grid ) ) return "collision patch subdivision exceeds native grid";
+	CM_RemoveDegenerateColumns( grid );
+	return NULL;
+}
+
+/* No world, hunk, facet or plane state is published during this preflight. */
+const char *CM_ValidatePatchCollide( int width, int height, vec3_t *points ) {
+	cGrid_t *grid;
+	const char *error;
+
+	grid = malloc( sizeof( *grid ) );
+	if ( !grid ) return "collision patch preflight workspace allocation failed";
+	error = CM_RefinePatchGrid( grid, width, height, points );
+	free( grid );
+	return error;
+}
+
 /*
 ===================
 CM_GeneratePatchCollide
@@ -1150,40 +1194,13 @@ struct patchCollide_s	*CM_GeneratePatchCollide( int width, int height, vec3_t *p
 	MAC_STATIC cGrid_t			grid;
 	int				i, j;
 
-	if ( width <= 2 || height <= 2 || !points ) {
-		Com_Error( ERR_DROP, "CM_GeneratePatchFacets: bad parameters: (%i, %i, %p)",
-			width, height, points );
+	const char *error;
+
+	error = CM_RefinePatchGrid( &grid, width, height, points );
+	if ( error ) {
+		Com_Error( ERR_DROP, "CM_GeneratePatchCollide: %s", error );
+		return NULL;
 	}
-
-	if ( !(width & 1) || !(height & 1) ) {
-		Com_Error( ERR_DROP, "CM_GeneratePatchFacets: even sizes are invalid for quadratic meshes" );
-	}
-
-	if ( width > MAX_GRID_SIZE || height > MAX_GRID_SIZE ) {
-		Com_Error( ERR_DROP, "CM_GeneratePatchFacets: source is > MAX_GRID_SIZE" );
-	}
-
-	// build a grid
-	grid.width = width;
-	grid.height = height;
-	grid.wrapWidth = qfalse;
-	grid.wrapHeight = qfalse;
-	for ( i = 0 ; i < width ; i++ ) {
-		for ( j = 0 ; j < height ; j++ ) {
-			VectorCopy( points[j*width + i], grid.points[i][j] );
-		}
-	}
-
-	// subdivide the grid
-	CM_SetGridWrapWidth( &grid );
-	CM_SubdivideGridColumns( &grid );
-	CM_RemoveDegenerateColumns( &grid );
-
-	CM_TransposeGrid( &grid );
-
-	CM_SetGridWrapWidth( &grid );
-	CM_SubdivideGridColumns( &grid );
-	CM_RemoveDegenerateColumns( &grid );
 
 	// we now have a grid of points exactly on the curve
 	// the aproximate surface defined by these points will be

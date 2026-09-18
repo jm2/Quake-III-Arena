@@ -194,6 +194,8 @@ QVMs while any P0 item is open.
   - [x] World traversal preserves inherited culling/light masks with bounded
         frames and OOM cleanup; all 32 light bits use defined shifts; see
         [world evidence](bsp-world-validation.md).
+  - [x] Collision patch refinement fits the native grid before map reset, with
+        [native goldens and ownership evidence](bsp-patch-grid-validation.md).
 - [ ] [#46 — enforce shader/skin/font limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
       — **high**, fixed-array writes and unsafe serialized resources.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
