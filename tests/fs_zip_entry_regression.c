@@ -162,6 +162,7 @@ static void CapGolden(char *dir, int occupied) {
     fileHandle_t prior = 0, f;
     fileHandleData_t saved;
     int i, j, live, files;
+    unsigned char chunk[65536];
     Begin();
     Path(path, sizeof(path), dir, "caps.pk3");
     search.pack = FS_LoadZipFile(path, "caps.pk3");
@@ -179,6 +180,20 @@ static void CapGolden(char *dir, int occupied) {
         if (fsh[f].buffer) {
             Check(fsh[f].bufferLen == sizes[i] && fsh[f].buffer[sizes[i] - 1] == 0,
                   "complete native buffered payload reaches its last byte");
+        } else {
+            int consumed = sizeof(text);
+            while (consumed < sizes[i]) {
+                int request = sizes[i] - consumed;
+                if (request > (int)sizeof(chunk)) request = sizeof(chunk);
+                Check(FS_Read(chunk, request, f) == request,
+                      "native streamed cap payload reads completely through refills");
+                for (j = 0; j < request; j++)
+                    Check(chunk[j] == 0, "every native streamed cap payload byte remains correct");
+                consumed += request;
+            }
+            Check(FS_Read(chunk, sizeof(chunk), f) == 0 &&
+                  FS_Read(chunk, 1, f) == 0,
+                  "complete native streamed cap payload reaches stable EOF");
         }
         FS_FCloseFile(f);
         if (occupied) Preserved(prior, &saved, payload, live, files);
