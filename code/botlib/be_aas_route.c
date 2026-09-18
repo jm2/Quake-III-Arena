@@ -753,11 +753,13 @@ aas_routingcache_t *AAS_AllocRoutingCache(int numtraveltimes)
 	aas_routingcache_t *cache;
 	int size;
 
-	//
-	size = sizeof(aas_routingcache_t)
-						+ numtraveltimes * sizeof(unsigned short int)
-						+ numtraveltimes * sizeof(unsigned char);
-	//
+	// Bound native signed import/accounting costs before multiplication or allocation.
+	if (numtraveltimes < 0 || numtraveltimes >
+		(INT_MAX - (int)sizeof(aas_routingcache_t)) /
+		(int)(sizeof(unsigned short int) + sizeof(unsigned char))) return NULL;
+	size = (int)sizeof(aas_routingcache_t) + numtraveltimes *
+		(int)(sizeof(unsigned short int) + sizeof(unsigned char));
+	if (routingcachesize < 0 || size > INT_MAX - routingcachesize) return NULL;
 	cache = (aas_routingcache_t *) GetClearedMemory(size);
 	if (!cache) return NULL;
 	routingcachesize += size;
@@ -1045,109 +1047,153 @@ void AAS_WriteRouteCache(void)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-aas_routingcache_t *AAS_ReadCache(fileHandle_t fp)
+static qboolean AAS_ReadRouteCacheBytes(void *buffer, int size, fileHandle_t fp, int *remaining)
 {
-	int size;
-	aas_routingcache_t *cache;
+	if (size < 0 || size > *remaining || botimport.FS_Read(buffer, size, fp) != size) return qfalse;
+	*remaining -= size;
+	return qtrue;
+}
 
-	botimport.FS_Read(&size, sizeof(size), fp);
-	cache = (aas_routingcache_t *) GetMemory(size);
-	cache->size = size;
-	botimport.FS_Read((unsigned char *)cache + sizeof(size), size - sizeof(size), fp);
-	cache->reachabilities = (unsigned char *) cache + sizeof(aas_routingcache_t) - sizeof(unsigned short) +
-		(size - sizeof(aas_routingcache_t) + sizeof(unsigned short)) / 3 * 2;
-	return cache;
-} //end of the function AAS_ReadCache
-//===========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
-//===========================================================================
-int AAS_ReadRouteCache(void)
+static qboolean AAS_RouteCacheFloatFinite(const float *value)
 {
-	int i, clusterareanum;//, size;
-	fileHandle_t fp;
-	char filename[MAX_QPATH];
-	routecacheheader_t routecacheheader;
-	aas_routingcache_t *cache;
+	unsigned int bits;
+	/* Read bytes without a fast-math floating argument's finite assumption. */
+	memcpy(&bits, value, sizeof(bits));
+	return (bits & 0x7f800000U) != 0x7f800000U;
+}
 
-	Com_sprintf(filename, MAX_QPATH, "maps/%s.rcd", aasworld.mapname);
-	botimport.FS_FOpenFile( filename, &fp, FS_READ );
-	if (!fp)
+static qboolean AAS_RouteCacheGoal(int cluster, int area, int *slot)
+{
+	int owner, portal;
+	if (cluster <= 0 || cluster >= aasworld.numclusters || area <= 0 || area >= aasworld.numareas) return qfalse;
+	owner = aasworld.areasettings[area].cluster;
+	if (owner > 0)
 	{
-		return qfalse;
-	} //end if
-	botimport.FS_Read(&routecacheheader, sizeof(routecacheheader_t), fp );
-	if (routecacheheader.ident != RCID)
+		if (owner != cluster) return qfalse;
+		*slot = aasworld.areasettings[area].clusterareanum;
+	}
+	else
 	{
-		AAS_Error("%s is not a route cache dump\n");
-		return qfalse;
-	} //end if
-	if (routecacheheader.version != RCVERSION)
+		if (owner == 0 || owner == INT_MIN) return qfalse;
+		portal = -owner;
+		if (portal >= aasworld.numportals) return qfalse;
+		if (aasworld.portals[portal].frontcluster != cluster && aasworld.portals[portal].backcluster != cluster) return qfalse;
+		*slot = aasworld.portals[portal].clusterareanum[aasworld.portals[portal].frontcluster != cluster];
+	}
+	return *slot >= 0 && *slot < aasworld.clusters[cluster].numreachabilityareas;
+}
+
+static qboolean AAS_ValidateRouteCachePayload(aas_routingcache_t *cache)
+{
+	int i, area, slot;
+	if (cache->type == CACHETYPE_PORTAL)
 	{
-		AAS_Error("route cache dump has wrong version %d, should be %d", routecacheheader.version, RCVERSION);
-		return qfalse;
-	} //end if
-	if (routecacheheader.numareas != aasworld.numareas)
-	{
-		//AAS_Error("route cache dump has wrong number of areas\n");
-		return qfalse;
-	} //end if
-	if (routecacheheader.numclusters != aasworld.numclusters)
-	{
-		//AAS_Error("route cache dump has wrong number of clusters\n");
-		return qfalse;
-	} //end if
-	if (routecacheheader.areacrc !=
-		CRC_ProcessString( (unsigned char *)aasworld.areas, sizeof(aas_area_t) * aasworld.numareas ))
-	{
-		//AAS_Error("route cache dump area CRC incorrect\n");
-		return qfalse;
-	} //end if
-	if (routecacheheader.clustercrc !=
-		CRC_ProcessString( (unsigned char *)aasworld.clusters, sizeof(aas_cluster_t) * aasworld.numclusters ))
-	{
-		//AAS_Error("route cache dump cluster CRC incorrect\n");
-		return qfalse;
-	} //end if
-	//read all the portal cache
-	for (i = 0; i < routecacheheader.numportalcache; i++)
-	{
-		cache = AAS_ReadCache(fp);
-		cache->next = aasworld.portalcache[cache->areanum];
-		cache->prev = NULL;
-		if (aasworld.portalcache[cache->areanum])
-			aasworld.portalcache[cache->areanum]->prev = cache;
-		aasworld.portalcache[cache->areanum] = cache;
-	} //end for
-	//read all the cluster area cache
-	for (i = 0; i < routecacheheader.numareacache; i++)
-	{
-		cache = AAS_ReadCache(fp);
-		clusterareanum = AAS_ClusterAreaNum(cache->cluster, cache->areanum);
-		cache->next = aasworld.clusterareacache[cache->cluster][clusterareanum];
-		cache->prev = NULL;
-		if (aasworld.clusterareacache[cache->cluster][clusterareanum])
-			aasworld.clusterareacache[cache->cluster][clusterareanum]->prev = cache;
-		aasworld.clusterareacache[cache->cluster][clusterareanum] = cache;
-	} //end for
-	// read the visareas
-	/*
-	aasworld.areavisibility = (byte **) GetClearedMemory(aasworld.numareas * sizeof(byte *));
-	aasworld.decompressedvis = (byte *) GetClearedMemory(aasworld.numareas * sizeof(byte));
-	for (i = 0; i < aasworld.numareas; i++)
-	{
-		botimport.FS_Read(&size, sizeof(size), fp );
-		if (size) {
-			aasworld.areavisibility[i] = (byte *) GetMemory(size);
-			botimport.FS_Read(aasworld.areavisibility[i], size, fp );
+		if (aasworld.numportals && cache->traveltimes[0]) return qfalse;
+		for (i = 1; i < aasworld.numportals; i++)
+		{
+			area = aasworld.portals[i].areanum;
+			if (area <= 0 || area >= aasworld.numareas) return qfalse;
+			if (cache->traveltimes[i] && cache->reachabilities[i] >= aasworld.areasettings[area].numreachableareas) return qfalse;
 		}
 	}
-	*/
-	//
-	botimport.FS_FCloseFile(fp);
+	else
+	{
+		for (area = 1; area < aasworld.numareas; area++)
+		{
+			if (!AAS_RouteCacheGoal(cache->cluster, area, &slot)) continue;
+			if (cache->traveltimes[slot] && cache->reachabilities[slot] >= aasworld.areasettings[area].numreachableareas) return qfalse;
+		}
+	}
 	return qtrue;
+}
+
+/* RCVERSION 2 stores the complete native cache header, followed by its payload. */
+static aas_routingcache_t *AAS_ReadCache(fileHandle_t fp, int *remaining, int type)
+{
+	int count, size, slot, i;
+	aas_routingcache_t disk, *cache;
+	if (!AAS_ReadRouteCacheBytes(&disk, sizeof(disk), fp, remaining)) return NULL;
+	if (disk.type != type || !AAS_RouteCacheGoal(disk.cluster, disk.areanum, &slot)) return NULL;
+	if (!AAS_RouteCacheFloatFinite(&disk.time) || !AAS_RouteCacheFloatFinite(&disk.starttraveltime) || disk.starttraveltime < 0) return NULL;
+	for (i = 0; i < 3; i++) if (!AAS_RouteCacheFloatFinite(&disk.origin[i])) return NULL;
+	count = type == CACHETYPE_PORTAL ? aasworld.numportals : aasworld.clusters[disk.cluster].numreachabilityareas;
+	if (count < 0 || count > (INT_MAX - (int)sizeof(disk)) / 3) return NULL;
+	size = (int)sizeof(disk) + count * 3;
+	if (disk.size != size || size - (int)sizeof(disk) > *remaining) return NULL;
+	cache = AAS_AllocRoutingCache(count);
+	if (!cache) return NULL;
+	memcpy(cache, &disk, sizeof(disk));
+	// File pointers are never runtime owners. Rebuild payload and list links.
+	cache->reachabilities = (unsigned char *)cache + sizeof(*cache) + count * sizeof(unsigned short);
+	cache->prev = cache->next = cache->time_prev = cache->time_next = NULL;
+	if (!AAS_ReadRouteCacheBytes((unsigned char *)cache + sizeof(*cache), size - sizeof(*cache), fp, remaining) ||
+		!AAS_ValidateRouteCachePayload(cache))
+	{
+		routingcachesize -= cache->size;
+		FreeMemory(cache);
+		return NULL;
+	}
+	return cache;
+}
+
+int AAS_ReadRouteCache(void)
+{
+	int i, total, remaining, slot;
+	fileHandle_t fp;
+	char filename[MAX_QPATH];
+	routecacheheader_t header;
+	aas_routingcache_t *cache, *next, *staged = NULL, **table;
+	qboolean valid = qfalse;
+
+	Com_sprintf(filename, MAX_QPATH, "maps/%s.rcd", aasworld.mapname);
+	remaining = botimport.FS_FOpenFile(filename, &fp, FS_READ);
+	if (!fp) return qfalse;
+	if (remaining < 0 || aasworld.numareas <= 0 || aasworld.numclusters < 1 ||
+		aasworld.numareas > INT_MAX / (int)sizeof(aas_area_t) ||
+		aasworld.numclusters > INT_MAX / (int)sizeof(aas_cluster_t)) goto done;
+	if (!AAS_ReadRouteCacheBytes(&header, sizeof(header), fp, &remaining)) goto done;
+	if (header.ident != RCID || header.version != RCVERSION ||
+		header.numareas != aasworld.numareas || header.numclusters != aasworld.numclusters ||
+		header.areacrc != CRC_ProcessString((unsigned char *)aasworld.areas, sizeof(aas_area_t) * aasworld.numareas) ||
+		header.clustercrc != CRC_ProcessString((unsigned char *)aasworld.clusters, sizeof(aas_cluster_t) * aasworld.numclusters)) goto done;
+	if (header.numportalcache < 0 || header.numareacache < 0 ||
+		header.numportalcache > remaining / (int)sizeof(aas_routingcache_t) ||
+		header.numareacache > remaining / (int)sizeof(aas_routingcache_t) - header.numportalcache) goto done;
+	total = header.numportalcache + header.numareacache;
+	for (i = 0; i < total; i++)
+	{
+		cache = AAS_ReadCache(fp, &remaining, i < header.numportalcache ? CACHETYPE_PORTAL : CACHETYPE_AREA);
+		if (!cache) goto done;
+		cache->next = staged;
+		staged = cache;
+	}
+	if (remaining != 0) goto done;
+	// Publish only after the entire optional dump validates.
+	while (staged)
+	{
+		cache = staged;
+		staged = cache->next;
+		if (cache->type == CACHETYPE_PORTAL) table = &aasworld.portalcache[cache->areanum];
+		else
+		{
+			slot = AAS_ClusterAreaNum(cache->cluster, cache->areanum);
+			table = &aasworld.clusterareacache[cache->cluster][slot];
+		}
+		cache->next = *table;
+		if (*table) (*table)->prev = cache;
+		*table = cache;
+		AAS_LinkCache(cache);
+	}
+	valid = qtrue;
+ done:
+	for (cache = staged; cache; cache = next)
+	{
+		next = cache->next;
+		routingcachesize -= cache->size;
+		FreeMemory(cache);
+	}
+	botimport.FS_FCloseFile(fp);
+	return valid;
 } //end of the function AAS_ReadRouteCache
 //===========================================================================
 //

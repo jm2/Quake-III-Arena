@@ -428,3 +428,18 @@ area/portal cache providers and routing consumers; nullable cache/workspace
 failures preserve existing cache/LRU ownership, release unfinished owners,
 clear pending portal flags and permit successful retries. All three public
 route-provider failure paths are exercised under normal/fast-math sanitizers.
+
+The cache-allocation runner exercises actual native allocation, cache linking
+and physical free. Literal count/layout goldens retain zero through 1,024
+entries; negative/wrapped counts and invalid signed byte budgets reject before
+imports or mutation. Exact signed byte capacity remains accepted. Nullable
+ordinary and large representable requests preserve accounting. Normal/fast-math
+sanitizers cover original pointer/counter overflow and undersized-cache proofs.
+
+The cache-file runner round-trips the actual native version-two writer and
+reader, retains literal route results, and regenerates routes after area state
+changes with exact loaded-cache accounting. Stored pointers are discarded.
+Every file truncation, malformed headers/records/floats/indices, short reads,
+nullable imports and cumulative signed budget failure reject without changing
+existing cache/table/LRU ownership. Empty dumps remain valid. GCC and Clang
+normal/release fast-math sanitizer runs cover their different float assumptions.
