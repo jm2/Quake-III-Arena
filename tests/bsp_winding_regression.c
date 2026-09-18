@@ -77,8 +77,49 @@ static void CopyOwnership(void) {
 		Check(!zoneLive && !c_active_windings,"copy and source release ownership");
 	}
 }
+static void NativeBudgets(void) {
+	facet_t facet;float plane[4]={1,0,0,123};
+	vec3_t a={0,0,123},b={0,1,123},c={1,0,123};
+	int i,flipped;
+	memset(planes,0,sizeof(planes));
+	for(i=0;i<MAX_PATCH_PLANES;i++) { planes[i].plane[0]=1;planes[i].plane[3]=-1000-i; }
+	numPlanes=MAX_PATCH_PLANES;
+	Check(CM_FindPlane2(plane,&flipped)==CM_PATCH_PLANE_LIMIT && numPlanes==MAX_PATCH_PLANES,"full bevel plane table rejects insertion");
+	Check(CM_FindPlane(a,b,c)==CM_PATCH_PLANE_LIMIT && numPlanes==MAX_PATCH_PLANES,"full triangle plane table rejects insertion");
+	Vector4Copy(plane,planes[7].plane);
+	Check(CM_FindPlane2(plane,&flipped)==7 && !flipped && numPlanes==MAX_PATCH_PLANES,"full plane table retains matching native plane");
+	numPlanes=MAX_PATCH_PLANES-1;
+	Check(CM_FindPlane2((float[4]){0,1,0,456},&flipped)==MAX_PATCH_PLANES-1 && numPlanes==MAX_PATCH_PLANES,"last native plane insertion");
+	BuildFacet(&facet);numPlanes=5;
+	for(i=4;i<26;i++) { facet.borderPlanes[i]=4;facet.borderInward[i]=qtrue; }
+	facet.numBorders=25;
+	Check(CM_AddFacetBevels(&facet)==NULL && facet.numBorders==26 && facet.borderPlanes[25]==facet.surfacePlane && !zoneLive,"last native border holds opposite plane");
+	facet.numBorders=26;
+	Check(!strcmp(CM_AddFacetBevels(&facet),"MAX_FACET_BORDERS") && facet.numBorders==26 && !zoneLive,"full native border array releases winding before opposite-plane rejection");
+	BuildFacet(&facet);numPlanes=5;
+	for(i=1;i<=4;i++) { float x=planes[i].plane[0],y=planes[i].plane[1];planes[i].plane[0]=(x-y)*0.70710677f;planes[i].plane[1]=(x+y)*0.70710677f; }
+	for(i=4;i<25;i++) { facet.borderPlanes[i]=4;facet.borderInward[i]=qtrue; }
+	facet.numBorders=25;
+	Check(!strcmp(CM_AddFacetBevels(&facet),"MAX_FACET_BORDERS") && facet.numBorders==25 && !zoneLive,"bevel insertion reserves opposite-plane capacity and releases winding");
+	BuildFacet(&facet);numPlanes=MAX_PATCH_PLANES;
+	for(i=1;i<=4;i++) { float x=planes[i].plane[0],y=planes[i].plane[1];planes[i].plane[0]=(x-y)*0.70710677f;planes[i].plane[1]=(x+y)*0.70710677f; }
+	Check(!strcmp(CM_AddFacetBevels(&facet),"MAX_PATCH_PLANES") && !zoneLive && !c_active_windings,"bevel plane failure releases live winding");
+}
+static void PreflightState(void) {
+	vec3_t points[9],savedPoints[4];int i;
+	facet_t oldFacet;patchCollide_t oldPatch;
+	for(i=0;i<9;i++)VectorSet(points[i],(i%3)*32,(i/3)*32,0);
+	debugBlock=qtrue;
+	for(i=0;i<4;i++)VectorSet(debugBlockPoints[i],i+0.25f,i+0.5f,i+0.75f);
+	memcpy(savedPoints,debugBlockPoints,sizeof(savedPoints));
+	numPlanes=17;numFacets=11;debugFacet=&oldFacet;debugPatchCollide=&oldPatch;
+	Check(CM_ValidatePatchCollide(3,3,points)==NULL && numPlanes==17 && numFacets==11 && debugBlock &&
+		!memcmp(savedPoints,debugBlockPoints,sizeof(savedPoints)) && debugFacet==&oldFacet && debugPatchCollide==&oldPatch && !zoneLive,
+		"native preflight retains build counters and persistent debug ownership");
+	debugFacet=NULL;debugPatchCollide=NULL;
+}
 int main(void) {
-	FacetOwnership();CopyOwnership();
+	FacetOwnership();CopyOwnership();NativeBudgets();PreflightState();
 	Check(zoneAllocations==zoneFrees && !zoneLive && !c_active_windings,"all native winding ownership balanced");
 	puts("BSP native facet rejection and winding copy ownership regressions passed (issue #45)");return 0;
 }

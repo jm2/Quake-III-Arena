@@ -304,6 +304,8 @@ implementation or check, without implying issue completion.
         preserves native output; [evidence](bsp-patch-grid-validation.md).
   - [x] Native facet rejection releases winding ownership, with exact layout
         copies and repeated rejection [evidence](bsp-winding-validation.md).
+  - [x] Native derived collision plane/facet/border capacity rejects before
+        map reset, with staged-build [evidence](bsp-patch-budget-validation.md).
 - [ ] [#46 — shader/skin/font fixed limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.

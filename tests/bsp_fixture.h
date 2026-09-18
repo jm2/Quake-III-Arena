@@ -40,7 +40,13 @@ void *Hunk_Alloc(int size,ha_pref preference) {
 static void FreeHunks(void) { free(hunkArena);hunkArena=NULL;hunkUsed=0;allocations=0; }
 
 cvar_t *Cvar_Get(const char *name,const char *value,int flags) { (void)name;(void)value;(void)flags;return &variable; }
-void QDECL Com_Error(int level,const char *format,...) { (void)format; Check(level==ERR_DROP && expectError && !fileAllocation,"controlled rejection after input cleanup"); longjmp(errorJump,1); }
+void QDECL Com_Error(int level,const char *format,...) {
+	if(level!=ERR_DROP || !expectError || fileAllocation) {
+		va_list args;va_start(args,format);vfprintf(stderr,format,args);va_end(args);fputc('\n',stderr);
+	}
+	Check(level==ERR_DROP && expectError && !fileAllocation,"controlled rejection after input cleanup");
+	longjmp(errorJump,1);
+}
 void QDECL Com_Printf(const char *format,...) { (void)format; }
 void QDECL Com_DPrintf(const char *format,...) { (void)format; }
 #ifndef Com_Memcpy
