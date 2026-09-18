@@ -1284,7 +1284,10 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 						return -1;
 					}
 					// copy the file info into the unzip structure
-					Com_Memcpy( zfi, pak->handle, sizeof(unz_s) );
+					if (uniqueFILE) {
+						Com_Memcpy( zfi, pak->handle, sizeof(unz_s) );
+						zfi->pfile_in_zip_read = NULL;
+					}
 					// we copy this back into the structure
 					zfi->file = temp;
 					// open the file in the zip

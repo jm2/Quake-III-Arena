@@ -1298,7 +1298,8 @@ extern unzFile unzReOpen (const char* path, unzFile file)
 	Com_Memcpy(s, (unz_s*)file, sizeof(unz_s));
 
 	s->file = fin;
-	return (unzFile)s;	
+	s->pfile_in_zip_read = NULL;
+	return (unzFile)s;
 }
 
 /*
@@ -4296,5 +4297,4 @@ void  zcfree (void *opaque, void *ptr)
     Z_Free(ptr);
     if (opaque) return; /* make compiler happy */
 }
-
 
