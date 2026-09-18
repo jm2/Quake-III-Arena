@@ -547,3 +547,14 @@ preserve the registry; duplicate removal retains native first-match behavior.
 Five original actual-body proofs expose three use-after-free paths, null-name
 lookup and failure to unlink a duplicate. GCC and Clang run normal/release
 fast-math sanitizers; remaining directive factories and parse budgets stay open.
+
+The interpolation runner uses real parsed lower/upper skill characters and the
+actual native interpolation/cleanup/getter bodies. Literal native float values,
+lower integer/string choices, mixed/unset fields, independent ordinary/empty
+string copies and first-free handles remain compatible. Every output/header and
+string import observes an unpublished result. All three nullable stages release
+partial output, preserve every input field/string owner and retry into the same
+handle. Native invalid handles and a full table reject before imports. Four
+original actual-body proofs fail; ordinary native goldens also pass against the
+original body. GCC/Clang normal/release sanitizer CI covers ownership; default
+inheritance and character numeric bounds remain separate work.
