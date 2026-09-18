@@ -24,7 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "tr_local.h"
 
 
-#define	WAVEVALUE( table, base, amplitude, phase, freq )  ((base) + table[ myftol( ( ( (phase) + tess.shaderTime * (freq) ) * FUNCTABLE_SIZE ) ) & FUNCTABLE_MASK ] * (amplitude))
+#define	WAVEVALUE( table, base, amplitude, phase, freq )  ((base) + table[ R_Ftol( ( ( (phase) + tess.shaderTime * (freq) ) * FUNCTABLE_SIZE ) ) & FUNCTABLE_MASK ] * (amplitude))
 
 static float *TableForFunc( genFunc_t func ) 
 {
@@ -66,6 +66,8 @@ static float EvalWaveForm( const waveForm_t *wf )
 static float EvalWaveFormClamped( const waveForm_t *wf )
 {
 	float glow  = EvalWaveForm( wf );
+
+	if ( !R_FiniteFloat(glow) ) return 0;
 
 	if ( glow < 0 )
 	{
@@ -211,7 +213,7 @@ void RB_CalcBulgeVertexes( deformStage_t *ds ) {
 		int		off;
 		float scale;
 
-		off = (float)( FUNCTABLE_SIZE / (M_PI*2) ) * ( st[0] * ds->bulgeWidth + now );
+		off = R_FloatToInt( (float)( FUNCTABLE_SIZE / (M_PI*2) ) * ( st[0] * ds->bulgeWidth + now ) );
 
 		scale = tr.sinTable[ off & FUNCTABLE_MASK ] * ds->bulgeHeight;
 			
@@ -689,6 +691,8 @@ void RB_CalcWaveColor( const waveForm_t *wf, unsigned char *dstColors )
 		glow = EvalWaveForm( wf ) * tr.identityLight;
 	}
 	
+	if ( !R_FiniteFloat(glow) ) glow = 0;
+
 	if ( glow < 0 ) {
 		glow = 0;
 	}
@@ -696,7 +700,7 @@ void RB_CalcWaveColor( const waveForm_t *wf, unsigned char *dstColors )
 		glow = 1;
 	}
 
-	v = myftol( 255 * glow );
+	v = R_Ftol( 255 * glow );
 	color[0] = color[1] = color[2] = v;
 	color[3] = 255;
 	v = *(int *)color;
@@ -717,7 +721,7 @@ void RB_CalcWaveAlpha( const waveForm_t *wf, unsigned char *dstColors )
 
 	glow = EvalWaveFormClamped( wf );
 
-	v = 255 * glow;
+	v = R_FloatToInt( 255 * glow );
 
 	for ( i = 0; i < tess.numVertexes; i++, dstColors += 4 )
 	{
@@ -739,9 +743,9 @@ void RB_CalcModulateColorsByFog( unsigned char *colors ) {
 
 	for ( i = 0; i < tess.numVertexes; i++, colors += 4 ) {
 		float f = 1.0 - R_FogFactor( texCoords[i][0], texCoords[i][1] );
-		colors[0] *= f;
-		colors[1] *= f;
-		colors[2] *= f;
+		colors[0] = (byte)R_FloatToInt( colors[0] * f );
+		colors[1] = (byte)R_FloatToInt( colors[1] * f );
+		colors[2] = (byte)R_FloatToInt( colors[2] * f );
 	}
 }
 
@@ -759,7 +763,7 @@ void RB_CalcModulateAlphasByFog( unsigned char *colors ) {
 
 	for ( i = 0; i < tess.numVertexes; i++, colors += 4 ) {
 		float f = 1.0 - R_FogFactor( texCoords[i][0], texCoords[i][1] );
-		colors[3] *= f;
+		colors[3] = (byte)R_FloatToInt( colors[3] * f );
 	}
 }
 
@@ -777,10 +781,10 @@ void RB_CalcModulateRGBAsByFog( unsigned char *colors ) {
 
 	for ( i = 0; i < tess.numVertexes; i++, colors += 4 ) {
 		float f = 1.0 - R_FogFactor( texCoords[i][0], texCoords[i][1] );
-		colors[0] *= f;
-		colors[1] *= f;
-		colors[2] *= f;
-		colors[3] *= f;
+		colors[0] = (byte)R_FloatToInt( colors[0] * f );
+		colors[1] = (byte)R_FloatToInt( colors[1] * f );
+		colors[2] = (byte)R_FloatToInt( colors[2] * f );
+		colors[3] = (byte)R_FloatToInt( colors[3] * f );
 	}
 }
 
@@ -1079,7 +1083,7 @@ void RB_CalcSpecularAlpha( unsigned char *alphas ) {
 		} else {
 			l = l*l;
 			l = l*l;
-			b = l * 255;
+			b = R_FloatToInt( l * 255 );
 			if (b > 255) {
 				b = 255;
 			}
@@ -1180,19 +1184,19 @@ void RB_CalcDiffuseColor( unsigned char *colors )
 			*(int *)&colors[i*4] = ambientLightInt;
 			continue;
 		} 
-		j = myftol( ambientLight[0] + incoming * directedLight[0] );
+		j = R_Ftol( ambientLight[0] + incoming * directedLight[0] );
 		if ( j > 255 ) {
 			j = 255;
 		}
 		colors[i*4+0] = j;
 
-		j = myftol( ambientLight[1] + incoming * directedLight[1] );
+		j = R_Ftol( ambientLight[1] + incoming * directedLight[1] );
 		if ( j > 255 ) {
 			j = 255;
 		}
 		colors[i*4+1] = j;
 
-		j = myftol( ambientLight[2] + incoming * directedLight[2] );
+		j = R_Ftol( ambientLight[2] + incoming * directedLight[2] );
 		if ( j > 255 ) {
 			j = 255;
 		}

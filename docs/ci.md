@@ -244,11 +244,22 @@ bash tests/run_skin_capacity_tests.sh
 bash tests/run_font_layout_tests.sh
 bash tests/run_font_freetype_tests.sh
 bash tests/run_shader_archive_tests.sh
+bash tests/run_shader_runtime_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
 PowerShell parser validation is also part of CI; see
 `.github/workflows/portable-ci.yml` for the exact command.
+
+The native shader runtime runner compiles the actual math/noise bodies in normal
+and release fast-math sanitizer configurations. It compares 645 valid waveform/
+color/alpha samples and 513 noise samples with the original native formulas under
+the same compiler flags. Noise matches exactly in normal builds and within four
+float epsilons under release reassociation. Conversion boundaries, every noise
+coordinate's non-finite/extreme values and actual waveform, bulge and diffuse
+consumers check overflow handling; all 8,192 native fog samples retain their
+density and non-finite coordinates return zero. Graphics imports and target GPU behavior remain
+deferred.
 
 ## What this CI does not prove
 

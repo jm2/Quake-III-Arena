@@ -230,7 +230,7 @@ static void R_BindAnimatedImage( textureBundle_t *bundle ) {
 
 	// it is necessary to do this messy calc to make sure animations line up
 	// exactly with waveforms of the same frequency
-	index = myftol( tess.shaderTime * bundle->imageAnimationSpeed * FUNCTABLE_SIZE );
+	index = R_Ftol( tess.shaderTime * bundle->imageAnimationSpeed * FUNCTABLE_SIZE );
 	index >>= FUNCTABLE_SIZE2;
 
 	if ( index < 0 ) {
@@ -559,9 +559,9 @@ static void ProjectDlightTexture( void ) {
 			}
 			clipBits[i] = clip;
 
-			colors[0] = myftol(floatColor[0] * modulate);
-			colors[1] = myftol(floatColor[1] * modulate);
-			colors[2] = myftol(floatColor[2] * modulate);
+			colors[0] = R_Ftol(floatColor[0] * modulate);
+			colors[1] = R_Ftol(floatColor[1] * modulate);
+			colors[2] = R_Ftol(floatColor[2] * modulate);
 			colors[3] = 255;
 #endif
 		}
@@ -798,6 +798,8 @@ static void ComputeColors( shaderStage_t *pStage )
 
 				len /= tess.shader->portalRange;
 
+				if ( !R_FiniteFloat(len) ) len = 0;
+
 				if ( len < 0 )
 				{
 					alpha = 0;
@@ -808,7 +810,7 @@ static void ComputeColors( shaderStage_t *pStage )
 				}
 				else
 				{
-					alpha = len * 0xff;
+					alpha = (byte)R_FloatToInt( len * 0xff );
 				}
 
 				tess.svars.colors[i][3] = alpha;

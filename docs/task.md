@@ -251,6 +251,10 @@ QVMs while any P0 item is open.
   - [x] Shader names/lightmap modes and image/remap inputs validate before
         lookup/index/publication while retaining native valid cache behavior;
         see [registration evidence](shader-registration-input-validation.md).
+  - [x] Derived waveform/animation/color conversions check native int range and
+        finite bits; noise reduces extreme finite cells before indexing while
+        retaining its 256-cell period; see
+        [runtime conversion evidence](shader-runtime-conversion-validation.md).
   - [ ] Complete derived rendering conversions.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
       — **high**, server OOB access/infinite traversal.

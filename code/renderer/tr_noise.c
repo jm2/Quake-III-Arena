@@ -53,6 +53,19 @@ void R_NoiseInit( void )
 	}
 }
 
+/* Ordinary cells retain the native hot path. Leave room for nested permutation
+ * additions and adjacent cells before converting a large coordinate. */
+static int NoiseCell( float coordinate, float *fraction ) {
+	double integer = floor( coordinate );
+	if ( integer >= -2147483648.0 && integer <= 2147483391.0 ) {
+		int cell = (int)integer;
+		*fraction = coordinate - cell;
+		return cell;
+	}
+	*fraction = coordinate - (float)integer;
+	return (int)fmod( integer, NOISE_SIZE );
+}
+
 float R_NoiseGet4f( float x, float y, float z, float t )
 {
 	int i;
@@ -62,14 +75,12 @@ float R_NoiseGet4f( float x, float y, float z, float t )
 	float back[4];
 	float fvalue, bvalue, value[2], finalvalue;
 
-	ix = ( int ) floor( x );
-	fx = x - ix;
-	iy = ( int ) floor( y );
-	fy = y - iy;
-	iz = ( int ) floor( z );
-	fz = z - iz;
-	it = ( int ) floor( t );
-	ft = t - it;
+	/* Noise cells repeat every 256 integers; reduce before the native int cast. */
+	if ( !R_FiniteFloat(x) || !R_FiniteFloat(y) || !R_FiniteFloat(z) || !R_FiniteFloat(t) ) return 0;
+	ix = NoiseCell( x, &fx );
+	iy = NoiseCell( y, &fy );
+	iz = NoiseCell( z, &fz );
+	it = NoiseCell( t, &ft );
 
 	for ( i = 0; i < 2; i++ )
 	{

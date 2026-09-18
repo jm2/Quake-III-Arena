@@ -356,6 +356,10 @@ implementation or check, without implying issue completion.
   - [x] Shader names/lightmap modes and image/remap inputs validate before
         lookup/index/publication while retaining native valid cache behavior;
         see [registration evidence](shader-registration-input-validation.md).
+  - [x] Derived waveform/animation/color conversions check native int range and
+        finite bits; noise reduces extreme finite cells before indexing while
+        retaining its 256-cell period; see
+        [runtime conversion evidence](shader-runtime-conversion-validation.md).
   - [ ] Complete derived rendering conversions.
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.
