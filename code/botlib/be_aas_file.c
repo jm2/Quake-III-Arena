@@ -441,6 +441,53 @@ static qboolean AAS_ValidateGeometry(void)
 	return qtrue;
 }
 
+/* Kahn traversal checks every component without recursion or node mutation. */
+static qboolean AAS_ValidateNodes(void)
+{
+	int i, side, head = 0, tail = 0, visited = 0;
+	int *workspace, *indegree, *queue;
+	qboolean valid;
+	if (aasworld.numnodes < 2 || aasworld.numareas < 1 ||
+		aasworld.numareasettings != aasworld.numareas ||
+		aasworld.numnodes > INT_MAX / (2 * (int)sizeof(int))) return qfalse;
+	for (i = 1; i < aasworld.numnodes; i++)
+	{
+		aas_node_t *node = &aasworld.nodes[i];
+		if (node->planenum < 0 || node->planenum >= aasworld.numplanes ||
+			(node->planenum ^ 1) >= aasworld.numplanes) return qfalse;
+		for (side = 0; side < 2; side++)
+		{
+			int child = node->children[side];
+			if (child > 0 && child >= aasworld.numnodes) return qfalse;
+			if (child < 0 && !AAS_SignedIndex(child, aasworld.numareas)) return qfalse;
+		}
+	}
+	workspace = (int *)GetMemory(2 * (unsigned long)aasworld.numnodes * sizeof(int));
+	if (!workspace) return qfalse;
+	Com_Memset(workspace, 0, 2 * (unsigned long)aasworld.numnodes * sizeof(int));
+	indegree = workspace;
+	queue = workspace + aasworld.numnodes;
+	for (i = 1; i < aasworld.numnodes; i++)
+		for (side = 0; side < 2; side++)
+			if (aasworld.nodes[i].children[side] > 0)
+				indegree[aasworld.nodes[i].children[side]]++;
+	for (i = 1; i < aasworld.numnodes; i++)
+		if (!indegree[i]) queue[tail++] = i;
+	while (head < tail)
+	{
+		int node = queue[head++];
+		visited++;
+		for (side = 0; side < 2; side++)
+		{
+			int child = aasworld.nodes[node].children[side];
+			if (child > 0 && --indegree[child] == 0) queue[tail++] = child;
+		}
+	}
+	valid = visited == aasworld.numnodes - 1;
+	FreeMemory(workspace);
+	return valid;
+}
+
 int AAS_LoadAASFile(char *filename)
 {
 	fileHandle_t fp;
@@ -587,8 +634,8 @@ int AAS_LoadAASFile(char *filename)
 	if (!aasworld.clusters) { AAS_DumpAASData(); return BLERR_CANNOTREADAASLUMP; }
 	//swap everything
 	AAS_SwapAASData();
-	if (!AAS_ValidateGeometry()) {
-		AAS_Error("invalid aas geometry references or numeric fields\n");
+	if (!AAS_ValidateGeometry() || !AAS_ValidateNodes()) {
+		AAS_Error("invalid aas geometry or node references, numeric fields or cycles\n");
 		botimport.FS_FCloseFile(fp);
 		AAS_DumpAASData();
 		return BLERR_CANNOTREADAASLUMP;
