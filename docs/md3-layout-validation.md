@@ -16,7 +16,9 @@ bounds; triangle indexes fit vertices. Culling metadata, tags and texture
 coordinates are finite, with nonnegative radii and ordered frame bounds.
 Unused fixed-width frame labels and reserved flags are not interpreted as
 strings or array references. Native copying/conversion retains packed vertex
-normals, surface naming and shader registration behavior.
+normals, surface naming and shader registration behavior. Tag lookup also
+clamps negative frame indexes before pointer arithmetic, preserving the
+existing upper-frame fallback.
 
 Registration stages candidate MD3 LOD files before allocating payloads.
 A malformed primary model releases every staged file and keeps only the
@@ -29,8 +31,8 @@ has a valid pointer. Aggregate model byte counts validate before payload
 allocation. All staging buffers release after either outcome.
 
 MD4 is still a distinct unfinished step of #44. Its identification/header
-is bounded here and cannot mix with MD3 payloads, but its variable bones,
-weights and LOD layout still require validation and correct native conversion.
+is bounded here, is selected only by the requested base file and cannot mix
+with MD3 payloads, but its variable bones, weights and LOD layout still require validation and correct native conversion.
 This MD3 step does not close the model-loader security issue.
 
 ## Validation
@@ -50,8 +52,9 @@ invalid identification/version and aggregate allocation overflow. Rejection
 asserts no payload allocation, shader registration or changed model state.
 Actual registration checks missing and malformed optional LODs, incompatible
 frame counts, coarse-only fallback, failed-primary cleanup/cache reuse,
-short/negative file lengths and invalid names. Both Mac products and the
-portable Python/ledger checks are validated after the final source changes.
+short/negative file lengths and invalid names. A native-loadable MD4 at an
+optional MD3 path cannot replace the requested base or load without it.
+Both Mac products and the portable Python/ledger checks are validated after the final source changes.
 
 The MD3 fixture and nine Python tests pass. Its host build reports the existing
 MD4 null-pointer/int stride warning; the MD4 follow-up replaces that expression.
@@ -60,8 +63,8 @@ PEFs using temporary loader libraries from [loading evidence](qvm-loading-valida
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,674,233 | `8d7b988a769b8e8f21adf6b802ebd47bf46775e8fc805d2fc42a0314fb47d795` |
-| Quake3_TeamArena | 3,822,807 | `422b8af24284ff7354d773be950ae865aa9593954302b9aaf09745f51496b97e` |
+| Quake3 | 3,674,255 | `77987887a1506bd61d05d17a17691260e9807bf66ff02395297637aff1f2c395` |
+| Quake3_TeamArena | 3,822,829 | `a45f14d8528e05f030dbc0ecc291b441462f96084739b00cb2b586c4d4ad15c6` |
 
 ## Remaining acceptance
 

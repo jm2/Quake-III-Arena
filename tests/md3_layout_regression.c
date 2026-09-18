@@ -94,6 +94,14 @@ static int Read( const char *name, void **buffer ) {
 		byte *triangle=surface+R_MODEL_FIELD(surface,md3Surface_t,ofsTriangles); unsigned int index=R_MODEL_FIELD(surface,md3Surface_t,numVerts); int i;
 		for(i=0;i<4;i++) triangle[i]=index>>(8*i);
 	}
+	if(present[lod]==4) {
+		/* A native-loadable empty MD4 must not replace the requested base through an optional path. */
+		const size_t fields[]={offsetof(md4Header_t,ident),offsetof(md4Header_t,version),offsetof(md4Header_t,numFrames),offsetof(md4Header_t,numBones),offsetof(md4Header_t,ofsFrames),offsetof(md4Header_t,numLODs),offsetof(md4Header_t,ofsLODs),offsetof(md4Header_t,ofsEnd)};
+		const unsigned int values[]={MD4_IDENT,MD4_VERSION,1,1,100,1,188,200}; int i,j;
+		memset(filePointers[lod],0,sizes[lod]);
+		for(i=0;i<8;i++) for(j=0;j<4;j++) filePointers[lod][fields[i]+j]=values[i]>>(8*j);
+		filePointers[lod][188+offsetof(md4LOD_t,ofsSurfaces)]=12; filePointers[lod][188+offsetof(md4LOD_t,ofsEnd)]=12;
+	}
 	*buffer=filePointers[lod]; return negativeLength?-1:sizes[lod];
 }
 static void FreeFile( void *pointer ) { int i; for(i=0;i<3;i++) if(filePointers[i]==pointer) { free(fileAllocations[i]); fileAllocations[i]=filePointers[i]=NULL; frees++; return; } Check(0,"unowned file free"); }
@@ -136,6 +144,10 @@ static void Golden( int frames, int tags, int surfaces, int vertices, int triang
 		surface=(md3Surface_t *)((byte *)surface+surface->ofsEnd);
 	}
 	Check(shaderCalls==surfaces*shaders,"shader count");
+	if(tags) {
+		orientation_t orientation; tr.models[1]=&model; tr.numModels=2;
+		Check(R_LerpTag(&orientation,1,INT_MIN,INT_MAX,0.5f,"tag_test") && orientation.origin[0]==1 && orientation.axis[0][0]==1 && orientation.axis[2][2]==1,"bounded runtime tag frame indexes");
+	}
 }
 
 /** Mutate signed offsets/counts and consumed serialized data after saving a canonical model. */
@@ -189,6 +201,8 @@ int main( void ) {
 	Reset(); present[0]=1; present[1]=2; Check(RE_RegisterModel("test.md3")==1 && allocations==2 && tr.models[1]->numLods==1 && frees==2 && warnings,"incompatible optional frame count");
 	Reset(); present[0]=present[1]=1; sizes[1]=sourceSize-1; Check(RE_RegisterModel("test.md3")==1 && allocations==2 && tr.models[1]->numLods==1 && frees==2 && warnings,"malformed optional LOD fallback");
 	Reset(); present[0]=present[1]=1; sizes[1]=3; Check(RE_RegisterModel("test.md3")==1 && allocations==2 && tr.models[1]->numLods==1 && frees==2 && warnings,"short optional LOD fallback");
+	Reset(); present[0]=1; present[2]=4; Check(RE_RegisterModel("test.md3")==1 && allocations==2 && tr.models[1]->type==MOD_MESH && !tr.models[1]->md4 && frees==2 && warnings,"optional MD4 replaced requested base");
+	Reset(); present[2]=4; Check(!RE_RegisterModel("test.md3") && allocations==1 && !tr.models[1]->dataSize && frees==1 && !shaderCalls,"optional MD4 loaded without requested base");
 	Reset(); present[2]=1; present[0]=2; Check(!RE_RegisterModel("test.md3") && allocations==1 && !shaderCalls && !tr.models[1]->dataSize && !tr.models[1]->numLods && !tr.models[1]->md3[0] && !tr.models[1]->md3[2] && frees==2,"failed primary retained partial model");
 	Reset(); present[2]=1; present[0]=3; Check(!RE_RegisterModel("test.md3") && allocations==1 && !shaderCalls && !tr.models[1]->dataSize && !tr.models[1]->md3[2] && frees==2,"late malformed primary retained partial payload");
 	baseline=reads; Check(!RE_RegisterModel("test.md3") && reads==baseline && allocations==1,"failed model cache");

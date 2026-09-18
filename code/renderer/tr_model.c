@@ -113,12 +113,16 @@ qhandle_t RE_RegisterModel( const char *name ) {
 		error = NULL;
 		if ( lengths[lod] < 4 ) error = "truncated identification";
 		else if ( R_ModelWord(buffers[lod]) == MD4_IDENT ) {
-			/* MD4 layout validation is a separate issue #44 step; never mix MD3/MD4 payloads. */
-			if ( lengths[lod] < (int)sizeof(md4Header_t) || !R_LoadMD4(mod,buffers[lod],name) ) {
-				error = "invalid MD4 header"; goto fail;
+			/* Only the requested base file may select MD4; optional paths are MD3 LODs. */
+			if ( lod ) error = "MD4 identification in optional MD3 LOD";
+			else {
+				/* Complete MD4 layout validation is a separate issue #44 step. */
+				if ( lengths[lod] < (int)sizeof(md4Header_t) || !R_LoadMD4(mod,buffers[lod],name) ) {
+					error = "invalid MD4 header"; goto fail;
+				}
+				mod->numLods = 1;
+				goto success;
 			}
-			mod->numLods = 1;
-			goto success;
 		}
 		else if ( R_ModelWord(buffers[lod]) != MD3_IDENT ) error = "unknown identification";
 		else error = R_ValidateMD3(buffers[lod], lengths[lod], &sizes[lod]);
@@ -556,6 +560,7 @@ static md3Tag_t *R_GetTag( md3Header_t *mod, int frame, const char *tagName ) {
 	md3Tag_t		*tag;
 	int				i;
 
+	if ( frame < 0 ) frame = 0;
 	if ( frame >= mod->numFrames ) {
 		// it is possible to have a bad frame while changing models, so don't error
 		frame = mod->numFrames - 1;
