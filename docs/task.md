@@ -16,10 +16,13 @@ checks; they do not automatically require an unrelated engine rebuild.
 A checked nested item records only the stated implementation or check.
 
 Every new step goes through a pull request. Before merging, require successful
-CI for its current head and a clean Codex review, with every CodeRabbit
-finding resolved. CodeRabbit rate limits or skipped reviews do not replace
-the required completed Codex review. Re-run affected checks and obtain renewed bot review after fixes.
-Do not interpret absent, pending, failed, or unavailable review as clean.
+CI for its current head and a completed clean Codex review, with every
+CodeRabbit finding resolved. After fixes, re-run affected checks and obtain
+a renewed clean current-head Codex review. Do not interpret absent, pending,
+failed or unavailable CI/Codex review as clean. CodeRabbit rate limits or
+skipped reviews do not replace the required Codex review; the user does not
+require waiting for a follow-up CodeRabbit review once every finding is
+resolved and the CI/Codex gate passes.
 Keep issues open when a merged step covers only part of their acceptance
 criteria, and link the PR and remaining evidence in the issue.
 
