@@ -1844,6 +1844,12 @@ int PC_EvaluateTokens(source_t *source, token_t *tokens, signed long int *intval
 					break;
 				} //end if
 				t = t->next;
+				if (!t)
+				{
+					SourceError(source, "defined without name in #if/#elif");
+					error = 1;
+					break;
+				} //end if
 				if (!strcmp(t->string, "("))
 				{
 					brace = qtrue;
@@ -2260,15 +2266,17 @@ int PC_Evaluate(source_t *source, signed long int *intvalue,
 	token_t token, *firsttoken, *lasttoken;
 	token_t *t, *nexttoken;
 	define_t *define;
-	int defined = qfalse;
+	int defined = qfalse, result = qfalse;
+	unsigned int errorsequence = source->errorsequence;
 
+	firsttoken = lasttoken = NULL;
 	if (intvalue) *intvalue = 0;
 	if (floatvalue) *floatvalue = 0;
 	//
 	if (!PC_ReadLine(source, &token))
 	{
 		SourceError(source, "no value after #if/#elif");
-		return qfalse;
+		goto cleanup;
 	} //end if
 	firsttoken = NULL;
 	lasttoken = NULL;
@@ -2281,6 +2289,11 @@ int PC_Evaluate(source_t *source, signed long int *intvalue,
 			{
 				defined = qfalse;
 				t = PC_CopyToken(&token);
+				if (!t)
+				{
+					SourceError(source, "could not copy expression operand");
+					goto cleanup;
+				} //end if
 				t->next = NULL;
 				if (lasttoken) lasttoken->next = t;
 				else firsttoken = t;
@@ -2290,6 +2303,11 @@ int PC_Evaluate(source_t *source, signed long int *intvalue,
 			{
 				defined = qtrue;
 				t = PC_CopyToken(&token);
+				if (!t)
+				{
+					SourceError(source, "could not copy expression operand");
+					goto cleanup;
+				} //end if
 				t->next = NULL;
 				if (lasttoken) lasttoken->next = t;
 				else firsttoken = t;
@@ -2306,15 +2324,20 @@ int PC_Evaluate(source_t *source, signed long int *intvalue,
 				if (!define)
 				{
 					SourceError(source, "can't evaluate %s, not defined", token.string);
-					return qfalse;
+					goto cleanup;
 				} //end if
-				if (!PC_ExpandDefineIntoSource(source, &token, define)) return qfalse;
+				if (!PC_ExpandDefineIntoSource(source, &token, define)) goto cleanup;
 			} //end else
 		} //end if
 		//if the token is a number or a punctuation
 		else if (token.type == TT_NUMBER || token.type == TT_PUNCTUATION)
 		{
 			t = PC_CopyToken(&token);
+			if (!t)
+			{
+				SourceError(source, "could not copy expression operand");
+				goto cleanup;
+			} //end if
 			t->next = NULL;
 			if (lasttoken) lasttoken->next = t;
 			else firsttoken = t;
@@ -2323,15 +2346,18 @@ int PC_Evaluate(source_t *source, signed long int *intvalue,
 		else //can't evaluate the token
 		{
 			SourceError(source, "can't evaluate %s", token.string);
-			return qfalse;
+			goto cleanup;
 		} //end else
 	} while(PC_ReadLine(source, &token));
 	//
-	if (!PC_EvaluateTokens(source, firsttoken, intvalue, floatvalue, integer)) return qfalse;
+	if (PC_SourceErrorFlag(source, SCFL_LEXERROR) ||
+			source->errorsequence != errorsequence) goto cleanup;
+	result = PC_EvaluateTokens(source, firsttoken, intvalue, floatvalue, integer);
 	//
 #ifdef DEBUG_EVAL
 	Log_Write("eval:");
 #endif //DEBUG_EVAL
+cleanup:
 	for (t = firsttoken; t; t = nexttoken)
 	{
 #ifdef DEBUG_EVAL
@@ -2345,7 +2371,7 @@ int PC_Evaluate(source_t *source, signed long int *intvalue,
 	else Log_Write("eval result: %f", *floatvalue);
 #endif //DEBUG_EVAL
 	//
-	return qtrue;
+	return result;
 } //end of the function PC_Evaluate
 //============================================================================
 //
@@ -2356,23 +2382,30 @@ int PC_Evaluate(source_t *source, signed long int *intvalue,
 int PC_DollarEvaluate(source_t *source, signed long int *intvalue,
 												double *floatvalue, int integer)
 {
-	int indent, defined = qfalse;
+	int indent = 0, defined = qfalse, result = qfalse;
+	unsigned int errorsequence = source->errorsequence;
 	token_t token, *firsttoken, *lasttoken;
 	token_t *t, *nexttoken;
 	define_t *define;
 
+	firsttoken = lasttoken = NULL;
 	if (intvalue) *intvalue = 0;
 	if (floatvalue) *floatvalue = 0;
 	//
 	if (!PC_ReadSourceToken(source, &token))
 	{
 		SourceError(source, "no leading ( after $evalint/$evalfloat");
-		return qfalse;
+		goto cleanup;
+	} //end if
+	if (token.type != TT_PUNCTUATION || strcmp(token.string, "("))
+	{
+		SourceError(source, "no leading ( after $evalint/$evalfloat");
+		goto cleanup;
 	} //end if
 	if (!PC_ReadSourceToken(source, &token))
 	{
 		SourceError(source, "nothing to evaluate");
-		return qfalse;
+		goto cleanup;
 	} //end if
 	indent = 1;
 	firsttoken = NULL;
@@ -2386,6 +2419,11 @@ int PC_DollarEvaluate(source_t *source, signed long int *intvalue,
 			{
 				defined = qfalse;
 				t = PC_CopyToken(&token);
+				if (!t)
+				{
+					SourceError(source, "could not copy expression operand");
+					goto cleanup;
+				} //end if
 				t->next = NULL;
 				if (lasttoken) lasttoken->next = t;
 				else firsttoken = t;
@@ -2395,6 +2433,11 @@ int PC_DollarEvaluate(source_t *source, signed long int *intvalue,
 			{
 				defined = qtrue;
 				t = PC_CopyToken(&token);
+				if (!t)
+				{
+					SourceError(source, "could not copy expression operand");
+					goto cleanup;
+				} //end if
 				t->next = NULL;
 				if (lasttoken) lasttoken->next = t;
 				else firsttoken = t;
@@ -2411,9 +2454,9 @@ int PC_DollarEvaluate(source_t *source, signed long int *intvalue,
 				if (!define)
 				{
 					SourceError(source, "can't evaluate %s, not defined", token.string);
-					return qfalse;
+					goto cleanup;
 				} //end if
-				if (!PC_ExpandDefineIntoSource(source, &token, define)) return qfalse;
+				if (!PC_ExpandDefineIntoSource(source, &token, define)) goto cleanup;
 			} //end else
 		} //end if
 		//if the token is a number or a punctuation
@@ -2423,6 +2466,11 @@ int PC_DollarEvaluate(source_t *source, signed long int *intvalue,
 			else if (*token.string == ')') indent--;
 			if (indent <= 0) break;
 			t = PC_CopyToken(&token);
+			if (!t)
+			{
+				SourceError(source, "could not copy expression operand");
+				goto cleanup;
+			} //end if
 			t->next = NULL;
 			if (lasttoken) lasttoken->next = t;
 			else firsttoken = t;
@@ -2431,15 +2479,23 @@ int PC_DollarEvaluate(source_t *source, signed long int *intvalue,
 		else //can't evaluate the token
 		{
 			SourceError(source, "can't evaluate %s", token.string);
-			return qfalse;
+			goto cleanup;
 		} //end else
 	} while(PC_ReadSourceToken(source, &token));
+	if (indent > 0)
+	{
+		SourceError(source, "missing ) after $evalint/$evalfloat");
+		goto cleanup;
+	} //end if
 	//
-	if (!PC_EvaluateTokens(source, firsttoken, intvalue, floatvalue, integer)) return qfalse;
+	if (PC_SourceErrorFlag(source, SCFL_LEXERROR) ||
+			source->errorsequence != errorsequence) goto cleanup;
+	result = PC_EvaluateTokens(source, firsttoken, intvalue, floatvalue, integer);
 	//
 #ifdef DEBUG_EVAL
 	Log_Write("$eval:");
 #endif //DEBUG_EVAL
+cleanup:
 	for (t = firsttoken; t; t = nexttoken)
 	{
 #ifdef DEBUG_EVAL
@@ -2453,7 +2509,7 @@ int PC_DollarEvaluate(source_t *source, signed long int *intvalue,
 	else Log_Write("$eval result: %f", *floatvalue);
 #endif //DEBUG_EVAL
 	//
-	return qtrue;
+	return result;
 } //end of the function PC_DollarEvaluate
 //============================================================================
 //
