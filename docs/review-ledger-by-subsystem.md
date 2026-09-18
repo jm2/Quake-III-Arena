@@ -479,6 +479,10 @@ implementation or check, without implying issue completion.
         casts; finite bounded floats clamp before conversion while representable
         truncation, signed integer fields and native error fallbacks remain;
         see [integer evidence](bot-character-integer-validation.md).
+  - [x] Public characteristic string output ignores missing/nonpositive buffers
+        before size subtraction/copy, preserving exact native truncation/NUL
+        padding for every valid capacity;
+        see [string evidence](bot-character-string-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)

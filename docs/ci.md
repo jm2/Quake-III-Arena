@@ -631,3 +631,12 @@ reversed-bound fallbacks retain native behavior. Every getter preserves complete
 character/string owners without imports. The reference header contains original
 actual getter bodies at the documented parent and is used only for safe values.
 Both GCC/Clang normal and release fast-math sanitizers run the fixture.
+
+
+The characteristic string runner executes actual character/source/lexer/libvar/
+core bodies. Ordinary/empty strings retain every copied/truncated/NUL/padding byte
+and surrounding canary for capacities one through 1,024 (2,048 outputs). Missing
+buffers and zero/negative/INT_MIN capacities perform no write or import. Valid
+capacity handle/index/type errors retain native diagnostics and unchanged output.
+Complete character and string owners remain intact until balanced cleanup.
+Both GCC/Clang normal and release fast-math sanitizers run the fixture.
