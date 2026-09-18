@@ -118,8 +118,19 @@ static void PreflightState(void) {
 		"native preflight retains build counters and persistent debug ownership");
 	debugFacet=NULL;debugPatchCollide=NULL;
 }
+static void NonfinitePlanes(void) {
+	unsigned int words[]={0x7f800000u,0xff800000u,0x7fc00001u};
+	int i,j,flipped;float plane[4];
+	vec3_t a={-1e20f,-1e20f,0},b={1e20f,-1e20f,0},c={1e20f,1e20f,0};
+	BuildFacet(&(facet_t){0});numPlanes=5;
+	Check(CM_FindPlane(a,b,c)==CM_PATCH_NONFINITE_PLANE && numPlanes==5 && !zoneLive,"triangle cross-product overflow precedes plane publication");
+	for(i=0;i<3;i++)for(j=0;j<4;j++) {
+		VectorSet(plane,1,0,0);plane[3]=0;memcpy(plane+j,words+i,4);
+		Check(CM_FindPlane2(plane,&flipped)==CM_PATCH_NONFINITE_PLANE && numPlanes==5 && !zoneLive,"nonfinite bevel candidate precedes matching/insertion");
+	}
+}
 int main(void) {
-	FacetOwnership();CopyOwnership();NativeBudgets();PreflightState();
+	FacetOwnership();CopyOwnership();NativeBudgets();PreflightState();NonfinitePlanes();
 	Check(zoneAllocations==zoneFrees && !zoneLive && !c_active_windings,"all native winding ownership balanced");
 	puts("BSP native facet rejection and winding copy ownership regressions passed (issue #45)");return 0;
 }

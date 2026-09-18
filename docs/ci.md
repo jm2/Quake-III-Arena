@@ -110,6 +110,9 @@ PR head while retaining checks on the merged default branch.
   - executes actual MD4 registration, complete layout validation, native endian
     conversion and animation skinning, with variable weights, LOD/surface
     progress, bones/back references, extreme frame indexes and tess bases;
+  - rejects finite collision controls that overflow native midpoint/distance,
+    edge differences, cross products or normalization before publication,
+    retaining the loaded patch and releasing file/grid/winding ownership;
   - executes native collision plane/facet budget rejection before map reset,
     checks last legal plane/border insertions and matching full-table planes,
     and retains loaded geometry and persistent debug state after preflight;
