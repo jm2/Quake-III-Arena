@@ -558,3 +558,14 @@ handle. Native invalid handles and a full table reject before imports. Four
 original actual-body proofs fail; ordinary native goldens also pass against the
 original body. GCC/Clang normal/release sanitizer CI covers ownership; default
 inheritance and character numeric bounds remain separate work.
+
+The default runner parses real default/target characters, executes native
+inheritance and skill/cache/reload paths, and measures physical owners. Missing
+strings clone before any target field changes. Three primitive nullable stages
+and nine cached/new/reload caller failures preserve prior targets/defaults and
+registry, free prospective strings/new targets and retry. Literal native numeric
+and ordinary/empty string values, occupied fields, self/repeated inheritance and
+missing-file fallback remain compatible. Six original proofs isolate null copies,
+early mutation and ignored caller failure; original valid goldens pass too.
+GCC/Clang normal/release sanitizer CI covers these owners; numeric/cursor bounds
+and remaining parser consumers stay open.
