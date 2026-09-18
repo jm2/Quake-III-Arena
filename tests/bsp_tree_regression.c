@@ -22,6 +22,7 @@ typedef unsigned int GLuint;
 #define GL_CLAMP 0x2900
 #include "../code/renderer/tr_bsp.c"
 #include "../code/renderer/tr_curve.c"
+#include "../code/renderer/tr_marks.c"
 
 trGlobals_t tr;
 glconfig_t glConfig;
@@ -105,6 +106,21 @@ static void QueryOracle(leafList_t *ll,int node,int *expected,int *count) {
 	if(side!=2)QueryOracle(ll,cm.nodes[node].children[0],expected,count);
 	if(side!=1)QueryOracle(ll,cm.nodes[node].children[1],expected,count);
 }
+static void SmallMarkQueries(cNode_t *collision,leafList_t *ll,int root,const int *expected,int number) {
+	mnode_t nodes[3],leaves[2];msurface_t surfaces[2],*marks[2];shader_t shaders[2];
+	surfaceType_t types[2]={SF_GRID,SF_GRID},*list[3];vec3_t dir={0,0,-1};int i,j,length=0,seen[2]={0},wanted[2],count=0;
+	memset(nodes,0,sizeof(nodes));memset(leaves,0,sizeof(leaves));memset(surfaces,0,sizeof(surfaces));memset(shaders,0,sizeof(shaders));
+	for(i=0;i<2;i++) { surfaces[i].data=types+i;surfaces[i].shader=shaders+i;marks[i]=surfaces+i;leaves[i].firstmarksurface=marks+i;leaves[i].nummarksurfaces=1; }
+	for(i=0;i<3;i++) {
+		nodes[i].contents=-1;nodes[i].plane=collision[i].plane;
+		for(j=0;j<2;j++)nodes[i].children[j]=children[i][j]>=0?nodes+children[i][j]:leaves+(-1-children[i][j]);
+	}
+	for(i=0;i<3;i++)for(j=0;j<2;j++)if(children[i][j]>=0)nodes[children[i][j]].parent=nodes+i;
+	for(i=0;i<number;i++)if(!seen[expected[i]]) { seen[expected[i]]=1;wanted[count++]=expected[i]; }
+	tr.viewCount=501;R_BoxSurfaces_r(nodes+root,ll->bounds[0],ll->bounds[1],list,2,&length,dir);
+	Check(length==count,"every small renderer mark query has native unique surface count");
+	for(i=0;i<count;i++)Check(list[i]==types+wanted[i],"every accepted renderer forest/subtree retains front-first mark order");
+}
 static void SmallQueries(void) {
 	clipMap_t retained=cm;cNode_t nodes[3];leafList_t ll;int expected[64],number,i,j,k,root;
 	const float boxes[][2]={{-2,0},{-2,-2},{0,0},{1,2},{-1,-1}};
@@ -114,7 +130,7 @@ static void SmallQueries(void) {
 	for(k=0;k<sizeof(boxes)/sizeof(boxes[0]);k++)for(root=0;root<3;root++) {
 		for(i=0;i<3;i++) { ll.bounds[0][i]=boxes[k][0];ll.bounds[1][i]=boxes[k][1]; }
 		queryCount=number=0;CM_BoxLeafnums_r(&ll,root);QueryOracle(&ll,root,expected,&number);
-		Check(queryCount==number && !memcmp(queryLeaves,expected,number*sizeof(int)),"every accepted small forest/subtree and box matches stock callback order");
+		Check(queryCount==number && !memcmp(queryLeaves,expected,number*sizeof(int)),"every accepted small forest/subtree and box matches stock callback order");SmallMarkQueries(nodes,&ll,root,expected,number);
 	}
 	cm=retained;
 }
@@ -141,10 +157,40 @@ static void BoxQueries(int count) {
 	queryCount=0;CM_BoxLeafnums_r(&ll,-2);Check(queryCount==1 && queryLeaves[0]==1,"direct leaf query");
 	if(count==3) { queryCount=0;CM_BoxLeafnums_r(&ll,1);expectedCount=0;QueryOracle(&ll,1,expected,&expectedCount);Check(queryCount==expectedCount && !memcmp(queryLeaves,expected,queryCount*sizeof(int)),"query stops at requested subtree root"); }
 }
+static void MarkQueries(int count) {
+	mnode_t *front=s_worldData.nodes+count+1,*back=s_worldData.nodes+count;
+	mnode_t savedFront=*front,savedBack=*back;msurface_t surfaces[9],*frontMarks[8],*backMarks[3];shader_t shaders[9];srfSurfaceFace_t faces[9];
+	surfaceType_t *list[5],*guard=(surfaceType_t *)&knownShader;vec3_t mins={-2,-1,-1},maxs={0,1,1},dir={0,0,-1};int i,capacity,length;
+	memset(surfaces,0,sizeof(surfaces));memset(shaders,0,sizeof(shaders));memset(faces,0,sizeof(faces));
+	for(i=0;i<9;i++) { faces[i].surfaceType=SF_GRID;surfaces[i].data=&faces[i].surfaceType;surfaces[i].shader=shaders+i;if(i<8)frontMarks[i]=surfaces+i; }
+	faces[0].surfaceType=faces[2].surfaceType=faces[3].surfaceType=SF_FACE;
+	faces[0].plane.normal[2]=faces[2].plane.normal[2]=1;faces[0].plane.type=faces[2].plane.type=2;faces[2].plane.dist=10;
+	faces[3].plane.normal[0]=1;faces[3].plane.type=0;faces[3].plane.dist=-1;
+	shaders[4].surfaceFlags=SURF_NOIMPACT;shaders[5].contentFlags=CONTENTS_FOG;faces[6].surfaceType=SF_TRIANGLES;shaders[7].surfaceFlags=SURF_NOMARKS;
+	backMarks[0]=surfaces+1;backMarks[1]=surfaces+8;backMarks[2]=surfaces;
+	front->firstmarksurface=frontMarks;front->nummarksurfaces=8;back->firstmarksurface=backMarks;back->nummarksurfaces=3;
+	for(capacity=0;capacity<=3;capacity++) {
+		for(i=0;i<9;i++)surfaces[i].viewCount=0;for(i=0;i<5;i++)list[i]=guard;tr.viewCount=502;length=0;
+		R_BoxSurfaces_r(s_worldData.nodes,mins,maxs,list+1,capacity,&length,dir);
+		Check(length==capacity && list[0]==guard && list[capacity+1]==guard,"actual deep mark-list capacity, exact prefix and guards");
+		if(capacity>0)Check(list[1]==surfaces[0].data,"front-first face mark");
+		if(capacity>1)Check(list[2]==surfaces[1].data,"front-first shared grid mark");
+		if(capacity>2)Check(list[3]==surfaces[8].data,"back grid appended once after rejected/shared marks");
+		if(capacity==0)for(i=0;i<9;i++)Check(!surfaces[i].viewCount,"zero-capacity query leaves surface view counters untouched");
+		if(capacity==3)for(i=0;i<9;i++)Check(surfaces[i].viewCount==tr.viewCount,"native inclusion and rejection view counters");
+	}
+	for(i=0;i<9;i++)surfaces[i].viewCount=0;tr.viewCount=503;length=0;maxs[0]=-2;
+	R_BoxSurfaces_r(s_worldData.nodes,mins,maxs,list,5,&length,dir);Check(length==2 && list[0]==surfaces[0].data && list[1]==surfaces[1].data,"front-only mark query retains plane/direction/shader filtering");
+	for(i=0;i<9;i++)surfaces[i].viewCount=0;tr.viewCount=504;length=0;mins[0]=maxs[0]=0;
+	R_BoxSurfaces_r(s_worldData.nodes,mins,maxs,list,5,&length,dir);Check(length==3 && list[0]==surfaces[1].data && list[1]==surfaces[8].data && list[2]==surfaces[0].data,"back-only mark query retains native ordering");
+	for(i=0;i<9;i++)surfaces[i].viewCount=0;length=0;
+	R_BoxSurfaces_r(back,mins,maxs,list,5,&length,dir);Check(length==3,"direct leaf mark query");
+	*front=savedFront;*back=savedBack;
+}
 int main(void) {
 	int i,j,code,n,valid,checksum;unsigned int offset;dheader_t header;const char *error;
 	ri.Error=Com_Error;ri.Printf=Print;ri.FS_ReadFile=FS_ReadFile;ri.FS_FreeFile=FS_FreeFile;ri.Hunk_Alloc=RendererHunk;ri.Malloc=RendererMalloc;ri.Free=RendererFree;subdivisions.value=4;
-	Build(3);NativeLoad(3,1,2);BoxQueries(3);
+	Build(3);NativeLoad(3,1,2);BoxQueries(3);MarkQueries(3);
 	Build(3);Child(0,0,0);RejectTree(); /* Root self-cycle. */
 	Build(3);Child(1,0,0);RejectTree(); /* Mutual root cycle. */
 	Build(3);Child(0,1,1);RejectTree(); /* Duplicate decision edge. */
@@ -163,7 +209,7 @@ int main(void) {
 		valid=BSP_ValidateTree(source,&header)==NULL;Check(valid==Expected() && !graphTemporary,"exhaustive small-graph acceptance matches independent oracle");if(valid)SmallQueries();
 	}
 	/* Long valid trees use bounded heap/linear parent initialization, with no depth cap. */
-	FreeHunks();Build(4096);NativeLoad(4096,1,4095);BoxQueries(4096);
+	FreeHunks();Build(4096);NativeLoad(4096,1,4095);BoxQueries(4096);MarkQueries(4096);
 	Build(MAX_MAP_NODES+1);Header(&header);Check(!CM_ValidateBSPAllocations(&header) && !R_ValidateBSPAllocations(&header) && !BSP_ValidateTree(source,&header) && !graphTemporary,"raised compiler node budget remains supported by native storage");
 	/* Retained collision state still answers its actual loaded deep tree after validation. */
 	{ vec3_t point={-2,0,0};checksum=CM_PointLeafnum(point);Check(checksum==1,"deep loaded native point query retained"); }
