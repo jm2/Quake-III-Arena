@@ -110,6 +110,9 @@ PR head while retaining checks on the merged default branch.
   - executes actual MD4 registration, complete layout validation, native endian
     conversion and animation skinning, with variable weights, LOD/surface
     progress, bones/back references, extreme frame indexes and tess bases;
+  - executes native renderer curve refinement with eight captured output
+    fingerprints, finite-source overflow and workspace-failure rejection at
+    four FS alignments, and actual nodraw skips before control allocation;
   - rejects finite collision controls that overflow native midpoint/distance,
     edge differences, cross products or normalization before publication,
     retaining the loaded patch and releasing file/grid/winding ownership;
