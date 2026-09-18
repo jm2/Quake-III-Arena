@@ -22,6 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // cmodel.c -- model loading
 
 #include "cm_local.h"
+#include "bsp_validate.h"
 
 #ifdef BSPC
 
@@ -441,9 +442,10 @@ CMod_LoadEntityString
 =================
 */
 void CMod_LoadEntityString( lump_t *l ) {
-	cm.entityString = Hunk_Alloc( l->filelen, h_high );
+	cm.entityString = Hunk_Alloc( l->filelen + 1, h_high );
 	cm.numEntityChars = l->filelen;
 	Com_Memcpy (cm.entityString, cmod_base + l->fileofs, l->filelen);
+	cm.entityString[l->filelen] = 0;
 }
 
 /*
@@ -566,9 +568,27 @@ CM_LoadMap
 Loads in the map and all submodels
 ==================
 */
+/** Match every direct collision array allocation, including the reserved box hull. */
+static const char *CM_ValidateBSPAllocations(const dheader_t *header) {
+	const bspArrayAllocation_t arrays[]={
+		{header->lumps[LUMP_SHADERS].filelen/sizeof(dshader_t),sizeof(dshader_t),0},
+		{header->lumps[LUMP_LEAFS].filelen/sizeof(dleaf_t),sizeof(cLeaf_t),BOX_LEAFS},
+		{header->lumps[LUMP_LEAFBRUSHES].filelen/4,sizeof(int),BOX_BRUSHES},
+		{header->lumps[LUMP_LEAFSURFACES].filelen/4,sizeof(int),0},
+		{header->lumps[LUMP_PLANES].filelen/sizeof(dplane_t),sizeof(cplane_t),BOX_PLANES},
+		{header->lumps[LUMP_BRUSHSIDES].filelen/sizeof(dbrushside_t),sizeof(cbrushside_t),BOX_SIDES},
+		{header->lumps[LUMP_BRUSHES].filelen/sizeof(dbrush_t),sizeof(cbrush_t),BOX_BRUSHES},
+		{header->lumps[LUMP_MODELS].filelen/sizeof(dmodel_t),sizeof(cmodel_t),0},
+		{header->lumps[LUMP_NODES].filelen/sizeof(dnode_t),sizeof(cNode_t),0},
+		{header->lumps[LUMP_SURFACES].filelen/sizeof(dsurface_t),sizeof(cPatch_t *),0},
+		{header->lumps[LUMP_ENTITIES].filelen,1,1}
+	};
+	return BSP_ValidateAllocations(arrays,sizeof(arrays)/sizeof(arrays[0]));
+}
+
 void CM_LoadMap( const char *name, qboolean clientload, int *checksum ) {
-	int				*buf;
-	int				i;
+	int				*buf = NULL;
+	const char		*error;
 	dheader_t		header;
 	int				length;
 	static unsigned	last_checksum;
@@ -589,19 +609,6 @@ void CM_LoadMap( const char *name, qboolean clientload, int *checksum ) {
 		return;
 	}
 
-	// free old stuff
-	Com_Memset( &cm, 0, sizeof( cm ) );
-	CM_ClearLevelPatches();
-
-	if ( !name[0] ) {
-		cm.numLeafs = 1;
-		cm.numClusters = 1;
-		cm.numAreas = 1;
-		cm.cmodels = Hunk_Alloc( sizeof( *cm.cmodels ), h_high );
-		*checksum = 0;
-		return;
-	}
-
 	//
 	// load the file
 	//
@@ -615,18 +622,18 @@ void CM_LoadMap( const char *name, qboolean clientload, int *checksum ) {
 		Com_Error (ERR_DROP, "Couldn't load %s", name);
 	}
 
-	last_checksum = LittleLong (Com_BlockChecksum (buf, length));
+	error = BSP_ValidateHeader(buf,length,&header);
+	if ( !error ) error = CM_ValidateBSPAllocations(&header);
+	if ( error ) {
+		FS_FreeFile(buf);
+		Com_Error(ERR_DROP,"CM_LoadMap: %s: %s",name,error);
+		return;
+	}
+	last_checksum = LittleLong(Com_BlockChecksum(buf,length));
 	*checksum = last_checksum;
-
-	header = *(dheader_t *)buf;
-	for (i=0 ; i<sizeof(dheader_t)/4 ; i++) {
-		((int *)&header)[i] = LittleLong ( ((int *)&header)[i]);
-	}
-
-	if ( header.version != BSP_VERSION ) {
-		Com_Error (ERR_DROP, "CM_LoadMap: %s has wrong version number (%i should be %i)"
-		, name, header.version, BSP_VERSION );
-	}
+	/* Malformed file layouts cannot discard the previously loaded collision map. */
+	Com_Memset(&cm,0,sizeof(cm));
+	CM_ClearLevelPatches();
 
 	cmod_base = (byte *)buf;
 
