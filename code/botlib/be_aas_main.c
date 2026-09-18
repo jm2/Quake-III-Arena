@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *****************************************************************************/
 
 #include "../game/q_shared.h"
+#include <limits.h>
 #include "l_memory.h"
 #include "l_libvar.h"
 #include "l_utils.h"
@@ -386,20 +387,61 @@ int AAS_LoadMap(const char *mapname)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
+static int AAS_SetupCount(libvar_t *variable, int *count)
+{
+	unsigned int bits;
+	volatile unsigned int representation;
+
+	if (!variable) return qfalse;
+	Com_Memcpy(&bits, &variable->value, sizeof(bits));
+	representation = bits;
+	if ((representation & 0x7f800000U) == 0x7f800000U ||
+			(double)variable->value < 1.0 || (double)variable->value > INT_MAX)
+		return qfalse;
+	*count = (int)variable->value;
+	return qtrue;
+}
+
 int AAS_Setup(void)
 {
-	aasworld.maxclients = (int) LibVarValue("maxclients", "128");
-	aasworld.maxentities = (int) LibVarValue("maxentities", "1024");
-	// as soon as it's set to 1 the routing cache will be saved
-	saveroutingcache = LibVar("saveroutingcache", "0");
-	//allocate memory for the entities
+	libvar_t *variable, *routingvariable;
+	aas_entity_t *entities;
+	int maxclients, maxentities;
+	unsigned long bytes;
+
+	variable = LibVar("maxclients", "128");
+	if (!AAS_SetupCount(variable, &maxclients))
+	{
+		botimport.Print(PRT_ERROR, "invalid or missing maxclients during AAS setup\n");
+		return BLERR_LIBRARYNOTSETUP;
+	}
+	variable = LibVar("maxentities", "1024");
+	if (!AAS_SetupCount(variable, &maxentities) ||
+			(unsigned long)maxentities > (unsigned long)INT_MAX / sizeof(aas_entity_t))
+	{
+		botimport.Print(PRT_ERROR, "invalid or missing maxentities during AAS setup\n");
+		return BLERR_LIBRARYNOTSETUP;
+	}
+	bytes = (unsigned long)maxentities * sizeof(aas_entity_t);
+	routingvariable = LibVar("saveroutingcache", "0");
+	if (!routingvariable)
+	{
+		botimport.Print(PRT_ERROR, "couldn't initialize saveroutingcache\n");
+		return BLERR_LIBRARYNOTSETUP;
+	}
+	entities = (aas_entity_t *) GetClearedHunkMemory(bytes);
+	if (!entities)
+	{
+		botimport.Print(PRT_ERROR, "couldn't allocate AAS entities\n");
+		return BLERR_LIBRARYNOTSETUP;
+	}
+	//All imports and counts are complete before replacing prior world state.
 	if (aasworld.entities) FreeMemory(aasworld.entities);
-	aasworld.entities = (aas_entity_t *) GetClearedHunkMemory(aasworld.maxentities * sizeof(aas_entity_t));
-	//invalidate all the entities
+	aasworld.maxclients = maxclients;
+	aasworld.maxentities = maxentities;
+	aasworld.entities = entities;
+	saveroutingcache = routingvariable;
 	AAS_InvalidateEntities();
-	//force some recalculations
-	//LibVarSet("forceclustering", "1");			//force clustering calculation
-	//LibVarSet("forcereachability", "1");		//force reachability calculation
 	aasworld.numframes = 0;
 	return BLERR_NOERROR;
 } //end of the function AAS_Setup

@@ -2097,7 +2097,7 @@ bot_moveresult_t BotTravel_Elevator(bot_movestate_t *ms, aas_reachability_t *rea
 		botimport.Print(PRT_MESSAGE, "bot on elevator\n");
 #endif //DEBUG_ELEVATOR
 		//if vertically not too far from the end point
-		if (abs(ms->origin[2] - reach->end[2]) < sv_maxbarrier->value)
+		if (fabsf(ms->origin[2] - reach->end[2]) < sv_maxbarrier->value)
 		{
 #ifdef DEBUG_ELEVATOR
 			botimport.Print(PRT_MESSAGE, "bot moving to end\n");
@@ -3578,17 +3578,48 @@ void BotResetMoveState(int movestate)
 //===========================================================================
 int BotSetupMoveAI(void)
 {
+	libvar_t *variables[10];
+	size_t i;
+	static const struct
+	{
+		char *name;
+		char *value;
+	} defaults[] =
+	{
+		{ "sv_step", "18" },
+		{ "sv_maxbarrier", "32" },
+		{ "sv_gravity", "800" },
+		{ "weapindex_rocketlauncher", "5" },
+		{ "weapindex_bfg10k", "9" },
+		{ "weapindex_grapple", "10" },
+		{ "entitytypemissile", "3" },
+		{ "offhandgrapple", "0" },
+		{ "cmd_grappleon", "grappleon" },
+		{ "cmd_grappleoff", "grappleoff" }
+	};
+
+	//Resolve complete shared variables before publishing movement references.
+	for (i = 0; i < sizeof(defaults) / sizeof(defaults[0]); i++)
+	{
+		variables[i] = LibVar(defaults[i].name, defaults[i].value);
+		if (!variables[i])
+		{
+			botimport.Print(PRT_ERROR, "couldn't initialize movement variable %s\n",
+					defaults[i].name);
+			return BLERR_LIBRARYNOTSETUP;
+		} //end if
+	} //end for
+	sv_maxstep = variables[0];
+	sv_maxbarrier = variables[1];
+	sv_gravity = variables[2];
+	weapindex_rocketlauncher = variables[3];
+	weapindex_bfg10k = variables[4];
+	weapindex_grapple = variables[5];
+	entitytypemissile = variables[6];
+	offhandgrapple = variables[7];
+	cmd_grappleon = variables[8];
+	cmd_grappleoff = variables[9];
 	BotSetBrushModelTypes();
-	sv_maxstep = LibVar("sv_step", "18");
-	sv_maxbarrier = LibVar("sv_maxbarrier", "32");
-	sv_gravity = LibVar("sv_gravity", "800");
-	weapindex_rocketlauncher = LibVar("weapindex_rocketlauncher", "5");
-	weapindex_bfg10k = LibVar("weapindex_bfg10k", "9");
-	weapindex_grapple = LibVar("weapindex_grapple", "10");
-	entitytypemissile = LibVar("entitytypemissile", "3");
-	offhandgrapple = LibVar("offhandgrapple", "0");
-	cmd_grappleon = LibVar("cmd_grappleon", "grappleon");
-	cmd_grappleoff = LibVar("cmd_grappleoff", "grappleoff");
 	return BLERR_NOERROR;
 } //end of the function BotSetupMoveAI
 //===========================================================================

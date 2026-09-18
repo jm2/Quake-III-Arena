@@ -487,7 +487,107 @@ implementation or check, without implying issue completion.
         oversized native integer words before publication; prior strings/source
         owners release, while valid float and 32-bit word patterns remain;
         see [publication evidence](bot-character-numeric-validation.md).
-  - [ ] Finish expression bounds, remaining character/source allocation
+  - [x] Requested NaN skills and unsafe cached skill casts reject before imports
+        while native finite/infinity clamps, rounding/fallback/cache behavior and
+        all existing character/string owners remain;
+        see [skill evidence](bot-character-skill-validation.md).
+  - [x] Interpolation rejects invalid endpoint/scale/result representations,
+        releases staged output after numeric failure, preserves available equal
+        fallback endpoints, and formats floating skill logs with matching types;
+        see [blend evidence](bot-interpolation-numeric-validation.md).
+  - [x] Public float getters reject invalid stored representations and NaN
+        bounds while retaining exact finite clamping, signed integer conversion,
+        negative zero and defined native infinity-bound behavior;
+        see [float getter evidence](bot-character-float-getter-validation.md).
+  - [x] Synonym loaders retain source diagnostics until validation, check aligned
+        measured capacity in both passes, stage nullable writes in heap memory
+        and publish/rebase one complete native hunk owner; invalid source/weight/
+        changed-capacity failures release all staged owners;
+        see [synonym evidence](bot-synonym-validation.md).
+  - [x] Expression result tokens initialize magnitude metadata, format complete
+        unsigned integer magnitudes without signed absolute overflow, reject
+        non-finite float results and safely clamp auxiliary integer values;
+        number/sign copies publish atomically with native text/type behavior;
+        see [expression token evidence](bot-eval-token-validation.md).
+  - [x] Expression collectors release copied operands on every parse/evaluation/
+        nullable-copy failure, reject lexical errors and malformed dollar/defined
+        grammar before publication, and retain valid macro/defined values and
+        historical source-error recovery;
+        see [operand evidence](bot-eval-collection-validation.md).
+  - [x] Selected expression arithmetic checks signed add/subtract/multiply and
+        division/remainder traps, validates shifts with native word semantics,
+        avoids unused integer operations in float mode and rejects non-finite
+        operands/results before publication; fractional float division remains;
+        see [arithmetic evidence](bot-eval-arithmetic-validation.md).
+  - [x] Failed unread-token copies preserve queued owners and record source
+        status; nullable conditional pushes preserve the existing stack/skip
+        count and return failure through entering directives; else/elif reuse
+        complete frames and preserve failed-expression/EOF recovery;
+        see [factory evidence](bot-source-factory-validation.md).
+  - [x] Macro definitions stage names/parameters/body tokens before dictionary
+        publication, preserve complete prior definitions on malformed/nullable
+        failures, parse parameter names without expanding prior macros and clean
+        external temporary dictionaries/scripts on every failed import;
+        see [definition evidence](bot-define-validation.md).
+  - [x] Complete empty macro expansion reports successful consumption so readers
+        continue to subsequent tokens, concatenated strings, included parents and
+        lexical errors; empty-only input reaches actual EOF and valid character
+        fields publish with native values;
+        see [empty-expansion evidence](bot-empty-expansion-validation.md).
+  - [x] Movement setup stages all ten native libvar references, rejects each
+        nullable import before brush/reference publication and preserves complete
+        prior state; retries retain native cached/configured values and models;
+        see [movement setup evidence](bot-move-setup-validation.md).
+  - [x] File loading checks block-comment closure before compression removes
+        diagnostics; malformed root/include/character imports release all owners
+        while valid files retain native compressed bytes and token metadata;
+        see [file-comment evidence](bot-file-comment-validation.md).
+  - [x] Compressed files update the EOF pointer to their complete new length;
+        exhausted roots/includes unwind conditional frames and skip state while
+        preserving native bytes/tokens and complete parent recovery;
+        see [file EOF evidence](bot-file-eof-validation.md).
+  - [x] Elevator height checks use native floating magnitude for the float
+        barrier libvar, avoiding unsafe integer conversion and retaining tested
+        integer-barrier behavior while correcting fractional barrier decisions;
+        see [distance evidence](bot-elevator-distance-validation.md).
+  - [x] AAS/public setup validates native count conversions and entity cost,
+        stages nullable cache/hunk imports before replacing world state and
+        preserves prior entities on failure; native defaults and truncation stay;
+        see [setup evidence](aas-setup-validation.md).
+  - [x] Entity proximity compares both float coordinate magnitudes directly;
+        defined native constant-40 decisions remain and unsafe integer casts
+        disappear; see [proximity evidence](aas-nearest-distance-validation.md).
+  - [x] Action setup stages complete input storage before replacing pointer/
+        actual capacity; nullable failure preserves usable prior payload, and
+        successful replacement releases its logical allocator record;
+        see [action setup evidence](bot-action-setup-validation.md).
+  - [x] Item configuration validates native count/cost and full filenames,
+        parses checked heap staging, rejects source errors and releases complete
+        sources before publishing a rebased hunk owner; native item values stay;
+        see [item evidence](bot-item-config-validation.md).
+  - [x] Structure numeric fields stage finite float results and checked native
+        integer words/bounds before writing destination bytes; 16-bit ranges and
+        ordinary native field values stay;
+        see [structure evidence](bot-structure-number-validation.md).
+  - [x] Goal setup validates native game-type conversion and stages complete
+        config/weight references before item parsing/publication; failed imports
+        retain prior goal payload and successful replacement releases its logical
+        record; see [goal evidence](bot-goal-setup-validation.md).
+  - [x] Level-item pool validates native count/cost, stages complete free links
+        before heap/list replacement and propagates failures before public map
+        information reset/map-API success; game load/setup failures disable bot
+        creation/frames until success while human initialization continues. Engine
+        readiness survives game VM resets through an existing syscall query. Retail
+        void ABI, prior pool bytes and native positive counts remain;
+        see [pool evidence](bot-level-pool-validation.md).
+  - [x] Map metadata stages checked locations/camps and publishes roots with
+        the complete level pool; nullable failure preserves all prior bytes,
+        cleans private owners and propagates through the checked map API;
+        see [metadata evidence](bot-map-info-validation.md).
+  - [x] Projectile model descriptors use the projectile offset, preserve every
+        scalar field across string order/boundaries and retain native layouts;
+        see [projectile evidence](bot-projectile-model-validation.md).
+  - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
   - [x] Local pool/type/item/string checks, reload-name initialization, and

@@ -60,6 +60,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 //bot states
 bot_state_t	*botstates[MAX_CLIENTS];
+// Map failures disable bot creation and frames until a successful load.
+static qboolean botmapready;
 //number of bots
 int numbots;
 //floating point time
@@ -1155,6 +1157,8 @@ int BotAISetupClient(int client, struct bot_settings_s *settings, qboolean resta
 	bot_state_t *bs;
 	int errnum;
 
+	if (!botmapready) return qfalse;
+
 	if (!botstates[client]) botstates[client] = G_Alloc(sizeof(bot_state_t));
 	bs = botstates[client];
 
@@ -1348,10 +1352,21 @@ BotAILoadMap
 int BotAILoadMap( int restart ) {
 	int			i;
 	vmCvar_t	mapname;
+	char		ready[2];
 
+	if (restart) {
+		// Game DLL/QVM data resets on restart; the engine retains its bot map.
+		botmapready = qfalse;
+		// Retail engines return an empty string for an unknown variable.
+		if (trap_BotLibVarGet("botlib_mapready", ready, sizeof(ready)) != BLERR_NOERROR
+				|| (ready[0] && (ready[0] != '1' || ready[1] != '\0'))) return qfalse;
+	}
 	if (!restart) {
 		trap_Cvar_Register( &mapname, "mapname", "", CVAR_SERVERINFO | CVAR_ROM );
-		trap_BotLibLoadMap( mapname.string );
+		botmapready = qfalse;
+		if (trap_BotLibLoadMap( mapname.string ) != BLERR_NOERROR) {
+			return qfalse;
+		}
 	}
 
 	for (i = 0; i < MAX_CLIENTS; i++) {
@@ -1362,6 +1377,7 @@ int BotAILoadMap( int restart ) {
 	}
 
 	BotSetupDeathmatchAI();
+	botmapready = qtrue;
 
 	return qtrue;
 }
@@ -1383,6 +1399,8 @@ int BotAIStartFrame(int time) {
 	static int local_time;
 	static int botlib_residual;
 	static int lastbotthink_time;
+
+	if (!botmapready) return qfalse;
 
 	G_CheckBotSpawn();
 
@@ -1661,6 +1679,8 @@ int BotAISetup( int restart ) {
 		return qtrue;
 	}
 
+	botmapready = qfalse;
+
 	//initialize the bot states
 	memset( botstates, 0, sizeof(botstates) );
 
@@ -1689,6 +1709,7 @@ int BotAIShutdown( int restart ) {
 		//don't shutdown the bot library
 	}
 	else {
+		botmapready = qfalse;
 		trap_BotLibShutdown();
 	}
 	return qtrue;

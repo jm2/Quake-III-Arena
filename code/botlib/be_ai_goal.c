@@ -30,6 +30,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *****************************************************************************/
 
 #include "../game/q_shared.h"
+#include <limits.h>
+#include <stddef.h>
 #include "l_utils.h"
 #include "l_libvar.h"
 #include "l_memory.h"
@@ -134,7 +136,7 @@ typedef struct iteminfo_s
 	int number;							//number of the item info
 } iteminfo_t;
 
-#define ITEMINFO_OFS(x)	(int)&(((iteminfo_t *)0)->x)
+#define ITEMINFO_OFS(x)	(int)offsetof(iteminfo_t, x)
 
 fielddef_t iteminfo_fields[] =
 {
@@ -270,18 +272,49 @@ itemconfig_t *LoadItemConfig(char *filename)
 	token_t token;
 	char path[MAX_PATH];
 	source_t *source;
-	itemconfig_t *ic;
+	itemconfig_t *ic, *result;
 	iteminfo_t *ii;
+	libvar_t *variable;
+	unsigned int bits;
+	volatile unsigned int representation;
+	unsigned long bytes;
 
-	max_iteminfo = (int) LibVarValue("max_iteminfo", "256");
+	if (!filename || !*filename || strlen(filename) >= sizeof(path))
+	{
+		botimport.Print(PRT_ERROR, "invalid item configuration filename\n");
+		return NULL;
+	}
+	variable = LibVar("max_iteminfo", "256");
+	if (!variable)
+	{
+		botimport.Print(PRT_ERROR, "couldn't initialize max_iteminfo\n");
+		return NULL;
+	}
+	Com_Memcpy(&bits, &variable->value, sizeof(bits));
+	representation = bits;
+	if ((representation & 0x7f800000U) == 0x7f800000U ||
+			(double)variable->value < INT_MIN || (double)variable->value > INT_MAX)
+	{
+		botimport.Print(PRT_ERROR, "invalid max_iteminfo\n");
+		return NULL;
+	}
+	max_iteminfo = (int)variable->value;
 	if (max_iteminfo < 0)
 	{
 		botimport.Print(PRT_ERROR, "max_iteminfo = %d\n", max_iteminfo);
 		max_iteminfo = 256;
 		LibVarSet( "max_iteminfo", "256" );
+		if (variable->value != 256.0f) return NULL;
 	}
+	if ((unsigned long)max_iteminfo >
+			((unsigned long)INT_MAX - sizeof(itemconfig_t)) / sizeof(iteminfo_t))
+	{
+		botimport.Print(PRT_ERROR, "item configuration allocation is too large\n");
+		return NULL;
+	}
+	bytes = sizeof(itemconfig_t) + (unsigned long)max_iteminfo * sizeof(iteminfo_t);
 
-	strncpy( path, filename, MAX_PATH );
+	strcpy(path, filename);
 	PC_SetBaseFolder(BOTFILESBASEFOLDER);
 	source = LoadSourceFile( path );
 	if( !source ) {
@@ -289,8 +322,13 @@ itemconfig_t *LoadItemConfig(char *filename)
 		return NULL;
 	} //end if
 	//initialize item config
-	ic = (itemconfig_t *) GetClearedHunkMemory(sizeof(itemconfig_t) +
-														max_iteminfo * sizeof(iteminfo_t));
+	ic = (itemconfig_t *) GetClearedMemory(bytes);
+	if (!ic)
+	{
+		botimport.Print(PRT_ERROR, "couldn't stage item configuration\n");
+		FreeSource(source);
+		return NULL;
+	}
 	ic->iteminfo = (iteminfo_t *) ((char *) ic + sizeof(itemconfig_t));
 	ic->numiteminfo = 0;
 	//parse the item config file
@@ -310,7 +348,7 @@ itemconfig_t *LoadItemConfig(char *filename)
 			if (!PC_ExpectTokenType(source, TT_STRING, 0, &token))
 			{
 				FreeMemory(ic);
-				FreeMemory(source);
+				FreeSource(source);
 				return NULL;
 			} //end if
 			StripDoubleQuotes(token.string);
@@ -332,7 +370,24 @@ itemconfig_t *LoadItemConfig(char *filename)
 			return NULL;
 		} //end else
 	} //end while
+	if (PC_SourceHasError(source))
+	{
+		FreeMemory(ic);
+		FreeSource(source);
+		return NULL;
+	}
 	FreeSource(source);
+	result = (itemconfig_t *)GetClearedHunkMemory(bytes);
+	if (!result)
+	{
+		botimport.Print(PRT_ERROR, "couldn't allocate complete item configuration\n");
+		FreeMemory(ic);
+		return NULL;
+	}
+	Com_Memcpy(result, ic, bytes);
+	result->iteminfo = (iteminfo_t *)((char *)result + sizeof(itemconfig_t));
+	FreeMemory(ic);
+	ic = result;
 	//
 	if (!ic->numiteminfo) botimport.Print(PRT_WARNING, "no item info loaded\n");
 	botimport.Print(PRT_MESSAGE, "loaded %s\n", path);
@@ -368,22 +423,60 @@ int *ItemWeightIndex(weightconfig_t *iwc, itemconfig_t *ic)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
-void InitLevelItemHeap(void)
+static levelitem_t *StageLevelItemHeap(void)
 {
 	int i, max_levelitems;
+	libvar_t *variable;
+	levelitem_t *heap;
+	unsigned int bits;
+	volatile unsigned int representation;
 
-	if (levelitemheap) FreeMemory(levelitemheap);
-
-	max_levelitems = (int) LibVarValue("max_levelitems", "256");
-	levelitemheap = (levelitem_t *) GetClearedMemory(max_levelitems * sizeof(levelitem_t));
-
-	for (i = 0; i < max_levelitems-1; i++)
+	variable = LibVar("max_levelitems", "256");
+	if (!variable)
 	{
-		levelitemheap[i].next = &levelitemheap[i + 1];
-	} //end for
-	levelitemheap[max_levelitems-1].next = NULL;
-	//
-	freelevelitems = levelitemheap;
+		botimport.Print(PRT_ERROR, "couldn't initialize max_levelitems\n");
+		return NULL;
+	}
+	Com_Memcpy(&bits, &variable->value, sizeof(bits));
+	representation = bits;
+	if ((representation & 0x7f800000U) == 0x7f800000U ||
+			(double)variable->value < 1.0 || (double)variable->value > INT_MAX)
+	{
+		botimport.Print(PRT_ERROR, "invalid max_levelitems\n");
+		return NULL;
+	}
+	max_levelitems = (int)variable->value;
+	if ((unsigned long)max_levelitems > (unsigned long)INT_MAX / sizeof(levelitem_t))
+	{
+		botimport.Print(PRT_ERROR, "level item allocation is too large\n");
+		return NULL;
+	}
+	heap = (levelitem_t *)GetClearedMemory((unsigned long)max_levelitems * sizeof(levelitem_t));
+	if (!heap)
+	{
+		botimport.Print(PRT_ERROR, "couldn't allocate level items\n");
+		return NULL;
+	}
+	for (i = 0; i < max_levelitems - 1; i++) heap[i].next = &heap[i + 1];
+	heap[max_levelitems - 1].next = NULL;
+	return heap;
+}
+
+static void CommitLevelItemHeap(levelitem_t *heap)
+{
+	if (levelitemheap) FreeMemory(levelitemheap);
+	levelitemheap = heap;
+	freelevelitems = heap;
+	levelitems = NULL;
+	numlevelitems = 0;
+}
+
+int InitLevelItemHeap(void)
+{
+	levelitem_t *heap = StageLevelItemHeap();
+	if (!heap) return qfalse;
+	CommitLevelItemHeap(heap);
+	return qtrue;
 } //end of the function InitLevelItemHeap
 //===========================================================================
 //
@@ -448,22 +541,27 @@ void RemoveLevelItemFromList(levelitem_t *li)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-void BotFreeInfoEntities(void)
+static void FreeInfoEntities(maplocation_t *locations, campspot_t *spots)
 {
 	maplocation_t *ml, *nextml;
 	campspot_t *cs, *nextcs;
 
-	for (ml = maplocations; ml; ml = nextml)
+	for (ml = locations; ml; ml = nextml)
 	{
 		nextml = ml->next;
 		FreeMemory(ml);
 	} //end for
-	maplocations = NULL;
-	for (cs = campspots; cs; cs = nextcs)
+	for (cs = spots; cs; cs = nextcs)
 	{
 		nextcs = cs->next;
 		FreeMemory(cs);
 	} //end for
+}
+
+void BotFreeInfoEntities(void)
+{
+	FreeInfoEntities(maplocations, campspots);
+	maplocations = NULL;
 	campspots = NULL;
 } //end of the function BotFreeInfoEntities
 //===========================================================================
@@ -472,14 +570,13 @@ void BotFreeInfoEntities(void)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-void BotInitInfoEntities(void)
+static int StageInfoEntities(maplocation_t **locations, campspot_t **spots)
 {
 	char classname[MAX_EPAIRKEY];
-	maplocation_t *ml;
-	campspot_t *cs;
+	maplocation_t *ml, *newlocations = NULL;
+	campspot_t *cs, *newspots = NULL;
 	int ent, numlocations, numcampspots;
 
-	BotFreeInfoEntities();
 	//
 	numlocations = 0;
 	numcampspots = 0;
@@ -491,17 +588,19 @@ void BotInitInfoEntities(void)
 		if (!strcmp(classname, "target_location"))
 		{
 			ml = (maplocation_t *) GetClearedMemory(sizeof(maplocation_t));
+			if (!ml) goto failed;
 			AAS_VectorForBSPEpairKey(ent, "origin", ml->origin);
 			AAS_ValueForBSPEpairKey(ent, "message", ml->name, sizeof(ml->name));
 			ml->areanum = AAS_PointAreaNum(ml->origin);
-			ml->next = maplocations;
-			maplocations = ml;
+			ml->next = newlocations;
+			newlocations = ml;
 			numlocations++;
 		} //end if
 		//camp spots
 		else if (!strcmp(classname, "info_camp"))
 		{
 			cs = (campspot_t *) GetClearedMemory(sizeof(campspot_t));
+			if (!cs) goto failed;
 			AAS_VectorForBSPEpairKey(ent, "origin", cs->origin);
 			//cs->origin[2] += 16;
 			AAS_ValueForBSPEpairKey(ent, "message", cs->name, sizeof(cs->name));
@@ -516,8 +615,8 @@ void BotInitInfoEntities(void)
 				FreeMemory(cs);
 				continue;
 			} //end if
-			cs->next = campspots;
-			campspots = cs;
+			cs->next = newspots;
+			newspots = cs;
 			//AAS_DrawPermanentCross(cs->origin, 4, LINECOLOR_YELLOW);
 			numcampspots++;
 		} //end else if
@@ -527,6 +626,24 @@ void BotInitInfoEntities(void)
 		botimport.Print(PRT_MESSAGE, "%d map locations\n", numlocations);
 		botimport.Print(PRT_MESSAGE, "%d camp spots\n", numcampspots);
 	} //end if
+	*locations = newlocations;
+	*spots = newspots;
+	return qtrue;
+failed:
+	botimport.Print(PRT_ERROR, "couldn't allocate complete map information\n");
+	FreeInfoEntities(newlocations, newspots);
+	return qfalse;
+}
+
+int BotInitInfoEntities(void)
+{
+	maplocation_t *locations;
+	campspot_t *spots;
+	if (!StageInfoEntities(&locations, &spots)) return qfalse;
+	BotFreeInfoEntities();
+	maplocations = locations;
+	campspots = spots;
+	return qtrue;
 } //end of the function BotInitInfoEntities
 //===========================================================================
 //
@@ -534,7 +651,7 @@ void BotInitInfoEntities(void)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-void BotInitLevelItems(void)
+int BotInitLevelItemsChecked(void)
 {
 	int i, spawnflags, value;
 	char classname[MAX_EPAIRKEY];
@@ -543,20 +660,28 @@ void BotInitLevelItems(void)
 	itemconfig_t *ic;
 	levelitem_t *li;
 	bsp_trace_t trace;
+	levelitem_t *heap;
+	maplocation_t *locations;
+	campspot_t *spots;
 
-	//initialize the map locations and camp spots
-	BotInitInfoEntities();
-
-	//initialize the level item heap
-	InitLevelItemHeap();
-	levelitems = NULL;
-	numlevelitems = 0;
+	//Stage all metadata roots before replacing any prior pool or map information.
+	heap = StageLevelItemHeap();
+	if (!heap) return BLERR_LIBRARYNOTSETUP;
+	if (!StageInfoEntities(&locations, &spots))
+	{
+		FreeMemory(heap);
+		return BLERR_LIBRARYNOTSETUP;
+	}
+	CommitLevelItemHeap(heap);
+	BotFreeInfoEntities();
+	maplocations = locations;
+	campspots = spots;
 	//
 	ic = itemconfig;
-	if (!ic) return;
+	if (!ic) return BLERR_NOERROR;
 
 	//if there's no AAS file loaded
-	if (!AAS_Loaded()) return;
+	if (!AAS_Loaded()) return BLERR_NOERROR;
 
 	//update the modelindexes of the item info
 	for (i = 0; i < ic->numiteminfo; i++)
@@ -614,7 +739,7 @@ void BotInitLevelItems(void)
 		} //end if
 
 		li = AllocLevelItem();
-		if (!li) return;
+		if (!li) return BLERR_LIBRARYNOTSETUP;
 		//
 		li->number = ++numlevelitems;
 		li->timeout = 0;
@@ -669,6 +794,12 @@ void BotInitLevelItems(void)
 		AddLevelItemToList(li);
 	} //end for
 	botimport.Print(PRT_MESSAGE, "found %d level items\n", numlevelitems);
+	return BLERR_NOERROR;
+}
+
+void BotInitLevelItems(void)
+{
+	(void)BotInitLevelItemsChecked();
 } //end of the function BotInitLevelItems
 //===========================================================================
 //
@@ -1773,22 +1904,50 @@ void BotFreeGoalState(int handle)
 //===========================================================================
 int BotSetupGoalAI(void)
 {
-	char *filename;
+	libvar_t *gametype, *configvariable, *weightvariable;
+	itemconfig_t *config;
+	unsigned int bits;
+	volatile unsigned int representation;
+	int type;
 
-	//check if teamplay is on
-	g_gametype = LibVarValue("g_gametype", "0");
-	//item configuration file
-	filename = LibVarString("itemconfig", "items.c");
-	//load the item configuration
-	itemconfig = LoadItemConfig(filename);
-	if (!itemconfig)
+	gametype = LibVar("g_gametype", "0");
+	if (!gametype)
+	{
+		botimport.Print(PRT_ERROR, "couldn't initialize g_gametype\n");
+		return BLERR_LIBRARYNOTSETUP;
+	}
+	Com_Memcpy(&bits, &gametype->value, sizeof(bits));
+	representation = bits;
+	if ((representation & 0x7f800000U) == 0x7f800000U ||
+			(double)gametype->value < INT_MIN || (double)gametype->value > INT_MAX)
+	{
+		botimport.Print(PRT_ERROR, "invalid g_gametype during goal setup\n");
+		return BLERR_LIBRARYNOTSETUP;
+	}
+	type = (int)gametype->value;
+	configvariable = LibVar("itemconfig", "items.c");
+	if (!configvariable)
+	{
+		botimport.Print(PRT_FATAL, "couldn't initialize itemconfig\n");
+		return BLERR_CANNOTLOADITEMCONFIG;
+	}
+	weightvariable = LibVar("droppedweight", "1000");
+	if (!weightvariable)
+	{
+		botimport.Print(PRT_ERROR, "couldn't initialize droppedweight\n");
+		return BLERR_LIBRARYNOTSETUP;
+	}
+	config = LoadItemConfig(configvariable->string);
+	if (!config)
 	{
 		botimport.Print(PRT_FATAL, "couldn't load item config\n");
 		return BLERR_CANNOTLOADITEMCONFIG;
-	} //end if
-	//
-	droppedweight = LibVar("droppedweight", "1000");
-	//everything went ok
+	}
+	//All imports and parsed owners are complete before replacing prior state.
+	if (itemconfig) FreeMemory(itemconfig);
+	g_gametype = type;
+	itemconfig = config;
+	droppedweight = weightvariable;
 	return BLERR_NOERROR;
 } //end of the function BotSetupGoalAI
 //===========================================================================
