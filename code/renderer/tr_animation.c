@@ -21,6 +21,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #include "tr_local.h"
+#include <stddef.h>
 
 /*
 
@@ -71,11 +72,11 @@ void RB_SurfaceAnim( md4Surface_t *surface ) {
 	int				numVerts;
 	md4Vertex_t		*v;
 	md4Bone_t		bones[MD4_MAX_BONES];
-	md4Bone_t		*bonePtr, *bone;
+	md4Bone_t		*bonePtr, *bone, *frameBones, *oldFrameBones;
 	md4Header_t		*header;
 	md4Frame_t		*frame;
 	md4Frame_t		*oldFrame;
-	int				frameSize;
+	int				frameSize, frameIndex, oldFrameIndex, row, column;
 
 
 	if (  backEnd.currentEntity->e.oldframe == backEnd.currentEntity->e.frame ) {
@@ -87,12 +88,18 @@ void RB_SurfaceAnim( md4Surface_t *surface ) {
 	}
 	header = (md4Header_t *)((byte *)surface + surface->ofsHeader);
 
-	frameSize = (int)( &((md4Frame_t *)0)->bones[ header->numBones ] );
+	frameSize = offsetof(md4Frame_t,bones) + header->numBones * sizeof(md4Bone_t);
+	frameIndex = backEnd.currentEntity->e.frame;
+	oldFrameIndex = backEnd.currentEntity->e.oldframe;
+	if ( frameIndex < 0 ) frameIndex = 0;
+	else if ( frameIndex >= header->numFrames ) frameIndex = header->numFrames - 1;
+	if ( oldFrameIndex < 0 ) oldFrameIndex = 0;
+	else if ( oldFrameIndex >= header->numFrames ) oldFrameIndex = header->numFrames - 1;
+	frame = (md4Frame_t *)((byte *)header + header->ofsFrames + frameIndex * frameSize);
+	oldFrame = (md4Frame_t *)((byte *)header + header->ofsFrames + oldFrameIndex * frameSize);
 
-	frame = (md4Frame_t *)((byte *)header + header->ofsFrames + 
-		backEnd.currentEntity->e.frame * frameSize );
-	oldFrame = (md4Frame_t *)((byte *)header + header->ofsFrames + 
-		backEnd.currentEntity->e.oldframe * frameSize );
+	frameBones = (md4Bone_t *)((byte *)frame + offsetof(md4Frame_t,bones));
+	oldFrameBones = (md4Bone_t *)((byte *)oldFrame + offsetof(md4Frame_t,bones));
 
 	RB_CheckOverflow( surface->numVerts, surface->numTriangles * 3 );
 
@@ -101,7 +108,7 @@ void RB_SurfaceAnim( md4Surface_t *surface ) {
 	baseIndex = tess.numIndexes;
 	baseVertex = tess.numVertexes;
 	for (j = 0 ; j < indexes ; j++) {
-		tess.indexes[baseIndex + j] = baseIndex + triangles[j];
+		tess.indexes[baseIndex + j] = baseVertex + triangles[j];
 	}
 	tess.numIndexes += indexes;
 
@@ -110,12 +117,12 @@ void RB_SurfaceAnim( md4Surface_t *surface ) {
 	//
 	if ( !backlerp ) {
 		// no lerping needed
-		bonePtr = frame->bones;
+		bonePtr = frameBones;
 	} else {
 		bonePtr = bones;
-		for ( i = 0 ; i < header->numBones*12 ; i++ ) {
-			((float *)bonePtr)[i] = frontlerp * ((float *)frame->bones)[i]
-				+ backlerp * ((float *)oldFrame->bones)[i];
+		for ( i = 0; i < header->numBones; i++ ) for ( row = 0; row < 3; row++ ) for ( column = 0; column < 4; column++ ) {
+			bonePtr[i].matrix[row][column] = frontlerp * frameBones[i].matrix[row][column]
+				+ backlerp * oldFrameBones[i].matrix[row][column];
 		}
 	}
 
@@ -134,7 +141,7 @@ void RB_SurfaceAnim( md4Surface_t *surface ) {
 
 		VectorClear( tempVert );
 		VectorClear( tempNormal );
-		w = v->weights;
+		w = (md4Weight_t *)((byte *)v + offsetof(md4Vertex_t,weights));
 		for ( k = 0 ; k < v->numWeights ; k++, w++ ) {
 			bone = bonePtr + w->boneIndex;
 
@@ -162,7 +169,7 @@ void RB_SurfaceAnim( md4Surface_t *surface ) {
 		// This makes TFC's skeletons work.  Shouldn't be necessary anymore, but left
 		// in for reference.
 		//v = (md4Vertex_t *)( ( byte * )&v->weights[v->numWeights] + 12 );
-		v = (md4Vertex_t *)&v->weights[v->numWeights];
+		v = (md4Vertex_t *)((byte *)v + offsetof(md4Vertex_t,weights) + v->numWeights * sizeof(md4Weight_t));
 	}
 
 	tess.numVertexes += surface->numVerts;
