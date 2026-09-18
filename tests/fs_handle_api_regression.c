@@ -9,6 +9,7 @@
 #endif
 #include Q3_ZIP_NATIVE_FIXTURE
 #undef main
+#include "fs_zip_fixture_io.h"
 
 void Sys_StreamSeek(fileHandle_t f, int offset, int origin) {
     (void)f; (void)offset; (void)origin;
@@ -84,7 +85,7 @@ static void NativeHandleGolden(char *path) {
     }
     Begin();
     f = MAX_FILE_HANDLES - 1;
-    fsh[f].handleFiles.file.o = tmpfile();
+    fsh[f].handleFiles.file.o = FixtureTemporaryFile();
     Check(fsh[f].handleFiles.file.o != NULL, "actual ordinary native FILE owner");
     ordinaryFD = fileno(fsh[f].handleFiles.file.o);
     FS_ForceFlush(f);
@@ -136,7 +137,7 @@ static void Inputs(char *path) {
     End();
     Begin();
     f = MAX_FILE_HANDLES - 1;
-    fsh[f].handleFiles.file.o = tmpfile();
+    fsh[f].handleFiles.file.o = FixtureTemporaryFile();
     Check(fsh[f].handleFiles.file.o != NULL, "ordinary invalid-write FILE owner");
     Check(!FS_Write(NULL, 1, f) && !FS_Write("x", -1, f) &&
           !FS_Write("x", INT_MIN, f) && !FS_Write(NULL, 0, f) &&
