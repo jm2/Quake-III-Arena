@@ -165,6 +165,7 @@ $env = new cons(
   ../renderer/tr_flares.c   
   ../renderer/tr_font.c    
   ../renderer/tr_image.c    
+  ../renderer/tr_image_bmp.c
   ../renderer/tr_init.c     
   ../renderer/tr_light.c   
   ../renderer/tr_main.c    

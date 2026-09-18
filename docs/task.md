@@ -139,6 +139,9 @@ QVMs while any P0 item is open.
   - [ ] Complete deferred retail 1.32c and Mac OS 9 cinematic acceptance.
 - [ ] [#42 — replace BMP/PCX/TGA loaders with bounded cursors](https://github.com/jm2/Quake-III-Arena/issues/42)
       — **high**, deterministic image heap/OOB corruption.
+  - [x] BMP headers/palettes/rows use checked byte spans and allocation
+        arithmetic, with [host regressions](bmp-cursor-validation.md).
+  - [ ] Replace PCX and TGA decoding and complete deferred retail acceptance.
 - [ ] [#43 — make JPEG I/O length-aware and remove duplicate APIs](https://github.com/jm2/Quake-III-Arena/issues/43)
       — **high**, OOB decode and link-order ambiguity.
   - [x] Local RGBA output sizing/dimension checks fix one overwrite.

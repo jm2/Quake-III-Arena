@@ -16,7 +16,9 @@ PR head while retaining checks on the merged default branch.
   - compiles the Python utilities;
   - requires `docs/task.md` to remain in P0-to-P3 order with exactly one direct
     link for every confirmed issue #1 through #52, allowing both open and
-    completed checkboxes as the queue is worked down.
+    completed checkboxes as the queue is worked down;
+  - checks portable image decoders are included in Unix Make/Cons, Visual
+    Studio, Xcode source phases and lint manifests.
 - `Packaging tools (Python 3.11)` and `(Python 3.14)`
   - validate AppleDouble entry offsets, resource data, Finder type/creator,
     and bundle flag;
@@ -84,7 +86,10 @@ PR head while retaining checks on the merged default branch.
     native averaging, and matching preview/videoMap upload dimensions;
   - checks every full RoQ codebook truncation and fixed RGBA table entry,
     partial updates, all VQ opcodes, exact payload prefixes, control-word refill,
-    both frame halves, signed/unaligned motion, and rejection before writes.
+    both frame halves, signed/unaligned motion, and rejection before writes;
+  - checks the actual BMP loader at four input alignments with every small
+    file truncation, 8/16/24/32-bit pixels, palettes, row padding/offsets,
+    orientation, extended headers, dimensions, and cleanup before errors.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -114,6 +119,7 @@ bash tests/run_botlib_ai_tests.sh
 bash tests/run_roq_stream_tests.sh
 bash tests/run_roq_frame_tests.sh
 bash tests/run_roq_vq_tests.sh
+bash tests/run_bmp_cursor_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
