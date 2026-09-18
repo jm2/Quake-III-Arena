@@ -297,8 +297,9 @@ QVMs while any P0 item is open.
         and physical release; failed cache creation/update stays unpublished
         and can retry; see [workspace evidence](aas-routing-workspace-validation.md).
   - [x] Native routing cache counts, allocation costs and signed byte accounting
-        reject before overflow/import; native layouts and nullable ownership
-        remain intact; see [cache evidence](aas-cache-allocation-validation.md).
+        reject before overflow/import; loaded caches are accounted and optional
+        native dumps validate before publication with rebuilt runtime links;
+        see [cache evidence](aas-cache-allocation-validation.md).
   - [ ] Validate the entire AAS file and graph before setting `loaded`.
 - [ ] [#48 — bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48)
       — **high**, parser fixed-buffer corruption/invalid cleanup.
