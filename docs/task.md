@@ -132,8 +132,9 @@ QVMs while any P0 item is open.
       — **high**, deterministic cinematic buffer corruption.
   - [x] Bound disk/packet payloads, exact reads, mono/stereo output and early
         failure cleanup; see [chunk/audio evidence](roq-stream-validation.md).
-  - [ ] Validate frame dimensions, both frame halves, quad counts, VQ read
-        cursors and motion-compensated source blocks before writes.
+  - [x] Validate frame geometry, both halves, complete quad groups and
+        bounded preview/videoMap resizing; see [frame evidence](roq-frame-validation.md).
+  - [ ] Bound VQ read cursors and motion-compensated source blocks before writes.
 - [ ] [#42 — replace BMP/PCX/TGA loaders with bounded cursors](https://github.com/jm2/Quake-III-Arena/issues/42)
       — **high**, deterministic image heap/OOB corruption.
 - [ ] [#43 — make JPEG I/O length-aware and remove duplicate APIs](https://github.com/jm2/Quake-III-Arena/issues/43)
