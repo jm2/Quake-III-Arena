@@ -502,6 +502,9 @@ static qboolean AAS_ValidateReachability(void)
 			return qfalse;
 		total += settings->numreachableareas;
 	}
+	// Native tables contain dummy slot 0 followed by exactly the owned records.
+	if (aasworld.reachabilitysize && total != aasworld.reachabilitysize - 1)
+		return qfalse;
 	for (i = 0; i < aasworld.reachabilitysize; i++)
 	{
 		aas_reachability_t *reach = &aasworld.reachability[i];
@@ -543,6 +546,90 @@ static qboolean AAS_ValidateReachability(void)
 	return qtrue;
 }
 
+/* Bounds are checked before these native slot/side ownership checks. */
+static qboolean AAS_ClaimClusterSlot(unsigned char *owned, int *offsets,
+								   int cluster, int slot, int reachable)
+{
+	int index = offsets[cluster] + slot;
+	unsigned int mask = 1u << (index & 7);
+	if ((slot < aasworld.clusters[cluster].numreachabilityareas) != (reachable != 0) ||
+		(owned[index >> 3] & mask)) return qfalse;
+	owned[index >> 3] |= mask;
+	return qtrue;
+}
+
+static qboolean AAS_ValidateClusterOwnership(void)
+{
+	int i, side, slots = 0, mapped = 0, header, bytes, bitmap;
+	int *offsets;
+	unsigned char *owned, *seen;
+	qboolean valid = qtrue;
+	// Native unclustered/dummy-only roots do not have a completed slot mapping.
+	if (aasworld.numclusters <= 1) return qtrue;
+	if (aasworld.clusters[0].numareas || aasworld.clusters[0].numreachabilityareas ||
+		aasworld.clusters[0].numportals || aasworld.areasettings[0].cluster) return qfalse;
+	for (i = 1; i < aasworld.numareasettings; i++)
+		if (aasworld.areasettings[i].cluster > 0) mapped++;
+	if (aasworld.numportals > 0)
+	{
+		if (aasworld.numportals - 1 > (INT_MAX - mapped) / 2) return qfalse;
+		mapped += 2 * (aasworld.numportals - 1);
+	}
+	for (i = 0; i < aasworld.numclusters; i++)
+	{
+		if (aasworld.clusters[i].numareas > mapped - slots) return qfalse;
+		slots += aasworld.clusters[i].numareas;
+	}
+	if (slots != mapped || aasworld.numclusters > INT_MAX / (int)sizeof(int) - 1)
+		return qfalse;
+	header = (aasworld.numclusters + 1) * (int)sizeof(int);
+	bitmap = slots / 8 + (slots % 8 != 0);
+	if (bitmap > INT_MAX - header || aasworld.numportals > INT_MAX - header - bitmap)
+		return qfalse;
+	bytes = header + bitmap + aasworld.numportals;
+	offsets = (int *)GetMemory(bytes);
+	if (!offsets) return qfalse;
+	owned = (unsigned char *)offsets + header;
+	seen = owned + bitmap;
+	Com_Memset(owned, 0, bitmap + aasworld.numportals);
+	offsets[0] = 0;
+	for (i = 0; i < aasworld.numclusters; i++)
+		offsets[i + 1] = offsets[i] + aasworld.clusters[i].numareas;
+	for (i = 1; i < aasworld.numareasettings && valid; i++)
+	{
+		aas_areasettings_t *settings = &aasworld.areasettings[i];
+		if (settings->cluster > 0)
+			valid = AAS_ClaimClusterSlot(owned, offsets, settings->cluster,
+				settings->clusterareanum, settings->numreachableareas);
+	}
+	for (i = 1; i < aasworld.numportals && valid; i++)
+	{
+		aas_portal_t *portal = &aasworld.portals[i];
+		for (side = 0; side < 2 && valid; side++)
+			valid = AAS_ClaimClusterSlot(owned, offsets,
+				side ? portal->backcluster : portal->frontcluster,
+				portal->clusterareanum[side],
+				aasworld.areasettings[portal->areanum].numreachableareas);
+	}
+	for (i = 1; i < aasworld.numclusters && valid; i++)
+	{
+		aas_cluster_t *cluster = &aasworld.clusters[i];
+		int n;
+		for (n = 0; n < cluster->numportals; n++)
+		{
+			int portalnum = aasworld.portalindex[cluster->firstportal + n];
+			aas_portal_t *portal = &aasworld.portals[portalnum];
+			unsigned int mask = 1u << (portal->frontcluster != i);
+			if (seen[portalnum] & mask) { valid = qfalse; break; }
+			seen[portalnum] |= mask;
+		}
+	}
+	for (i = 1; i < aasworld.numportals && valid; i++)
+		if (seen[i] != 3) valid = qfalse;
+	FreeMemory(offsets);
+	return valid;
+}
+
 static qboolean AAS_ValidateClusters(void)
 {
 	int i, side, total = 0;
@@ -572,6 +659,7 @@ static qboolean AAS_ValidateClusters(void)
 		// Complete clustering needs both sides and inverse area ownership.
 		if (i && aasworld.numclusters > 1 &&
 			(!portal->frontcluster || !portal->backcluster ||
+			 portal->frontcluster == portal->backcluster ||
 			 aasworld.areasettings[portal->areanum].cluster != -i)) return qfalse;
 	}
 	for (i = 0; i < aasworld.portalindexsize; i++)
@@ -623,7 +711,7 @@ static qboolean AAS_ValidateClusters(void)
 		}
 		FreeMemory(owned);
 	}
-	return qtrue;
+	return AAS_ValidateClusterOwnership();
 }
 
 int AAS_LoadAASFile(char *filename)
