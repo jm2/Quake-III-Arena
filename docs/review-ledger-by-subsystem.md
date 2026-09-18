@@ -379,6 +379,9 @@ implementation or check, without implying issue completion.
   - [x] Bbox float endian conversion retains fractional and finite extreme
         coordinates in independent endian models; existing uint16 travel-time
         swap remains unchanged; see [endian evidence](aas-endian-validation.md).
+  - [x] AAS writer preserves native world bytes on every return, checks all
+        writes/seeks and rejects invalid/overflowing output roots before opening;
+        see [writer evidence](aas-writer-validation.md).
   - [ ] Validate the complete file and graph before setting `loaded`.
 - [ ] [#48 — bot preprocessor/token/path bounds](https://github.com/jm2/Quake-III-Arena/issues/48)
   - [x] Several upstream primitive/preprocessor/diagnostic bounds fixes are
