@@ -566,15 +566,23 @@ void BotFreeWeaponState(int handle)
 //===========================================================================
 int BotSetupWeaponAI(void)
 {
-	char *file;
+	libvar_t *file;
+	weaponconfig_t *candidate;
 
-	file = LibVarString("weaponconfig", "weapons.c");
-	weaponconfig = LoadWeaponConfig(file);
-	if (!weaponconfig)
+	file = LibVar("weaponconfig", "weapons.c");
+	if (!file || !file->string)
+	{
+		botimport.Print(PRT_ERROR, "couldn't initialize weaponconfig\n");
+		return BLERR_CANNOTLOADWEAPONCONFIG;
+	}
+	candidate = LoadWeaponConfig(file->string);
+	if (!candidate)
 	{
 		botimport.Print(PRT_FATAL, "couldn't load the weapon config\n");
 		return BLERR_CANNOTLOADWEAPONCONFIG;
-	} //end if
+	}
+	if (weaponconfig) FreeMemory(weaponconfig);
+	weaponconfig = candidate;
 
 #ifdef DEBUG_AI_WEAP
 	DumpWeaponConfig(weaponconfig);
