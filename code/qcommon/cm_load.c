@@ -199,6 +199,7 @@ void CMod_LoadNodes( lump_t *l ) {
 	for (i=0 ; i<count ; i++, out++, in++)
 	{
 		out->plane = cm.planes + LittleLong( in->planeNum );
+		out->parent = -1;
 		for (j=0 ; j<2 ; j++)
 		{
 			child = LittleLong (in->children[j]);
@@ -206,6 +207,14 @@ void CMod_LoadNodes( lump_t *l ) {
 		}
 	}
 
+	/* Tree preflight guarantees every decision child has exactly one parent.
+	 * Leaves may be shared; their parents are not needed for traversal. */
+	for ( i = 0; i < count; i++ ) {
+		for ( j = 0; j < 2; j++ ) {
+			child = cm.nodes[i].children[j];
+			if ( child >= 0 ) cm.nodes[child].parent = i;
+		}
+	}
 }
 
 /*

@@ -74,7 +74,7 @@ static void NativeLoad(int count,int models,int visibleParent) {
 	Check(tr.worldMapLoaded && tr.world==&s_worldData && s_worldData.numDecisionNodes==count && !s_worldData.nodes[0].parent && modelCalls==beforeModels+models && !graphTemporary && !fileAllocation,"actual renderer tree/world publication");
 	for(i=0;i<count;i++) {
 		mnode_t *node=s_worldData.nodes+i;unsigned int child=BSP_FileWord(source+At(LUMP_NODES,i*sizeof(dnode_t)+offsetof(dnode_t,children)));
-		if(!(child&0x80000000u)) Check(s_worldData.nodes[child].parent==node,"every native unique decision-node parent");
+		if(!(child&0x80000000u)) Check(s_worldData.nodes[child].parent==node && cm.nodes[child].parent==i,"every native renderer and collision decision-node parent");
 	}
 	Check(s_worldData.nodes[count+1].parent==s_worldData.nodes+visibleParent,"visible-leaf native ancestor");
 }
@@ -94,10 +94,57 @@ static int Expected(void) {
 	}
 	memset(color,0,sizeof(color));for(i=0;i<3;i++)if(!Acyclic(i))return 0;return 1;
 }
+static int queryLeaves[8192],queryCount;
+static void QueryLeaf(leafList_t *ll,int encoded) {
+	(void)ll;Check(queryCount<8192,"bounded captured query callbacks");queryLeaves[queryCount++]=-1-encoded;
+}
+/* Independent stock recursion is restricted to small trusted fixture trees. */
+static void QueryOracle(leafList_t *ll,int node,int *expected,int *count) {
+	int side;if(node<0) { expected[(*count)++]=-1-node;return; }
+	side=BoxOnPlaneSide(ll->bounds[0],ll->bounds[1],cm.nodes[node].plane);
+	if(side!=2)QueryOracle(ll,cm.nodes[node].children[0],expected,count);
+	if(side!=1)QueryOracle(ll,cm.nodes[node].children[1],expected,count);
+}
+static void SmallQueries(void) {
+	clipMap_t retained=cm;cNode_t nodes[3];leafList_t ll;int expected[64],number,i,j,k,root;
+	const float boxes[][2]={{-2,0},{-2,-2},{0,0},{1,2},{-1,-1}};
+	for(i=0;i<3;i++) { nodes[i].plane=retained.planes+2*i;nodes[i].parent=-1;for(j=0;j<2;j++)nodes[i].children[j]=children[i][j]; }
+	for(i=0;i<3;i++)for(j=0;j<2;j++)if(children[i][j]>=0)nodes[children[i][j]].parent=i;
+	cm.nodes=nodes;cm.numNodes=3;memset(&ll,0,sizeof(ll));ll.storeLeafs=QueryLeaf;
+	for(k=0;k<sizeof(boxes)/sizeof(boxes[0]);k++)for(root=0;root<3;root++) {
+		for(i=0;i<3;i++) { ll.bounds[0][i]=boxes[k][0];ll.bounds[1][i]=boxes[k][1]; }
+		queryCount=number=0;CM_BoxLeafnums_r(&ll,root);QueryOracle(&ll,root,expected,&number);
+		Check(queryCount==number && !memcmp(queryLeaves,expected,number*sizeof(int)),"every accepted small forest/subtree and box matches stock callback order");
+	}
+	cm=retained;
+}
+static void BoxQueries(int count) {
+	leafList_t ll;int expected[64],expectedCount=0,last=-1,list[5],result,i; cbrush_t *brushes[2];
+	vec3_t mins={-2,-1,-1},maxs={0,1,1},front={-2,0,0},back={0,0,0};
+	memset(&ll,0,sizeof(ll));VectorCopy(mins,ll.bounds[0]);VectorCopy(maxs,ll.bounds[1]);ll.storeLeafs=QueryLeaf;
+	queryCount=0;CM_BoxLeafnums_r(&ll,0);
+	if(count<=32) {
+		QueryOracle(&ll,0,expected,&expectedCount);
+		Check(queryCount==expectedCount && !memcmp(queryLeaves,expected,queryCount*sizeof(int)),"all native front-first leaf callbacks match stock oracle");
+	} else {
+		Check(queryCount==count+1 && queryLeaves[0]==1,"deep crossing query visits visible leaf first");
+		for(i=1;i<queryCount;i++)Check(queryLeaves[i]==0,"deep crossing query preserves every repeated opaque-leaf callback");
+	}
+	memset(list,0x5a,sizeof(list));result=CM_BoxLeafnums(mins,maxs,list+1,2,&last);
+	Check(result==2 && list[1]==queryLeaves[0] && list[2]==queryLeaves[1] && list[0]==0x5a5a5a5a && list[3]==0x5a5a5a5a && last==1,"bounded leaf-list prefix, guard and native last visible leaf");
+	last=-1;result=CM_BoxLeafnums(mins,maxs,NULL,0,&last);Check(!result && last==1,"zero-capacity traversal still updates last visible leaf");
+	result=CM_BoxLeafnums(front,front,list,5,&last);Check(result==1 && list[0]==1 && last==1,"front-only deep query");
+	result=CM_BoxLeafnums(back,back,list,5,&last);Check(result==1 && list[0]==0 && last==0,"back-only query preserves native last-leaf default");
+	cm.leafs[0].firstLeafBrush=cm.leafs[1].firstLeafBrush;cm.leafs[0].numLeafBrushes=1;
+	result=CM_BoxBrushes(mins,maxs,brushes,2);Check(result==1 && brushes[0]==cm.brushes,"actual brush query retains deduplication across repeated/shared leaves");
+	result=CM_BoxBrushes(mins,maxs,NULL,0);Check(!result,"zero-capacity brush query");cm.leafs[0].numLeafBrushes=0;
+	queryCount=0;CM_BoxLeafnums_r(&ll,-2);Check(queryCount==1 && queryLeaves[0]==1,"direct leaf query");
+	if(count==3) { queryCount=0;CM_BoxLeafnums_r(&ll,1);expectedCount=0;QueryOracle(&ll,1,expected,&expectedCount);Check(queryCount==expectedCount && !memcmp(queryLeaves,expected,queryCount*sizeof(int)),"query stops at requested subtree root"); }
+}
 int main(void) {
 	int i,j,code,n,valid,checksum;unsigned int offset;dheader_t header;const char *error;
 	ri.Error=Com_Error;ri.Printf=Print;ri.FS_ReadFile=FS_ReadFile;ri.FS_FreeFile=FS_FreeFile;ri.Hunk_Alloc=RendererHunk;ri.Malloc=RendererMalloc;ri.Free=RendererFree;subdivisions.value=4;
-	Build(3);NativeLoad(3,1,2);
+	Build(3);NativeLoad(3,1,2);BoxQueries(3);
 	Build(3);Child(0,0,0);RejectTree(); /* Root self-cycle. */
 	Build(3);Child(1,0,0);RejectTree(); /* Mutual root cycle. */
 	Build(3);Child(0,1,1);RejectTree(); /* Duplicate decision edge. */
@@ -113,13 +160,13 @@ int main(void) {
 	Build(3);Header(&header);
 	for(code=0;code<15625;code++) {
 		n=code;for(i=0;i<3;i++)for(j=0;j<2;j++) { int choice=n%5;n/=5;children[i][j]=choice<3?choice:choice==3?-1:-2;Child(i,j,(unsigned int)children[i][j]); }
-		valid=BSP_ValidateTree(source,&header)==NULL;Check(valid==Expected() && !graphTemporary,"exhaustive small-graph acceptance matches independent oracle");
+		valid=BSP_ValidateTree(source,&header)==NULL;Check(valid==Expected() && !graphTemporary,"exhaustive small-graph acceptance matches independent oracle");if(valid)SmallQueries();
 	}
 	/* Long valid trees use bounded heap/linear parent initialization, with no depth cap. */
-	FreeHunks();Build(4096);NativeLoad(4096,1,4095);
+	FreeHunks();Build(4096);NativeLoad(4096,1,4095);BoxQueries(4096);
 	Build(MAX_MAP_NODES+1);Header(&header);Check(!CM_ValidateBSPAllocations(&header) && !R_ValidateBSPAllocations(&header) && !BSP_ValidateTree(source,&header) && !graphTemporary,"raised compiler node budget remains supported by native storage");
 	/* Retained collision state still answers its actual loaded deep tree after validation. */
 	{ vec3_t point={-2,0,0};checksum=CM_PointLeafnum(point);Check(checksum==1,"deep loaded native point query retained"); }
 	Check(graphAllocations==graphFrees && !graphTemporary && !fileAllocation,"all graph/input ownership released");FreeHunks();
-	puts("BSP tree/forest topology, exhaustive graph, native parent and collision/renderer ownership regressions passed (issue #45)");return 0;
+	puts("BSP tree/forest topology, iterative box queries, exhaustive goldens and native ownership regressions passed (issue #45)");return 0;
 }
