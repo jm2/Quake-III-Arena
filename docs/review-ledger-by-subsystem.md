@@ -471,6 +471,10 @@ implementation or check, without implying issue completion.
         string lookahead and include unwinding; failed lexical readers preserve
         queued owners and cannot continue into parents;
         see [error evidence](bot-source-error-validation.md).
+  - [x] Weight configurations reject source errors before cache publication,
+        release current names/partial trees on failure, and roll back nullable
+        configuration/name/separator imports in cached and reload modes;
+        see [weight evidence](bot-weight-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
