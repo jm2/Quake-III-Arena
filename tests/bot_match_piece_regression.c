@@ -103,6 +103,7 @@ static void CallerFailures(void)
     ChatBegin();Attempt("[(8)] = 1 { \"native\"; }");Check(!BotLoadReplyChat("native.c") && errors>=1 && !heapLive && !numtokens && opens==closes,
           "reply caller releases source once after piece failure");ChatEnd();
 }
+#ifndef Q3_MATCH_PIECE_NO_MAIN
 int main(int argc,char **argv)
 {
     source_t *source;bot_matchpiece_t *pieces;int base,count,i,mode;
@@ -114,3 +115,5 @@ int main(int argc,char **argv)
     printf("Actual complete match pieces, %d nullable imports, borrowed-source cleanup, both callers and native matching/physical ownership (issue #48)\n",count*2);
     return 0;
 }
+
+#endif /* Q3_MATCH_PIECE_NO_MAIN */
