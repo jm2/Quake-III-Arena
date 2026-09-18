@@ -209,6 +209,8 @@ QVMs while any P0 item is open.
   - [x] Aggregate collision allocations fit actual remaining hunk capacity,
         including derived indexes/visibility and real patch geometry; see
         [memory evidence](bsp-memory-budget-validation.md).
+  - [x] Native planar face distances reject nonfinite derived results before
+        world/shader/model changes; see [face evidence](bsp-face-numeric-validation.md).
 - [ ] [#46 — enforce shader/skin/font limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
       — **high**, fixed-array writes and unsafe serialized resources.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)

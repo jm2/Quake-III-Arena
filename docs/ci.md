@@ -110,6 +110,9 @@ PR head while retaining checks on the merged default branch.
   - executes actual MD4 registration, complete layout validation, native endian
     conversion and animation skinning, with variable weights, LOD/surface
     progress, bones/back references, extreme frame indexes and tess bases;
+  - checks native planar face distances for finite-source product/sum/cancellation
+    overflow with four-alignment state retention, plus exact finite classification
+    and large-coordinate compatibility;
   - independently measures complete native collision-map allocations and checks
     exact aggregate fits and four-alignment over-budget rejection, including
     derived visibility/areas/inline indexes and actual repeated patch output;
