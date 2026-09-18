@@ -1,6 +1,6 @@
 # Quake III Arena Mac OS 9 prioritized review queue
 
-Last updated: 2026-09-17
+Last updated: 2026-09-18
 
 This is the authoritative continuation ledger. Work is sorted first by
 priority (`P0` through `P3`), then by severity and exploit/runtime impact
@@ -467,10 +467,16 @@ QVMs while any P0 item is open.
       resolved CodeRabbit findings.
 - [x] RoQ/image/JPEG/model/BSP steps #70–#77/#79–#82 and assessment #78
       are merged at master `95a6c18`, after the same current-head CI/review gates.
-- [ ] Finish gated BSP PRs #83–#91, in dependency order; affected host checks
-      and both PPC builds pass, while queued CI still holds their merges.
-- [ ] Finish #45 derived geometry/facet bounds, aggregate map/query budgets
-      and complete transactional publication; keep parent acceptance open.
+- [x] BSP steps #83–#91/#93–#101 and shader capacity #102 are merged at
+      master `cdc8c38` after the same current-head CI/review gates.
+- [ ] Finish gated skin/font/shader PRs #103–#111 in dependency order;
+      affected host checks and both PPC builds pass. Queued CI still holds
+      merges; renewed Codex review is required after fixes.
+      See the [September 18 snapshot](review-2026-09-18.md).
+- [ ] Finish #45 renderer aggregate capacity and full transactional
+      publication; retain remaining query/candidate costs and deferred target
+      acceptance. Collision aggregate and derived geometry/facet checks are
+      merged; keep parent acceptance open.
 - [ ] Record and execute the deferred retail/target compatibility checks when
       the user provides the assets and test environment.
 
