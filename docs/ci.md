@@ -281,6 +281,13 @@ UV directions; acos near an endpoint can amplify a final-bit rounding change.
 The stage fixture checks that later shader failures preserve cloud state and
 accepted duplicate sky fields publish only the final layer.
 
+The stage fixture also verifies complete native default materials after shader
+rejection or missing implicit textures. Parsed sky/fog/deform/stage/render flags
+are discarded while the failed name remains cached, all lighting-mode probes
+reuse it, exported registration keeps returning zero, and the following healthy
+definition remains usable. Fixture bootstrap now supplies the native default
+image after each reset, matching the renderer's actual initialization contract.
+
 ## What this CI does not prove
 
 Portable CI does not compile a PowerPC PEF, preserve/inspect a Classic resource
