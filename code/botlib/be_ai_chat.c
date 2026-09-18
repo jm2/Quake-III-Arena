@@ -32,6 +32,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../game/q_shared.h"
 #include "l_memory.h"
 #include <limits.h>
+#include <stdint.h>
 #include <float.h>
 #include "l_libvar.h"
 #include "l_script.h"
@@ -250,6 +251,9 @@ static int InitConsoleMessageHeapChecked(void)
 	bot_consolemessage_t *first[MAX_CLIENTS + 1] = { NULL };
 	bot_consolemessage_t *last[MAX_CLIENTS + 1] = { NULL };
 	bot_chatstate_t *cs;
+	unsigned char *seen = NULL;
+	uintptr_t base, address, offset;
+	unsigned long slot;
 
 	variable = LibVar("max_messages", "1024");
 	if (!variable)
@@ -272,6 +276,26 @@ static int InitConsoleMessageHeapChecked(void)
 		botimport.Print(PRT_ERROR, "invalid console message heap size\n");
 		return qfalse;
 	}
+	for (i = 1; i <= MAX_CLIENTS; i++)
+	{
+		cs = botchatstates[i];
+		if (!cs) continue;
+		if (cs->numconsolemessages < 0 || cs->numconsolemessages > max_messages - used ||
+				cs->numconsolemessages > consolemessageheapcount - used ||
+				(!consolemessageheap && cs->numconsolemessages)) goto invalidqueue;
+		used += cs->numconsolemessages;
+	}
+	if (used > 0)
+	{
+		seen = (unsigned char *) GetClearedMemory(consolemessageheapcount);
+		if (!seen)
+		{
+			botimport.Print(PRT_ERROR, "couldn't stage console message ownership\n");
+			return qfalse;
+		}
+	}
+	base = (uintptr_t)consolemessageheap;
+	used = 0;
 	// Validate complete existing queues before acquiring persistent storage.
 	for (i = 1; i <= MAX_CLIENTS; i++)
 	{
@@ -284,7 +308,15 @@ static int InitConsoleMessageHeapChecked(void)
 		message = cs->firstmessage;
 		for (j = 0; j < cs->numconsolemessages; j++)
 		{
-			if (!message || message->prev != previous) goto invalidqueue;
+			address = (uintptr_t)message;
+			if (address < base) goto invalidqueue;
+			offset = address - base;
+			if (offset >= (uintptr_t)consolemessageheapcount * sizeof(bot_consolemessage_t) ||
+					offset % sizeof(bot_consolemessage_t)) goto invalidqueue;
+			slot = offset / sizeof(bot_consolemessage_t);
+			if (seen[slot]) goto invalidqueue;
+			seen[slot] = 1;
+			if (message->prev != previous) goto invalidqueue;
 			previous = message;
 			message = message->next;
 		}
@@ -295,6 +327,7 @@ static int InitConsoleMessageHeapChecked(void)
 			(unsigned long)max_messages * sizeof(bot_consolemessage_t));
 	if (!candidate)
 	{
+		if (seen) FreeMemory(seen);
 		botimport.Print(PRT_ERROR, "couldn't allocate console message heap\n");
 		return qfalse;
 	}
@@ -319,6 +352,7 @@ static int InitConsoleMessageHeapChecked(void)
 		candidate[j].prev = j > used ? &candidate[j - 1] : NULL;
 		candidate[j].next = j + 1 < max_messages ? &candidate[j + 1] : NULL;
 	}
+	if (seen) FreeMemory(seen);
 	if (consolemessageheap) FreeMemory(consolemessageheap);
 	consolemessageheap = candidate;
 	consolemessageheapcount = max_messages;
@@ -333,6 +367,7 @@ static int InitConsoleMessageHeapChecked(void)
 	return qtrue;
 
 invalidqueue:
+	if (seen) FreeMemory(seen);
 	botimport.Print(PRT_ERROR, "console message queues do not fit the complete heap\n");
 	return qfalse;
 }

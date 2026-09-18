@@ -614,7 +614,8 @@ implementation or check, without implying issue completion.
         see [chat lifecycle evidence](bot-chat-state-validation.md).
   - [x] Console pools check native counts/cost and all nullable imports,
         migrate complete queued messages before root replacement, and reject
-        capacity/shape errors before arena use; chat setup propagates failure
+        capacity/shape errors and foreign/misaligned/stale/shared nodes before
+        dereference or arena use; chat setup propagates failure
         before dictionary mutation, preserving the void helper and native values;
         see [console pool evidence](bot-chat-pool-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation

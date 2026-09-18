@@ -91,11 +91,11 @@ static void Migration(int count, int removed)
     prior = consolemessageheap; baseline = heapLive; snprintf(text, sizeof(text), "%d", count);
     LibVarSet("max_messages", text); Attempt(nativeText);
     Check(InitConsoleMessageHeapChecked() && consolemessageheap != prior && heapLive == baseline && hunkLive == 2 &&
-          requests == 1 && !errors, "queued pool replacement acquires exactly one complete persistent owner");
+          requests == 2 && !errors, "queued pool replacement acquires exactly one complete persistent owner");
     Migrated(count, removed); ChatEnd();
 }
 
-static void PriorFailure(int capacity)
+static void PriorFailure(int capacity, int position)
 {
     bot_consolemessage_t *prior, *freeRoot;
     bot_consolemessage_t saved[4];
@@ -103,8 +103,8 @@ static void PriorFailure(int capacity)
     int i, baseline;
     Queues(); prior = consolemessageheap; freeRoot = freeconsolemessages; baseline = heapLive;
     memcpy(saved, prior, sizeof(saved)); for (i = 0; i < 3; i++) states[i] = *botchatstates[i + 1];
-    LibVarSet("max_messages", capacity ? "2" : "8"); Attempt(nativeText); if (!capacity) failAt = 1;
-    Check(!InitConsoleMessageHeapChecked() && errors == 1 && requests == (capacity ? 0 : 1) &&
+    LibVarSet("max_messages", capacity ? "2" : "8"); Attempt(nativeText); if (!capacity) failAt = position;
+    Check(!InitConsoleMessageHeapChecked() && errors == 1 && requests == (capacity ? 0 : position) &&
           consolemessageheap == prior && freeconsolemessages == freeRoot && consolemessageheapcount == 4 &&
           heapLive == baseline && hunkLive == 1 && !memcmp(saved, prior, sizeof(saved)),
           "nullable/too-small replacement keeps every prior pool/free/queue byte and spends no physical hunk");
@@ -143,7 +143,7 @@ static void InvalidQueue(int kind)
     memcpy(changed, prior, sizeof(changed));
     for (i = 0; i < 3; i++) changedStates[i] = *botchatstates[i + 1];
     Attempt(nativeText);
-    Check(!InitConsoleMessageHeapChecked() && !requests && errors == 1 && heapLive == baseline &&
+    Check(!InitConsoleMessageHeapChecked() && requests == (kind < 2 ? 0 : 1) && errors == 1 && heapLive == baseline &&
           hunkLive == 1 && consolemessageheap == prior && freeconsolemessages == freeRoot &&
           !memcmp(changed, prior, sizeof(changed)), "bad queue count/shape/cycle rejects before arena import without mutation");
     for (i = 0; i < 3; i++) Check(!memcmp(&changedStates[i], botchatstates[i + 1], sizeof(changedStates[i])),
@@ -151,6 +151,42 @@ static void InvalidQueue(int kind)
     memcpy(prior, original, sizeof(original));
     for (i = 0; i < 3; i++) *botchatstates[i + 1] = states[i];
     Attempt(nativeText); Check(InitConsoleMessageHeapChecked(), "repaired valid native queue retries");
+    Migrated(4, 0); ChatEnd();
+}
+
+static void BadOwnership(int kind)
+{
+    bot_consolemessage_t original[4], changed[4], foreign;
+    bot_chatstate_t states[3], changedStates[3];
+    bot_consolemessage_t *prior, *freeRoot, *stale = NULL;
+    int i, baseline, arena;
+    Queues();
+    if (kind == 4) { stale = consolemessageheap; Check(InitConsoleMessageHeapChecked(), "create genuine physically live stale pool"); }
+    prior = consolemessageheap; freeRoot = freeconsolemessages; baseline = heapLive; arena = hunkLive;
+    memcpy(original, prior, sizeof(original));
+    for (i = 0; i < 3; i++) states[i] = *botchatstates[i + 1];
+    memset(&foreign, 0, sizeof(foreign)); foreign.handle = 77;
+    if (kind == 0 || kind == 1 || kind == 2 || kind == 4) {
+        bot_consolemessage_t *bad = kind == 0 ? &foreign : kind == 1 ? prior + 4 :
+            kind == 2 ? (bot_consolemessage_t *)((char *)prior + 1) : stale;
+        botchatstates[1]->firstmessage = botchatstates[1]->lastmessage = bad;
+        botchatstates[1]->numconsolemessages = 1;
+    } else {
+        botchatstates[2]->firstmessage = botchatstates[1]->firstmessage;
+        botchatstates[2]->lastmessage = botchatstates[1]->lastmessage;
+        botchatstates[2]->numconsolemessages = 2;
+    }
+    memcpy(changed, prior, sizeof(changed));
+    for (i = 0; i < 3; i++) changedStates[i] = *botchatstates[i + 1];
+    Attempt(nativeText);
+    Check(!InitConsoleMessageHeapChecked() && requests == 1 && errors == 1 && heapLive == baseline &&
+          hunkLive == arena && consolemessageheap == prior && freeconsolemessages == freeRoot &&
+          !memcmp(changed, prior, sizeof(changed)), "foreign/one-past/misaligned/stale/shared node rejects before dereference/arena import");
+    for (i = 0; i < 3; i++) Check(!memcmp(&changedStates[i], botchatstates[i + 1], sizeof(changedStates[i])),
+          "bad node ownership preserves every caller-provided state byte");
+    memcpy(prior, original, sizeof(original));
+    for (i = 0; i < 3; i++) *botchatstates[i + 1] = states[i];
+    Attempt(nativeText); Check(InitConsoleMessageHeapChecked(), "valid unique node ownership retries");
     Migrated(4, 0); ChatEnd();
 }
 
@@ -183,16 +219,18 @@ int main(int argc, char **argv)
     if (argc > 1) {
         proof = atoi(argv[1]);
         if (proof < 3) FreshNullable(proof + 1);
-        else if (proof == 3) PriorFailure(0);
+        else if (proof == 3) PriorFailure(0, 1);
         else if (proof == 4) Migration(8, 0);
         else if (proof == 5) PoolGolden(0, 1);
-        else if (proof == 6) PriorFailure(1);
+        else if (proof == 6) PriorFailure(1, 0);
+        else if (proof >= 8 && proof <= 12) BadOwnership(proof - 8);
         else { PoolGolden(0, 0); PoolGolden(1, 0); }
         return 0;
     }
     PoolGolden(0, 0); PoolGolden(1, 0); PoolGolden(0, 1);
     for (proof = 1; proof <= 3; proof++) FreshNullable(proof);
-    PriorFailure(0); PriorFailure(1); SetupFailure();
+    PriorFailure(0, 1); PriorFailure(0, 2); PriorFailure(1, 0); SetupFailure();
+    for (proof = 0; proof < 5; proof++) BadOwnership(proof);
     for (proof = 0; proof < 6; proof++) InvalidQueue(proof);
     for (count = 3; count <= 8; count += count == 3 ? 1 : 4)
         for (removed = 0; removed < 2; removed++) Migration(count, removed);
