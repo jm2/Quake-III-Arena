@@ -1256,7 +1256,7 @@ static const char *CM_RefinePatchGrid( cGrid_t *grid, int width, int height, vec
 }
 
 /* No world, hunk, facet or plane state is published during this preflight. */
-const char *CM_ValidatePatchCollide( int width, int height, vec3_t *points ) {
+const char *CM_ValidatePatchCollideAllocations( int width, int height, vec3_t *points, int sizes[3] ) {
 	cGrid_t *grid;
 	const char *error;
 	int savedPlanes = numPlanes, savedFacets = numFacets;
@@ -1268,12 +1268,21 @@ const char *CM_ValidatePatchCollide( int width, int height, vec3_t *points ) {
 	Com_Memcpy(savedBlockPoints,debugBlockPoints,sizeof(savedBlockPoints));
 	error = CM_RefinePatchGrid( grid, width, height, points );
 	if ( !error ) error = CM_PatchCollideFromGrid( grid );
+	if ( !error && sizes ) {
+		sizes[0] = sizeof( patchCollide_t );
+		sizes[1] = numFacets * sizeof( facet_t );
+		sizes[2] = numPlanes * sizeof( patchPlane_t );
+	}
 	numPlanes = savedPlanes;
 	numFacets = savedFacets;
 	debugBlock = savedBlock;
 	Com_Memcpy(debugBlockPoints,savedBlockPoints,sizeof(savedBlockPoints));
 	free( grid );
 	return error;
+}
+
+const char *CM_ValidatePatchCollide( int width, int height, vec3_t *points ) {
+	return CM_ValidatePatchCollideAllocations( width, height, points, NULL );
 }
 
 /*

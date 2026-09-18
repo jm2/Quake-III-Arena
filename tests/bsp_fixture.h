@@ -12,6 +12,9 @@ static int sourceSize,readable,advertised,alignment,reads,frees,allocations,chec
 static void *hunks[1024],*fileAllocation,*filePointer;
 static byte *hunkArena;
 static unsigned int hunkUsed;
+static int hunkLimit=4000000;
+int Hunk_AllocationSize(int size) { return size<0 || size>INT_MAX-31?-1:(size+31)&~31; }
+int Hunk_MemoryRemaining(void) { return hunkLimit-(int)hunkUsed; }
 static int expectedPatch,patchCalls,patchToken;
 static int hunkSizes[1024];
 static cvar_t variable;
@@ -34,6 +37,7 @@ void *Hunk_Alloc(int size,ha_pref preference) {
 	void *p;unsigned int reserved;
 	Check(size>=0 && size<1000000 && preference==h_high && allocations<1024,"bounded hunk");
 	reserved=((unsigned int)size+31)&~31u;Check(reserved<=4000000u-hunkUsed,"fixture arena capacity");
+	Check(Hunk_MemoryRemaining()>=0 && reserved<=(unsigned int)Hunk_MemoryRemaining(),"native allocations fit reported remaining capacity");
 	if(!hunkArena) { hunkArena=calloc(1,4000000);Check(hunkArena!=NULL,"fixture hunk arena"); }
 	p=hunkArena+hunkUsed;hunkUsed+=reserved;hunks[allocations]=p;hunkSizes[allocations++]=size;return p;
 }
@@ -64,6 +68,7 @@ void CM_FloodAreaConnections(void) { floods++; }
 #endif
 #ifndef BSP_FIXTURE_NATIVE_PATCH_COLLISION
 const char *CM_ValidatePatchCollide(int width,int height,vec3_t *points) { (void)width;(void)height;(void)points;return NULL; }
+const char *CM_ValidatePatchCollideAllocations(int width,int height,vec3_t *points,int sizes[3]) { memset(sizes,0,3*sizeof(int));return CM_ValidatePatchCollide(width,height,points); }
 struct patchCollide_s *CM_GeneratePatchCollide(int width,int height,vec3_t *points) {
 	Check(expectedPatch && width==3 && height==3 && points[0][0]==-1 && points[8][0]==1,"validated patch callback");patchCalls++;return (struct patchCollide_s *)&patchToken;
 }

@@ -206,6 +206,9 @@ QVMs while any P0 item is open.
         before publication; see [native curve evidence](bsp-curve-numeric-validation.md).
   - [x] Permanent hunk allocations expose checked native alignment/debug costs
         and reject before bank changes; see [allocator evidence](hunk-allocation-validation.md).
+  - [x] Aggregate collision allocations fit actual remaining hunk capacity,
+        including derived indexes/visibility and real patch geometry; see
+        [memory evidence](bsp-memory-budget-validation.md).
 - [ ] [#46 — enforce shader/skin/font limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
       — **high**, fixed-array writes and unsafe serialized resources.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
