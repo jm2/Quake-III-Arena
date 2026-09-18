@@ -322,6 +322,116 @@ static void CapacityBounds(void) {
     RejectGeometry(badLow,maxs,0,0);RejectGeometry(mins,badHigh,0,0);RejectGeometry(reversed,maxs,0,0);
 }
 
+static void StockInitSkyTexCoords( float heightCloud )
+{
+	int i, s, t;
+	float radiusWorld = 4096;
+	float p;
+	float sRad, tRad;
+	vec3_t skyVec;
+	vec3_t v;
+
+	// init zfar so MakeSkyVec works even though
+	// a world hasn't been bounded
+	backEnd.viewParms.zFar = 1024;
+
+	for ( i = 0; i < 6; i++ )
+	{
+		for ( t = 0; t <= SKY_SUBDIVISIONS; t++ )
+		{
+			for ( s = 0; s <= SKY_SUBDIVISIONS; s++ )
+			{
+				// compute vector from view origin to sky side integral point
+				MakeSkyVec( ( s - HALF_SKY_SUBDIVISIONS ) / ( float ) HALF_SKY_SUBDIVISIONS,
+							( t - HALF_SKY_SUBDIVISIONS ) / ( float ) HALF_SKY_SUBDIVISIONS,
+							i,
+							NULL,
+							skyVec );
+
+				// compute parametric value 'p' that intersects with cloud layer
+				p = ( 1.0f / ( 2 * DotProduct( skyVec, skyVec ) ) ) *
+					( -2 * skyVec[2] * radiusWorld +
+					   2 * sqrt( SQR( skyVec[2] ) * SQR( radiusWorld ) +
+					             2 * SQR( skyVec[0] ) * radiusWorld * heightCloud +
+								 SQR( skyVec[0] ) * SQR( heightCloud ) +
+								 2 * SQR( skyVec[1] ) * radiusWorld * heightCloud +
+								 SQR( skyVec[1] ) * SQR( heightCloud ) +
+								 2 * SQR( skyVec[2] ) * radiusWorld * heightCloud +
+								 SQR( skyVec[2] ) * SQR( heightCloud ) ) );
+
+				s_cloudTexP[i][t][s] = p;
+
+				// compute intersection point based on p
+				VectorScale( skyVec, p, v );
+				v[2] += radiusWorld;
+
+				// compute vector from world origin to intersection point 'v'
+				VectorNormalize( v );
+
+				sRad = Q_acos( v[0] );
+				tRad = Q_acos( v[1] );
+
+				s_cloudTexCoords[i][t][s][0] = sRad;
+				s_cloudTexCoords[i][t][s][1] = tRad;
+			}
+		}
+	}
+}
+
+static float nativeCloudP[6][SKY_SUBDIVISIONS+1][SKY_SUBDIVISIONS+1];
+static float nativeCloudUV[6][SKY_SUBDIVISIONS+1][SKY_SUBDIVISIONS+1][2];
+static int CloudMatches(const float *actual,const float *native,size_t count,int angles) {
+    size_t i;
+    for(i=0;i<count;i++) {
+#ifdef __FAST_MATH__
+        double first=angles?cos((double)actual[i]):actual[i],second=angles?cos((double)native[i]):native[i];
+        if(fabs(first-second)>(angles?4.0:8.0)*FLT_EPSILON*fmax(1.0,fabs(second)))return 0;
+#else
+        if(actual[i]!=native[i])return 0;
+#endif
+    }
+    return 1;
+}
+static int NativeCloudMatches(void) {
+    return CloudMatches((float*)s_cloudTexP,(float*)nativeCloudP,sizeof(nativeCloudP)/sizeof(float),0)&&CloudMatches((float*)s_cloudTexCoords,(float*)nativeCloudUV,sizeof(nativeCloudUV)/sizeof(float),1);
+}
+
+static void CheckCloudFinite(void) {
+    int side,t,vertex,axis;
+    for(side=0;side<6;side++)for(t=0;t<=SKY_SUBDIVISIONS;t++)for(vertex=0;vertex<=SKY_SUBDIVISIONS;vertex++) {
+        Check(R_FiniteFloat(s_cloudTexP[side][t][vertex]),"finite complete cloud parameters");
+        for(axis=0;axis<2;axis++)Check(R_FiniteFloat(s_cloudTexCoords[side][t][vertex][axis])&&s_cloudTexCoords[side][t][vertex][axis]>=0&&s_cloudTexCoords[side][t][vertex][axis]<=(float)M_PI,"finite bounded complete cloud UV");
+    }
+}
+/* Independent geometry invariant, rather than repeating intersection formulas. */
+static void CheckCloudSurface(float height) {
+    int side,t,s,axis;
+    for(side=0;side<6;side++)for(t=0;t<=SKY_SUBDIVISIONS;t++)for(s=0;s<=SKY_SUBDIVISIONS;s++) {
+        vec3_t ray;double point[3],length,target=fabs(4096.0+height);
+        MakeSkyVec((s-HALF_SKY_SUBDIVISIONS)/(float)HALF_SKY_SUBDIVISIONS,(t-HALF_SKY_SUBDIVISIONS)/(float)HALF_SKY_SUBDIVISIONS,side,NULL,ray);
+        for(axis=0;axis<3;axis++)point[axis]=(double)ray[axis]*s_cloudTexP[side][t][s];point[2]+=4096;
+        length=sqrt(point[0]*point[0]+point[1]*point[1]+point[2]*point[2]);
+        Check(fabs(length-target)<=16.0*FLT_EPSILON*fmax(1.0,target),"wide cloud point lies on its intended sphere");
+        if(length)for(axis=0;axis<2;axis++)Check(fabs(cos((double)s_cloudTexCoords[side][t][s][axis])-point[axis]/length)<=8.0*FLT_EPSILON,"wide cloud UV matches normalized intersection direction");
+    }
+}
+
+static void CloudLayers(void) {
+    const float valid[]={0,1,32,512,1024,4096,32768,100000,1e9f,-8192,-9000,-1e9f};
+    const float extreme[]={FLT_MAX,-FLT_MAX,1e10f,-1e10f,1e20f,-1e20f};
+    const float malformed[]={-1,-4096,-8191};
+    const uint32_t invalid[]={0x7fc00000u,0xffc00000u,0x7f800001u,0xff800001u,0x7f800000u,0xff800000u};
+    size_t i;
+    for(i=0;i<sizeof(valid)/sizeof(valid[0]);i++) {
+        Setup();StockInitSkyTexCoords(valid[i]);CheckCloudFinite();memcpy(nativeCloudP,s_cloudTexP,sizeof(nativeCloudP));memcpy(nativeCloudUV,s_cloudTexCoords,sizeof(nativeCloudUV));
+        R_InitSkyTexCoords(valid[i]);CheckCloudFinite();Check(NativeCloudMatches(),"complete native stable cloud parameters and UV retained");
+    }
+    for(i=0;i<sizeof(extreme)/sizeof(extreme[0]);i++){Setup();R_InitSkyTexCoords(extreme[i]);CheckCloudFinite();CheckCloudSurface(extreme[i]);}
+    Setup();StockInitSkyTexCoords(512);memcpy(nativeCloudP,s_cloudTexP,sizeof(nativeCloudP));memcpy(nativeCloudUV,s_cloudTexCoords,sizeof(nativeCloudUV));
+    for(i=0;i<sizeof(malformed)/sizeof(malformed[0]);i++){R_InitSkyTexCoords(malformed[i]);CheckCloudFinite();Check(NativeCloudMatches(),"invalid cloud intersection uses complete native default layer");}
+    for(i=0;i<sizeof(invalid)/sizeof(invalid[0]);i++){float value;memcpy(&value,&invalid[i],sizeof(value));R_InitSkyTexCoords(value);CheckCloudFinite();Check(NativeCloudMatches(),"nonfinite cloud input uses complete default layer");}
+}
+
 int main(int argc,char **argv) {
     int proof=argc>1?atoi(argv[1]):-1;const int mins[2]={-4,-4},maxs[2]={4,4};
     Setup();
@@ -330,7 +440,9 @@ int main(int argc,char **argv) {
     else if(proof==2){tess.numVertexes=SHADER_MAX_VERTEXES;expectError=1;if(!setjmp(failure))FillCloudySkySide(mins,maxs,qtrue);Check(errors==1,"capacity rejected before writes");}
     else if(proof==3){tess.numIndexes=SHADER_MAX_INDEXES;FillCloudySkySide(mins,maxs,qtrue);}
     else if(proof==4){tess.xstages[1]=tess.xstages[2]=&stage;R_BuildCloudData(&tess);}
+    else if(proof==6){R_InitSkyTexCoords(FLT_MAX);CheckCloudFinite();}
+    else if(proof==7){R_InitSkyTexCoords(-1);CheckCloudFinite();}
     else if(proof==5){DrawSkyBox(&material);printf("Stock sky trace %08x binds %d strips %d vertices %d\n",trace,binds,strips,vertices);Setup();R_BuildCloudData(&tess);printf("Stock indexed cloud fingerprint %08x vertices %d indexes %d\n",CloudHash(0),tess.numVertexes,tess.numIndexes);}
-    else {NativeBounds();StagesAndExtremeBounds();CapacityBounds();puts("Native sky subdivision, complete graphics/indexed-geometry oracles, 0-8 stages and capacity checks passed (issue #46)");}
+    else {NativeBounds();StagesAndExtremeBounds();CapacityBounds();CloudLayers();puts("Native sky subdivision, complete graphics/indexed-geometry oracles, 0-8 stages and capacity checks passed (issue #46)");}
     return 0;
 }

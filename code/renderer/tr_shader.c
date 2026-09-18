@@ -1327,7 +1327,6 @@ static qboolean ParseSkyParms( char **text ) {
 		}
 	}
 	shader.sky.cloudHeight = height;
-	R_InitSkyTexCoords( height );
 	if ( strcmp( inner, "-" ) ) {
 		for ( i = 0; i < 6; i++ ) {
 			Com_sprintf( pathname, sizeof(pathname), "%s_%s.tga", inner, suf[i] );
@@ -1723,6 +1722,7 @@ static qboolean ParseShader( char **text )
 		return qfalse;
 	}
 
+	if ( shader.isSky ) R_InitSkyTexCoords( shader.sky.cloudHeight );
 	shader.explicitlyDefined = qtrue;
 	if ( hasSun ) {
 		VectorCopy( sunLight, tr.sunLight );

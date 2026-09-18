@@ -364,6 +364,9 @@ implementation or check, without implying issue completion.
   - [x] Sky bounds clamp before subdivision conversion; cloud assembly validates
         capacities before writes and shares the first indexed mesh across all
         eight stages; see [sky evidence](sky-subdivision-validation.md).
+  - [x] Cloud tables stage completely, preserve stable native results and use
+        wide geometry for finite overflow; rejected definitions retain prior
+        cloud state; see [cloud evidence](cloud-coordinate-validation.md).
   - [ ] Complete derived rendering conversions.
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.
@@ -443,7 +446,9 @@ implementation or check, without implying issue completion.
       The [September 18 snapshot](review-2026-09-18.md) retains the earlier queue.
 - [x] Derived shader conversions/noise #115 merged at `aa25e88` after the
       same exact-head CI/Codex/resolved-finding gate.
-- [ ] Gate sky subdivisions/shared cloud mesh and finish cloud-layer math;
+- [x] Sky subdivisions/shared cloud mesh #116 merged at `e59b66d` after
+      the same exact-head CI/Codex/resolved-finding gate.
+- [ ] Gate cloud math/publication and review rejected material fallback;
       retain renderer transaction/capacity and deferred acceptance gates.
 - [ ] Finish renderer aggregate capacity/full transactional publication and
       remaining query/candidate costs for #45. Keep deferred acceptance open.

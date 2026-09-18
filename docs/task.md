@@ -258,6 +258,9 @@ QVMs while any P0 item is open.
   - [x] Sky bounds clamp before subdivision conversion; cloud assembly validates
         capacities before writes and shares the first indexed mesh across all
         eight stages; see [sky evidence](sky-subdivision-validation.md).
+  - [x] Cloud tables stage completely, preserve stable native results and use
+        wide geometry for finite overflow; rejected definitions retain prior
+        cloud state; see [cloud evidence](cloud-coordinate-validation.md).
   - [ ] Complete derived rendering conversions.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
       — **high**, server OOB access/infinite traversal.
@@ -488,8 +491,10 @@ QVMs while any P0 item is open.
       records the earlier queue; its dated evidence remains unchanged.
 - [x] Derived shader conversions/noise PR #115 merged at `aa25e88` after
       exact-head CI, clean completed Codex and resolved bot findings.
-- [ ] Gate sky subdivisions/shared cloud mesh, then finish cloud-layer math
-      and remaining renderer transaction/capacity work.
+- [x] Sky subdivisions/shared cloud mesh #116 merged at `e59b66d` after
+      exact-head CI, clean completed Codex and resolved bot findings.
+- [ ] Gate cloud-layer math/publication, review rejected material fallback and
+      finish remaining renderer transaction/capacity work.
 - [ ] Finish #45 renderer aggregate capacity and full transactional
       publication; retain remaining query/candidate costs and deferred target
       acceptance. Collision aggregate and derived geometry/facet checks are

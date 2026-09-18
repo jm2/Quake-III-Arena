@@ -397,11 +397,18 @@ static void PublicInputs(int proof) {
     source->remappedShader=NULL;before=allocations;R_RemapShader(NULL,"tests/target",NULL);R_RemapShader("tests/source",NULL,NULL);R_RemapShader(name,NULL,NULL);Check(!source->remappedShader && before==allocations,"invalid remap names have no allocation/remap side effects");
     (void)text;Release();tr.whiteImage=&white;
 }
+static void CloudPublication(void) {
+    const char *invalid[]={"{\nskyparms - 1024 -\nunknownField\n}","{\nskyparms - 1024 -\n{\nmap $whiteimage\nrgbGen const ( 1 nan 1 )\n}\n}","{\nskyparms - 1024 -\n"};
+    size_t i;char *text;
+    for(i=0;i<sizeof(invalid)/sizeof(invalid[0]);i++){ResetParser();traceImages=1;skyInitializations=0;skyHeight=512;text=(char*)invalid[i];Check(!ParseShader(&text)&&!skyInitializations&&skyHeight==512,"later shader failure preserves cloud state");traceImages=0;}
+    ResetParser();traceImages=1;skyInitializations=0;text="{\nskyparms - 512 -\nskyparms - 1024 -\n}";Check(ParseShader(&text)&&skyInitializations==1&&skyHeight==1024,"accepted definition publishes final native cloud layer once");traceImages=0;
+}
+
 int main(int argc,char **argv) {
 	int i;char *text;ri.Printf=Print;ri.Hunk_Alloc=Allocate;ri.CIN_PlayCinematic=Video;ri.Error=Com_Error;tr.whiteImage=&white;
 	for(i=0;i<MAX_SHADERTEXT_HASH;i++)shaderTextHashTable[i]=emptyHash;
-	if(argc>1) {int proof=atoi(argv[1]);if(proof<3)ConstantVectors(proof);else if(proof<8)WaveModifiers(proof-3);else if(proof<13)Metadata(proof-8);else PublicInputs(proof-13);Release();return 0;}
-	PublicInputs(-1);Metadata(-1);WaveModifiers(-1);ConstantVectors(-1);AlphaIdentity();AlphaWaves();FastAlpha();NativeStages();TailCases();
+	if(argc>1) {int proof=atoi(argv[1]);if(proof==100){CloudPublication();return 0;}if(proof<3)ConstantVectors(proof);else if(proof<8)WaveModifiers(proof-3);else if(proof<13)Metadata(proof-8);else PublicInputs(proof-13);Release();return 0;}
+	PublicInputs(-1);CloudPublication();Metadata(-1);WaveModifiers(-1);ConstantVectors(-1);AlphaIdentity();AlphaWaves();FastAlpha();NativeStages();TailCases();
 	ResetParser();text="{\nsurfaceParm fog\n}\n";Check(ParseShader(&text),"native zero-stage fog remains valid");
 	ResetParser();text="{\nskyparms - 512 -\n}\n";Check(ParseShader(&text) && shader.isSky,"native zero-stage sky remains valid");
 	Registration();
