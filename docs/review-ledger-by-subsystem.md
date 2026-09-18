@@ -504,6 +504,11 @@ implementation or check, without implying issue completion.
         and publish/rebase one complete native hunk owner; invalid source/weight/
         changed-capacity failures release all staged owners;
         see [synonym evidence](bot-synonym-validation.md).
+  - [x] Expression result tokens initialize magnitude metadata, format complete
+        unsigned integer magnitudes without signed absolute overflow, reject
+        non-finite float results and safely clamp auxiliary integer values;
+        number/sign copies publish atomically with native text/type behavior;
+        see [expression token evidence](bot-eval-token-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
