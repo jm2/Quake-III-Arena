@@ -435,9 +435,11 @@ implementation or check, without implying issue completion.
 - [x] Current progress reconciled at master `cdc8c38` on 2026-09-18: BSP
       steps #83–#91/#93–#101 and shader capacity #102 are merged after
       successful current-head CI, clean Codex and resolved CodeRabbit findings.
-- [ ] Merge dependent skin/font/shader steps #103–#111 after their same
-      current-head gates. Queued CI holds merges; see the
-      [September 18 snapshot](review-2026-09-18.md).
+- [x] Skin/font/shader and ledger steps #103–#114 merged at `fc6c10e`
+      after exact-head CI, clean completed Codex and resolved bot findings.
+      The [September 18 snapshot](review-2026-09-18.md) retains the earlier queue.
+- [ ] Gate derived shader conversions/noise and finish sky/cloud math; retain
+      renderer-wide transaction/capacity and deferred acceptance gates.
 - [ ] Finish renderer aggregate capacity/full transactional publication and
       remaining query/candidate costs for #45. Keep deferred acceptance open.
 - [x] Cross-build the full local security/UI/filesystem patch set as base and

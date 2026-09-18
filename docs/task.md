@@ -479,10 +479,12 @@ QVMs while any P0 item is open.
       are merged at master `95a6c18`, after the same current-head CI/review gates.
 - [x] BSP steps #83–#91/#93–#101 and shader capacity #102 are merged at
       master `cdc8c38` after the same current-head CI/review gates.
-- [ ] Finish gated skin/font/shader PRs #103–#111 in dependency order;
-      affected host checks and both PPC builds pass. Queued CI still holds
-      merges; renewed Codex review is required after fixes.
-      See the [September 18 snapshot](review-2026-09-18.md).
+- [x] Skin/font/shader and ledger PRs #103–#114 are merged at master
+      `fc6c10e`, each after exact-head CI, completed clean Codex review and
+      resolution of every bot finding. The [September 18 snapshot](review-2026-09-18.md)
+      records the earlier queue; its dated evidence remains unchanged.
+- [ ] Gate the derived shader conversion/noise step, then finish sky/cloud
+      math and remaining renderer transaction/capacity work.
 - [ ] Finish #45 renderer aggregate capacity and full transactional
       publication; retain remaining query/candidate costs and deferred target
       acceptance. Collision aggregate and derived geometry/facet checks are
