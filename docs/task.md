@@ -321,7 +321,11 @@ QVMs while any P0 item is open.
   - [x] Libvar value/name costs and nullable allocations preserve dictionary and
         prior value ownership on failure; aliased replacements clone before
         release; see [ownership evidence](bot-libvar-ownership-validation.md).
-  - [ ] Finish token merge/stringize, include paths, time macros, character
+  - [x] Builtin date/time expansion borrows runtime time storage and releases
+        copied tokens on failed/empty expansion while retaining native token
+        text, types and location metadata;
+        see [builtin evidence](bot-builtin-validation.md).
+  - [ ] Finish token merge/stringize, include paths, character
         paths/indexes, and allocation cleanup.
 
 ## P1 — high-impact security, runtime, and release blockers

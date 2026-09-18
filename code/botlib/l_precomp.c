@@ -708,9 +708,12 @@ int PC_ExpandBuiltinDefine(source_t *source, token_t *deftoken, define_t *define
 {
 	token_t *token;
 	// time_t t; removed here, declared locally in cases
-	char *curtime;
+	const char *curtime;
 
+	*firsttoken = NULL;
+	*lasttoken = NULL;
 	token = PC_CopyToken(deftoken);
+	if (!token) return qfalse;
 	switch(define->builtin)
 	{
 		case BUILTIN_LINE:
@@ -740,11 +743,16 @@ int PC_ExpandBuiltinDefine(source_t *source, token_t *deftoken, define_t *define
 			time_t t;
 			t = time(NULL);
 			curtime = ctime(&t);
+			if (!curtime)
+			{
+				PC_FreeToken(token);
+				SourceError(source, "could not expand __DATE__");
+				return qfalse;
+			} //end if
 			strcpy(token->string, "\"");
 			strncat(token->string, curtime+4, 7);
 			strncat(token->string+7, curtime+20, 4);
 			strcat(token->string, "\"");
-			free(curtime);
 			token->type = TT_NAME;
 			token->subtype = strlen(token->string);
 			*firsttoken = token;
@@ -756,10 +764,15 @@ int PC_ExpandBuiltinDefine(source_t *source, token_t *deftoken, define_t *define
 			time_t t;
 			t = time(NULL);
 			curtime = ctime(&t);
+			if (!curtime)
+			{
+				PC_FreeToken(token);
+				SourceError(source, "could not expand __TIME__");
+				return qfalse;
+			} //end if
 			strcpy(token->string, "\"");
 			strncat(token->string, curtime+11, 8);
 			strcat(token->string, "\"");
-			free(curtime);
 			token->type = TT_NAME;
 			token->subtype = strlen(token->string);
 			*firsttoken = token;
@@ -769,6 +782,7 @@ int PC_ExpandBuiltinDefine(source_t *source, token_t *deftoken, define_t *define
 		case BUILTIN_STDC:
 		default:
 		{
+			PC_FreeToken(token);
 			*firsttoken = NULL;
 			*lasttoken = NULL;
 			break;

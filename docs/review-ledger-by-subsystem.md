@@ -425,7 +425,11 @@ implementation or check, without implying issue completion.
   - [x] Libvar value/name costs and nullable allocations preserve dictionary and
         prior value ownership on failure; aliased replacements clone before
         release; see [ownership evidence](bot-libvar-ownership-validation.md).
-  - [ ] Finish token merging, include paths, time macros, character paths, and
+  - [x] Builtin date/time expansion borrows runtime time storage and releases
+        copied tokens on failed/empty expansion while retaining native token
+        text, types and location metadata;
+        see [builtin evidence](bot-builtin-validation.md).
+  - [ ] Finish token merging, include paths, character paths, and
         allocation cleanup.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
   - [x] Local pool/type/item/string checks, reload-name initialization, and
