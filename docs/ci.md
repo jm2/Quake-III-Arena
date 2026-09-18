@@ -110,6 +110,9 @@ PR head while retaining checks on the merged default branch.
   - executes actual MD4 registration, complete layout validation, native endian
     conversion and animation skinning, with variable weights, LOD/surface
     progress, bones/back references, extreme frame indexes and tess bases;
+  - executes actual collision patch/winding refinement with captured native
+    output, subdivision overflow rejection on both axes and all four FS
+    alignments, plus workspace failure cleanup before world/checksum changes;
   - executes actual BSP/model allocation and null-model bootstrap with remaining
     cache-slot boundaries, complete brush descriptors/handle lookups and
     four-alignment rejection preserving registry/world/ownership;
@@ -176,6 +179,7 @@ bash tests/run_bsp_tree_tests.sh
 bash tests/run_bsp_model_capacity_tests.sh
 bash tests/run_bsp_trace_tests.sh
 bash tests/run_bsp_world_tests.sh
+bash tests/run_bsp_patch_grid_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 

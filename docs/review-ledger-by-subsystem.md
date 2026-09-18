@@ -300,6 +300,8 @@ implementation or check, without implying issue completion.
         bounded frames and owned-growth cleanup; [evidence](bsp-trace-validation.md).
   - [x] Deep world traversal preserves native culling/draw state with owned
         bounded frames; full lighting masks are defined; [evidence](bsp-world-validation.md).
+  - [x] Collision patch subdivision capacity rejects before map reset and
+        preserves native output; [evidence](bsp-patch-grid-validation.md).
 - [ ] [#46 — shader/skin/font fixed limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.

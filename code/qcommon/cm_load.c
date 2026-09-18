@@ -578,6 +578,33 @@ CM_LoadMap
 Loads in the map and all submodels
 ==================
 */
+/* Geometry/references have already checked every source span and dimension. */
+static const char *CM_ValidateBSPPatchGrids( const byte *buffer, const dheader_t *header ) {
+	const byte *surface, *vertices;
+	vec3_t points[MAX_PATCH_VERTS];
+	int i, j, k, count, width, height;
+	unsigned int first;
+	const char *error;
+
+	count = header->lumps[LUMP_SURFACES].filelen / sizeof(dsurface_t);
+	surface = buffer + header->lumps[LUMP_SURFACES].fileofs;
+	for ( i = 0 ; i < count ; i++, surface += sizeof(dsurface_t) ) {
+		if ( BSP_FileWord(surface + offsetof(dsurface_t,surfaceType)) != MST_PATCH ) continue;
+		width = BSP_FileWord(surface + offsetof(dsurface_t,patchWidth));
+		height = BSP_FileWord(surface + offsetof(dsurface_t,patchHeight));
+		first = BSP_FileWord(surface + offsetof(dsurface_t,firstVert));
+		vertices = buffer + header->lumps[LUMP_DRAWVERTS].fileofs + first * sizeof(drawVert_t);
+		for ( j = 0 ; j < width * height ; j++ ) {
+			for ( k = 0 ; k < 3 ; k++ ) {
+				points[j][k] = BSP_GeometryFloat(vertices + j * sizeof(drawVert_t) + k * 4);
+			}
+		}
+		error = CM_ValidatePatchCollide( width, height, points );
+		if ( error ) return error;
+	}
+	return NULL;
+}
+
 /** Match every direct collision array allocation, including the reserved box hull. */
 static const char *CM_ValidateBSPAllocations(const dheader_t *header) {
 	const bspArrayAllocation_t arrays[]={
@@ -638,6 +665,7 @@ void CM_LoadMap( const char *name, qboolean clientload, int *checksum ) {
 	if ( !error ) error = BSP_ValidateReferences(buf,&header);
 	if ( !error ) error = BSP_ValidateTree(buf,&header);
 	if ( !error ) error = BSP_ValidateGeometry(buf,&header,CM_MAX_PATCH_GRID_SIZE,MAX_PATCH_VERTS);
+	if ( !error ) error = CM_ValidateBSPPatchGrids((const byte *)buf,&header);
 	if ( error ) {
 		FS_FreeFile(buf);
 		Com_Error(ERR_DROP,"CM_LoadMap: %s: %s",name,error);
