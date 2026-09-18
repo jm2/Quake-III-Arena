@@ -430,6 +430,10 @@ QVMs while any P0 item is open.
         lexical errors; empty-only input reaches actual EOF and valid character
         fields publish with native values;
         see [empty-expansion evidence](bot-empty-expansion-validation.md).
+  - [x] Movement setup stages all ten native libvar references, rejects each
+        nullable import before brush/reference publication and preserves complete
+        prior state; retries retain native cached/configured values and models;
+        see [movement setup evidence](bot-move-setup-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
