@@ -9,13 +9,15 @@ extern int numblocks,allocatedmemory,totalmemorysize;
 #ifndef Q3_ITEM_NATIVE_INTERFACE
 int bot_developer;
 #endif
+#ifndef Q3_POOL_BSP_HOOKS
 int AAS_NextBSPEntity(int ent){Check(ent==0,"native empty BSP iteration");infoCalls++;return 0;}
-int AAS_Loaded(void){return 0;}
 int AAS_ValueForBSPEpairKey(int ent,char *key,char *value,int size){(void)ent;(void)key;(void)value;(void)size;Check(0,"unreachable empty BSP lookup");return 0;}
 int AAS_VectorForBSPEpairKey(int ent,char *key,vec3_t out){(void)ent;(void)key;(void)out;Check(0,"unreachable empty BSP vector");return 0;}
 int AAS_FloatForBSPEpairKey(int ent,char *key,float *out){(void)ent;(void)key;(void)out;Check(0,"unreachable empty BSP float");return 0;}
 int AAS_IntForBSPEpairKey(int ent,char *key,int *out){(void)ent;(void)key;(void)out;Check(0,"unreachable empty BSP integer");return 0;}
 int AAS_PointAreaNum(vec3_t point){(void)point;Check(0,"unreachable empty BSP area");return 0;}
+#endif
+int AAS_Loaded(void){return 0;}
 int AAS_PointContents(vec3_t point){(void)point;Check(0,"unreachable empty BSP contents");return 0;}
 bsp_trace_t AAS_Trace(vec3_t start,vec3_t mins,vec3_t maxs,vec3_t end,int entity,int contents){bsp_trace_t trace;memset(&trace,0,sizeof(trace));(void)start;(void)mins;(void)maxs;(void)end;(void)entity;(void)contents;Check(0,"unreachable empty BSP trace");return trace;}
 int AAS_BestReachableFromJumpPadArea(vec3_t origin,vec3_t mins,vec3_t maxs){(void)origin;(void)mins;(void)maxs;Check(0,"unreachable empty BSP jump query");return 0;}

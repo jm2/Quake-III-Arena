@@ -423,7 +423,7 @@ int *ItemWeightIndex(weightconfig_t *iwc, itemconfig_t *ic)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
-int InitLevelItemHeap(void)
+static levelitem_t *StageLevelItemHeap(void)
 {
 	int i, max_levelitems;
 	libvar_t *variable;
@@ -435,7 +435,7 @@ int InitLevelItemHeap(void)
 	if (!variable)
 	{
 		botimport.Print(PRT_ERROR, "couldn't initialize max_levelitems\n");
-		return qfalse;
+		return NULL;
 	}
 	Com_Memcpy(&bits, &variable->value, sizeof(bits));
 	representation = bits;
@@ -443,28 +443,39 @@ int InitLevelItemHeap(void)
 			(double)variable->value < 1.0 || (double)variable->value > INT_MAX)
 	{
 		botimport.Print(PRT_ERROR, "invalid max_levelitems\n");
-		return qfalse;
+		return NULL;
 	}
 	max_levelitems = (int)variable->value;
 	if ((unsigned long)max_levelitems > (unsigned long)INT_MAX / sizeof(levelitem_t))
 	{
 		botimport.Print(PRT_ERROR, "level item allocation is too large\n");
-		return qfalse;
+		return NULL;
 	}
 	heap = (levelitem_t *)GetClearedMemory((unsigned long)max_levelitems * sizeof(levelitem_t));
 	if (!heap)
 	{
 		botimport.Print(PRT_ERROR, "couldn't allocate level items\n");
-		return qfalse;
+		return NULL;
 	}
 	for (i = 0; i < max_levelitems - 1; i++) heap[i].next = &heap[i + 1];
 	heap[max_levelitems - 1].next = NULL;
-	//The complete pool/list replacement follows successful native staging.
+	return heap;
+}
+
+static void CommitLevelItemHeap(levelitem_t *heap)
+{
 	if (levelitemheap) FreeMemory(levelitemheap);
 	levelitemheap = heap;
 	freelevelitems = heap;
 	levelitems = NULL;
 	numlevelitems = 0;
+}
+
+int InitLevelItemHeap(void)
+{
+	levelitem_t *heap = StageLevelItemHeap();
+	if (!heap) return qfalse;
+	CommitLevelItemHeap(heap);
 	return qtrue;
 } //end of the function InitLevelItemHeap
 //===========================================================================
@@ -530,22 +541,27 @@ void RemoveLevelItemFromList(levelitem_t *li)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-void BotFreeInfoEntities(void)
+static void FreeInfoEntities(maplocation_t *locations, campspot_t *spots)
 {
 	maplocation_t *ml, *nextml;
 	campspot_t *cs, *nextcs;
 
-	for (ml = maplocations; ml; ml = nextml)
+	for (ml = locations; ml; ml = nextml)
 	{
 		nextml = ml->next;
 		FreeMemory(ml);
 	} //end for
-	maplocations = NULL;
-	for (cs = campspots; cs; cs = nextcs)
+	for (cs = spots; cs; cs = nextcs)
 	{
 		nextcs = cs->next;
 		FreeMemory(cs);
 	} //end for
+}
+
+void BotFreeInfoEntities(void)
+{
+	FreeInfoEntities(maplocations, campspots);
+	maplocations = NULL;
 	campspots = NULL;
 } //end of the function BotFreeInfoEntities
 //===========================================================================
@@ -554,14 +570,13 @@ void BotFreeInfoEntities(void)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-void BotInitInfoEntities(void)
+static int StageInfoEntities(maplocation_t **locations, campspot_t **spots)
 {
 	char classname[MAX_EPAIRKEY];
-	maplocation_t *ml;
-	campspot_t *cs;
+	maplocation_t *ml, *newlocations = NULL;
+	campspot_t *cs, *newspots = NULL;
 	int ent, numlocations, numcampspots;
 
-	BotFreeInfoEntities();
 	//
 	numlocations = 0;
 	numcampspots = 0;
@@ -573,17 +588,19 @@ void BotInitInfoEntities(void)
 		if (!strcmp(classname, "target_location"))
 		{
 			ml = (maplocation_t *) GetClearedMemory(sizeof(maplocation_t));
+			if (!ml) goto failed;
 			AAS_VectorForBSPEpairKey(ent, "origin", ml->origin);
 			AAS_ValueForBSPEpairKey(ent, "message", ml->name, sizeof(ml->name));
 			ml->areanum = AAS_PointAreaNum(ml->origin);
-			ml->next = maplocations;
-			maplocations = ml;
+			ml->next = newlocations;
+			newlocations = ml;
 			numlocations++;
 		} //end if
 		//camp spots
 		else if (!strcmp(classname, "info_camp"))
 		{
 			cs = (campspot_t *) GetClearedMemory(sizeof(campspot_t));
+			if (!cs) goto failed;
 			AAS_VectorForBSPEpairKey(ent, "origin", cs->origin);
 			//cs->origin[2] += 16;
 			AAS_ValueForBSPEpairKey(ent, "message", cs->name, sizeof(cs->name));
@@ -598,8 +615,8 @@ void BotInitInfoEntities(void)
 				FreeMemory(cs);
 				continue;
 			} //end if
-			cs->next = campspots;
-			campspots = cs;
+			cs->next = newspots;
+			newspots = cs;
 			//AAS_DrawPermanentCross(cs->origin, 4, LINECOLOR_YELLOW);
 			numcampspots++;
 		} //end else if
@@ -609,6 +626,24 @@ void BotInitInfoEntities(void)
 		botimport.Print(PRT_MESSAGE, "%d map locations\n", numlocations);
 		botimport.Print(PRT_MESSAGE, "%d camp spots\n", numcampspots);
 	} //end if
+	*locations = newlocations;
+	*spots = newspots;
+	return qtrue;
+failed:
+	botimport.Print(PRT_ERROR, "couldn't allocate complete map information\n");
+	FreeInfoEntities(newlocations, newspots);
+	return qfalse;
+}
+
+int BotInitInfoEntities(void)
+{
+	maplocation_t *locations;
+	campspot_t *spots;
+	if (!StageInfoEntities(&locations, &spots)) return qfalse;
+	BotFreeInfoEntities();
+	maplocations = locations;
+	campspots = spots;
+	return qtrue;
 } //end of the function BotInitInfoEntities
 //===========================================================================
 //
@@ -625,11 +660,22 @@ int BotInitLevelItemsChecked(void)
 	itemconfig_t *ic;
 	levelitem_t *li;
 	bsp_trace_t trace;
+	levelitem_t *heap;
+	maplocation_t *locations;
+	campspot_t *spots;
 
-	//A failed pool replacement must preserve prior lists and map information.
-	if (!InitLevelItemHeap()) return BLERR_LIBRARYNOTSETUP;
-	//initialize the map locations and camp spots
-	BotInitInfoEntities();
+	//Stage all metadata roots before replacing any prior pool or map information.
+	heap = StageLevelItemHeap();
+	if (!heap) return BLERR_LIBRARYNOTSETUP;
+	if (!StageInfoEntities(&locations, &spots))
+	{
+		FreeMemory(heap);
+		return BLERR_LIBRARYNOTSETUP;
+	}
+	CommitLevelItemHeap(heap);
+	BotFreeInfoEntities();
+	maplocations = locations;
+	campspots = spots;
 	//
 	ic = itemconfig;
 	if (!ic) return BLERR_NOERROR;
