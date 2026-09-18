@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *****************************************************************************/
 
 #include "../game/q_shared.h"
+#include <float.h>
 #include "l_memory.h"
 #include "l_libvar.h"
 
@@ -46,32 +47,29 @@ float LibVarStringValue(char *string)
 {
 	int dotfound = 0;
 	float value = 0;
+	double divisor = 10.0, next;
 
-	while(*string)
+	while (*string)
 	{
-		if (*string < '0' || *string > '9')
+		if (*string >= '0' && *string <= '9')
 		{
-			if (dotfound || *string != '.')
+			if (dotfound)
 			{
-				return 0;
-			} //end if
+				value += (float)((double)(*string - '0') / divisor);
+				if (divisor <= DBL_MAX / 10.0) divisor *= 10.0;
+				else divisor = DBL_MAX;
+			}
 			else
 			{
-				dotfound = 10;
-				string++;
-			} //end if
-		} //end if
-		if (dotfound)
-		{
-			value = value + (float) (*string - '0') / (float) dotfound;
-			dotfound *= 10;
-		} //end if
-		else
-		{
-			value = value * 10.0 + (float) (*string - '0');
-		} //end else
+				next = value * 10.0 + (float)(*string - '0');
+				if (next > FLT_MAX) return 0;
+				value = (float)next;
+			}
+		}
+		else if (!dotfound && *string == '.') dotfound = 1;
+		else return 0;
 		string++;
-	} //end while
+	}
 	return value;
 } //end of the function LibVarStringValue
 //===========================================================================
