@@ -42,8 +42,8 @@ validation using temporary libraries from [loading evidence](qvm-loading-validat
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,665,585 | `0d67b6b4a990df4bdc475e99e387c4eb0458d7bef0969df02ba47a58d5b84b58` |
-| Quake3_TeamArena | 3,814,159 | `c74112313d303744a0bd7f2616088c316e7a2141042634d6bc515d53c0a70be4` |
+| Quake3 | 3,673,903 | `f8cd4c993a64558ca437b253166a520f5fb4b2ef26a9c7b465da5b88e9f9ca3a` |
+| Quake3_TeamArena | 3,822,477 | `2612390ca6fe338d91af44ebdfb46ccd9209a948d22189e32f5702a448af2681` |
 
 ## Remaining acceptance
 
@@ -51,3 +51,8 @@ Keep #42 open. TGA still needs bounded decoding and its malformed corpus.
 Retail 1.32c textures/UI and strict-alignment PPC live acceptance remain
 explicitly deferred. This host corpus checks the supported PCX format and
 bounds; it does not establish acceptance of every retail or mod asset.
+
+Reviewed QVM work through #64, single-run CI (#68) and the RoQ console
+shutdown fix are integrated. The affected sanitizer fixtures, nine Python
+checks and both Mac products pass; CI retains every runner. The table
+records these integrated artifacts.
