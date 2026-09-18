@@ -2705,17 +2705,42 @@ int BotNumInitialChats(int chatstate, char *type)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
+// Append optional variables only within the fixed native match array.
+static int BotAppendChatVariables(bot_match_t *match, char **variables)
+{
+	int i, index = (int)strlen(match->string);
+	size_t length;
+
+	for (i = 0; i < MAX_MATCHVARIABLES; i++)
+	{
+		if (!variables[i]) continue;
+		length = strlen(variables[i]);
+		if (length >= sizeof(match->string) - index)
+		{
+			botimport.Print(PRT_ERROR, "chat variables exceed the native match capacity\n");
+			return qfalse;
+		}
+		Com_Memcpy(match->string + index, variables[i], length + 1);
+		match->variables[i].offset = index;
+		match->variables[i].length = length;
+		index += length;
+	}
+	return qtrue;
+}
+
 void BotInitialChat(int chatstate, char *type, int mcontext, char *var0, char *var1, char *var2, char *var3, char *var4, char *var5, char *var6, char *var7)
 {
 	char *message;
-	int index;
+	char *variables[MAX_MATCHVARIABLES] = { var0, var1, var2, var3, var4, var5, var6, var7 };
 	bot_match_t match;
 	bot_chatstate_t *cs;
 
 	cs = BotChatStateFromHandle(chatstate);
 	if (!cs) return;
 	//if no chat file is loaded
-	if (!cs->chat) return;
+	if (!cs->chat || !type) return;
+	Com_Memset(&match, 0, sizeof(match));
+	if (!BotAppendChatVariables(&match, variables)) return;
 	//choose a chat message randomly of the given type
 	message = BotChooseInitialChatMessage(cs, type);
 	//if there's no message of the given type
@@ -2727,56 +2752,6 @@ void BotInitialChat(int chatstate, char *type, int mcontext, char *var0, char *v
 		return;
 	} //end if
 	//
-	Com_Memset(&match, 0, sizeof(match));
-	index = 0;
-	if( var0 ) {
-		strcat(match.string, var0);
-		match.variables[0].offset = index;
-		match.variables[0].length = strlen(var0);
-		index += strlen(var0);
-	}
-	if( var1 ) {
-		strcat(match.string, var1);
-		match.variables[1].offset = index;
-		match.variables[1].length = strlen(var1);
-		index += strlen(var1);
-	}
-	if( var2 ) {
-		strcat(match.string, var2);
-		match.variables[2].offset = index;
-		match.variables[2].length = strlen(var2);
-		index += strlen(var2);
-	}
-	if( var3 ) {
-		strcat(match.string, var3);
-		match.variables[3].offset = index;
-		match.variables[3].length = strlen(var3);
-		index += strlen(var3);
-	}
-	if( var4 ) {
-		strcat(match.string, var4);
-		match.variables[4].offset = index;
-		match.variables[4].length = strlen(var4);
-		index += strlen(var4);
-	}
-	if( var5 ) {
-		strcat(match.string, var5);
-		match.variables[5].offset = index;
-		match.variables[5].length = strlen(var5);
-		index += strlen(var5);
-	}
-	if( var6 ) {
-		strcat(match.string, var6);
-		match.variables[6].offset = index;
-		match.variables[6].length = strlen(var6);
-		index += strlen(var6);
-	}
-	if( var7 ) {
-		strcat(match.string, var7);
-		match.variables[7].offset = index;
-		match.variables[7].length = strlen(var7);
-		index += strlen(var7);
-	}
  	//
 	BotConstructChatMessage(cs, message, mcontext, &match, 0, qfalse);
 } //end of the function BotInitialChat
@@ -2833,8 +2808,9 @@ int BotReplyChat(int chatstate, char *message, int mcontext, int vcontext, char 
 	bot_replychatkey_t *key;
 	bot_chatmessage_t *m, *bestchatmessage;
 	bot_match_t match, bestmatch;
-	int bestpriority, num, found, res, numchatmessages, index;
+	int bestpriority, num, found, res, numchatmessages;
 	bot_chatstate_t *cs;
+	char *variables[MAX_MATCHVARIABLES] = { var0, var1, var2, var3, var4, var5, var6, var7 };
 
 	cs = BotChatStateFromHandle(chatstate);
 	if (!cs) return qfalse;
@@ -2916,55 +2892,7 @@ int BotReplyChat(int chatstate, char *message, int mcontext, int vcontext, char 
 	} //end for
 	if (bestchatmessage)
 	{
-		index = strlen(bestmatch.string);
-		if( var0 ) {
-			strcat(bestmatch.string, var0);
-			bestmatch.variables[0].offset = index;
-			bestmatch.variables[0].length = strlen(var0);
-			index += strlen(var0);
-		}
-		if( var1 ) {
-			strcat(bestmatch.string, var1);
-			bestmatch.variables[1].offset = index;
-			bestmatch.variables[1].length = strlen(var1);
-			index += strlen(var1);
-		}
-		if( var2 ) {
-			strcat(bestmatch.string, var2);
-			bestmatch.variables[2].offset = index;
-			bestmatch.variables[2].length = strlen(var2);
-			index += strlen(var2);
-		}
-		if( var3 ) {
-			strcat(bestmatch.string, var3);
-			bestmatch.variables[3].offset = index;
-			bestmatch.variables[3].length = strlen(var3);
-			index += strlen(var3);
-		}
-		if( var4 ) {
-			strcat(bestmatch.string, var4);
-			bestmatch.variables[4].offset = index;
-			bestmatch.variables[4].length = strlen(var4);
-			index += strlen(var4);
-		}
-		if( var5 ) {
-			strcat(bestmatch.string, var5);
-			bestmatch.variables[5].offset = index;
-			bestmatch.variables[5].length = strlen(var5);
-			index += strlen(var5);
-		}
-		if( var6 ) {
-			strcat(bestmatch.string, var6);
-			bestmatch.variables[6].offset = index;
-			bestmatch.variables[6].length = strlen(var6);
-			index += strlen(var6);
-		}
-		if( var7 ) {
-			strcat(bestmatch.string, var7);
-			bestmatch.variables[7].offset = index;
-			bestmatch.variables[7].length = strlen(var7);
-			index += strlen(var7);
-		}
+		if (!BotAppendChatVariables(&bestmatch, variables)) return qfalse;
 		if (LibVarGetValue("bot_testrchat"))
 		{
 			for (m = bestrchat->firstchatmessage; m; m = m->next)
