@@ -518,6 +518,10 @@ QVMs while any P0 item is open.
         input/output/name and nonpositive chat output sizes reject before prior
         state changes, preserving valid FIFO/property/match/output behavior;
         see [chat API evidence](bot-chat-api-validation.md).
+  - [x] Reply input must fit the native match array before copying; initial
+        counts/selectors handle missing files/state/type, and missing match spans
+        return the native empty result while valid construction/timing stays;
+        see [consumer evidence](bot-chat-consumer-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 

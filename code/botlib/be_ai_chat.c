@@ -1693,7 +1693,7 @@ void BotMatchVariable(bot_match_t *match, int variable, char *buf, int size)
 	char *end;
 	int offset, length;
 	if (!buf || size <= 0) return;
-	if (variable < 0 || variable >= MAX_MATCHVARIABLES) { buf[0] = '\0'; return; }
+	if (!match || variable < 0 || variable >= MAX_MATCHVARIABLES) { buf[0] = '\0'; return; }
 	offset = match->variables[variable].offset;
 	length = match->variables[variable].length;
 	end = memchr(match->string, '\0', sizeof(match->string));
@@ -2627,6 +2627,7 @@ char *BotChooseInitialChatMessage(bot_chatstate_t *cs, char *type)
 	bot_chatmessage_t *m, *bestchatmessage;
 	bot_chat_t *chat;
 
+	if (!cs || !cs->chat || !type) return NULL;
 	chat = cs->chat;
 	for (t = chat->types; t; t = t->next)
 	{
@@ -2683,7 +2684,7 @@ int BotNumInitialChats(int chatstate, char *type)
 	bot_chattype_t *t;
 
 	cs = BotChatStateFromHandle(chatstate);
-	if (!cs) return 0;
+	if (!cs || !cs->chat || !type) return 0;
 
 	for (t = cs->chat->types; t; t = t->next)
 	{
@@ -2837,6 +2838,11 @@ int BotReplyChat(int chatstate, char *message, int mcontext, int vcontext, char 
 
 	cs = BotChatStateFromHandle(chatstate);
 	if (!cs) return qfalse;
+	if (!message || strlen(message) >= sizeof(match.string))
+	{
+		botimport.Print(PRT_ERROR, "invalid reply message input\n");
+		return qfalse;
+	}
 	Com_Memset(&match, 0, sizeof(bot_match_t));
 	strcpy(match.string, message);
 	bestpriority = -1;
