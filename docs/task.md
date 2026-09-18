@@ -271,6 +271,9 @@ QVMs while any P0 item is open.
   - [x] Bbox coordinates use float endian conversion; independent native/swapped
         models retain fractions, signed zero, finite extremes and existing
         uint16 travel-time conversion; see [endian evidence](aas-endian-validation.md).
+  - [x] AAS writer preserves native world bytes on every return, checks all
+        writes/seeks and rejects invalid/overflowing output roots before opening;
+        see [writer evidence](aas-writer-validation.md).
   - [ ] Validate the entire AAS file and graph before setting `loaded`.
 - [ ] [#48 — bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48)
       — **high**, parser fixed-buffer corruption/invalid cleanup.
