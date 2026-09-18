@@ -1377,6 +1377,46 @@ static int PS_ScriptMemoryCost(int length, const char *name, unsigned long *size
 	return 1;
 }
 
+/* Compression must not erase a block-comment error before the lexer sees it. */
+static int PS_CheckFileComments(script_t *script)
+{
+	const char *p = script->buffer;
+	int line = 1;
+
+	while (*p)
+	{
+		if (*p == '/' && p[1] == '/')
+		{
+			while (*p && *p != '\n') p++;
+		}
+		else if (*p == '/' && p[1] == '*')
+		{
+			p += 2;
+			while (*p && (*p != '*' || p[1] != '/'))
+			{
+				if (*p++ == '\n' && line < INT_MAX) line++;
+			}
+			if (!*p)
+			{
+				script->line = line;
+				ScriptError(script, "unterminated block comment");
+				return qfalse;
+			}
+			p += 2;
+		}
+		//COM_Compress quotes only double-quoted regions, without escape handling.
+		else if (*p == '"')
+		{
+			p++;
+			while (*p && *p != '"')
+				if (*p++ == '\n' && line < INT_MAX) line++;
+			if (*p) p++;
+		}
+		else if (*p++ == '\n' && line < INT_MAX) line++;
+	}
+	return qtrue;
+}
+
 script_t *LoadScriptFile(const char *filename)
 {
 #ifdef BOTLIB
@@ -1480,7 +1520,15 @@ script_t *LoadScriptFile(const char *filename)
 	fclose(fp);
 #endif
 	//
-	if (script) script->length = COM_Compress(script->buffer);
+	if (script)
+	{
+		if (!PS_CheckFileComments(script))
+		{
+			FreeScript(script);
+			return NULL;
+		}
+		script->length = COM_Compress(script->buffer);
+	}
 
 	return script;
 } //end of the function LoadScriptFile

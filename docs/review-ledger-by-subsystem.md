@@ -538,6 +538,10 @@ implementation or check, without implying issue completion.
         nullable import before brush/reference publication and preserves complete
         prior state; retries retain native cached/configured values and models;
         see [movement setup evidence](bot-move-setup-validation.md).
+  - [x] File loading checks block-comment closure before compression removes
+        diagnostics; malformed root/include/character imports release all owners
+        while valid files retain native compressed bytes and token metadata;
+        see [file-comment evidence](bot-file-comment-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
