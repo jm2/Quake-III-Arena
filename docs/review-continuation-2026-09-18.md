@@ -149,6 +149,9 @@ current-head completed clean review remains required; it is pending at this
 snapshot. Complete initial/cache/library/world publication and aggregate parser/
 work/memory budgets remain separate work. Retail/Mac OS 9 execution is deferred.
 
+The ledger PR itself is omitted to avoid a self-referential stale SHA.
+Query its exact current head and review/CI gates directly before merging.
+
 | PR | Current head | Successful Portable CI checks |
 | --- | --- | ---: |
 | #171 | `a4584211aa1a9eafae0c98f9e16de70825108787` | 3/4 |
@@ -161,7 +164,6 @@ work/memory budgets remain separate work. Retail/Mac OS 9 execution is deferred.
 | #178 | `5f9f557d5ab406bd439737b57d4db70162142b6f` | 0/4 |
 | #179 | `5d9a47f4fb8a7bd0f9eb85b02914af595afb36db` | 2/4 |
 | #181 | `494e70e6099d81b2d58f9ea8cbe27b5497aab8da` | 1/4 |
-| #182 | `13a5447e00f0aaf922ad6a4cd1792beca9bc4bf9` | 0/4 |
 | #183 | `09c2b22ecbf182d4091d5e2e9d378c27b270ced9` | 0/4 |
 | #184 | `f153e8944ea8bbe5a7a9e0096cf9cbc4b625ac7b` | 0/4 |
 | #185 | `431c889f467c7eff0737360ece35e2a5b0f6e1d9` | 0/4 |
