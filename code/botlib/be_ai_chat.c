@@ -1171,99 +1171,111 @@ void BotDumpRandomStringList(bot_randomlist_t *randomlist)
 //===========================================================================
 bot_randomlist_t *BotLoadRandomStrings(char *filename)
 {
-	int pass, size;
-	char *ptr = NULL, chatmessagestring[MAX_MESSAGE_SIZE];
-	source_t *source;
+	int pass, size = 0, used, bytes;
+	char *ptr, *staged = NULL, *published, chatmessagestring[MAX_MESSAGE_SIZE];
+	source_t *source = NULL;
 	token_t token;
-	bot_randomlist_t *randomlist, *lastrandom, *random;
-	bot_randomstring_t *randomstring;
+	bot_randomlist_t *randomlist = NULL, *lastrandom, *random = NULL, *out;
+	bot_randomstring_t *randomstring, *entry;
 
-#ifdef DEBUG
-	int starttime = Sys_MilliSeconds();
-#endif //DEBUG
-
-	size = 0;
-	randomlist = NULL;
-	random = NULL;
-	//the synonyms are parsed in two phases
+	if (!filename || !filename[0] || strlen(filename) >= MAX_PATH)
+	{
+		botimport.Print(PRT_ERROR, "invalid random dictionary filename\n");
+		return NULL;
+	}
 	for (pass = 0; pass < 2; pass++)
 	{
-		//
-		if (pass && size) ptr = (char *) GetClearedHunkMemory(size);
-		//
+		if (pass && size)
+		{
+			staged = (char *)GetClearedMemory(size);
+			if (!staged) goto failed;
+		}
+		used = 0;
 		PC_SetBaseFolder(BOTFILESBASEFOLDER);
 		source = LoadSourceFile(filename);
-		if (!source)
+		if (!source) goto failed;
+		randomlist = lastrandom = NULL;
+		while (!PC_SourceHasError(source) && PC_ReadToken(source, &token))
 		{
-			botimport.Print(PRT_ERROR, "counldn't load %s\n", filename);
-			return NULL;
-		} //end if
-		//
-		randomlist = NULL; //list
-		lastrandom = NULL; //last
-		//
-		while(PC_ReadToken(source, &token))
-		{
+			if (PC_SourceHasError(source)) goto failed;
 			if (token.type != TT_NAME)
 			{
 				SourceError(source, "unknown random %s", token.string);
-				FreeSource(source);
-				return NULL;
-			} //end if
-			size += sizeof(bot_randomlist_t) + strlen(token.string) + 1;
+				goto failed;
+			}
+			if (!BotSynonymReserve(&used, sizeof(bot_randomlist_t), sizeof(void *),
+					pass ? size : INT_MAX, staged, &ptr)) goto excessive;
+			if (pass) random = (bot_randomlist_t *)ptr;
+			bytes = (int)strlen(token.string) + 1;
+			if (!BotSynonymReserve(&used, bytes, 1, pass ? size : INT_MAX, staged, &ptr)) goto excessive;
 			if (pass)
 			{
-				random = (bot_randomlist_t *) ptr;
-				ptr += sizeof(bot_randomlist_t);
 				random->string = ptr;
-				ptr += strlen(token.string) + 1;
-				strcpy(random->string, token.string);
-				random->firstrandomstring = NULL;
-				random->numstrings = 0;
-				//
+				strcpy(ptr, token.string);
 				if (lastrandom) lastrandom->next = random;
 				else randomlist = random;
 				lastrandom = random;
-			} //end if
-			if (!PC_ExpectTokenString(source, "=") ||
-				!PC_ExpectTokenString(source, "{"))
+			}
+			if (!PC_ExpectTokenString(source, "=") || !PC_ExpectTokenString(source, "{")) goto failed;
+			while (1)
 			{
-				FreeSource(source);
-				return NULL;
-			} //end if
-			while(!PC_CheckTokenString(source, "}"))
-			{
-				if (!BotLoadChatMessage(source, chatmessagestring))
-				{
-					FreeSource(source);
-					return NULL;
-				} //end if
-				size += sizeof(bot_randomstring_t) + strlen(chatmessagestring) + 1;
+				if (PC_SourceHasError(source)) goto failed;
+				if (PC_CheckTokenString(source, "}")) break;
+				if (PC_SourceHasError(source)) goto failed;
+				if (!BotLoadChatMessage(source, chatmessagestring) || PC_SourceHasError(source)) goto failed;
+				if (!BotSynonymReserve(&used, sizeof(bot_randomstring_t), sizeof(void *),
+						pass ? size : INT_MAX, staged, &ptr)) goto excessive;
+				if (pass) randomstring = (bot_randomstring_t *)ptr;
+				bytes = (int)strlen(chatmessagestring) + 1;
+				if (!BotSynonymReserve(&used, bytes, 1, pass ? size : INT_MAX, staged, &ptr)) goto excessive;
 				if (pass)
 				{
-					randomstring = (bot_randomstring_t *) ptr;
-					ptr += sizeof(bot_randomstring_t);
 					randomstring->string = ptr;
-					ptr += strlen(chatmessagestring) + 1;
-					strcpy(randomstring->string, chatmessagestring);
-					//
+					strcpy(ptr, chatmessagestring);
 					random->numstrings++;
 					randomstring->next = random->firstrandomstring;
 					random->firstrandomstring = randomstring;
-				} //end if
-			} //end while
-		} //end while
-		//free the source after one pass
+				}
+			}
+		}
+		if (PC_SourceHasError(source)) goto failed;
 		FreeSource(source);
-	} //end for
+		source = NULL;
+		if (!pass) size = used;
+		else if (used != size) goto excessive;
+	}
+	if (size)
+	{
+		published = (char *)GetClearedHunkMemory(size);
+		if (!published) goto failed;
+		Com_Memcpy(published, staged, size);
+		for (random = randomlist; random; random = random->next)
+		{
+			out = (bot_randomlist_t *)(published + ((char *)random - staged));
+			out->string = published + (random->string - staged);
+			out->next = random->next ? (bot_randomlist_t *)(published + ((char *)random->next - staged)) : NULL;
+			out->firstrandomstring = random->firstrandomstring ?
+				(bot_randomstring_t *)(published + ((char *)random->firstrandomstring - staged)) : NULL;
+			for (randomstring = random->firstrandomstring; randomstring; randomstring = randomstring->next)
+			{
+				entry = (bot_randomstring_t *)(published + ((char *)randomstring - staged));
+				entry->string = published + (randomstring->string - staged);
+				entry->next = randomstring->next ?
+					(bot_randomstring_t *)(published + ((char *)randomstring->next - staged)) : NULL;
+			}
+		}
+		randomlist = (bot_randomlist_t *)(published + ((char *)randomlist - staged));
+		FreeMemory(staged);
+	}
 	botimport.Print(PRT_MESSAGE, "loaded %s\n", filename);
-	//
-#ifdef DEBUG
-	botimport.Print(PRT_MESSAGE, "random strings %d msec\n", Sys_MilliSeconds() - starttime);
-	//BotDumpRandomStringList(randomlist);
-#endif //DEBUG
-	//
 	return randomlist;
+excessive:
+	botimport.Print(PRT_ERROR, "random dictionary exceeds measured native capacity\n");
+failed:
+	if (source) FreeSource(source);
+	if (staged) FreeMemory(staged);
+	botimport.Print(PRT_ERROR, "could not load complete random dictionary\n");
+	return NULL;
 } //end of the function BotLoadRandomStrings
 //===========================================================================
 //

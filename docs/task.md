@@ -534,6 +534,10 @@ QVMs while any P0 item is open.
         component costs and native slots before copying; complete publication
         preserves prior output on lexical/syntax/size failures and native order;
         see [component evidence](bot-chat-message-validation.md).
+  - [x] Random dictionaries measure aligned records and complete costs,
+        stage both passes before persistent publication, reject source/capacity
+        changes and rebase complete native group/message/string links;
+        see [random dictionary evidence](bot-chat-random-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
