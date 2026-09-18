@@ -373,6 +373,9 @@ implementation or check, without implying issue completion.
   - [ ] Complete derived rendering conversions.
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.
+  - [x] AAS v4/v5 header/lump preflight precedes world reset; exact reads,
+        seeks and allocation failures close once and clear partial logical
+        owners; see [AAS layout evidence](aas-layout-validation.md).
   - [ ] Validate the complete file and graph before setting `loaded`.
 - [ ] [#48 — bot preprocessor/token/path bounds](https://github.com/jm2/Quake-III-Arena/issues/48)
   - [x] Several upstream primitive/preprocessor/diagnostic bounds fixes are
