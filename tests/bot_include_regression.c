@@ -12,6 +12,9 @@ static const char *foundPath;
 static void Check(int condition,const char *message) {if(!condition){fprintf(stderr,"Bot include regression failed: %s\n",message);exit(1);}}
 void *GetMemory(unsigned long size) {
     int i;Check(size>0&&size<=sizeof(script_t)+sizeof(token_t),"bounded fixture native allocation");
+#ifdef Q3_INCLUDE_HEAP_HOOK
+    if(Q3_INCLUDE_HEAP_HOOK())return NULL;
+#endif
     for(i=0;i<16;i++)if(!owners[i]){owners[i]=malloc(size);Check(owners[i]!=NULL,"fixture heap allocation");liveOwners++;return owners[i];}
     Check(0,"bounded native owners");return NULL;
 }
@@ -22,7 +25,14 @@ void Com_Memcpy(void *out,const void *in,size_t size) {memcpy(out,in,size);}
 #ifndef Com_Memset
 void Com_Memset(void *out,int value,size_t size) {memset(out,value,size);}
 #endif
-void QDECL Com_Error(int level,const char *format,...) {(void)level;(void)format;Check(0,"unexpected native fatal allocation");}
+void QDECL Com_Error(int level,const char *format,...) {
+#ifdef Q3_INCLUDE_FATAL_HOOK
+    Q3_INCLUDE_FATAL_HOOK(level);
+#else
+    (void)level;Check(0,"unexpected native fatal allocation");
+#endif
+    (void)format;
+}
 void QDECL Com_Printf(const char *format,...) {(void)format;Check(0,"unexpected native formatting");}
 static void QDECL Print(int level,char *format,...) {
     char text[2048];va_list args;va_start(args,format);vsnprintf(text,sizeof(text),format,args);va_end(args);

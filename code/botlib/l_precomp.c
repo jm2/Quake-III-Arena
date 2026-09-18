@@ -445,6 +445,7 @@ int PC_ReadDefineParms(source_t *source, define_t *define, token_t **parms, int 
 			{
 				//
 				t = PC_CopyToken(&token);
+				if (!t) return qfalse;
 				t->next = NULL;
 				if (last) last->next = t;
 				else parms[numparms] = t;
@@ -461,20 +462,32 @@ int PC_ReadDefineParms(source_t *source, define_t *define, token_t **parms, int 
 // Returns:					-
 // Changes Globals:		-
 //============================================================================
+/* Append only a complete string, including its terminator. */
+static int PC_AppendString(char *output, size_t capacity, const char *input)
+{
+	size_t used = strlen(output), length = strlen(input);
+	if (used >= capacity || length >= capacity - used) return qfalse;
+	memmove(output + used, input, length + 1);
+	return qtrue;
+}
+
 int PC_StringizeTokens(token_t *tokens, token_t *token)
 {
 	token_t *t;
-
-	token->type = TT_STRING;
-	token->whitespace_p = NULL;
-	token->endwhitespace_p = NULL;
-	token->string[0] = '\0';
-	strcat(token->string, "\"");
+	char string[MAX_TOKEN];
+	strcpy(string, "\"");
 	for (t = tokens; t; t = t->next)
 	{
-		strncat(token->string, t->string, MAX_TOKEN - strlen(token->string));
+		/* Reserve the closing quote as well as the terminator. */
+		if (!PC_AppendString(string, sizeof(string) - 1, t->string)) return qfalse;
 	} //end for
-	strncat(token->string, "\"", MAX_TOKEN - strlen(token->string));
+	if (!PC_AppendString(string, sizeof(string), "\"")) return qfalse;
+
+	token->type = TT_STRING;
+	token->subtype = strlen(string);
+	token->whitespace_p = NULL;
+	token->endwhitespace_p = NULL;
+	memcpy(token->string, string, strlen(string) + 1);
 	return qtrue;
 } //end of the function PC_StringizeTokens
 //============================================================================
@@ -485,19 +498,24 @@ int PC_StringizeTokens(token_t *tokens, token_t *token)
 //============================================================================
 int PC_MergeTokens(token_t *t1, token_t *t2)
 {
+	size_t firstlength, secondlength;
 	//merging of a name with a name or number
 	if (t1->type == TT_NAME && (t2->type == TT_NAME || t2->type == TT_NUMBER))
 	{
-		strcat(t1->string, t2->string);
-		return qtrue;
+		return PC_AppendString(t1->string, sizeof(t1->string), t2->string);
 	} //end if
 	//merging of two strings
 	if (t1->type == TT_STRING && t2->type == TT_STRING)
 	{
+		firstlength = strlen(t1->string);
+		secondlength = strlen(t2->string);
+		if (firstlength < 2 || secondlength < 2 ||
+			firstlength - 1 >= sizeof(t1->string) ||
+			secondlength - 1 >= sizeof(t1->string) - (firstlength - 1)) return qfalse;
 		//remove trailing double quote
-		t1->string[strlen(t1->string)-1] = '\0';
+		t1->string[firstlength-1] = '\0';
 		//concat without leading double quote
-		strcat(t1->string, &t2->string[1]);
+		PC_AppendString(t1->string, sizeof(t1->string), &t2->string[1]);
 		return qtrue;
 	} //end if
 	//FIXME: merging of two number of the same sub type
@@ -802,17 +820,25 @@ int PC_ExpandDefine(source_t *source, token_t *deftoken, define_t *define,
 {
 	token_t *parms[MAX_DEFINEPARMS], *dt, *pt, *t;
 	token_t *t1, *t2, *first, *last, *nextpt, token;
-	int parmnum, i;
+	int parmnum, i, result = qfalse;
 
 	//if it is a builtin define
 	if (define->builtin)
 	{
 		return PC_ExpandBuiltinDefine(source, deftoken, define, firsttoken, lasttoken);
 	} //end if
+	*firsttoken = *lasttoken = NULL;
+	first = last = NULL;
+	Com_Memset(parms, 0, sizeof(parms));
+	if (define->numparms < 0 || define->numparms > MAX_DEFINEPARMS)
+	{
+		SourceError(source, "define parameter count out of range");
+		return qfalse;
+	} //end if
 	//if the define has parameters
 	if (define->numparms)
 	{
-		if (!PC_ReadDefineParms(source, define, parms, MAX_DEFINEPARMS)) return qfalse;
+		if (!PC_ReadDefineParms(source, define, parms, MAX_DEFINEPARMS)) goto cleanup;
 #ifdef DEBUG_EVAL
 		for (i = 0; i < define->numparms; i++)
 		{
@@ -842,6 +868,7 @@ int PC_ExpandDefine(source_t *source, token_t *deftoken, define_t *define,
 			for (pt = parms[parmnum]; pt; pt = pt->next)
 			{
 				t = PC_CopyToken(pt);
+				if (!t) goto cleanup;
 				//add the token to the list
 				t->next = NULL;
 				if (last) last->next = t;
@@ -863,10 +890,11 @@ int PC_ExpandDefine(source_t *source, token_t *deftoken, define_t *define,
 					//step over the stringizing operator
 					dt = dt->next;
 					//stringize the define parameter tokens
+					token = *deftoken;
 					if (!PC_StringizeTokens(parms[parmnum], &token))
 					{
 						SourceError(source, "can't stringize tokens");
-						return qfalse;
+						goto cleanup;
 					} //end if
 					t = PC_CopyToken(&token);
 				} //end if
@@ -881,6 +909,7 @@ int PC_ExpandDefine(source_t *source, token_t *deftoken, define_t *define,
 				t = PC_CopyToken(dt);
 			} //end else
 			//add the token to the list
+			if (!t) goto cleanup;
 			t->next = NULL;
 			if (last) last->next = t;
 			else first = t;
@@ -902,7 +931,7 @@ int PC_ExpandDefine(source_t *source, token_t *deftoken, define_t *define,
 					if (!PC_MergeTokens(t1, t2))
 					{
 						SourceError(source, "can't merge %s with %s", t1->string, t2->string);
-						return qfalse;
+						goto cleanup;
 					} //end if
 					PC_FreeToken(t1->next);
 					t1->next = t2->next;
@@ -917,6 +946,15 @@ int PC_ExpandDefine(source_t *source, token_t *deftoken, define_t *define,
 	//store the first and last token of the list
 	*firsttoken = first;
 	*lasttoken = last;
+	first = NULL;
+	result = qtrue;
+cleanup:
+	while (first)
+	{
+		nextpt = first->next;
+		PC_FreeToken(first);
+		first = nextpt;
+	} //end while
 	//free all the parameter tokens
 	for (i = 0; i < define->numparms; i++)
 	{
@@ -927,7 +965,7 @@ int PC_ExpandDefine(source_t *source, token_t *deftoken, define_t *define,
 		} //end for
 	} //end for
 	//
-	return qtrue;
+	return result;
 } //end of the function PC_ExpandDefine
 //============================================================================
 //
@@ -980,14 +1018,6 @@ void PC_ConvertPath(char *path)
 	} //end while
 } //end of the function PC_ConvertPath
 
-/* Append only a complete string, including its terminator. */
-static int PC_AppendString(char *output, size_t capacity, const char *input)
-{
-	size_t used = strlen(output), length = strlen(input);
-	if (used >= capacity || length >= capacity - used) return qfalse;
-	memcpy(output + used, input, length + 1);
-	return qtrue;
-}
 //============================================================================
 //
 // Parameter:				-
