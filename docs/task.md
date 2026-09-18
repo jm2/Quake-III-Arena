@@ -483,6 +483,9 @@ QVMs while any P0 item is open.
         the complete level pool; nullable failure preserves all prior bytes,
         cleans private owners and propagates through the checked map API;
         see [metadata evidence](bot-map-info-validation.md).
+  - [x] Projectile model descriptors use the projectile offset, preserve every
+        scalar field across string order/boundaries and retain native layouts;
+        see [projectile evidence](bot-projectile-model-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
