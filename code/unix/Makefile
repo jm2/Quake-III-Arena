@@ -454,6 +454,7 @@ Q3OBJ = \
 	$(B)/client/l_struct.o \
 	\
 	$(B)/client/jcapimin.o \
+	$(B)/client/jcapistd.o \
 	$(B)/client/jchuff.o   \
 	$(B)/client/jcinit.o \
 	$(B)/client/jccoefct.o  \
@@ -499,6 +500,7 @@ Q3OBJ = \
 	$(B)/client/tr_image_bmp.o \
 	$(B)/client/tr_image_pcx.o \
 	$(B)/client/tr_image_tga.o \
+	$(B)/client/tr_image_jpeg.o \
 	$(B)/client/tr_init.o \
 	$(B)/client/tr_light.o \
 	$(B)/client/tr_main.o \
@@ -684,6 +686,7 @@ $(B)/client/l_script.o : $(BLIBDIR)/l_script.c; $(DO_BOT_CC)
 $(B)/client/l_struct.o : $(BLIBDIR)/l_struct.c; $(DO_BOT_CC) 
 
 $(B)/client/jcapimin.o : $(JPDIR)/jcapimin.c; $(DO_CC) 
+$(B)/client/jcapistd.o : $(JPDIR)/jcapistd.c; $(DO_CC)
 $(B)/client/jchuff.o : $(JPDIR)/jchuff.c; $(DO_CC) 
 $(B)/client/jcinit.o : $(JPDIR)/jcinit.c; $(DO_CC) 
 $(B)/client/jccoefct.o : $(JPDIR)/jccoefct.c; $(DO_CC) 
@@ -730,6 +733,7 @@ $(B)/client/tr_image.o : $(RDIR)/tr_image.c; $(DO_CC)   $(GL_CFLAGS)
 $(B)/client/tr_image_bmp.o : $(RDIR)/tr_image_bmp.c $(RDIR)/tr_image_cursor.h; $(DO_CC)   $(GL_CFLAGS)
 $(B)/client/tr_image_pcx.o : $(RDIR)/tr_image_pcx.c $(RDIR)/tr_image_cursor.h; $(DO_CC)   $(GL_CFLAGS)
 $(B)/client/tr_image_tga.o : $(RDIR)/tr_image_tga.c $(RDIR)/tr_image_cursor.h; $(DO_CC)   $(GL_CFLAGS)
+$(B)/client/tr_image_jpeg.o : $(RDIR)/tr_image_jpeg.c $(RDIR)/tr_image_cursor.h; $(DO_CC)   $(GL_CFLAGS)
 $(B)/client/tr_init.o : $(RDIR)/tr_init.c; $(DO_CC)    $(GL_CFLAGS) 
 $(B)/client/tr_light.o : $(RDIR)/tr_light.c; $(DO_CC)  $(GL_CFLAGS) 
 $(B)/client/tr_main.o : $(RDIR)/tr_main.c; $(DO_CC)   $(GL_CFLAGS) 
@@ -1557,6 +1561,7 @@ Q3SOBJ = \
 	$(B)/q3static/l_struct.o \
 	\
 	$(B)/q3static/jcapimin.o \
+	$(B)/q3static/jcapistd.o \
 	$(B)/q3static/jchuff.o   \
 	$(B)/q3static/jcinit.o \
 	$(B)/q3static/jccoefct.o  \
@@ -1602,6 +1607,7 @@ Q3SOBJ = \
 	$(B)/q3static/tr_image_bmp.o \
 	$(B)/q3static/tr_image_pcx.o \
 	$(B)/q3static/tr_image_tga.o \
+	$(B)/q3static/tr_image_jpeg.o \
 	$(B)/q3static/tr_init.o \
 	$(B)/q3static/tr_light.o \
 	$(B)/q3static/tr_main.o \
@@ -1721,6 +1727,7 @@ $(B)/q3static/l_script.o : $(BLIBDIR)/l_script.c; $(DO_BOT_CC) -DQ3_STATIC
 $(B)/q3static/l_struct.o : $(BLIBDIR)/l_struct.c; $(DO_BOT_CC) -DQ3_STATIC 
 
 $(B)/q3static/jcapimin.o : $(JPDIR)/jcapimin.c; $(DO_CC) -DQ3_STATIC 
+$(B)/q3static/jcapistd.o : $(JPDIR)/jcapistd.c; $(DO_CC) -DQ3_STATIC
 $(B)/q3static/jchuff.o : $(JPDIR)/jchuff.c; $(DO_CC) -DQ3_STATIC 
 $(B)/q3static/jcinit.o : $(JPDIR)/jcinit.c; $(DO_CC) -DQ3_STATIC 
 $(B)/q3static/jccoefct.o : $(JPDIR)/jccoefct.c; $(DO_CC) -DQ3_STATIC 
@@ -1767,6 +1774,7 @@ $(B)/q3static/tr_image.o : $(RDIR)/tr_image.c; $(DO_CC) -DQ3_STATIC
 $(B)/q3static/tr_image_bmp.o : $(RDIR)/tr_image_bmp.c $(RDIR)/tr_image_cursor.h; $(DO_CC) -DQ3_STATIC
 $(B)/q3static/tr_image_pcx.o : $(RDIR)/tr_image_pcx.c $(RDIR)/tr_image_cursor.h; $(DO_CC) -DQ3_STATIC
 $(B)/q3static/tr_image_tga.o : $(RDIR)/tr_image_tga.c $(RDIR)/tr_image_cursor.h; $(DO_CC) -DQ3_STATIC
+$(B)/q3static/tr_image_jpeg.o : $(RDIR)/tr_image_jpeg.c $(RDIR)/tr_image_cursor.h; $(DO_CC) -DQ3_STATIC
 $(B)/q3static/tr_init.o : $(RDIR)/tr_init.c; $(DO_CC) -DQ3_STATIC 
 $(B)/q3static/tr_light.o : $(RDIR)/tr_light.c; $(DO_CC) -DQ3_STATIC 
 $(B)/q3static/tr_main.o : $(RDIR)/tr_main.c; $(DO_CC) -DQ3_STATIC 

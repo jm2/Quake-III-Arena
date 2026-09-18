@@ -19,7 +19,9 @@
 #include "jversion.h"
 #include "jerror.h"
 
-#include "../renderer/tr_local.h"
+#include "../game/q_shared.h"
+#include "../renderer/tr_public.h"
+extern refimport_t ri;
 
 #ifndef EXIT_FAILURE		/* define exit() codes if not provided */
 #define EXIT_FAILURE  1

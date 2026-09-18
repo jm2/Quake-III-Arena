@@ -163,7 +163,7 @@ start_pass_phuff_decoder (j_decompress_ptr cinfo)
 	if (tbl < 0 || tbl >= NUM_HUFF_TBLS ||
 	    cinfo->dc_huff_tbl_ptrs[tbl] == NULL)
 	  ERREXIT1(cinfo, JERR_NO_HUFF_TABLE, tbl);
-	jpeg_make_d_derived_tbl(cinfo, cinfo->dc_huff_tbl_ptrs[tbl],
+	jpeg_make_d_derived_tbl(cinfo, TRUE, cinfo->dc_huff_tbl_ptrs[tbl],
 				& entropy->derived_tbls[tbl]);
       }
     } else {
@@ -171,7 +171,7 @@ start_pass_phuff_decoder (j_decompress_ptr cinfo)
       if (tbl < 0 || tbl >= NUM_HUFF_TBLS ||
           cinfo->ac_huff_tbl_ptrs[tbl] == NULL)
         ERREXIT1(cinfo, JERR_NO_HUFF_TABLE, tbl);
-      jpeg_make_d_derived_tbl(cinfo, cinfo->ac_huff_tbl_ptrs[tbl],
+      jpeg_make_d_derived_tbl(cinfo, FALSE, cinfo->ac_huff_tbl_ptrs[tbl],
 			      & entropy->derived_tbls[tbl]);
       /* remember the single active table */
       entropy->ac_derived_tbl = entropy->derived_tbls[tbl];
@@ -200,7 +200,7 @@ start_pass_phuff_decoder (j_decompress_ptr cinfo)
 
 #ifdef AVOID_TABLES
 
-#define HUFF_EXTEND(x,s)  ((x) < (1<<((s)-1)) ? (x) + (((-1)<<(s)) + 1) : (x))
+#define HUFF_EXTEND(x,s)  ((x) < (1<<((s)-1)) ? (x) + (1 - (1<<(s))) : (x))
 
 #else
 
@@ -210,11 +210,11 @@ static const int extend_test[16] =   /* entry n is 2**(n-1) */
   { 0, 0x0001, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080,
     0x0100, 0x0200, 0x0400, 0x0800, 0x1000, 0x2000, 0x4000 };
 
-static const int extend_offset[16] = /* entry n is (-1 << n) + 1 */
-  { 0, ((-1)<<1) + 1, ((-1)<<2) + 1, ((-1)<<3) + 1, ((-1)<<4) + 1,
-    ((-1)<<5) + 1, ((-1)<<6) + 1, ((-1)<<7) + 1, ((-1)<<8) + 1,
-    ((-1)<<9) + 1, ((-1)<<10) + 1, ((-1)<<11) + 1, ((-1)<<12) + 1,
-    ((-1)<<13) + 1, ((-1)<<14) + 1, ((-1)<<15) + 1 };
+static const int extend_offset[16] = /* entry n is 1 - (1 << n) */
+  { 0, 1 - (1<<1), 1 - (1<<2), 1 - (1<<3), 1 - (1<<4),
+    1 - (1<<5), 1 - (1<<6), 1 - (1<<7), 1 - (1<<8),
+    1 - (1<<9), 1 - (1<<10), 1 - (1<<11), 1 - (1<<12),
+    1 - (1<<13), 1 - (1<<14), 1 - (1<<15) };
 
 #endif /* AVOID_TABLES */
 
@@ -323,7 +323,7 @@ decode_mcu_DC_first (j_decompress_ptr cinfo, JBLOCKROW *MCU_data)
     s += state.last_dc_val[ci];
     state.last_dc_val[ci] = s;
     /* Scale and output the DC coefficient (assumes jpeg_natural_order[0]=0) */
-    (*block)[0] = (JCOEF) (s << Al);
+    (*block)[0] = (JCOEF) (s * (1 << Al));
   }
 
   /* Completed MCU, so update state */
@@ -385,7 +385,7 @@ decode_mcu_AC_first (j_decompress_ptr cinfo, JBLOCKROW *MCU_data)
         r = GET_BITS(s);
         s = HUFF_EXTEND(r, s);
 	/* Scale and output coefficient in natural (dezigzagged) order */
-        (*block)[jpeg_natural_order[k]] = (JCOEF) (s << Al);
+        (*block)[jpeg_natural_order[k]] = (JCOEF) (s * (1 << Al));
       } else {
         if (r == 15) {		/* ZRL */
           k += 15;		/* skip 15 zeroes in band */
@@ -472,7 +472,7 @@ decode_mcu_AC_refine (j_decompress_ptr cinfo, JBLOCKROW *MCU_data)
   phuff_entropy_ptr entropy = (phuff_entropy_ptr) cinfo->entropy;
   int Se = cinfo->Se;
   int p1 = 1 << cinfo->Al;	/* 1 in the bit position being coded */
-  int m1 = (-1) << cinfo->Al;	/* -1 in the bit position being coded */
+  int m1 = -(1 << cinfo->Al);	/* -1 in the bit position being coded */
   register int s, k, r;
   unsigned int EOBRUN;
   JBLOCKROW block;

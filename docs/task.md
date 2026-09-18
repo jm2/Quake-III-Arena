@@ -118,8 +118,9 @@ QVMs while any P0 item is open.
 - [ ] [#43 — make JPEG I/O length-aware and remove duplicate APIs](https://github.com/jm2/Quake-III-Arena/issues/43)
       — **high**, OOB decode and link-order ambiguity.
   - [x] Local RGBA output sizing/dimension checks fix one overwrite.
-  - [ ] Replace source/destination managers, fatal error flow, and duplicate
-        libjpeg entry points.
+  - [x] Explicit input lengths, checked growing output, recoverable cleanup
+        and sole standard compression APIs have [host regressions](jpeg-io-validation.md).
+  - [ ] Complete deferred retail 1.32c JPEG and screenshot acceptance.
 - [ ] [#44 — validate MD3/MD4 layouts before allocation or swapping](https://github.com/jm2/Quake-III-Arena/issues/44)
       — **high**, malformed model memory corruption/hangs.
 - [ ] [#45 — validate BSP lumps and cross-references transactionally](https://github.com/jm2/Quake-III-Arena/issues/45)

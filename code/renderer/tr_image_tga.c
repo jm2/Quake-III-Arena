@@ -74,7 +74,7 @@ static qboolean R_DecodeTGA( const byte *buffer, unsigned int length, byte **pic
 	depth = pixelFormat[0]; rle = format[2] == 10;
 	if ( format[1] || (format[2] != 2 && format[2] != 3 && format[2] != 10) ||
 	     (depth != 24 && depth != 32 && !(format[2] == 3 && depth == 8)) ||
-	     !columns || !rows || rows > (INT_MAX / 4u) / columns ) return qfalse;
+	     !columns || !rows || rows > (R_IMAGE_MAX_BYTES / 4u) / columns ) return qfalse;
 	preflight = cursor;
 	if ( !R_TGAPixels(&preflight, columns, rows, depth / 8, rle, NULL) ) return qfalse;
 	output = ri.Malloc( columns * rows * 4 );

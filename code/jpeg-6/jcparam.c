@@ -149,11 +149,16 @@ add_huff_table (j_compress_ptr cinfo,
 		JHUFF_TBL **htblptr, const UINT8 *bits, const UINT8 *val)
 /* Define a Huffman table */
 {
+  int length, count = 0;
+  for (length = 1; length <= 16; length++) count += bits[length];
+  if (count > 256) ERREXIT(cinfo, JERR_HUFF_CLEN_OVERFLOW);
   if (*htblptr == NULL)
     *htblptr = jpeg_alloc_huff_table((j_common_ptr) cinfo);
-  
+
   MEMCOPY((*htblptr)->bits, bits, SIZEOF((*htblptr)->bits));
-  MEMCOPY((*htblptr)->huffval, val, SIZEOF((*htblptr)->huffval));
+  /* Standard DC and AC source arrays contain only their 12 or 162 symbols. */
+  MEMZERO((*htblptr)->huffval, SIZEOF((*htblptr)->huffval));
+  MEMCOPY((*htblptr)->huffval, val, count * SIZEOF(UINT8));
 
   /* Initialize sent_table FALSE so table will be written to JPEG file. */
   (*htblptr)->sent_table = FALSE;

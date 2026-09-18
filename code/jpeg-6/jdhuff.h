@@ -44,7 +44,7 @@ typedef struct {
 
 /* Expand a Huffman table definition into the derived format */
 EXTERN void jpeg_make_d_derived_tbl JPP((j_decompress_ptr cinfo,
-				JHUFF_TBL * htbl, d_derived_tbl ** pdtbl));
+				boolean isDC, JHUFF_TBL * htbl, d_derived_tbl ** pdtbl));
 
 
 /*
@@ -65,7 +65,7 @@ EXTERN void jpeg_make_d_derived_tbl JPP((j_decompress_ptr cinfo,
  * necessary.
  */
 
-typedef INT32 bit_buf_type;	/* type of bit-extraction buffer */
+typedef unsigned long bit_buf_type;	/* type of bit-extraction buffer */
 #define BIT_BUF_SIZE  32	/* size of buffer in bits */
 
 /* If long is > 32 bits on your machine, and shifting/masking longs is

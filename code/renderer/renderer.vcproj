@@ -739,6 +739,48 @@
 				</FileConfiguration>
 			</File>
 			<File
+				RelativePath="tr_image_jpeg.c">
+				<FileConfiguration
+					Name="Debug TA|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="0"
+						PreprocessorDefinitions=""
+						BasicRuntimeChecks="3"
+						BrowseInformation="1"/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="2"
+						PreprocessorDefinitions=""/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Debug|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="0"
+						PreprocessorDefinitions=""
+						BasicRuntimeChecks="3"
+						BrowseInformation="1"/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release TA|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="2"
+						PreprocessorDefinitions=""/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="vector|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="2"
+						PreprocessorDefinitions=""/>
+				</FileConfiguration>
+			</File>
+			<File
 				RelativePath="tr_init.c">
 				<FileConfiguration
 					Name="Debug TA|Win32">
@@ -1540,6 +1582,48 @@
 				Filter="">
 				<File
 					RelativePath="..\jpeg-6\jcapimin.c">
+					<FileConfiguration
+						Name="Debug TA|Win32">
+						<Tool
+							Name="VCCLCompilerTool"
+							Optimization="0"
+							PreprocessorDefinitions=""
+							BasicRuntimeChecks="3"
+							BrowseInformation="1"/>
+					</FileConfiguration>
+					<FileConfiguration
+						Name="Release|Win32">
+						<Tool
+							Name="VCCLCompilerTool"
+							Optimization="2"
+							PreprocessorDefinitions=""/>
+					</FileConfiguration>
+					<FileConfiguration
+						Name="Debug|Win32">
+						<Tool
+							Name="VCCLCompilerTool"
+							Optimization="0"
+							PreprocessorDefinitions=""
+							BasicRuntimeChecks="3"
+							BrowseInformation="1"/>
+					</FileConfiguration>
+					<FileConfiguration
+						Name="Release TA|Win32">
+						<Tool
+							Name="VCCLCompilerTool"
+							Optimization="2"
+							PreprocessorDefinitions=""/>
+					</FileConfiguration>
+					<FileConfiguration
+						Name="vector|Win32">
+						<Tool
+							Name="VCCLCompilerTool"
+							Optimization="2"
+							PreprocessorDefinitions=""/>
+					</FileConfiguration>
+				</File>
+				<File
+					RelativePath="..\jpeg-6\jcapistd.c">
 					<FileConfiguration
 						Name="Debug TA|Win32">
 						<Tool
