@@ -355,6 +355,10 @@ QVMs while any P0 item is open.
         rejects failed cached/new/reload targets, preserves existing owners
         and releases only newly loaded failed targets;
         see [default evidence](bot-default-validation.md).
+  - [x] Numeric tokens reject unsigned overflow before wrap/index assignment,
+        preserve native bases/suffixes, and check float conversion/fraction
+        costs with bounded auxiliary integers;
+        see [number evidence](bot-number-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
