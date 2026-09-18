@@ -671,3 +671,12 @@ character. A variadic log interface renders the actual dump, including floating
 skill text. Representation checks and fixture input words use volatile integer
 materialization to prevent release finite-math assumptions from erasing tests.
 Both GCC/Clang normal and release fast-math sanitizers run the fixture.
+
+
+The float getter runner links actual character/source/lexer/libvar/core bodies.
+It compares 9,612 finite result bit patterns against original getter bodies and
+retains signed integer conversion, negative zero, native error fallbacks and
+five defined infinity-bound pairs. NaN bounds and non-finite stored fields reject
+with zero/error in normal and release fast-math builds, preserving complete
+character/string/registry owners without heap imports. Both GCC/Clang sanitizer
+configurations run the fixture.

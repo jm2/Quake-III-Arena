@@ -391,6 +391,10 @@ QVMs while any P0 item is open.
         releases staged output after numeric failure, preserves available equal
         fallback endpoints, and formats floating skill logs with matching types;
         see [blend evidence](bot-interpolation-numeric-validation.md).
+  - [x] Public float getters reject invalid stored representations and NaN
+        bounds while retaining exact finite clamping, signed integer conversion,
+        negative zero and defined native infinity-bound behavior;
+        see [float getter evidence](bot-character-float-getter-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
