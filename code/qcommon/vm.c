@@ -689,6 +689,136 @@ void *VM_ArgPtr( int intValue ) {
 	}
 }
 
+/** Fault the responsible QVM even when engine code has a different current VM. */
+void VM_ErrorForVM( vm_t *vm, const char *message ) {
+	if ( vm && !vm->entryPoint ) {
+		vm->interpretFaulted = qtrue;
+		vm->currentlyInterpreting = qfalse;
+	}
+	Com_Error( ERR_DROP, "%s", message );
+}
+
+/** Mark the active QVM as faulted before ERR_DROP can invoke module shutdown. */
+void VM_Error( const char *message ) {
+	VM_ErrorForVM( currentVM, message );
+}
+
+/** Validate a buffer in the supplied module without changing the active VM. */
+static void *VM_CheckedArgPtrForVM( vm_t *vm, int value, int length, int alignment, qboolean nullable ) {
+	int offset;
+	if ( !vm || length < 0 || (alignment != 1 && alignment != 4) ||
+	     (!value && !nullable) ) {
+		VM_ErrorForVM( vm, "VM syscall buffer out of range" );
+		return NULL;
+	}
+	if ( !value ) {
+		return NULL;
+	}
+	if ( vm->entryPoint ) {
+		return (void *)(unsigned long)(unsigned int)value;
+	}
+	offset = value & vm->dataMask;
+	if ( (offset & (alignment - 1)) || length > vm->dataMask + 1 - offset ) {
+		VM_ErrorForVM( vm, "VM syscall buffer out of range or unaligned" );
+		return NULL;
+	}
+	return vm->dataBase + offset;
+}
+
+/** Validate the complete active QVM range and alignment, retaining legacy masking. */
+void *VM_CheckedArgPtr( int value, int length, int alignment, qboolean nullable ) {
+	return VM_CheckedArgPtrForVM( currentVM, value, length, alignment, nullable );
+}
+
+/** Bound a returned string in its owning module and fault that module on failure. */
+char *VM_CheckedExplicitString( vm_t *vm, int value, qboolean nullable ) {
+	char *input = VM_CheckedArgPtrForVM( vm, value, 1, 1, nullable );
+	if ( input && !vm->entryPoint &&
+	     !memchr( input, 0, vm->dataMask + 1 - (value & vm->dataMask) ) ) {
+		VM_ErrorForVM( vm, "VM string is not terminated" );
+		return NULL;
+	}
+	return input;
+}
+
+/** Require a terminator inside the active QVM image before native string reads. */
+char *VM_CheckedArgString( int value, qboolean nullable ) {
+	return VM_CheckedExplicitString( currentVM, value, nullable );
+}
+
+/** Reject negative or overflowing element counts before checking an aligned array range. */
+void *VM_CheckedArgArray( int value, int count, int elementSize ) {
+	if ( count < 0 || elementSize <= 0 || count > INT_MAX / elementSize ) {
+		VM_Error( "VM syscall array size out of range" );
+		return NULL;
+	}
+	return VM_CheckedArgPtr( value, count * elementSize, 4, count == 0 );
+}
+
+/** Check output capacity, reserving a terminator slot unless NULL is an allowed query. */
+void *VM_CheckedStringBuffer( int value, int length, qboolean nullable ) {
+	// A NULL output is supported by query/reset APIs. Non-NULL string outputs
+	// require a terminator slot; zero lengths must not reach Q_strncpyz.
+	if ( length < 0 || (value && length == 0) ) {
+		VM_Error( "VM syscall string buffer is empty" );
+		return NULL;
+	}
+	return VM_CheckedArgPtr( value, length, 1, nullable );
+}
+
+/** Return a complete VM buffer or drop the module before memory is accessed. */
+static void *VM_TrapBuffer( int value, int length ) {
+	return VM_CheckedArgPtr( value, length, 1, length == 0 );
+}
+
+/** Fill only a validated VM range; an empty range needs no buffer. */
+void VM_MemoryFill( int dest, int value, int length ) {
+	void *buffer = VM_TrapBuffer( dest, length );
+	if ( length ) {
+		Com_Memset( buffer, value, length );
+	}
+}
+
+/** Copy validated VM ranges, allowing overlapping source and destination. */
+void VM_MemoryCopy( int dest, int source, int length ) {
+	void *output = VM_TrapBuffer( dest, length );
+	void *input = VM_TrapBuffer( source, length );
+	if ( length ) {
+		memmove( output, input, length );
+	}
+}
+
+/** Copy at most length bytes and zero-pad without reading beyond VM storage. */
+int VM_StringCopy( int dest, int source, int length ) {
+	char *output = VM_TrapBuffer( dest, length );
+	char *input;
+	int copied = 0;
+	if ( length == 0 ) {
+		return dest;
+	}
+	input = VM_TrapBuffer( source, 1 );
+	if ( currentVM->entryPoint ) {
+		strncpy( output, input, length );
+		return dest;
+	}
+	// strncpy may stop reading early at NUL, so permit a short source when
+	// it terminates in range. Reject an unterminated source before writing.
+	while ( copied < length ) {
+		if ( copied >= currentVM->dataMask + 1 - (source & currentVM->dataMask) ) {
+			VM_TrapBuffer( source, copied + 1 );
+			return dest;
+		}
+		if ( input[copied++] == '\0' ) {
+			break;
+		}
+	}
+	memmove( output, input, copied );
+	if ( copied < length ) {
+		Com_Memset( output + copied, 0, length - copied );
+	}
+	return dest;
+}
+
 void *VM_ExplicitArgPtr( vm_t *vm, int intValue ) {
 	if ( !intValue ) {
 		return NULL;
@@ -734,57 +864,69 @@ locals from sp
 #define	MAX_STACK	256
 #define	STACK_MASK	(MAX_STACK-1)
 
-int	QDECL VM_Call( vm_t *vm, int callnum, ... ) {
-	vm_t	*oldVM;
-	int		r;
-	int i;
-	int args[16];
-	va_list ap;
-
-
-	if ( !vm ) {
-		Com_Error( ERR_FATAL, "VM_Call with NULL vm" );
+/* Shared marshalling for interpreted and compiled QVM entry. */
+/** Build the complete command and twelve-argument frame inside the VM stack. */
+int VM_SetupCallFrame( vm_t *vm, const int *args ) {
+	int stack = vm->programStack;
+	int floor = vm->stackBottom > 0 ? vm->stackBottom : 0;
+	int arg;
+	if ( !args || (stack & 3) || stack < floor ||
+	     stack - floor < VM_ENTRY_FRAME_SIZE || stack > vm->dataMask + 1 ) {
+		vm->interpretFaulted = qtrue;
+		vm->currentlyInterpreting = qfalse;
+		Com_Error( ERR_DROP, "VM entry stack out of range" );
+		return 0;
 	}
+	stack -= VM_ENTRY_FRAME_SIZE;
+	for ( arg = 0; arg < MAX_VMMAIN_ARGS; arg++ ) {
+		*(int *)(vm->dataBase + stack + 8 + arg * 4) = args[arg];
+	}
+	*(int *)(vm->dataBase + stack + 4) = 0;
+	*(int *)(vm->dataBase + stack) = -1;
+	return stack;
+}
 
+/** Dispatch counted arguments with zero padding and skip faulted QVM re-entry. */
+int VM_CallArgs( vm_t *vm, int callnum, const int *parameters, int count ) {
+	vm_t *oldVM;
+	int result, args[MAX_VMMAIN_ARGS] = {0};
+
+	if ( !vm || count < 0 || count >= MAX_VMMAIN_ARGS || (count && !parameters) ) {
+		Com_Error( ERR_FATAL, "VM_Call: invalid VM or argument count" );
+		return 0;
+	}
+	if ( !vm->entryPoint && vm->interpretFaulted ) {
+		return 0; // ERR_DROP module shutdown must not re-enter a faulted VM
+	}
+	args[0] = callnum;
+	if ( count ) {
+		Com_Memcpy( args + 1, parameters, count * sizeof(int) );
+	}
 	oldVM = currentVM;
 	currentVM = vm;
 	lastVM = vm;
-
 	if ( vm_debugLevel ) {
-	  Com_Printf( "VM_Call( %i )\n", callnum );
+		Com_Printf( "VM_Call( %i )\n", callnum );
 	}
 
-	// if we have a dll loaded, call it directly
 	if ( vm->entryPoint ) {
-		//rcg010207 -  see dissertation at top of VM_DllSyscall() in this file.
-		if ( vm_debugLevel ) {
-			Com_Printf("VM_Call: Calling native %s entryPoint %p cmd=%i\n", vm->name, vm->entryPoint, callnum);
-		}
-		va_start(ap, callnum);
-		for (i = 0; i < sizeof (args) / sizeof (args[i]); i++) {
-			args[i] = va_arg(ap, int);
-		}
-		va_end(ap);
-
-		// Fix for PPC/Static Build: Cast to the exact function signature of vmMain
-		// vmMain takes command + 12 integers = 13 arguments.
-		// Original code passed 17 arguments (command + 16 args) via a varargs pointer, 
-		// which breaks on PPC because fixed-arg functions expect args in registers differently than varargs.
-		typedef int (QDECL *vmMain_t)(int, int, int, int, int, int, int, int, int, int, int, int, int);
-		vmMain_t func = (vmMain_t)vm->entryPoint;
-		
-		r = func( callnum,  args[0],  args[1],  args[2], args[3],
-                            args[4],  args[5],  args[6], args[7],
-                            args[8],  args[9], args[10], args[11] );
+		// Retail vmMain uses a fixed command + twelve-parameter signature.
+		// Its calling convention on PPC differs from a varargs function.
+		typedef int (QDECL *vmMain_t)(int, int, int, int, int, int, int,
+		                             int, int, int, int, int, int);
+		vmMain_t entry = (vmMain_t)vm->entryPoint;
+		result = entry( args[0], args[1], args[2], args[3], args[4],
+		                args[5], args[6], args[7], args[8], args[9],
+		                args[10], args[11], args[12] );
 	} else if ( vm->compiled ) {
-		r = VM_CallCompiled( vm, &callnum );
+		result = VM_CallCompiled( vm, args );
 	} else {
-		r = VM_CallInterpreted( vm, &callnum );
+		result = VM_CallInterpreted( vm, args );
 	}
-
-	if ( oldVM != NULL ) // bk001220 - assert(currentVM!=NULL) for oldVM==NULL
-	  currentVM = oldVM;
-	return r;
+	if ( oldVM ) {
+		currentVM = oldVM;
+	}
+	return result;
 }
 
 //=================================================================

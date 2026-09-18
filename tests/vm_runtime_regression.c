@@ -7,6 +7,7 @@
 #include <string.h>
 
 #define IMAGE_SIZE 1024
+#define ENTRY_FRAME (8 + 4 * MAX_VMMAIN_ARGS)
 static byte code[4096];
 static int codeLength, instructionCount;
 static vm_t vm;
@@ -36,7 +37,6 @@ void QDECL Com_Error( int level, const char *format, ... ) {
 	longjmp( errorJump, 1 );
 }
 
-void VM_Debug( int level ) { (void)level; }
 void *Hunk_Alloc( int size, ha_pref preference ) {
 	(void)preference;
 	Check( size > 0 && !codeAllocation, "code allocation" );
@@ -45,8 +45,13 @@ void *Hunk_Alloc( int size, ha_pref preference ) {
 	return codeAllocation;
 }
 
+int VM_CallCompiled( vm_t *target, int *args ) {
+	(void)target; (void)args;
+	Check( 0, "unexpected compiled execution" ); return 0;
+}
+
 static int SystemCall( int *args ) {
-	int nestedArgs[10] = {0};
+	int nestedArgs[MAX_VMMAIN_ARGS] = {0};
 	Check( args[0] == 0, "syscall number" );
 	syscalls++;
 	if ( inspectSyscall ) {
@@ -87,7 +92,7 @@ static void Emit( int op, int operand ) {
 static void Execute( int entryStack, int floor, qboolean rejected, int result,
                      const char *errorText ) {
 	vmHeader_t *header;
-	int args[10] = {0};
+	int args[MAX_VMMAIN_ARGS] = {0};
 	memset( &vm, 0, sizeof(vm) );
 	header = calloc( 1, sizeof(*header) + codeLength );
 	vm.dataBase = calloc( 1, IMAGE_SIZE );
@@ -199,14 +204,14 @@ static void TestFrames( void ) {
 		Execute( badEntries[i], 0, qtrue, 0, "entry stack" );
 	}
 	Execute( IMAGE_SIZE, IMAGE_SIZE - 44, qtrue, 0, "entry stack" );
-	Execute( 48, -65536, qfalse, 42, NULL );
+	Execute( ENTRY_FRAME, -65536, qfalse, 42, NULL );
 	for ( i = 0; i < sizeof(badFrames)/sizeof(badFrames[0]); i++ ) {
 		ResetCode(); Emit( OP_ENTER, badFrames[i] ); Run( qtrue, 0, "ENTER frame" );
 		ResetCode(); Emit( OP_CONST, 42 ); Emit( OP_LEAVE, badFrames[i] );
 		Run( qtrue, 0, "LEAVE frame" );
 	}
 	ResetCode(); Emit( OP_ENTER, 16 );
-	Execute( IMAGE_SIZE, IMAGE_SIZE - 52, qtrue, 0, "ENTER frame" );
+	Execute( IMAGE_SIZE, IMAGE_SIZE - ENTRY_FRAME - 4, qtrue, 0, "ENTER frame" );
 }
 
 static void TestTargets( void ) {
@@ -248,7 +253,7 @@ static void StoreWord( int offset, int value ) {
 
 static void TestMemoryAccess( void ) {
 	const int badLoads[] = {IMAGE_SIZE - 1, IMAGE_SIZE - 2, IMAGE_SIZE - 3, -1};
-	const int badArgs[] = {1, 2, 3, 48, 252};
+	const int badArgs[] = {1, 2, 3, ENTRY_FRAME, 252};
 	size_t i;
 	int op, width;
 	for ( op = OP_LOAD2; op <= OP_LOAD4; op++ ) {
@@ -275,7 +280,7 @@ static void TestMemoryAccess( void ) {
 	Emit( OP_CONST, 42 ); Emit( OP_LEAVE, 0 ); Run( qfalse, 42, NULL );
 
 	ResetCode(); Emit( OP_LOCAL, INT_MAX ); Emit( OP_LEAVE, 0 );
-	Run( qfalse, (int)((unsigned int)INT_MAX + IMAGE_SIZE - 48), NULL );
+	Run( qfalse, (int)((unsigned int)INT_MAX + IMAGE_SIZE - ENTRY_FRAME), NULL );
 }
 
 static void TestBlockCopies( void ) {

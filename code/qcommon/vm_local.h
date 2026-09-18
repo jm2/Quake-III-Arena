@@ -175,6 +175,8 @@ int	VM_CallCompiled( vm_t *vm, int *args );
 
 qboolean VM_PrepareInterpreter( vm_t *vm, vmHeader_t *header );
 int	VM_CallInterpreted( vm_t *vm, int *args );
+#define VM_ENTRY_FRAME_SIZE (8 + 4 * MAX_VMMAIN_ARGS)
+int VM_SetupCallFrame( vm_t *vm, const int *args );
 
 vmSymbol_t *VM_ValueToFunctionSymbol( vm_t *vm, int value );
 int VM_SymbolToValue( vm_t *vm, const char *symbol );
