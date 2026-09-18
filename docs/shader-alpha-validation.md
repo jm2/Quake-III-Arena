@@ -4,7 +4,8 @@ This focused #46 follow-up corrects two comparisons of native alphaGen_t with
 colorGen_t. Use AGEN_IDENTITY when deciding whether identity alpha is redundant
 for identity/diffuse RGB, and AGEN_WAVEFORM when requiring matching alpha waves
 before multitexture collapse. Distinct base/amplitude/phase/frequency/function
-values retain separate passes. Unused alpha-wave fields do not block portal
+values retain separate passes. Identity and skipped alpha both retain the
+existing vertex-lit/lightmapped fast-path predicates. Unused alpha-wave fields do not block portal
 alpha collapse. Native stage capacities, text syntax, renderer data/module
 layouts and commercial 1.32c ABIs remain unchanged.
 
@@ -18,7 +19,10 @@ waves, portal alpha with unused wave fields, and the existing distinct RGB-wave
 guard. Rejected collapse retains complete original stages/metadata; accepted
 collapse retains alpha/texture data. Actual R_FindShader/FinishShader registration
 keeps two passes for distinct waves, one pass for identical waves, and reuses
-the cache without allocations. Graphics imports are isolated; no GPU acceptance
+the cache without allocations. The Codex follow-up reproduces loss of the
+specialized iterator before its correction; actual explicit diffuse and
+collapsed lightmapped registration now retain those iterators. Direct selection
+checks both identity/skip and varying-alpha generic cases. Graphics imports are isolated; no GPU acceptance
 is claimed.
 
 The complete shader, skin and legacy font ASan/UBSan runners pass without host
@@ -28,8 +32,8 @@ Temporary libraries are described in [loading evidence](qvm-loading-validation.m
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,737,425 | `e1fb56b48a28477063927aa92d049f866dcf1e14a3e44a02e215e493f07c20d5` |
-| Quake3_TeamArena | 3,885,999 | `cee7ee36bfcc2b9e04314633ddd730f03b81063857b26fbcd678241cd2d19463` |
+| Quake3 | 3,737,425 | `b6a32725653aeb76cadec893282133805f20bce808cca22f9ada6f40a592e629` |
+| Quake3_TeamArena | 3,885,999 | `8d89e5d2031923e057d0616a085c50305c9838e4626f934057185caaf18fcfbb` |
 
 ## Remaining acceptance
 
