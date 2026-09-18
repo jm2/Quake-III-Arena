@@ -171,6 +171,12 @@ fuzzyseperator_t *ReadFuzzySeperators_r(source_t *source)
 		if (def || !strcmp(token.string, "case"))
 		{
 			fs = (fuzzyseperator_t *) GetClearedMemory(sizeof(fuzzyseperator_t));
+			if (!fs)
+			{
+				SourceError(source, "could not allocate fuzzy separator\n");
+				FreeFuzzySeperators_r(firstfs);
+				return NULL;
+			} //end if
 			fs->index = index;
 			if (lastfs) lastfs->next = fs;
 			else firstfs = fs;
@@ -230,6 +236,7 @@ fuzzyseperator_t *ReadFuzzySeperators_r(source_t *source)
 			else
 			{
 				SourceError(source, "invalid name %s\n", token.string);
+				FreeFuzzySeperators_r(firstfs);
 				return NULL;
 			} //end else
 			if (newindent)
@@ -258,6 +265,12 @@ fuzzyseperator_t *ReadFuzzySeperators_r(source_t *source)
 	{
 		SourceWarning(source, "switch without default\n");
 		fs = (fuzzyseperator_t *) GetClearedMemory(sizeof(fuzzyseperator_t));
+		if (!fs)
+		{
+			SourceError(source, "could not allocate default fuzzy separator\n");
+			FreeFuzzySeperators_r(firstfs);
+			return NULL;
+		} //end if
 		fs->index = index;
 		fs->value = MAX_INVENTORYVALUE;
 		fs->weight = 0;
@@ -283,11 +296,18 @@ weightconfig_t *ReadWeightConfig(char *filename)
 	source_t *source;
 	fuzzyseperator_t *fs;
 	weightconfig_t *config = NULL;
+	weight_t *weight;
 #ifdef DEBUG
 	int starttime;
 
 	starttime = Sys_MilliSeconds();
 #endif //DEBUG
+
+	if (!filename || !*filename || strlen(filename) >= sizeof(config->filename))
+	{
+		botimport.Print(PRT_ERROR, "invalid or overlong weight file path\n");
+		return NULL;
+	} //end if
 
 	if (!LibVarGetValue("bot_reloadcharacters"))
 	{
@@ -326,6 +346,12 @@ weightconfig_t *ReadWeightConfig(char *filename)
 	} //end if
 	//
 	config = (weightconfig_t *) GetClearedMemory(sizeof(weightconfig_t));
+	if (!config)
+	{
+		SourceError(source, "could not allocate weight configuration\n");
+		FreeSource(source);
+		return NULL;
+	} //end if
 	config->numweights = 0;
 	Q_strncpyz( config->filename, filename, sizeof(config->filename) );
 	//parse the item config file
@@ -340,18 +366,20 @@ weightconfig_t *ReadWeightConfig(char *filename)
 			} //end if
 			if (!PC_ExpectTokenType(source, TT_STRING, 0, &token))
 			{
-				FreeWeightConfig(config);
-				FreeSource(source);
-				return NULL;
+				goto failure;
 			} //end if
 			StripDoubleQuotes(token.string);
-			config->weights[config->numweights].name = (char *) GetClearedMemory(strlen(token.string) + 1);
-			strcpy(config->weights[config->numweights].name, token.string);
+			weight = &config->weights[config->numweights++];
+			weight->name = (char *) GetClearedMemory(strlen(token.string) + 1);
+			if (!weight->name)
+			{
+				SourceError(source, "could not allocate weight name\n");
+				goto failure;
+			} //end if
+			strcpy(weight->name, token.string);
 			if (!PC_ExpectAnyToken(source, &token))
 			{
-				FreeWeightConfig(config);
-				FreeSource(source);
-				return NULL;
+				goto failure;
 			} //end if
 			newindent = qfalse;
 			if (!strcmp(token.string, "{"))
@@ -359,9 +387,7 @@ weightconfig_t *ReadWeightConfig(char *filename)
 				newindent = qtrue;
 				if (!PC_ExpectAnyToken(source, &token))
 				{
-					FreeWeightConfig(config);
-					FreeSource(source);
-					return NULL;
+					goto failure;
 				} //end if
 			} //end if
 			if (!strcmp(token.string, "switch"))
@@ -369,15 +395,18 @@ weightconfig_t *ReadWeightConfig(char *filename)
 				fs = ReadFuzzySeperators_r(source);
 				if (!fs)
 				{
-					FreeWeightConfig(config);
-					FreeSource(source);
-					return NULL;
+					goto failure;
 				} //end if
-				config->weights[config->numweights].firstseperator = fs;
+				weight->firstseperator = fs;
 			} //end if
 			else if (!strcmp(token.string, "return"))
 			{
 				fs = (fuzzyseperator_t *) GetClearedMemory(sizeof(fuzzyseperator_t));
+				if (!fs)
+				{
+					SourceError(source, "could not allocate return fuzzy separator\n");
+					goto failure;
+				} //end if
 				fs->index = 0;
 				fs->value = MAX_INVENTORYVALUE;
 				fs->next = NULL;
@@ -385,38 +414,30 @@ weightconfig_t *ReadWeightConfig(char *filename)
 				if (!ReadFuzzyWeight(source, fs))
 				{
 					FreeMemory(fs);
-					FreeWeightConfig(config);
-					FreeSource(source);
-					return NULL;
+					goto failure;
 				} //end if
-				config->weights[config->numweights].firstseperator = fs;
+				weight->firstseperator = fs;
 			} //end else if
 			else
 			{
 				SourceError(source, "invalid name %s\n", token.string);
-				FreeWeightConfig(config);
-				FreeSource(source);
-				return NULL;
+				goto failure;
 			} //end else
 			if (newindent)
 			{
 				if (!PC_ExpectTokenString(source, "}"))
 				{
-					FreeWeightConfig(config);
-					FreeSource(source);
-					return NULL;
+					goto failure;
 				} //end if
 			} //end if
-			config->numweights++;
 		} //end if
 		else
 		{
 			SourceError(source, "invalid name %s\n", token.string);
-			FreeWeightConfig(config);
-			FreeSource(source);
-			return NULL;
+			goto failure;
 		} //end else
 	} //end while
+	if (PC_SourceHasError(source)) goto failure;
 	//free the source at the end of a pass
 	FreeSource(source);
 	//if the file was located in a pak file
@@ -434,6 +455,11 @@ weightconfig_t *ReadWeightConfig(char *filename)
 	} //end if
 	//
 	return config;
+
+failure:
+	FreeWeightConfig2(config);
+	FreeSource(source);
+	return NULL;
 } //end of the function ReadWeightConfig
 #if 0
 //===========================================================================

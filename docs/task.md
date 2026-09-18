@@ -367,6 +367,10 @@ QVMs while any P0 item is open.
         string lookahead and include unwinding; failed lexical readers preserve
         queued owners and cannot continue into parents;
         see [error evidence](bot-source-error-validation.md).
+  - [x] Weight configurations reject source errors before cache publication,
+        release current names/partial trees on failure, and roll back nullable
+        configuration/name/separator imports in cached and reload modes;
+        see [weight evidence](bot-weight-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 

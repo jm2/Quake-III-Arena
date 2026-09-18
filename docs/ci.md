@@ -608,3 +608,15 @@ one/two-level includes and EOF remain valid, with balanced file and heap owners.
 Raw-memory unterminated comments reject; file comment compression and publication
 callers remain separate acceptance work. GCC/Clang normal and release fast-math
 sanitizers run the same fixture.
+
+
+The weight runner links the actual native weight/source/lexer/libvar/core bodies.
+Ordinary return, nested case/default and balance fields, implicit zero defaults,
+name lookup, public fuzzy evaluation, cache reuse and the native 128-weight
+warning/truncation behavior stay valid. All eleven configuration/name/separator
+imports fail in both cached/reload modes without private owner or cache mutation.
+Root/nested source errors, recovered inner directive errors, incomplete named
+weights and malformed/duplicate defaults reject before publication. A prior
+cached configuration retains its header, names, tree values and slots. Every
+failed load retries, and complete shutdown frees physical owners. Both GCC/Clang
+normal and release fast-math sanitizers run the fixture.
