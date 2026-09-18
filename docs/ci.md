@@ -60,7 +60,10 @@ PR head while retaining checks on the merged default branch.
     private strides, saved client capacities, controlled index/slot rejection,
     and unchanged registration on failure;
   - checks native debug-polygon point limits, invalid handles, and zero-point
-    line reservation. Botlib syscall families still need range checks.
+    line reservation;
+  - checks returned connection-denial strings in the owning VM with a
+    different active VM, boundary termination, aliases, and optional NULL.
+    Botlib syscall families still need range checks.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -82,6 +85,7 @@ bash tests/run_vm_memory_trap_tests.sh
 bash tests/run_ui_syscall_tests.sh
 bash tests/run_cgame_syscall_tests.sh
 bash tests/run_server_core_syscall_tests.sh
+bash tests/run_vm_returned_string_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
