@@ -12,8 +12,9 @@ has distinct sides and exactly one index occurrence in each declared cluster.
 Preserve retail v4/v5 layouts, portal side order, reordered disjoint spans,
 native payload bytes and commercial 1.32c interfaces. Unclustered native roots
 remain supported when they have zero clusters and native initialization will
-rebuild them. A dummy-only cluster table cannot own reachable areas because
-initialization skips rebuilding it. Isolated areas without outgoing reachabilities can legitimately remain in
+rebuild them. A dummy-only cluster table must have an empty dummy cluster, zero area
+cluster marks and no real portals or reachable areas, because initialization
+skips rebuilding it. Native empty dummy-only tables remain accepted. Isolated areas without outgoing reachabilities can legitimately remain in
 cluster zero: native AAS_FindClusters explicitly skips them when nofaceflood is
 enabled. Preserve their bytes; distinct start/goal routing queries return
 unreachable before cache allocation or mutation. Workspace costs are checked, and nullable failures reject
@@ -21,13 +22,14 @@ without temporary ownership. No hard map-size cap is introduced.
 
 ## Validation
 
-Eight original actual-loader proofs fail: huge area-cluster and negative portal
+Ten original actual-loader proofs fail: huge area-cluster and negative portal
 indices, shared index spans, duplicate local slots, omitted sides and identical
-side clusters, reachable cluster-zero orphans and reachable dummy-only roots
-still report success. Independent literal data covers both versions,
+side clusters, reachable cluster-zero orphans, reachable dummy-only roots,
+real portals in dummy-only tables and nonempty dummy clusters still report
+success. Independent literal data covers both versions,
 side orders, reordered spans, unclustered roots, multiple normal areas, reachable
-portals and multiple portals. Sixteen accepted worlds retain all native mapping
-bytes. Ninety-four malformed signed/one-past/count/span/inverse/slot/prefix/side cases
+portals and multiple portals. Eighteen accepted worlds retain all native mapping
+bytes. One hundred two malformed signed/one-past/count/span/inverse/slot/prefix/side cases
 reject before publication, close once and clear partial logical owners.
 
 Duplicate and partial spans reject even when aggregate counts fit. Each temporary
@@ -49,8 +51,8 @@ sanitizers and optimized GCC checks pass.
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,758,195 | `89d2fea8e3f9875dc8a636ff6cdcab6593ccbba095245650195690863dedf743` |
-| Quake3_TeamArena | 3,906,769 | `a215311d19fc3b4f217d59a60b4a31692517b52c113debbd9a09681dde263e01` |
+| Quake3 | 3,758,195 | `1e985a1c476bf53bdc18e203c38b0f2239b1a98dc0f5f82335e8ec251fb71d8d` |
+| Quake3_TeamArena | 3,906,769 | `a4d4293fb3b130fd259ad358392b2a50b419dcef5b49d01e6d64266f00fd7d20` |
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 

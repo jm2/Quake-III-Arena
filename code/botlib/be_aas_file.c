@@ -566,15 +566,17 @@ static qboolean AAS_ValidateClusterOwnership(void)
 	qboolean valid = qtrue;
 	// Zero-cluster roots are rebuilt by native clustering initialization.
 	if (!aasworld.numclusters) return qtrue;
-	// A dummy-only table skips rebuilding and cannot own reachable areas.
-	if (aasworld.numclusters == 1)
-	{
-		for (i = 1; i < aasworld.numareasettings; i++)
-			if (aasworld.areasettings[i].numreachableareas) return qfalse;
-		return qtrue;
-	}
 	if (aasworld.clusters[0].numareas || aasworld.clusters[0].numreachabilityareas ||
 		aasworld.clusters[0].numportals || aasworld.areasettings[0].cluster) return qfalse;
+	// A dummy-only table skips rebuilding and cannot own real portals or reachable areas.
+	if (aasworld.numclusters == 1)
+	{
+		if (aasworld.numportals > 1) return qfalse;
+		for (i = 1; i < aasworld.numareasettings; i++)
+			if (aasworld.areasettings[i].cluster ||
+				aasworld.areasettings[i].numreachableareas) return qfalse;
+		return qtrue;
+	}
 	for (i = 1; i < aasworld.numareasettings; i++)
 	{
 		aas_areasettings_t *settings = &aasworld.areasettings[i];

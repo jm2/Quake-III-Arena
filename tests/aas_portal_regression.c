@@ -116,6 +116,32 @@ static void TwoPortalsBuild(int version) {
     geometryOffsets[7]=areaOffset;geometryOffsets[8]=settingsOffset=newSettings;portalOffset=newPortal;indexOffset=newIndex;
     sourceSize=advertised=readable=newIndex+16;Encode(version);
 }
+static void EmptyDummyBuild(int version) {
+    UnclusteredBuild(version,1);PortalWord(version,settingsOffset+28+20,0);
+    PortalWord(version,16+8*AASLUMP_REACHABILITY,44);
+}
+static void DummyPortalBuild(int version) {
+    int i;TwoPortalsBuild(version);Encode(version);Word(16+8*AASLUMP_CLUSTERS,16);
+    Word(settingsOffset+28+12,0);Word(settingsOffset+28+20,0);Word(16+8*AASLUMP_REACHABILITY,44);
+    for(i=1;i<3;i++){Word(portalOffset+i*20+4,0);Word(portalOffset+i*20+8,0);Word(portalOffset+i*20+12,0);Word(portalOffset+i*20+16,0);}
+    Encode(version);
+}
+static void DummyTables(void) {
+    int version,field;
+    for(version=4;version<=5;version++) {
+        EmptyDummyBuild(version);Counters();OldWorld();
+        Check(AAS_LoadAASFile("fixture.aas")==BLERR_NOERROR&&aasworld.loaded,"native empty dummy-only table remains accepted");
+        Check(aasworld.numclusters==1&&!memcmp(aasworld.clusters,source+clusterOffset,16)&&!memcmp(aasworld.areasettings,source+settingsOffset,84),"empty dummy-only world retains bytes");
+        DummyPortalBuild(version);Counters();OldWorld();GeometryReject();
+        for(field=0;field<3;field++) {
+            EmptyDummyBuild(version);Counters();OldWorld();Encode(version);
+            Word(clusterOffset+field*4,1);
+            if(field==1)Word(clusterOffset,1);
+            if(field==2){Word(16+8*AASLUMP_PORTALS,20);Word(16+8*AASLUMP_PORTALINDEX,4);Word(indexOffset,0);}
+            Encode(version);GeometryReject();
+        }
+    }
+}
 static void SameClusterBuild(int version) {
     PortalBuild(version);PortalWord(version,portalOffset+28,1);PortalWord(version,portalOffset+36,0);
     PortalWord(version,clusterOffset+24,2);PortalWord(version,clusterOffset+32,0);PortalWord(version,clusterOffset+40,0);
@@ -193,6 +219,8 @@ int main(int argc,char **argv) {
     else if(proof==5){SameClusterBuild(4);Counters();OldWorld();GeometryReject();}
     else if(proof==6){ReachableOrphanBuild(4);Counters();OldWorld();GeometryReject();}
     else if(proof==7){UnclusteredBuild(4,1);Counters();OldWorld();GeometryReject();}
-    else {ValidPortals();UnclusteredPortals();BadPortals();PortalSpanOwnership();ClusterMapping();ReachableOrphans();NativeIsolatedAreas();puts("Native AAS portal/cluster references, local slots, inverse ownership and spans passed (issue #47)");}
+    else if(proof==8){DummyPortalBuild(4);Counters();OldWorld();GeometryReject();}
+    else if(proof==9){EmptyDummyBuild(4);Counters();OldWorld();PortalWord(4,clusterOffset,1);GeometryReject();}
+    else {ValidPortals();UnclusteredPortals();BadPortals();PortalSpanOwnership();ClusterMapping();ReachableOrphans();NativeIsolatedAreas();DummyTables();puts("Native AAS portal/cluster references, local slots, inverse ownership and spans passed (issue #47)");}
     ResetArena();return 0;
 }
