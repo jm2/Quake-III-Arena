@@ -250,6 +250,7 @@ bash tests/run_aas_layout_tests.sh
 bash tests/run_aas_endian_tests.sh
 bash tests/run_aas_writer_tests.sh
 bash tests/run_aas_geometry_tests.sh
+bash tests/run_bot_memory_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
@@ -325,6 +326,13 @@ failures, INT_MIN signed references, paired-plane limits and inverted bounds
 reject before loaded publication and clear partial logical ownership. Normal
 and release fast-math sanitizer configurations both run in CI. Node termination,
 routing references and derived runtime math/budgets remain follow-on work.
+
+The native bot allocator runner compiles shipped, debug and optional tracked
+implementations. Zero-to-65-byte raw/cleared allocations retain ownership-prefix
+and payload behavior. Nullable imports, unsigned/header/signed-length overflow
+and null cleanup cannot write or acquire ownership; tracked counter limits also
+reject before imports. Heap releases physically and hunk releases logically.
+This does not prove that every bot-parser caller handles allocation failure.
 
 ## What this CI does not prove
 
