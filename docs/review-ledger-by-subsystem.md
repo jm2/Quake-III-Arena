@@ -433,7 +433,11 @@ implementation or check, without implying issue completion.
         and incomplete angle directives without partial lookups, preserve
         next-line tokens and release recursively rejected scripts;
         see [include evidence](bot-include-validation.md).
-  - [ ] Finish token merging, character paths, and
+  - [x] Token stringize/paste operations reserve closing quotes and NUL space,
+        reject without partial output, and release private argument/output
+        chains after overflow, malformed arguments or nullable token copies;
+        see [macro evidence](bot-macro-validation.md).
+  - [ ] Finish expression bounds, character paths, and
         allocation cleanup.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
   - [x] Local pool/type/item/string checks, reload-name initialization, and

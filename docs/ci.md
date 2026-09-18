@@ -501,3 +501,15 @@ prefix/terminator/separator costs, overlapping separator removal and recursive
 script rejection exercise diagnostics and exact physical ownership. Eight
 original actual-body proofs cover the unsafe paths. GCC and Clang run normal
 and release fast-math sanitizer configurations in CI.
+
+The macro runner uses the whole actual preprocessor and shared lexer/heap/print
+interfaces. Native text/type goldens also pass against the original code.
+Stringize reserves closing quote/NUL space and builds privately; name/string
+pastes check complete costs before mutation. Boundary, alias and malformed-empty
+cases cover token helpers. Actual parameter substitution, stringized invocation
+metadata and source-queue publication remain valid. Every one of six returned
+nullable copies, oversized paste/stringize, incomplete arguments and unsupported
+pasting releases private argument/output chains without publishing partial
+output. Failed expansion retries and preexisting source tokens remain owned.
+Maximum native parameter count is retained. Eight original actual-body failure
+proofs fail; GCC and Clang normal/release sanitizer CI covers the fixed paths.
