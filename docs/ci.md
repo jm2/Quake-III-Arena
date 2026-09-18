@@ -252,6 +252,7 @@ bash tests/run_aas_writer_tests.sh
 bash tests/run_aas_geometry_tests.sh
 bash tests/run_bot_memory_tests.sh
 bash tests/run_aas_node_tests.sh
+bash tests/run_aas_reachability_tests.sh
 bash tests/run_bot_zone_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
@@ -344,6 +345,13 @@ actual AAS_PointAreaNum body through a strict source seam and retains native
 area/solid results in normal and release fast-math sanitizers. Optional empty
 lumps retain required safe root/plane/area/settings fixtures. Routing references
 and runtime/arena budgets remain follow-on work.
+
+The native AAS reachability runner retains all 32 travel slots, team flags,
+signed geometry references, uint16 travel times and packed elevator/jump-pad/
+func-bob fields. Invalid endpoints, destinations, ordinary references, per-area
+spans and aggregate reference ownership reject before loaded publication. Both
+normal and release fast-math sanitizer configurations check actual loader bodies.
+Portal/cluster references and derived routing math/work budgets remain pending.
 
 ## What this CI does not prove
 
