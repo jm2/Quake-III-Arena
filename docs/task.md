@@ -472,7 +472,8 @@ QVMs while any P0 item is open.
   - [x] Level-item pool validates native count/cost, stages complete free links
         before heap/list replacement and propagates failures before public map
         information reset/map-API success; game load/setup failures disable bot
-        creation/frames until success while human initialization continues. Retail
+        creation/frames until success while human initialization continues. Engine
+        readiness survives game VM resets through an existing syscall query. Retail
         void ABI, prior pool bytes and native positive counts remain;
         see [pool evidence](bot-level-pool-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation

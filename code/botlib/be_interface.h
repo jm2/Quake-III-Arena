@@ -45,6 +45,7 @@ typedef struct botlib_globals_s
 	vec3_t goalorigin;
 	int runai;
 #endif
+	int mapready;						//complete map setup survives game VM restart
 } botlib_globals_t;
 
 
