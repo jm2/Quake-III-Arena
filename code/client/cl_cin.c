@@ -1661,7 +1661,8 @@ void CL_PlayCinematic_f(void) {
 	if (CL_handle >= 0) {
 		do {
 			SCR_RunCinematic();
-		} while (cinTable[currentHandle].buf == NULL && cinTable[currentHandle].status == FMV_PLAY);		// wait for first frame (load codebook and sound)
+		} while (CL_handle >= 0 && CL_handle < MAX_VIDEO_HANDLES &&
+		         cinTable[CL_handle].buf == NULL && cinTable[CL_handle].status == FMV_PLAY);		// wait for first frame (load codebook and sound)
 	}
 }
 
