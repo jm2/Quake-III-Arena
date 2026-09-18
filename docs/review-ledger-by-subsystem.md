@@ -270,6 +270,9 @@ implementation or check, without implying issue completion.
         APIs have [host regressions](jpeg-io-validation.md).
   - [ ] Complete deferred retail JPEG/screenshot acceptance.
 - [ ] [#44 — MD3/MD4 layouts are not validated](https://github.com/jm2/Quake-III-Arena/issues/44)
+  - [x] Complete MD3 layout validation before copying/swapping and staged
+        LOD registration have [host regressions](md3-layout-validation.md).
+  - [ ] Complete MD4 layout/weight/index validation and deferred retail/PPC acceptance.
 - [ ] [#45 — BSP lumps/cross-references are not validated transactionally](https://github.com/jm2/Quake-III-Arena/issues/45)
 - [ ] [#46 — shader/skin/font fixed limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)

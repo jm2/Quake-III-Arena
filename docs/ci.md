@@ -99,7 +99,10 @@ PR head while retaining checks on the merged default branch.
   - executes the actual JPEG renderer and bundled codec with exact input
     allocations, every small-file prefix, short files/refill boundaries,
     grayscale/RGB pixels, malformed tables/dimensions, complete cleanup,
-    tiny screenshots, growing output and injected allocation failures.
+    tiny screenshots, growing output and injected allocation failures;
+  - executes actual MD3 registration/conversion with exact unaligned files,
+    every small-file prefix, signed offsets/counts, disjoint sections, names,
+    indexes, finite metadata, native format limits, LOD staging and fallback.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -133,6 +136,7 @@ bash tests/run_bmp_cursor_tests.sh
 bash tests/run_pcx_cursor_tests.sh
 bash tests/run_tga_cursor_tests.sh
 bash tests/run_jpeg_io_tests.sh
+bash tests/run_md3_layout_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 

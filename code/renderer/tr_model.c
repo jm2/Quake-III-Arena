@@ -22,10 +22,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // tr_models.c -- model loading and caching
 
 #include "tr_local.h"
+#include "tr_model_validate.h"
 
 #define	LL(x) x=LittleLong(x)
 
-static qboolean R_LoadMD3 (model_t *mod, int lod, void *buffer, const char *name );
+static qboolean R_LoadMD3 (model_t *mod, int lod, void *buffer, int length, const char *name );
 static qboolean R_LoadMD4 (model_t *mod, void *buffer, const char *name );
 
 model_t	*loadmodel;
@@ -79,132 +80,88 @@ asked for again.
 ====================
 */
 qhandle_t RE_RegisterModel( const char *name ) {
-	model_t		*mod;
-	unsigned	*buf;
-	int			lod;
-	int			ident;
-	qboolean	loaded;
-	qhandle_t	hModel;
-	int			numLoaded;
+	model_t *mod;
+	byte *buffers[MD3_MAX_LODS] = { NULL, NULL, NULL };
+	int lengths[MD3_MAX_LODS], sizes[MD3_MAX_LODS], lod, other, first = -1, last = -1, total = 0;
+	qhandle_t handle;
+	const char *error;
+	char filename[MAX_QPATH + 16];
 
-	if ( !name || !name[0] ) {
-		ri.Printf( PRINT_ALL, "RE_RegisterModel: NULL name\n" );
-		return 0;
+	if ( !name || !name[0] ) { ri.Printf(PRINT_ALL, "RE_RegisterModel: NULL name\n"); return 0; }
+	if ( strlen(name) >= MAX_QPATH ) { ri.Printf(PRINT_WARNING, "Model name exceeds MAX_QPATH\n"); return 0; }
+	for ( handle = 1; handle < tr.numModels; handle++ ) {
+		mod = tr.models[handle];
+		if ( !strcmp(mod->name, name) ) return mod->type == MOD_BAD ? 0 : handle;
 	}
+	mod = R_AllocModel();
+	if ( !mod ) { ri.Printf(PRINT_WARNING, "RE_RegisterModel: model limit reached (%s)\n", name); return 0; }
+	Q_strncpyz(mod->name, name, sizeof(mod->name));
+	mod->type = MOD_BAD; mod->dataSize = mod->numLods = 0;
+	memset(mod->md3, 0, sizeof(mod->md3)); mod->md4 = NULL; mod->bmodel = NULL;
+	R_SyncRenderThread(); loadmodel = mod;
 
-	if ( strlen( name ) >= MAX_QPATH ) {
-		Com_Printf( "Model name exceeds MAX_QPATH\n" );
-		return 0;
-	}
-
-	//
-	// search the currently loaded models
-	//
-	for ( hModel = 1 ; hModel < tr.numModels; hModel++ ) {
-		mod = tr.models[hModel];
-		if ( !strcmp( mod->name, name ) ) {
-			if( mod->type == MOD_BAD ) {
-				return 0;
-			}
-			return hModel;
+	/* Stage all candidate MD3 LODs before allocating or publishing any model payload. */
+	for ( lod = MD3_MAX_LODS - 1; lod >= 0; lod-- ) {
+		Q_strncpyz(filename, name, sizeof(filename));
+		if ( lod ) {
+			char *extension = strrchr(filename, '.');
+			if ( extension ) *extension = 0;
+			snprintf(filename + strlen(filename), sizeof(filename) - strlen(filename), "_%d.md3", lod);
 		}
-	}
-
-	// allocate a new model_t
-
-	if ( ( mod = R_AllocModel() ) == NULL ) {
-		ri.Printf( PRINT_WARNING, "RE_RegisterModel: R_AllocModel() failed for '%s'\n", name);
-		return 0;
-	}
-
-	// only set the name after the model has been successfully loaded
-	Q_strncpyz( mod->name, name, sizeof( mod->name ) );
-
-
-	// make sure the render thread is stopped
-	R_SyncRenderThread();
-
-	mod->numLods = 0;
-
-	//
-	// load the files
-	//
-	numLoaded = 0;
-
-	for ( lod = MD3_MAX_LODS - 1 ; lod >= 0 ; lod-- ) {
-		char filename[1024];
-
-		strcpy( filename, name );
-
-		if ( lod != 0 ) {
-			char namebuf[80];
-
-			if ( strrchr( filename, '.' ) ) {
-				*strrchr( filename, '.' ) = 0;
+		lengths[lod] = ri.FS_ReadFile(filename, (void **)&buffers[lod]);
+		if ( !buffers[lod] ) continue;
+		error = NULL;
+		if ( lengths[lod] < 4 ) error = "truncated identification";
+		else if ( R_ModelWord(buffers[lod]) == MD4_IDENT ) {
+			/* Only the requested base file may select MD4; optional paths are MD3 LODs. */
+			if ( lod ) error = "MD4 identification in optional MD3 LOD";
+			else {
+				/* Complete MD4 layout validation is a separate issue #44 step. */
+				if ( lengths[lod] < (int)sizeof(md4Header_t) || !R_LoadMD4(mod,buffers[lod],name) ) {
+					error = "invalid MD4 header"; goto fail;
+				}
+				mod->numLods = 1;
+				goto success;
 			}
-			sprintf( namebuf, "_%d.md3", lod );
-			strcat( filename, namebuf );
 		}
-
-		ri.FS_ReadFile( filename, (void **)&buf );
-		if ( !buf ) {
+		else if ( R_ModelWord(buffers[lod]) != MD3_IDENT ) error = "unknown identification";
+		else error = R_ValidateMD3(buffers[lod], lengths[lod], &sizes[lod]);
+		if ( error ) {
+			if ( !lod ) goto fail;
+			ri.FS_FreeFile(buffers[lod]); buffers[lod] = NULL;
+			ri.Printf(PRINT_WARNING, "RE_RegisterModel: ignoring invalid optional LOD (%s: %s)\n", filename, error);
 			continue;
 		}
-		
-		loadmodel = mod;
-		
-		ident = LittleLong(*(unsigned *)buf);
-		if ( ident == MD4_IDENT ) {
-			loaded = R_LoadMD4( mod, buf, name );
-		} else {
-			if ( ident != MD3_IDENT ) {
-				ri.Printf (PRINT_WARNING,"RE_RegisterModel: unknown fileid for %s\n", name);
-				goto fail;
-			}
-
-			loaded = R_LoadMD3( mod, lod, buf, name );
-		}
-		
-		ri.FS_FreeFile (buf);
-
-		if ( !loaded ) {
-			if ( lod == 0 ) {
-				goto fail;
-			} else {
-				break;
-			}
-		} else {
-			mod->numLods++;
-			numLoaded++;
-			// if we have a valid model and are biased
-			// so that we won't see any higher detail ones,
-			// stop loading them
-//			if ( lod <= r_lodbias->integer ) {
-//				break;
-//			}
-		}
+		first = lod;
 	}
-
-	if ( numLoaded ) {
-		// duplicate into higher lod spots that weren't
-		// loaded, in case the user changes r_lodbias on the fly
-		for ( lod-- ; lod >= 0 ; lod-- ) {
-			mod->numLods++;
-			mod->md3[lod] = mod->md3[lod+1];
+	if ( first < 0 ) { error = "no model file"; goto fail; }
+	/* Selected render LODs use frame indexes validated against the most detailed available model. */
+	for ( lod = first; lod < MD3_MAX_LODS; lod++ ) if ( buffers[lod] ) {
+		if ( R_MODEL_FIELD(buffers[lod],md3Header_t,numFrames) != R_MODEL_FIELD(buffers[first],md3Header_t,numFrames) ) {
+			ri.FS_FreeFile(buffers[lod]); buffers[lod] = NULL;
+			ri.Printf(PRINT_WARNING, "RE_RegisterModel: ignoring LOD with incompatible frames (%s)\n", name);
+			continue;
 		}
-
-		return mod->index;
+		if ( sizes[lod] > INT_MAX - total ) { error = "total model size overflow"; goto fail; }
+		total += sizes[lod]; last = lod;
 	}
-#ifdef _DEBUG
-	else {
-		ri.Printf (PRINT_WARNING,"RE_RegisterModel: couldn't load %s\n", name);
+	for ( lod = last; lod >= first; lod-- ) if ( buffers[lod] ) {
+		if ( !R_LoadMD3(mod,lod,buffers[lod],lengths[lod],name) ) { error = "MD3 conversion failed"; goto fail; }
 	}
-#endif
-
+	/* Fill missing LODs from the nearest available coarser model or the most detailed fallback. */
+	for ( lod = 0; lod < MD3_MAX_LODS; lod++ ) if ( !mod->md3[lod] ) {
+		for ( other = lod + 1; other < MD3_MAX_LODS && !mod->md3[other]; other++ ) {}
+		mod->md3[lod] = mod->md3[other < MD3_MAX_LODS ? other : first];
+	}
+	mod->numLods = last + 1;
+success:
+	for ( lod = 0; lod < MD3_MAX_LODS; lod++ ) if ( buffers[lod] ) ri.FS_FreeFile(buffers[lod]);
+	return mod->index;
 fail:
-	// we still keep the model_t around, so if the model name is asked for
-	// again, we won't bother scanning the filesystem
-	mod->type = MOD_BAD;
+	for ( lod = 0; lod < MD3_MAX_LODS; lod++ ) if ( buffers[lod] ) ri.FS_FreeFile(buffers[lod]);
+	mod->type = MOD_BAD; mod->dataSize = mod->numLods = 0;
+	memset(mod->md3, 0, sizeof(mod->md3)); mod->md4 = NULL; mod->bmodel = NULL;
+	ri.Printf(PRINT_WARNING, "RE_RegisterModel: %s: %s\n", name, error);
 	return 0;
 }
 
@@ -214,9 +171,8 @@ fail:
 R_LoadMD3
 =================
 */
-static qboolean R_LoadMD3 (model_t *mod, int lod, void *buffer, const char *mod_name ) {
+static qboolean R_LoadMD3 (model_t *mod, int lod, void *buffer, int length, const char *mod_name ) {
 	int					i, j;
-	md3Header_t			*pinmodel;
     md3Frame_t			*frame;
 	md3Surface_t		*surf;
 	md3Shader_t			*shader;
@@ -224,24 +180,19 @@ static qboolean R_LoadMD3 (model_t *mod, int lod, void *buffer, const char *mod_
 	md3St_t				*st;
 	md3XyzNormal_t		*xyz;
 	md3Tag_t			*tag;
-	int					version;
 	int					size;
 
-	pinmodel = (md3Header_t *)buffer;
-
-	version = LittleLong (pinmodel->version);
-	if (version != MD3_VERSION) {
-		ri.Printf( PRINT_WARNING, "R_LoadMD3: %s has wrong version (%i should be %i)\n",
-				 mod_name, version, MD3_VERSION);
-		return qfalse;
+	{
+		const char *error = R_ValidateMD3(buffer, length, &size);
+		if ( error || lod < 0 || lod >= MD3_MAX_LODS || (mod->dataSize < 0 || mod->dataSize > INT_MAX - size) ) {
+			ri.Printf(PRINT_WARNING, "R_LoadMD3: %s: %s\n", mod_name, error ? error : "invalid LOD/total size");
+			return qfalse;
+		}
 	}
-
+	mod->md3[lod] = ri.Hunk_Alloc(size, h_low);
+	Com_Memcpy(mod->md3[lod], buffer, size);
 	mod->type = MOD_MESH;
-	size = LittleLong(pinmodel->ofsEnd);
 	mod->dataSize += size;
-	mod->md3[lod] = ri.Hunk_Alloc( size, h_low );
-
-	Com_Memcpy (mod->md3[lod], buffer, LittleLong(pinmodel->ofsEnd) );
 
     LL(mod->md3[lod]->ident);
     LL(mod->md3[lod]->version);
@@ -609,6 +560,7 @@ static md3Tag_t *R_GetTag( md3Header_t *mod, int frame, const char *tagName ) {
 	md3Tag_t		*tag;
 	int				i;
 
+	if ( frame < 0 ) frame = 0;
 	if ( frame >= mod->numFrames ) {
 		// it is possible to have a bad frame while changing models, so don't error
 		frame = mod->numFrames - 1;
