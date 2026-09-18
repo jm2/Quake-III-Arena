@@ -42,8 +42,8 @@ validation with the temporary libraries in [loading evidence](qvm-loading-valida
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,682,175 | `dff2e6686722767855c4486a0a1802567f261b2b13cd74817c94d706c4918966` |
-| Quake3_TeamArena | 3,830,749 | `2a6d7da0413e461a76791adbcb9df95fbabe0b83bea09ae4294be85ac4b31bfa` |
+| Quake3 | 3,682,175 | `2294425e69d93459e628bd3bd31d90d8d355b0d27543be852cc779354f6eecd2` |
+| Quake3_TeamArena | 3,830,749 | `ea8890808fa24150ad6272e1c38ae9fc04cbdf91946fa2fa00d7200bebbbf325` |
 
 ## Remaining acceptance
 
@@ -56,3 +56,6 @@ tracks the intro/idlogo bypass.
 After integrating the stream PR with reviewed master through #64/#68, both
 RoQ fixtures, eight Python tests and both Mac builds pass. The table records
 these integrated artifacts; the CI workflow retains every QVM/RoQ runner.
+
+The stream console-command shutdown fix is integrated. Both RoQ fixtures
+and both products pass again; the table records the resulting artifacts.
