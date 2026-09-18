@@ -444,7 +444,7 @@ static void ProjectDlightTexture( void ) {
 	for ( l = 0 ; l < backEnd.refdef.num_dlights ; l++ ) {
 		dlight_t	*dl;
 
-		if ( !( tess.dlightBits & ( 1 << l ) ) ) {
+		if ( !( tess.dlightBits & ( 1u << l ) ) ) {
 			continue;	// this surface definately doesn't have any of this light
 		}
 		texCoords = texCoordsArray[0];

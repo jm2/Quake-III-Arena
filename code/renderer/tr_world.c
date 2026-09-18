@@ -20,6 +20,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 #include "tr_local.h"
+#include <limits.h>
 
 
 
@@ -166,14 +167,14 @@ static int R_DlightFace( srfSurfaceFace_t *face, int dlightBits ) {
 	dlight_t	*dl;
 
 	for ( i = 0 ; i < tr.refdef.num_dlights ; i++ ) {
-		if ( ! ( dlightBits & ( 1 << i ) ) ) {
+		if ( ! ( dlightBits & ( 1u << i ) ) ) {
 			continue;
 		}
 		dl = &tr.refdef.dlights[i];
 		d = DotProduct( dl->origin, face->plane.normal ) - face->plane.dist;
 		if ( d < -dl->radius || d > dl->radius ) {
 			// dlight doesn't reach the plane
-			dlightBits &= ~( 1 << i );
+			dlightBits &= ~( 1u << i );
 		}
 	}
 
@@ -190,7 +191,7 @@ static int R_DlightGrid( srfGridMesh_t *grid, int dlightBits ) {
 	dlight_t	*dl;
 
 	for ( i = 0 ; i < tr.refdef.num_dlights ; i++ ) {
-		if ( ! ( dlightBits & ( 1 << i ) ) ) {
+		if ( ! ( dlightBits & ( 1u << i ) ) ) {
 			continue;
 		}
 		dl = &tr.refdef.dlights[i];
@@ -201,7 +202,7 @@ static int R_DlightGrid( srfGridMesh_t *grid, int dlightBits ) {
 			|| dl->origin[2] - dl->radius > grid->meshBounds[1][2]
 			|| dl->origin[2] + dl->radius < grid->meshBounds[0][2] ) {
 			// dlight doesn't reach the bounds
-			dlightBits &= ~( 1 << i );
+			dlightBits &= ~( 1u << i );
 		}
 	}
 
@@ -223,7 +224,7 @@ static int R_DlightTrisurf( srfTriangles_t *surf, int dlightBits ) {
 	dlight_t	*dl;
 
 	for ( i = 0 ; i < tr.refdef.num_dlights ; i++ ) {
-		if ( ! ( dlightBits & ( 1 << i ) ) ) {
+		if ( ! ( dlightBits & ( 1u << i ) ) ) {
 			continue;
 		}
 		dl = &tr.refdef.dlights[i];
@@ -234,7 +235,7 @@ static int R_DlightTrisurf( srfTriangles_t *surf, int dlightBits ) {
 			|| dl->origin[2] - dl->radius > grid->meshBounds[1][2]
 			|| dl->origin[2] + dl->radius < grid->meshBounds[0][2] ) {
 			// dlight doesn't reach the bounds
-			dlightBits &= ~( 1 << i );
+			dlightBits &= ~( 1u << i );
 		}
 	}
 
@@ -353,14 +354,22 @@ void R_AddBrushModelSurfaces ( trRefEntity_t *ent ) {
 R_RecursiveWorldNode
 ================
 */
+typedef struct {
+	mnode_t *node;
+	int planeBits,dlightBits;
+} worldNodeFrame_t;
+
+/* Preserve each pending back child's inherited culling/lighting state explicitly. */
 static void R_RecursiveWorldNode( mnode_t *node, int planeBits, int dlightBits ) {
+	worldNodeFrame_t inlineFrames[64],*frames=inlineFrames,*grown,*pending;
+	size_t count=0,capacity=64,newCapacity,maxFrames;
+	int newDlights[2];
 
-	do {
-		int			newDlights[2];
-
+	maxFrames=tr.world && tr.world->numDecisionNodes>0?(size_t)tr.world->numDecisionNodes:0;
+	for ( ;; ) {
 		// if the node wasn't marked as potentially visible, exit
 		if (node->visframe != tr.visCount) {
-			return;
+			goto nextWorldNode;
 		}
 
 		// if the bounding volume is outside the frustum, nothing
@@ -372,7 +381,7 @@ static void R_RecursiveWorldNode( mnode_t *node, int planeBits, int dlightBits )
 			if ( planeBits & 1 ) {
 				r = BoxOnPlaneSide(node->mins, node->maxs, &tr.viewParms.frustum[0]);
 				if (r == 2) {
-					return;						// culled
+					goto nextWorldNode;						// culled
 				}
 				if ( r == 1 ) {
 					planeBits &= ~1;			// all descendants will also be in front
@@ -382,7 +391,7 @@ static void R_RecursiveWorldNode( mnode_t *node, int planeBits, int dlightBits )
 			if ( planeBits & 2 ) {
 				r = BoxOnPlaneSide(node->mins, node->maxs, &tr.viewParms.frustum[1]);
 				if (r == 2) {
-					return;						// culled
+					goto nextWorldNode;						// culled
 				}
 				if ( r == 1 ) {
 					planeBits &= ~2;			// all descendants will also be in front
@@ -392,7 +401,7 @@ static void R_RecursiveWorldNode( mnode_t *node, int planeBits, int dlightBits )
 			if ( planeBits & 4 ) {
 				r = BoxOnPlaneSide(node->mins, node->maxs, &tr.viewParms.frustum[2]);
 				if (r == 2) {
-					return;						// culled
+					goto nextWorldNode;						// culled
 				}
 				if ( r == 1 ) {
 					planeBits &= ~4;			// all descendants will also be in front
@@ -402,7 +411,7 @@ static void R_RecursiveWorldNode( mnode_t *node, int planeBits, int dlightBits )
 			if ( planeBits & 8 ) {
 				r = BoxOnPlaneSide(node->mins, node->maxs, &tr.viewParms.frustum[3]);
 				if (r == 2) {
-					return;						// culled
+					goto nextWorldNode;						// culled
 				}
 				if ( r == 1 ) {
 					planeBits &= ~8;			// all descendants will also be in front
@@ -411,9 +420,7 @@ static void R_RecursiveWorldNode( mnode_t *node, int planeBits, int dlightBits )
 
 		}
 
-		if ( node->contents != -1 ) {
-			break;
-		}
+		if ( node->contents != -1 ) goto worldLeaf;
 
 		// node is just a decision point, so go down both sides
 		// since we don't care about sort orders, just go positive to negative
@@ -428,70 +435,91 @@ static void R_RecursiveWorldNode( mnode_t *node, int planeBits, int dlightBits )
 				dlight_t	*dl;
 				float		dist;
 
-				if ( dlightBits & ( 1 << i ) ) {
+				if ( dlightBits & ( 1u << i ) ) {
 					dl = &tr.refdef.dlights[i];
 					dist = DotProduct( dl->origin, node->plane->normal ) - node->plane->dist;
 					
 					if ( dist > -dl->radius ) {
-						newDlights[0] |= ( 1 << i );
+						newDlights[0] |= ( 1u << i );
 					}
 					if ( dist < dl->radius ) {
-						newDlights[1] |= ( 1 << i );
+						newDlights[1] |= ( 1u << i );
 					}
 				}
 			}
 		}
 
-		// recurse down the children, front side first
-		R_RecursiveWorldNode (node->children[0], planeBits, newDlights[0] );
 
-		// tail recurse
-		node = node->children[1];
-		dlightBits = newDlights[1];
-	} while ( 1 );
+		if ( count==capacity ) {
+			newCapacity=capacity<maxFrames/2?capacity*2:maxFrames;
+			if ( newCapacity<=capacity || newCapacity>(INT_MAX-4096)/sizeof(*frames) ) {
+				if ( frames!=inlineFrames ) free(frames);
+				ri.Error(ERR_DROP,"R_RecursiveWorldNode: frame storage exceeds native capacity");
+				return;
+			}
+			grown=malloc(newCapacity*sizeof(*frames));
+			if ( !grown ) {
+				if ( frames!=inlineFrames ) free(frames);
+				ri.Error(ERR_DROP,"R_RecursiveWorldNode: cannot allocate frame storage");
+				return;
+			}
+			Com_Memcpy(grown,frames,count*sizeof(*frames));
+			if ( frames!=inlineFrames ) free(frames);
+			frames=grown;capacity=newCapacity;
+		}
+		pending=&frames[count++];pending->node=node->children[1];
+		pending->planeBits=planeBits;pending->dlightBits=newDlights[1];
+		node=node->children[0];dlightBits=newDlights[0];
+		continue;
 
-	{
-		// leaf node, so add mark surfaces
-		int			c;
-		msurface_t	*surf, **mark;
+worldLeaf:
+		{
+			// leaf node, so add mark surfaces
+			int			c;
+			msurface_t	*surf, **mark;
 
-		tr.pc.c_leafs++;
+			tr.pc.c_leafs++;
 
-		// add to z buffer bounds
-		if ( node->mins[0] < tr.viewParms.visBounds[0][0] ) {
-			tr.viewParms.visBounds[0][0] = node->mins[0];
-		}
-		if ( node->mins[1] < tr.viewParms.visBounds[0][1] ) {
-			tr.viewParms.visBounds[0][1] = node->mins[1];
-		}
-		if ( node->mins[2] < tr.viewParms.visBounds[0][2] ) {
-			tr.viewParms.visBounds[0][2] = node->mins[2];
+			// add to z buffer bounds
+			if ( node->mins[0] < tr.viewParms.visBounds[0][0] ) {
+				tr.viewParms.visBounds[0][0] = node->mins[0];
+			}
+			if ( node->mins[1] < tr.viewParms.visBounds[0][1] ) {
+				tr.viewParms.visBounds[0][1] = node->mins[1];
+			}
+			if ( node->mins[2] < tr.viewParms.visBounds[0][2] ) {
+				tr.viewParms.visBounds[0][2] = node->mins[2];
+			}
+
+			if ( node->maxs[0] > tr.viewParms.visBounds[1][0] ) {
+				tr.viewParms.visBounds[1][0] = node->maxs[0];
+			}
+			if ( node->maxs[1] > tr.viewParms.visBounds[1][1] ) {
+				tr.viewParms.visBounds[1][1] = node->maxs[1];
+			}
+			if ( node->maxs[2] > tr.viewParms.visBounds[1][2] ) {
+				tr.viewParms.visBounds[1][2] = node->maxs[2];
+			}
+
+			// add the individual surfaces
+			mark = node->firstmarksurface;
+			c = node->nummarksurfaces;
+			while (c--) {
+				// the surface may have already been added if it
+				// spans multiple leafs
+				surf = *mark;
+				R_AddWorldSurface( surf, dlightBits );
+				mark++;
+			}
 		}
 
-		if ( node->maxs[0] > tr.viewParms.visBounds[1][0] ) {
-			tr.viewParms.visBounds[1][0] = node->maxs[0];
-		}
-		if ( node->maxs[1] > tr.viewParms.visBounds[1][1] ) {
-			tr.viewParms.visBounds[1][1] = node->maxs[1];
-		}
-		if ( node->maxs[2] > tr.viewParms.visBounds[1][2] ) {
-			tr.viewParms.visBounds[1][2] = node->maxs[2];
-		}
-
-		// add the individual surfaces
-		mark = node->firstmarksurface;
-		c = node->nummarksurfaces;
-		while (c--) {
-			// the surface may have already been added if it
-			// spans multiple leafs
-			surf = *mark;
-			R_AddWorldSurface( surf, dlightBits );
-			mark++;
-		}
+nextWorldNode:
+		if ( !count ) break;
+		pending=&frames[--count];node=pending->node;
+		planeBits=pending->planeBits;dlightBits=pending->dlightBits;
 	}
-
+	if ( frames!=inlineFrames ) free(frames);
 }
-
 
 /*
 ===============
@@ -643,6 +671,7 @@ R_AddWorldSurfaces
 =============
 */
 void R_AddWorldSurfaces (void) {
+	unsigned int lightMask;
 	if ( !r_drawworld->integer ) {
 		return;
 	}
@@ -664,5 +693,7 @@ void R_AddWorldSurfaces (void) {
 	if ( tr.refdef.num_dlights > 32 ) {
 		tr.refdef.num_dlights = 32 ;
 	}
-	R_RecursiveWorldNode( tr.world->nodes, 15, ( 1 << tr.refdef.num_dlights ) - 1 );
+	if ( tr.refdef.num_dlights<0 ) tr.refdef.num_dlights=0;
+	lightMask=tr.refdef.num_dlights==32?~0u:((1u<<tr.refdef.num_dlights)-1u);
+	R_RecursiveWorldNode( tr.world->nodes, 15, (int)lightMask );
 }
