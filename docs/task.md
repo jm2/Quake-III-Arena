@@ -580,15 +580,19 @@ QVMs while any P0 item is open.
 
 ## Exact continuation point
 
-Current source is master `7f1e8168688ca393b2097c22508db998768b1c0b`, through
-merged #148. The [continuation evidence](review-continuation-2026-09-18.md)
-records the refreshed 52-issue inventory, pending #149–#181 stack and gates.
+Current source is master `bae97bac1c59479ae8516cb43ae9a19d723c25a8`, through
+merged #157. The [continuation evidence](review-continuation-2026-09-18.md)
+records the refreshed 52-issue inventory, pending stack and its current gates.
 All 52 issue-level entries remain open; nested implementation checks cover only
 the stated work. The milestones below retain their dated source evidence.
 
 - [x] AAS portal/travel/routing/workspace/cache/init steps #126–#130/#132 and
       native variable/parser/character steps #131/#133–#148 merged
       after exact-head CI, completed clean Codex and resolved bot findings.
+- [x] Source steps #149–#157 merged after four green exact-head CI checks,
+      completed clean Codex and every resolved review finding. #158's later
+      CodeRabbit documentation finding is fixed/resolved with renewed clean
+      Codex; its current-head CI remains required before dependent merges.
 - [ ] Merge eligible independent steps and the pending dependency chain,
       rechecking four successful Portable CI jobs, completed clean current-head
       Codex and all resolved CodeRabbit findings immediately before each merge.
