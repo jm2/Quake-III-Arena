@@ -25,7 +25,7 @@ static void Goldens(void) {
         {400,{132,520,400}},{5000,{1650,6500,5000}}
     };
     const struct {float distance;unsigned short time;} boundaries[]={
-        {65535,65535},{65536,0},{65537,1},{2147483520.0f,65408}
+        {65535,65535},{65536,65535},{65537,65535},{2147483520.0f,65535}
     };
     int kind,axis,reverse;size_t i;
     for(kind=0;kind<3;kind++)for(i=0;i<sizeof(cases)/sizeof(cases[0]);i++)for(axis=0;axis<3;axis++)for(reverse=0;reverse<2;reverse++) {
@@ -40,7 +40,7 @@ static void Goldens(void) {
     Mode(2);
     for(i=0;i<sizeof(boundaries)/sizeof(boundaries[0]);i++) {
         vec3_t start={boundaries[i].distance,0,0},end={0,0,0};
-        Check(AAS_AreaTravelTime(1,start,end)==boundaries[i].time,"defined signed conversion and legacy uint16 wrap remain unchanged");
+        Check(AAS_AreaTravelTime(1,start,end)==boundaries[i].time,"native uint16 boundary and longer distances saturate without wrapping");
     }
     for(kind=0;kind<3;kind++) {
         vec3_t start={Float(0x80000000u),0,0},end={0,0,0};Mode(kind);

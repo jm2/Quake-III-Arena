@@ -289,9 +289,9 @@ QVMs while any P0 item is open.
   - [x] Portal/cluster indices, local area slots, spans and inverse ownership
         validate before loaded; native side ordering and unclustered roots
         retain bytes; see [portal evidence](aas-portal-validation.md).
-  - [x] Derived area travel times reject nonfinite/unrepresentable signed
-        conversions while preserving defined native speed/minimum/uint16
-        results; see [travel-time evidence](aas-travel-time-validation.md).
+  - [x] Derived area travel times and cache sums saturate before overflowing
+        native uint16 capacity; representable speed/minimum and route costs
+        retain native results; see [travel-time evidence](aas-travel-time-validation.md).
   - [ ] Validate the entire AAS file and graph before setting `loaded`.
 - [ ] [#48 — bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48)
       — **high**, parser fixed-buffer corruption/invalid cleanup.

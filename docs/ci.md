@@ -403,6 +403,12 @@ invokes this runner with explicit Clang.
 
 The area travel-time runner extracts actual native area classification and
 conversion bodies with strict source seams and uses the real vector length.
-Literal walk/crouch/swim, minimum-time and signed/uint16 boundary goldens retain
-legacy results. Nonfinite inputs and finite overflowing derived distances reject
-before integer casts under normal and release fast-math sanitizers.
+Literal walk/crouch/swim, minimum-time and representable route costs retain
+legacy results. Nonfinite inputs and finite overflowing derived distances
+saturate before integer casts under normal and release fast-math sanitizers.
+The routing-time runner exercises actual area/portal cache updates, route
+selection and hide-area routing, replacing only cache providers and using
+the native projection body. Literal normal and maximum costs
+prove that area/crossing/reachability additions cannot wrap into cheap routes;
+nonfinite or oversized float cache starts saturate before uint16 conversion,
+and enemy-distance penalties cannot overflow casts or additions.

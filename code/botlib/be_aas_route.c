@@ -471,12 +471,28 @@ void AAS_CreateReversedReachability(void)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
+/* Native routing fields are uint16; overflow must not create cheap paths. */
+static unsigned short AAS_TravelTimeFromFloat(float value)
+{
+	union { float value; unsigned int bits; } representation;
+	representation.value = value;
+	if ((representation.bits & 0x7f800000u) == 0x7f800000u || value >= USHRT_MAX)
+		return USHRT_MAX;
+	if (value <= 0) return 0;
+	return (unsigned short)value;
+}
+
+static unsigned short AAS_TravelTimeSum(unsigned int first, unsigned int second)
+{
+	if (first >= USHRT_MAX || second >= USHRT_MAX - first) return USHRT_MAX;
+	return (unsigned short)(first + second);
+}
+
 unsigned short int AAS_AreaTravelTime(int areanum, vec3_t start, vec3_t end)
 {
 	int intdist;
 	float dist;
 	vec3_t dir;
-	union { float value; unsigned int bits; } representation;
 
 	VectorSubtract(start, end, dir);
 	dist = VectorLength(dir);
@@ -487,11 +503,7 @@ unsigned short int AAS_AreaTravelTime(int areanum, vec3_t start, vec3_t end)
 	//normal walk area
 	else dist *= DISTANCEFACTOR_WALK;
 	//
-	representation.value = dist;
-	// Fast-math-safe finite test; 2^31 is the first unrepresentable positive int.
-	if ((representation.bits & 0x7f800000u) == 0x7f800000u ||
-		dist >= 2147483648.0f) return USHRT_MAX;
-	intdist = (int) dist;
+	intdist = AAS_TravelTimeFromFloat(dist);
 	//make sure the distance isn't zero
 	if (intdist <= 0) intdist = 1;
 	return intdist;
@@ -1326,9 +1338,9 @@ void AAS_UpdateAreaRoutingCache(aas_routingcache_t *areacache)
 	curupdate->areanum = areacache->areanum;
 	//VectorCopy(areacache->origin, curupdate->start);
 	curupdate->areatraveltimes = startareatraveltimes;
-	curupdate->tmptraveltime = areacache->starttraveltime;
+	curupdate->tmptraveltime = AAS_TravelTimeFromFloat(areacache->starttraveltime);
 	//
-	areacache->traveltimes[clusterareanum] = areacache->starttraveltime;
+	areacache->traveltimes[clusterareanum] = curupdate->tmptraveltime;
 	//put the area to start with in the current read list
 	curupdate->next = NULL;
 	curupdate->prev = NULL;
@@ -1368,10 +1380,8 @@ void AAS_UpdateAreaRoutingCache(aas_routingcache_t *areacache)
 			if (clusterareanum < 0 || clusterareanum >= numreachabilityareas) continue;
 			//time already travelled plus the traveltime through
 			//the current area plus the travel time from the reachability
-			t = curupdate->tmptraveltime +
-						//AAS_AreaTravelTime(curupdate->areanum, curupdate->start, reach->end) +
-						curupdate->areatraveltimes[i] +
-							reach->traveltime;
+			t = AAS_TravelTimeSum(AAS_TravelTimeSum(curupdate->tmptraveltime,
+				curupdate->areatraveltimes[i]), reach->traveltime);
 			//
 			if (!areacache->traveltimes[clusterareanum] ||
 					areacache->traveltimes[clusterareanum] > t)
@@ -1474,12 +1484,12 @@ void AAS_UpdatePortalRoutingCache(aas_routingcache_t *portalcache)
 	curupdate = &aasworld.portalupdate[aasworld.numportals];
 	curupdate->cluster = portalcache->cluster;
 	curupdate->areanum = portalcache->areanum;
-	curupdate->tmptraveltime = portalcache->starttraveltime;
+	curupdate->tmptraveltime = AAS_TravelTimeFromFloat(portalcache->starttraveltime);
 	//if the start area is a cluster portal, store the travel time for that portal
 	clusternum = aasworld.areasettings[portalcache->areanum].cluster;
 	if (clusternum < 0)
 	{
-		portalcache->traveltimes[-clusternum] = portalcache->starttraveltime;
+		portalcache->traveltimes[-clusternum] = curupdate->tmptraveltime;
 	} //end if
 	//put the area to start with in the current read list
 	curupdate->next = NULL;
@@ -1514,7 +1524,7 @@ void AAS_UpdatePortalRoutingCache(aas_routingcache_t *portalcache)
 			//
 			t = cache->traveltimes[clusterareanum];
 			if (!t) continue;
-			t += curupdate->tmptraveltime;
+			t = AAS_TravelTimeSum(t, curupdate->tmptraveltime);
 			//
 			if (!portalcache->traveltimes[portalnum] ||
 					portalcache->traveltimes[portalnum] > t)
@@ -1531,7 +1541,7 @@ void AAS_UpdatePortalRoutingCache(aas_routingcache_t *portalcache)
 				} //end else
 				nextupdate->areanum = portal->areanum;
 				//add travel time through the actual portal area for the next update
-				nextupdate->tmptraveltime = t + aasworld.portalmaxtraveltimes[portalnum];
+				nextupdate->tmptraveltime = AAS_TravelTimeSum(t, aasworld.portalmaxtraveltimes[portalnum]);
 				if (!nextupdate->inlist)
 				{
 					// we add the update to the end of the list
@@ -1743,20 +1753,20 @@ int AAS_AreaRouteToGoalArea(int areanum, vec3_t origin, int goalareanum, int tra
 		if (!areacache->traveltimes[clusterareanum]) continue;
 		//total travel time is the travel time the portal area is from
 		//the goal area plus the travel time towards the portal area
-		t = portalcache->traveltimes[portalnum] + areacache->traveltimes[clusterareanum];
+		t = AAS_TravelTimeSum(portalcache->traveltimes[portalnum], areacache->traveltimes[clusterareanum]);
 		//FIXME: add the exact travel time through the actual portal area
 		//NOTE: for now we just add the largest travel time through the portal area
 		//		because we can't directly calculate the exact travel time
 		//		to be more specific we don't know which reachability was used to travel
 		//		into the portal area
-		t += aasworld.portalmaxtraveltimes[portalnum];
+		t = AAS_TravelTimeSum(t, aasworld.portalmaxtraveltimes[portalnum]);
 		//
 		if (origin)
 		{
 			*reachnum = aasworld.areasettings[areanum].firstreachablearea +
 							areacache->reachabilities[clusterareanum];
 			reach = aasworld.reachability + *reachnum;
-			t += AAS_AreaTravelTime(areanum, origin, reach->start);
+			t = AAS_TravelTimeSum(t, AAS_AreaTravelTime(areanum, origin, reach->start));
 		} //end if
 		//if the time is better than the one already found
 		if (!besttime || t < besttime)
@@ -2154,9 +2164,9 @@ int AAS_NearestHideArea(int srcnum, vec3_t origin, int areanum, int enemynum, ve
 			if (nextareanum == enemyareanum) continue;
 			//time already travelled plus the traveltime through
 			//the current area plus the travel time from the reachability
-			t = curupdate->tmptraveltime +
-						AAS_AreaTravelTime(curupdate->areanum, curupdate->start, reach->start) +
-							reach->traveltime;
+			t = AAS_TravelTimeSum(AAS_TravelTimeSum(curupdate->tmptraveltime,
+				AAS_AreaTravelTime(curupdate->areanum, curupdate->start, reach->start)),
+				reach->traveltime);
 
 			//avoid going near the enemy
 			AAS_ProjectPointOntoVector(enemyorigin, curupdate->start, reach->end, p);
@@ -2181,7 +2191,7 @@ int AAS_NearestHideArea(int srcnum, vec3_t origin, int areanum, int enemynum, ve
 			//
 			if (dist2 < dist1)
 			{
-				t += (dist1 - dist2) * 10;
+				t = AAS_TravelTimeSum(t, AAS_TravelTimeFromFloat((dist1 - dist2) * 10));
 			}
 			// if we weren't visible when starting, make sure we don't move into their view
 			if (!startVisible && AAS_AreaVisible(enemyareanum, nextareanum)) {

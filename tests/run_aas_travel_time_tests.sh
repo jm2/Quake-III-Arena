@@ -12,6 +12,10 @@ route=(root/'code/botlib/be_aas_route.c').read_text()
 reach=(root/'code/botlib/be_aas_reach.c').read_text()
 parts=re.findall(r'(?m)^#define DISTANCEFACTOR_.*$',route)
 assert len(parts)==3,'native distance-factor seam changed'
+start='static unsigned short AAS_TravelTimeFromFloat(float value)\n{'
+assert route.count(start)==1,'native float-time seam changed'
+first=route.index(start);last=route.index('\n}',first)+2
+parts.append(route[first:last])
 for source,name,signature in (
     (reach,'AAS_AreaCrouch','int AAS_AreaCrouch(int areanum)'),
     (reach,'AAS_AreaSwim','int AAS_AreaSwim(int areanum)'),
