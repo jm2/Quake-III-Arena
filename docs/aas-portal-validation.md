@@ -1,37 +1,40 @@
 # AAS portal and cluster reference ownership — 2026-09-18
 
-The native loader publishes invalid cluster references and negative portal
-indices. Validate cluster area/reach counts and subtraction-checked index spans,
-aggregate referenced table capacity and disjoint index-span ownership, portal area/cluster/local slots and every
-portal index before loaded publication. Relative normal-area slots must fit
-clusters; negative portal areas must match inverse ownership. Complete clustering
-requires both real portal sides and matching area ownership; each real cluster's
-referenced portal must belong to it. Unclustered native roots remain supported
-for subsequent native clustering initialization.
+The native loader publishes invalid portal/cluster references and inconsistent
+routing slots. Before loaded publication, validate area/reach counts, signed
+index spans, aggregate capacity, portal sides/local slots and inverse ownership.
+Temporary heap bitmaps enforce disjoint cluster index spans and unique local
+slots. Match native AAS_NumberClusterAreas: reachable areas occupy the prefix,
+and every normal-area/portal-side slot has exactly one owner. Each real portal
+has distinct sides and exactly one index occurrence in each declared cluster.
 
-Preserve retail v4/v5 layouts, side ordering, native payload bytes and commercial
-1.32c QVM/syscall interfaces. No hard map-size cap or allocator policy changes
-are introduced.
+Preserve retail v4/v5 layouts, portal side order, reordered disjoint spans,
+native payload bytes and commercial 1.32c interfaces. Unclustered native roots
+remain supported. Workspace costs are checked, and nullable failures reject
+without temporary ownership. No hard map-size cap is introduced.
 
 ## Validation
 
-Three original actual-loader proofs fail: huge area-cluster and negative portal
-indices, and two clusters sharing one index span, still report success. Independent literal area/portal/cluster data
-checks both versions/sides, reordered index spans and unclustered roots: eight
-accepted cases retain every
-portal/index/cluster/settings byte. Seventy-six malformed signed/one-past/local/
-count/span/inverse cases reject before publication, close once and clear partial
-logical owners. Duplicate and partial spans reject even when aggregate counts
-fit. A temporary heap bitmap releases on success/rejection; its nullable failure
-rejects without temporary ownership in both versions. Normal/release fast-math sanitizers and optimized GCC checks
-pass. All native AAS/allocator seams, nine Python checks, Bash syntax and diff
-checks pass. Both Retro68 products build with zero compiler diagnostics and
-validate as PPC PEFs.
+Six original actual-loader proofs fail: huge area-cluster and negative portal
+indices, shared index spans, duplicate local slots, omitted sides and identical
+side clusters still report success. Independent literal data covers both versions,
+side orders, reordered spans, unclustered roots, multiple normal areas, reachable
+portals and multiple portals. Fourteen accepted worlds retain all native mapping
+bytes. Ninety malformed signed/one-past/count/span/inverse/slot/prefix/side cases
+reject before publication, close once and clear partial logical owners.
+
+Duplicate and partial spans reject even when aggregate counts fit. Each temporary
+workspace physically releases on success/rejection; failures of either portal
+bitmap or slot/side workspace reject cleanly in both versions. Clang normal/
+release fast-math sanitizers and optimized GCC checks pass. Existing AAS seams,
+nine Python checks, Bash syntax and diff checks pass. Both Retro68 products
+build with zero compiler diagnostics and validate as PPC PEFs. The table includes
+the inherited #125 complete reachability ownership fix.
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,754,099 | `adb279f5bfc5b1681e4bb275c0ccafa998744db555744d612df9c555a6d54ef0` |
-| Quake3_TeamArena | 3,902,673 | `6f5cdf26e233c52b7d59d90a47610e9f974dc99ce8920e262f74fb20f191c0d4` |
+| Quake3 | 3,758,195 | `d73a4b80e3fd9d1cca68a807e22b28948a514db1cef839460830b478233941ff` |
+| Quake3_TeamArena | 3,906,769 | `52b9d38b7f4375abf2a030334e6022ac1915717167a38a11efdd5c32d9b57964` |
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 
