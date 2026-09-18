@@ -245,7 +245,10 @@ QVMs while any P0 item is open.
   - [x] Waveforms, texture modifiers and deformations propagate missing/non-finite
         fields, check line/count/reciprocal limits and publish complete modifiers;
         see [numeric staging evidence](shader-wave-texmod-validation.md).
-  - [ ] Complete remaining shader sky/sun/fog/sort and derived rendering checks.
+  - [x] Sky/sun/fog/sort metadata checks propagate numeric/path failures;
+        rejected definitions retain previous sun state and valid fields/import
+        order remain native; see [metadata evidence](shader-metadata-validation.md).
+  - [ ] Complete derived rendering conversions and public shader input checks.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
       — **high**, server OOB access/infinite traversal.
   - [x] Local mover model boundary/look-up fixes cross-build.

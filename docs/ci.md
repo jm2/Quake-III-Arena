@@ -115,7 +115,8 @@ PR head while retaining checks on the merged default branch.
     skipped excess-stage cinematics, native modifiers and valid/default caching,
     malformed/non-finite color/texture vectors and 1,021 native byte goldens,
     under both normal sanitizer and optimized release-fast-math configurations,
-    plus native modifier/deformation bytes and every non-finite numeric field;
+    plus native modifier/deformation bytes and every non-finite numeric field,
+    sky/sun/fog/sort metadata, exact sky paths/imports and retained rejected sun state;
   - executes native shader archive initialization, checked file/aggregate sizes,
     reverse input release, empty startup/restarts, native paths and 4,096-file cap,
     malformed-file isolation and 768 stock duplicate/missing lookup goldens;

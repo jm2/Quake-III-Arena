@@ -21,6 +21,9 @@ backEndData_t *backEndData[SMP_FRAMES]={&commands,&commands};
 static image_t white;
 static void *owned[512];
 static int allocations,videos;
+static int traceImages,imageFinds,skyInitializations;
+static char imageNames[16][MAX_QPATH];
+static float skyHeight;
 static char archive[64000];
 static char *emptyHash[1];
 static char *scriptFiles[]={"fixture.shader",NULL};
@@ -32,8 +35,8 @@ void QDECL Com_Printf(const char *format,...) { (void)format; }
 static void QDECL Print(int level,const char *format,...) { (void)level;(void)format; }
 static void *Allocate(int size,ha_pref preference) { void *p;Check(size>=0 && size<100000 && preference==h_low && allocations<512,"bounded native shader allocation");p=calloc(1,size?size:1);Check(p!=NULL,"shader fixture allocation");owned[allocations++]=p;return p; }
 static void Release(void) { while(allocations)free(owned[--allocations]);memset(&tr,0,sizeof(tr));memset(hashTable,0,sizeof(hashTable));memset(shaderTextHashTable,0,sizeof(shaderTextHashTable));s_shaderText=NULL;s_shaderTextIndexed=qfalse; }
-image_t *R_FindImageFile(const char *name,qboolean mipmap,qboolean picmip,int wrap) { (void)name;(void)mipmap;(void)picmip;(void)wrap;return &white; }
-void R_InitSkyTexCoords(float height) { (void)height; }
+image_t *R_FindImageFile(const char *name,qboolean mipmap,qboolean picmip,int wrap) { (void)mipmap;(void)picmip;(void)wrap;if(traceImages){Check(imageFinds<16,"bounded sky import trace");Q_strncpyz(imageNames[imageFinds++],name,MAX_QPATH);}return &white; }
+void R_InitSkyTexCoords(float height) { if(traceImages){skyInitializations++;skyHeight=height;} }
 void R_SyncRenderThread(void) { Check(0,"unexpected threaded import"); }
 void RB_StageIteratorGeneric(void) {}
 void RB_StageIteratorSky(void) {}
@@ -280,11 +283,76 @@ static void WaveModifiers(int proof) {
     }
     Release();tr.whiteImage=&white;
 }
+static void Metadata(int proof) {
+    int mode,i;char body[4096],path[64],*text;vec3_t oldLight={3,4,5},oldDirection={6,7,8};
+    const char *bad[]={"nan","inf","-inf","1e400","1e39","-1e39"};
+    const char *sorts[]={"portal","sky","opaque","decal","seeThrough","banner","additive","nearest","underwater","4.5","garbage"};
+    const float sortValues[]={SS_PORTAL,SS_ENVIRONMENT,SS_OPAQUE,SS_DECAL,SS_SEE_THROUGH,SS_BANNER,SS_BLEND1,SS_NEAREST,SS_UNDERWATER,4.5,0};
+    if(proof>=0 && proof<4) {
+        const char *bodies[]={"{\nq3map_sun 1 nan 3 100 45 60\n{\nmap $whiteimage\n}\n}","{\nsort nan\n{\nmap $whiteimage\n}\n}","{\nskyparms - nan -\n}","{\nfogParms ( 0.2 0.3 0.4 ) nan\n{\nmap $whiteimage\n}\n}"};
+        ResetParser();text=(char*)bodies[proof];Check(!ParseShader(&text),"non-finite shader metadata must reject");return;
+    }
+    for(mode=0;mode<11;mode++) {
+        ResetParser();snprintf(body,sizeof(body),"{\nsort %s\n{\nmap $whiteimage\n}\n}",sorts[mode]);text=body;Check(ParseShader(&text) && shader.sort==sortValues[mode],"all native named/numeric/legacy-zero sort values remain unchanged");
+    }
+    ResetParser();text="{\nq3map_sun 1 2 3 100 45 60\nfogParms ( 0.2 0.3 0.4 ) 256\nclampTime 12.5\n{\nmap $whiteimage\n}\n}";Check(ParseShader(&text),"valid native metadata corpus");
+    if(proof==4) {printf("SUNLIGHT %08x\n",NumericFingerprint(tr.sunLight,sizeof(tr.sunLight)));printf("SUNDIRECTION %08x\n",NumericFingerprint(tr.sunDirection,sizeof(tr.sunDirection)));printf("FOG %08x\n",NumericFingerprint(&shader.fogParms,sizeof(shader.fogParms)));return;}
+    Check(NumericFingerprint(tr.sunLight,sizeof(tr.sunLight))==0x8f2a7bb8 && NumericFingerprint(tr.sunDirection,sizeof(tr.sunDirection))==0x4872e335 && NumericFingerprint(&shader.fogParms,sizeof(shader.fogParms))==0xf9df3e46,"complete valid metadata retains captured stock bytes");
+    Check(shader.clampTime==12.5f && shader.fogParms.depthForOpaque==256 && shader.fogParms.color[0]==0.2f && shader.fogParms.color[1]==0.3f && shader.fogParms.color[2]==0.4f,"native valid fog/clamp fields");
+    for(mode=0;mode<6;mode++) {
+        for(i=0;i<6;i++) {
+            ResetParser();VectorCopy(oldLight,tr.sunLight);VectorCopy(oldDirection,tr.sunDirection);
+            snprintf(body,sizeof(body),"{\nq3map_sun %s %s %s %s %s %s\n{\nmap $whiteimage\n}\n}",i==0?bad[mode]:"1",i==1?bad[mode]:"2",i==2?bad[mode]:"3",i==3?bad[mode]:"100",i==4?bad[mode]:"45",i==5?bad[mode]:"60");text=body;
+            Check(!ParseShader(&text),"every non-finite/overflow sun parameter rejects");Check(!memcmp(tr.sunLight,oldLight,sizeof(oldLight)) && !memcmp(tr.sunDirection,oldDirection,sizeof(oldDirection)),"rejected sun parameters retain renderer state");
+        }
+        ResetParser();snprintf(body,sizeof(body),"{\nsort %s\n{\nmap $whiteimage\n}\n}",bad[mode]);text=body;Check(!ParseShader(&text),"invalid numeric sort rejects");
+        ResetParser();snprintf(body,sizeof(body),"{\nclampTime %s\n{\nmap $whiteimage\n}\n}",bad[mode]);text=body;Check(!ParseShader(&text),"invalid clamp time rejects");
+        ResetParser();snprintf(body,sizeof(body),"{\nfogParms ( 0.2 0.3 0.4 ) %s\n{\nmap $whiteimage\n}\n}",bad[mode]);text=body;Check(!ParseShader(&text),"invalid fog depth rejects");
+        ResetParser();traceImages=1;imageFinds=0;skyInitializations=0;snprintf(body,sizeof(body),"{\nskyparms outer %s inner\n}",bad[mode]);text=body;Check(!ParseShader(&text) && !imageFinds && !skyInitializations,"invalid sky number rejects before imports");traceImages=0;
+    }
+    ResetParser();VectorCopy(oldLight,tr.sunLight);VectorCopy(oldDirection,tr.sunDirection);text="{\nq3map_sun 1 2 3 100 45 60\nunknownParameter\n}";
+    Check(!ParseShader(&text) && !memcmp(tr.sunLight,oldLight,sizeof(oldLight)) && !memcmp(tr.sunDirection,oldDirection,sizeof(oldDirection)),"later shader failure never publishes pending valid sun parameters");
+    ResetParser();text="{\nq3map_sun 3.4e38 3.4e38 3.4e38 100 45 60\n{\nmap $whiteimage\n}\n}";
+    Check(!ParseShader(&text),"finite-source sun length overflow rejects");
+    for(mode=0;mode<6;mode++) {
+        const char *partial[]={"","1","1 2","1 2 3","1 2 3 100","1 2 3 100 45"};ResetParser();snprintf(body,sizeof(body),"{\nq3map_sun %s\n{\nmap $whiteimage\n}\n}",partial[mode]);text=body;Check(!ParseShader(&text),"every truncated sun prefix rejects");
+    }
+    for(mode=0;mode<4;mode++) {
+        const char *partial[]={"skyparms","skyparms outer","skyparms outer 512","skyparms outer 512 \"\""};
+        ResetParser();traceImages=1;imageFinds=0;skyInitializations=0;snprintf(body,sizeof(body),"{\n%s\n}",partial[mode]);text=body;Check(!ParseShader(&text) && !imageFinds && !skyInitializations,"incomplete sky rejects before imports");traceImages=0;
+    }
+    for(mode=0;mode<2;mode++) {
+        ResetParser();traceImages=1;imageFinds=0;skyInitializations=0;memset(path,'x',57);path[57]=0;
+        snprintf(body,sizeof(body),"{\nskyparms %s 512 %s\n}",mode?"outer":path,mode?path:"inner");text=body;
+        Check(!ParseShader(&text) && !imageFinds && !skyInitializations,"oversize completed sky image path rejects before imports");traceImages=0;
+    }
+    for(mode=0;mode<2;mode++) {
+        ResetParser();traceImages=1;imageFinds=0;skyInitializations=0;snprintf(body,sizeof(body),"{\nskyparms outer %s inner\n}",mode?"0":"512");text=body;
+        Check(ParseShader(&text) && shader.isSky && shader.sky.cloudHeight==512 && imageFinds==12 && skyInitializations==1 && skyHeight==512,"native valid/zero-height sky imports and defaults remain unchanged");
+        Check(!strcmp(imageNames[0],"outer_rt.tga") && !strcmp(imageNames[5],"outer_dn.tga") && !strcmp(imageNames[6],"inner_rt.tga") && !strcmp(imageNames[11],"inner_dn.tga"),"native sky face suffix/order remains unchanged");traceImages=0;
+    }
+    ResetParser();traceImages=1;imageFinds=0;skyInitializations=0;memset(path,'x',56);path[56]=0;snprintf(body,sizeof(body),"{\nskyparms %s 512 -\n}",path);text=body;
+    Check(ParseShader(&text) && imageFinds==6 && strlen(imageNames[0])==MAX_QPATH-1,"maximum full native sky image path accepted");traceImages=0;
+    ResetParser();text="{\nfogParms ( -1e30 0.5 1e30 ) 1\n{\nmap $whiteimage\n}\n}";Check(ParseShader(&text) && shader.fogParms.color[0]==0 && shader.fogParms.color[1]==0.5f && shader.fogParms.color[2]==1,"finite out-of-range fog colors clamp before later byte conversion");
+    for(mode=0;mode<4;mode++) {
+        const char *invalid[]={"q3map_sun 1 nan 3 100 45 60","sort nan","skyparms - nan -","fogParms ( 0.2 0.3 0.4 ) nan"};shader_t *registered;int before;
+        Release();tr.whiteImage=&white;VectorCopy(oldLight,tr.sunLight);VectorCopy(oldDirection,tr.sunDirection);
+        snprintf(archive,sizeof(archive),"tests/material\n{\n%s\n{\nmap $whiteimage\n}\n}\ntests/following\n{\n{\nmap $whiteimage\n}\n}\n",invalid[mode]);s_shaderText=archive;
+        registered=R_FindShader("tests/material",LIGHTMAP_NONE,qtrue);Check(registered->defaultShader,"public invalid metadata uses native default fallback");before=allocations;
+        Check(R_FindShader("tests/material",LIGHTMAP_NONE,qtrue)==registered && allocations==before,"public invalid metadata cache reuse");
+        Check(!memcmp(tr.sunLight,oldLight,sizeof(oldLight)) && !memcmp(tr.sunDirection,oldDirection,sizeof(oldDirection)),"public invalid metadata never alters renderer sun");
+        Check(!R_FindShader("tests/following",LIGHTMAP_NONE,qtrue)->defaultShader,"following definition survives invalid metadata");
+    }
+    Release();tr.whiteImage=&white;
+    ResetParser();text="{\nsort\n{\nmap $whiteimage\n}\n}";Check(!ParseShader(&text),"missing sort parameter rejects");
+    ResetParser();text="{\nclampTime\n{\nmap $whiteimage\n}\n}";Check(!ParseShader(&text),"missing clamp time rejects");
+    ResetParser();text="{\nfogParms ( 0.2 0.3 0.4 )\n{\nmap $whiteimage\n}\n}";Check(!ParseShader(&text),"missing fog depth rejects");
+}
 int main(int argc,char **argv) {
 	int i;char *text;ri.Printf=Print;ri.Hunk_Alloc=Allocate;ri.CIN_PlayCinematic=Video;ri.Error=Com_Error;tr.whiteImage=&white;
 	for(i=0;i<MAX_SHADERTEXT_HASH;i++)shaderTextHashTable[i]=emptyHash;
-	if(argc>1) {int proof=atoi(argv[1]);if(proof<3)ConstantVectors(proof);else WaveModifiers(proof-3);Release();return 0;}
-	WaveModifiers(-1);ConstantVectors(-1);AlphaIdentity();AlphaWaves();FastAlpha();NativeStages();TailCases();
+	if(argc>1) {int proof=atoi(argv[1]);if(proof<3)ConstantVectors(proof);else if(proof<8)WaveModifiers(proof-3);else Metadata(proof-8);Release();return 0;}
+	Metadata(-1);WaveModifiers(-1);ConstantVectors(-1);AlphaIdentity();AlphaWaves();FastAlpha();NativeStages();TailCases();
 	ResetParser();text="{\nsurfaceParm fog\n}\n";Check(ParseShader(&text),"native zero-stage fog remains valid");
 	ResetParser();text="{\nskyparms - 512 -\n}\n";Check(ParseShader(&text) && shader.isSky,"native zero-stage sky remains valid");
 	Registration();
