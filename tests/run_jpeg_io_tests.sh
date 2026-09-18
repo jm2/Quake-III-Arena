@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export TMPDIR="${TMPDIR:-/var/tmp}"
 
 Q3_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 Q3_TEST_DIR="$(mktemp -d -p "${TMPDIR:-/var/tmp}" q3-jpeg-io.XXXXXX)"
