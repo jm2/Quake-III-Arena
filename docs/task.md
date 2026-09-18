@@ -300,6 +300,10 @@ QVMs while any P0 item is open.
         reject before overflow/import; loaded caches are accounted and optional
         native dumps validate before publication with rebuilt runtime links;
         see [cache evidence](aas-cache-allocation-validation.md).
+  - [x] Derived routing arrays check full signed costs and nullable imports;
+        travel-matrix pointer rows stay aligned, partial owners release and
+        failed initialization cannot enable the world;
+        see [initialization evidence](aas-routing-init-validation.md).
   - [ ] Validate the entire AAS file and graph before setting `loaded`.
 - [ ] [#48 — bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48)
       — **high**, parser fixed-buffer corruption/invalid cleanup.
