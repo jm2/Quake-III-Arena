@@ -20,6 +20,17 @@ vector-length body. Independent literal speed/minimum/multi-axis/signed-zero and
 uint16/signed-boundary goldens pass. Every coordinate position/direction/class
 rejects nonfinite inputs and finite overflowing lengths before integer casts.
 Clang normal/release fast-math sanitizers and optimized GCC checks pass.
+After integrating the final portal/cluster mapping fixes, travel-time and portal
+sanitizers pass together. Nine Python checks, Bash syntax and diff checks pass.
+Both Retro68 products rebuild with zero compiler diagnostics and validate as
+PPC PEFs:
+
+| Product | PEF bytes | SHA-256 |
+| --- | ---: | --- |
+| Quake3 | 3,758,211 | `b00a7f0532ca27a2aae7ba353f96e1c1b78fdc401120e56ce662b1a57ac48185` |
+| Quake3_TeamArena | 3,906,785 | `ef8a14f93392f359346fdad83a9714850557297342e12fa49774610cf020cc93` |
+
+Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 
 ## Remaining acceptance
 

@@ -534,8 +534,10 @@ QVMs while any P0 item is open.
 - [x] AAS geometry #122 merged at `b242458` and allocator/import #123
       at `ed42d87`, after exact-head CI, clean completed Codex and all
       CodeRabbit findings resolved.
-- [ ] Gate node/reachability/portal steps and finish #47 derived runtime,
-      memory/work budgets and late-load transaction work.
+- [x] Node/reachability #124–#125 merged at `86c1667` after exact-head
+      CI, clean completed Codex and resolved review findings.
+- [ ] Gate portal/derived-time steps and finish #47 runtime query, memory/
+      work budget and late-load transaction work.
 - [ ] Finish #45 renderer aggregate capacity and full transactional
       publication; retain remaining query/candidate costs and deferred target
       acceptance. Collision aggregate and derived geometry/facet checks are
