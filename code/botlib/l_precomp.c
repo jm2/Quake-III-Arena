@@ -1532,8 +1532,12 @@ define_t *PC_CopyDefine(source_t *source, define_t *define)
 {
 	define_t *newdefine;
 	token_t *token, *newtoken, *lasttoken;
+	size_t length = strlen(define->name);
 
-	newdefine = (define_t *) GetMemory(sizeof(define_t) + strlen(define->name) + 1);
+	if (length > (size_t)INT_MAX - sizeof(define_t) - 1) return NULL;
+	newdefine = (define_t *) GetMemory(sizeof(define_t) + length + 1);
+	if (!newdefine) return NULL;
+	Com_Memset(newdefine, 0, sizeof(define_t));
 	//copy the define name
 	newdefine->name = (char *) newdefine + sizeof(define_t);
 	strcpy(newdefine->name, define->name);
@@ -1548,6 +1552,7 @@ define_t *PC_CopyDefine(source_t *source, define_t *define)
 	for (lasttoken = NULL, token = define->tokens; token; token = token->next)
 	{
 		newtoken = PC_CopyToken(token);
+		if (!newtoken) goto failure;
 		newtoken->next = NULL;
 		if (lasttoken) lasttoken->next = newtoken;
 		else newdefine->tokens = newtoken;
@@ -1558,12 +1563,16 @@ define_t *PC_CopyDefine(source_t *source, define_t *define)
 	for (lasttoken = NULL, token = define->parms; token; token = token->next)
 	{
 		newtoken = PC_CopyToken(token);
+		if (!newtoken) goto failure;
 		newtoken->next = NULL;
 		if (lasttoken) lasttoken->next = newtoken;
 		else newdefine->parms = newtoken;
 		lasttoken = newtoken;
 	} //end for
 	return newdefine;
+failure:
+	PC_FreeDefine(newdefine);
+	return NULL;
 } //end of the function PC_CopyDefine
 //============================================================================
 //
@@ -1571,13 +1580,14 @@ define_t *PC_CopyDefine(source_t *source, define_t *define)
 // Returns:					-
 // Changes Globals:		-
 //============================================================================
-void PC_AddGlobalDefinesToSource(source_t *source)
+int PC_AddGlobalDefinesToSource(source_t *source)
 {
 	define_t *define, *newdefine;
 
 	for (define = globaldefines; define; define = define->next)
 	{
 		newdefine = PC_CopyDefine(source, define);
+		if (!newdefine) return qfalse;
 #if DEFINEHASHING
 		PC_AddDefineToHash(newdefine, source->definehash);
 #else //DEFINEHASHING
@@ -1585,6 +1595,7 @@ void PC_AddGlobalDefinesToSource(source_t *source)
 		source->defines = newdefine;
 #endif //DEFINEHASHING
 	} //end for
+	return qtrue;
 } //end of the function PC_AddGlobalDefinesToSource
 //============================================================================
 //
@@ -3073,22 +3084,23 @@ void PC_SetPunctuations(source_t *source, punctuation_t *p)
 // Returns:				-
 // Changes Globals:		-
 //============================================================================
-source_t *LoadSourceFile(const char *filename)
+/* Publish a source only after every required dictionary owner is complete. */
+static source_t *PC_CreateSource(script_t *script, const char *name)
 {
 	source_t *source;
-	script_t *script;
-
-	PC_InitTokenHeap();
-
-	script = LoadScriptFile(filename);
 	if (!script) return NULL;
 
 	script->next = NULL;
 
 	source = (source_t *) GetMemory(sizeof(source_t));
+	if (!source)
+	{
+		FreeScript(script);
+		return NULL;
+	}
 	Com_Memset(source, 0, sizeof(source_t));
 
-	strncpy(source->filename, filename, MAX_PATH);
+	memcpy(source->filename, name, strlen(name) + 1);
 	source->scriptstack = script;
 	source->tokens = NULL;
 	source->defines = NULL;
@@ -3097,9 +3109,25 @@ source_t *LoadSourceFile(const char *filename)
 
 #if DEFINEHASHING
 	source->definehash = GetClearedMemory(DEFINEHASHSIZE * sizeof(define_t *));
+	if (!source->definehash)
+	{
+		FreeScript(script);
+		FreeMemory(source);
+		return NULL;
+	}
 #endif //DEFINEHASHING
-	PC_AddGlobalDefinesToSource(source);
+	if (!PC_AddGlobalDefinesToSource(source))
+	{
+		FreeSource(source);
+		return NULL;
+	}
 	return source;
+}
+
+source_t *LoadSourceFile(const char *filename)
+{
+	PC_InitTokenHeap();
+	return PC_CreateSource(LoadScriptFile(filename), filename);
 } //end of the function LoadSourceFile
 //============================================================================
 //
@@ -3109,30 +3137,8 @@ source_t *LoadSourceFile(const char *filename)
 //============================================================================
 source_t *LoadSourceMemory(char *ptr, int length, char *name)
 {
-	source_t *source;
-	script_t *script;
-
 	PC_InitTokenHeap();
-
-	script = LoadScriptMemory(ptr, length, name);
-	if (!script) return NULL;
-	script->next = NULL;
-
-	source = (source_t *) GetMemory(sizeof(source_t));
-	Com_Memset(source, 0, sizeof(source_t));
-
-	strncpy(source->filename, name, MAX_PATH);
-	source->scriptstack = script;
-	source->tokens = NULL;
-	source->defines = NULL;
-	source->indentstack = NULL;
-	source->skip = 0;
-
-#if DEFINEHASHING
-	source->definehash = GetClearedMemory(DEFINEHASHSIZE * sizeof(define_t *));
-#endif //DEFINEHASHING
-	PC_AddGlobalDefinesToSource(source);
-	return source;
+	return PC_CreateSource(LoadScriptMemory(ptr, length, name), name);
 } //end of the function LoadSourceMemory
 //============================================================================
 //
