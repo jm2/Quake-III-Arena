@@ -30,6 +30,10 @@ diagnostics and validate as PPC PEFs.
 | Quake3 | 3,749,997 | `e6a1374948cc56cfe7ebdf08d62d8dff1c39b697ed84ea59a97786170bbef726` |
 | Quake3_TeamArena | 3,902,667 | `bf5baf0c3ad9c22398d62c0080d6bb7363581cb0068959969c06a661104a9004` |
 
+After integrating the #123 review fixes through #124, all eight allocator
+sanitizer configurations and node/reachability checks pass again. Both PPC
+products rebuild with zero compiler diagnostics and unchanged artifact hashes.
+
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 
 ## Remaining acceptance
