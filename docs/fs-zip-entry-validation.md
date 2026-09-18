@@ -11,8 +11,11 @@ the native exclusive generic buffering cap and large-text override policy.
 Actual filesystem and embedded decoder bodies read real ZIP32 files with complete
 zero payloads just below, at and above 32 MiB. Generic unique reads buffer only
 below the cap; above-cap text remains buffered. The complete buffered payload
-reaches its last byte; actual stream reads and scalar length queries remain
-correct. These are valid complete archives, generated incrementally.
+reaches its last byte. Both streamed cap fixtures consume their entire declared
+payload through repeated decoder refills, verify every byte including the final
+chunk and reach stable EOF. Scalar length queries remain correct. These are
+valid complete archives, generated incrementally. This closes the Codex finding
+that checking only the first 64 streamed bytes could miss later corruption.
 
 Malformed ZIP metadata declares entry lengths `INT_MAX`, `INT_MAX + 1`,
 `UINT32_MAX - 1` and `UINT32_MAX`. Both unique/shared opens, full-file reads and
