@@ -113,6 +113,9 @@ QVMs while any P0 item is open.
         have [sanitizer regressions](qvm-botlib-actions-validation.md).
   - [x] Remaining bot AI structures, inventory/rank arrays, optional goals,
         and native genetic endpoints have [sanitizer regressions](qvm-botlib-ai-validation.md).
+  - [x] Source game/client/UI modules compile and link in base/missionpack
+        retail QVM format with existing libc helpers, complete particle manifests
+        and portable console diagnostics; see [source build evidence](qvm-source-build-validation.md).
   - [ ] Complete remaining syscall pointer/range checks and retain valid PPC
         QVM compatibility during deferred live acceptance.
 - [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)

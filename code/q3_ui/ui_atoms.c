@@ -1065,11 +1065,11 @@ UI_Init
 =================
 */
 void UI_Init( void ) {
-	printf("UI_Init: START\n"); fflush(stdout);
+	trap_Print(va("UI_Init: START\n"));
 	UI_RegisterCvars();
 
 	UI_InitGameinfo();
-	printf("UI_Init: Gameinfo loaded\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Gameinfo loaded\n"));
 
 	// cache redundant calulations
 	trap_GetGlconfig( &uis.glconfig );
@@ -1087,11 +1087,11 @@ void UI_Init( void ) {
 
 	// initialize the menu system
 	Menu_Cache();
-	printf("UI_Init: Menus cached\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Menus cached\n"));
 
 	uis.activemenu = NULL;
 	uis.menusp     = 0;
-	printf("UI_Init: COMPLETE\n"); fflush(stdout);
+	trap_Print(va("UI_Init: COMPLETE\n"));
 }
 
 /*

@@ -11,6 +11,7 @@ cg_info
 cg_localents
 cg_marks
 cg_players
+cg_particles
 cg_playerstate
 cg_predict
 cg_scoreboard
