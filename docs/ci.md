@@ -76,6 +76,9 @@ PR head while retaining checks on the merged default branch.
     bounded output strings, optional no-goal operations, genetic arrays and
     scalar outputs, and the inclusive native random endpoint.
     Scalar indices and indirect native accesses remain under review.
+  - checks actual RoQ open/run/stop, chunk capacities and short reads, final
+    payloads, embedded packet boundaries/nesting, mono/stereo expansion limits,
+    malformed looping movies, and cleanup before the first frame.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -102,6 +105,7 @@ bash tests/run_botlib_navigation_tests.sh
 bash tests/run_botlib_chat_tests.sh
 bash tests/run_botlib_actions_tests.sh
 bash tests/run_botlib_ai_tests.sh
+bash tests/run_roq_stream_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 

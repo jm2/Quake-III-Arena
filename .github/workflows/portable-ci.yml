@@ -29,7 +29,7 @@ jobs:
 
       - name: Check Bash syntax and help
         run: |
-          bash -n build_mac.sh setup_retro68.sh tests/run_host_c_tests.sh tests/run_vm_loading_tests.sh tests/run_vm_bytecode_tests.sh tests/run_vm_runtime_tests.sh tests/run_vm_call_tests.sh tests/run_vm_memory_trap_tests.sh tests/run_ui_syscall_tests.sh tests/run_cgame_syscall_tests.sh tests/run_server_core_syscall_tests.sh tests/run_vm_returned_string_tests.sh tests/run_botlib_navigation_tests.sh tests/run_botlib_chat_tests.sh tests/run_botlib_actions_tests.sh tests/run_botlib_ai_tests.sh
+          bash -n build_mac.sh setup_retro68.sh tests/run_host_c_tests.sh tests/run_vm_loading_tests.sh tests/run_vm_bytecode_tests.sh tests/run_vm_runtime_tests.sh tests/run_vm_call_tests.sh tests/run_vm_memory_trap_tests.sh tests/run_ui_syscall_tests.sh tests/run_cgame_syscall_tests.sh tests/run_server_core_syscall_tests.sh tests/run_vm_returned_string_tests.sh tests/run_botlib_navigation_tests.sh tests/run_botlib_chat_tests.sh tests/run_botlib_actions_tests.sh tests/run_botlib_ai_tests.sh tests/run_roq_stream_tests.sh
           ./build_mac.sh --help
 
       - name: Check PowerShell syntax and help
@@ -102,3 +102,4 @@ jobs:
           bash tests/run_botlib_chat_tests.sh
           bash tests/run_botlib_actions_tests.sh
           bash tests/run_botlib_ai_tests.sh
+          bash tests/run_roq_stream_tests.sh
