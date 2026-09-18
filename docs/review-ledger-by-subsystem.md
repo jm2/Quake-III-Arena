@@ -335,8 +335,10 @@ implementation or check, without implying issue completion.
   - [x] Enabled native FreeType flow releases faces before backing input and
         balances temporary bitmap/page ownership on controlled failures; see
         [ownership evidence](font-freetype-ownership-validation.md).
-  - [ ] Complete FreeType numeric/atlas/layout checks and remaining shader
-        semantic/file-allocation checks.
+  - [x] Optional font glyph/atlas arithmetic, complete page/final-glyph output,
+        generated cache names and legacy LE serialization have
+        [generation evidence](font-atlas-legacy-output-validation.md).
+  - [ ] Complete remaining shader semantic/file-allocation checks.
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.
   - [ ] Validate the complete file and graph before setting `loaded`.
