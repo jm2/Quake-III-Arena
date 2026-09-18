@@ -423,22 +423,49 @@ int *ItemWeightIndex(weightconfig_t *iwc, itemconfig_t *ic)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
-void InitLevelItemHeap(void)
+int InitLevelItemHeap(void)
 {
 	int i, max_levelitems;
+	libvar_t *variable;
+	levelitem_t *heap;
+	unsigned int bits;
+	volatile unsigned int representation;
 
-	if (levelitemheap) FreeMemory(levelitemheap);
-
-	max_levelitems = (int) LibVarValue("max_levelitems", "256");
-	levelitemheap = (levelitem_t *) GetClearedMemory(max_levelitems * sizeof(levelitem_t));
-
-	for (i = 0; i < max_levelitems-1; i++)
+	variable = LibVar("max_levelitems", "256");
+	if (!variable)
 	{
-		levelitemheap[i].next = &levelitemheap[i + 1];
-	} //end for
-	levelitemheap[max_levelitems-1].next = NULL;
-	//
-	freelevelitems = levelitemheap;
+		botimport.Print(PRT_ERROR, "couldn't initialize max_levelitems\n");
+		return qfalse;
+	}
+	Com_Memcpy(&bits, &variable->value, sizeof(bits));
+	representation = bits;
+	if ((representation & 0x7f800000U) == 0x7f800000U ||
+			(double)variable->value < 1.0 || (double)variable->value > INT_MAX)
+	{
+		botimport.Print(PRT_ERROR, "invalid max_levelitems\n");
+		return qfalse;
+	}
+	max_levelitems = (int)variable->value;
+	if ((unsigned long)max_levelitems > (unsigned long)INT_MAX / sizeof(levelitem_t))
+	{
+		botimport.Print(PRT_ERROR, "level item allocation is too large\n");
+		return qfalse;
+	}
+	heap = (levelitem_t *)GetClearedMemory((unsigned long)max_levelitems * sizeof(levelitem_t));
+	if (!heap)
+	{
+		botimport.Print(PRT_ERROR, "couldn't allocate level items\n");
+		return qfalse;
+	}
+	for (i = 0; i < max_levelitems - 1; i++) heap[i].next = &heap[i + 1];
+	heap[max_levelitems - 1].next = NULL;
+	//The complete pool/list replacement follows successful native staging.
+	if (levelitemheap) FreeMemory(levelitemheap);
+	levelitemheap = heap;
+	freelevelitems = heap;
+	levelitems = NULL;
+	numlevelitems = 0;
+	return qtrue;
 } //end of the function InitLevelItemHeap
 //===========================================================================
 //
@@ -599,13 +626,10 @@ void BotInitLevelItems(void)
 	levelitem_t *li;
 	bsp_trace_t trace;
 
+	//A failed pool replacement must preserve prior lists and map information.
+	if (!InitLevelItemHeap()) return;
 	//initialize the map locations and camp spots
 	BotInitInfoEntities();
-
-	//initialize the level item heap
-	InitLevelItemHeap();
-	levelitems = NULL;
-	numlevelitems = 0;
 	//
 	ic = itemconfig;
 	if (!ic) return;

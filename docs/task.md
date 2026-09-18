@@ -469,6 +469,10 @@ QVMs while any P0 item is open.
         config/weight references before item parsing/publication; failed imports
         retain prior goal payload and successful replacement releases its logical
         record; see [goal evidence](bot-goal-setup-validation.md).
+  - [x] Level-item pool validates native count/cost, stages complete free links
+        before heap/list replacement and propagates failures before public map
+        information reset; prior pool bytes stay and native positive counts work;
+        see [pool evidence](bot-level-pool-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
