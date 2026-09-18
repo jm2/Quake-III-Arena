@@ -598,6 +598,31 @@ static qboolean AAS_ValidateClusters(void)
 			if (!index || (portal->frontcluster != i && portal->backcluster != i)) return qfalse;
 		}
 	}
+	if (total)
+	{
+		unsigned char *owned;
+		int bytes = aasworld.portalindexsize / 8 + (aasworld.portalindexsize % 8 != 0);
+		owned = (unsigned char *)GetMemory(bytes);
+		if (!owned) return qfalse;
+		Com_Memset(owned, 0, bytes);
+		for (i = 0; i < aasworld.numclusters; i++)
+		{
+			aas_cluster_t *cluster = &aasworld.clusters[i];
+			int n;
+			for (n = 0; n < cluster->numportals; n++)
+			{
+				int index = cluster->firstportal + n;
+				unsigned int mask = 1u << (index & 7);
+				if (owned[index >> 3] & mask)
+				{
+					FreeMemory(owned);
+					return qfalse;
+				}
+				owned[index >> 3] |= mask;
+			}
+		}
+		FreeMemory(owned);
+	}
 	return qtrue;
 }
 

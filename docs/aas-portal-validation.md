@@ -2,7 +2,7 @@
 
 The native loader publishes invalid cluster references and negative portal
 indices. Validate cluster area/reach counts and subtraction-checked index spans,
-aggregate referenced table capacity, portal area/cluster/local slots and every
+aggregate referenced table capacity and disjoint index-span ownership, portal area/cluster/local slots and every
 portal index before loaded publication. Relative normal-area slots must fit
 clusters; negative portal areas must match inverse ownership. Complete clustering
 requires both real portal sides and matching area ownership; each real cluster's
@@ -15,20 +15,23 @@ are introduced.
 
 ## Validation
 
-Two original actual-loader proofs fail: a huge area-cluster index and negative
-portal index still report success. Independent literal area/portal/cluster data
-checks both versions/sides and unclustered roots: six accepted cases retain every
-portal/index/cluster/settings byte. Seventy-two malformed signed/one-past/local/
+Three original actual-loader proofs fail: huge area-cluster and negative portal
+indices, and two clusters sharing one index span, still report success. Independent literal area/portal/cluster data
+checks both versions/sides, reordered index spans and unclustered roots: eight
+accepted cases retain every
+portal/index/cluster/settings byte. Seventy-six malformed signed/one-past/local/
 count/span/inverse cases reject before publication, close once and clear partial
-logical owners. Normal/release fast-math sanitizers and optimized GCC checks
+logical owners. Duplicate and partial spans reject even when aggregate counts
+fit. A temporary heap bitmap releases on success/rejection; its nullable failure
+rejects without temporary ownership in both versions. Normal/release fast-math sanitizers and optimized GCC checks
 pass. All native AAS/allocator seams, nine Python checks, Bash syntax and diff
 checks pass. Both Retro68 products build with zero compiler diagnostics and
 validate as PPC PEFs.
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,754,093 | `59aa62b680a0a1fb977a4a2e1ab43c96b77c3b5dc25680faf0c425f1639cfc13` |
-| Quake3_TeamArena | 3,902,667 | `a4c887c7304c7cb8293c274527c8bb9a399ab6b6228a057b722b8ab4cc28fe56` |
+| Quake3 | 3,754,099 | `adb279f5bfc5b1681e4bb275c0ccafa998744db555744d612df9c555a6d54ef0` |
+| Quake3_TeamArena | 3,902,673 | `6f5cdf26e233c52b7d59d90a47610e9f974dc99ce8920e262f74fb20f191c0d4` |
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 

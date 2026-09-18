@@ -42,6 +42,33 @@ static void UnclusteredPortals(void) {
         Check(!memcmp(aasworld.portals,source+portalOffset,40)&&!memcmp(aasworld.areasettings,source+settingsOffset,84),"unclustered payload remains unchanged");
     }
 }
+static void PortalSpanBuild(int version,int partial) {
+    int offset,i;
+    PortalBuild(version);Encode(version);
+    if(partial) {
+        offset=sourceSize;
+        for(i=0;i<4;i++)Word(offset+i*4,1);
+        Word(12+8*AASLUMP_PORTALINDEX,offset);Word(16+8*AASLUMP_PORTALINDEX,16);
+        Word(clusterOffset+24,2);Word(clusterOffset+40,2);Word(clusterOffset+44,1);
+        indexOffset=offset;sourceSize=advertised=readable=offset+16;
+    } else Word(clusterOffset+44,0);
+    Encode(version);
+}
+static void PortalSpanOwnership(void) {
+    int version,kind;
+    for(version=4;version<=5;version++) {
+        for(kind=0;kind<2;kind++) {
+            PortalSpanBuild(version,kind);Counters();OldWorld();GeometryReject();
+            Check(workspaceRequests==3&&workspaceFrees==3&&!workspacePointer,"portal span rejection releases all validation heaps");
+        }
+        PortalBuild(version);Counters();OldWorld();PortalWord(version,clusterOffset+28,1);PortalWord(version,clusterOffset+44,0);
+        Check(AAS_LoadAASFile("fixture.aas")==BLERR_NOERROR&&aasworld.loaded,"reordered disjoint cluster spans remain accepted");
+        Check(!memcmp(aasworld.clusters,source+clusterOffset,48)&&!memcmp(aasworld.portalindex,source+indexOffset,8),"reordered cluster spans retain native bytes");
+        Check(workspaceRequests==3&&workspaceFrees==3&&!workspacePointer,"portal ownership heap physically releases");
+        PortalBuild(version);Counters();OldWorld();failWorkspace=3;GeometryReject();
+        Check(workspaceRequests==3&&workspaceFrees==2&&!workspacePointer,"portal bitmap failure leaves no temporary owner");
+    }
+}
 static void BadPortals(void) {
     const uint32_t huge[]={0x80000000u,0x7fffffffu};int version,group,field;size_t i;
     for(version=4;version<=5;version++) {
@@ -67,6 +94,7 @@ int main(int argc,char **argv) {
     int proof=argc>1?atoi(argv[1]):-1;botimport.Print=Print;botimport.FS_FOpenFile=Open;botimport.FS_Read=Read;botimport.FS_Seek=Seek;botimport.FS_FCloseFile=Close;
     if(proof==0){PortalBuild(4);Counters();OldWorld();PortalWord(4,settingsOffset+28+12,INT_MAX);GeometryReject();}
     else if(proof==1){PortalBuild(4);Counters();OldWorld();PortalWord(4,indexOffset,INT_MIN);GeometryReject();}
-    else {ValidPortals();UnclusteredPortals();BadPortals();puts("Native AAS portal/cluster references, local slots, inverse ownership and spans passed (issue #47)");}
+    else if(proof==2){PortalSpanBuild(4,0);Counters();OldWorld();GeometryReject();}
+    else {ValidPortals();UnclusteredPortals();BadPortals();PortalSpanOwnership();puts("Native AAS portal/cluster references, local slots, inverse ownership and spans passed (issue #47)");}
     ResetArena();return 0;
 }

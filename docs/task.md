@@ -528,8 +528,11 @@ QVMs while any P0 item is open.
       retain deferred acceptance.
 - [x] AAS layout/endian/writer PRs #119–#121 merged at `431e272` after
       exact-head CI, completed clean Codex and resolved review findings.
-- [ ] Gate geometry/allocation/node steps and finish #47 routing/reference,
-      derived runtime/budget and late-load transaction work.
+- [x] AAS geometry #122 merged at `b242458` and allocator/import #123
+      at `ed42d87`, after exact-head CI, clean completed Codex and all
+      CodeRabbit findings resolved.
+- [ ] Gate node/reachability/portal steps and finish #47 derived runtime,
+      memory/work budgets and late-load transaction work.
 - [ ] Finish #45 renderer aggregate capacity and full transactional
       publication; retain remaining query/candidate costs and deferred target
       acceptance. Collision aggregate and derived geometry/facet checks are
