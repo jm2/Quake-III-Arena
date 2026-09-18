@@ -348,11 +348,60 @@ static void Metadata(int proof) {
     ResetParser();text="{\nclampTime\n{\nmap $whiteimage\n}\n}";Check(!ParseShader(&text),"missing clamp time rejects");
     ResetParser();text="{\nfogParms ( 0.2 0.3 0.4 )\n{\nmap $whiteimage\n}\n}";Check(!ParseShader(&text),"missing fog depth rejects");
 }
+static void PublicInputs(int proof) {
+    int before,i,kind;char name[MAX_QPATH+8],alias[MAX_QPATH],*text;shader_t *material,*source,*target;
+    const int modes[]={LIGHTMAP_NONE,LIGHTMAP_BY_VERTEX,LIGHTMAP_2D,LIGHTMAP_WHITEIMAGE,0};
+    Release();tr.defaultImage=&white;tr.whiteImage=&white;
+    ri.FS_ListFiles=ListScripts;ri.FS_FreeFileList=FreeScriptList;ri.FS_ReadFile=ReadScript;ri.FS_FreeFile=FreeScript;
+    archive[0]=0;R_InitShaders();tr.numLightmaps=1;tr.lightmaps[0]=&white;
+    if(proof==0) {Check(!RE_RegisterShader(NULL),"null exported shader name returns native invalid handle");return;}
+    if(proof==1) {Check(R_FindShader("tests/invalid",INT_MIN,qtrue)==tr.defaultShader,"unknown negative lightmap mode rejects");return;}
+    if(proof==2) {material=R_FindShader("tests/source",LIGHTMAP_NONE,qtrue);target=R_FindShader("tests/target",LIGHTMAP_NONE,qtrue);R_RemapShader("tests/source","tests/target","nan");Check(target->timeOffset==0,"non-finite remap time retains target offset");return;}
+    for(kind=0;kind<3;kind++) {
+        before=allocations;
+        Check(!(kind==0?RE_RegisterShader(NULL):kind==1?RE_RegisterShaderNoMip(NULL):RE_RegisterShaderLightMap(NULL,0)),"each exported null-name registration rejects");
+        Check(allocations==before && R_FindShader(NULL,LIGHTMAP_NONE,qtrue)==tr.defaultShader,"null native registration imports/allocates nothing");
+    }
+    for(i=0;i<MAX_QPATH+7;i++) {
+        memset(name,'x',i);name[i]=0;before=allocations;
+        if(!i || i>=MAX_QPATH) {
+            Check(R_FindShader(name,LIGHTMAP_NONE,qtrue)==tr.defaultShader && !RE_RegisterShader(name) && !RE_RegisterShaderNoMip(name) && !RE_RegisterShaderLightMap(name,0) && !RE_RegisterShaderFromImage(name,LIGHTMAP_NONE,&white,qtrue) && R_FindShaderByName(name)==tr.defaultShader,"empty/overlong names uniformly reject before cache/imports");
+            Check(before==allocations,"invalid native names allocate nothing");
+        } else {
+            material=R_FindShader(name,LIGHTMAP_NONE,qtrue);Check(material && material!=tr.defaultShader && !strcmp(material->name,name),"all 1-63-byte native names retain exact identity");
+            before=allocations;Check(R_FindShader(name,LIGHTMAP_NONE,qtrue)==material && allocations==before && R_FindShaderByName(name)==material,"valid native name cache reuse");
+        }
+    }
+    memset(alias,'x',sizeof(alias)-1);alias[sizeof(alias)-1]=0;material=R_FindShader(alias,LIGHTMAP_NONE,qtrue);memset(alias,'X',sizeof(alias)-1);before=allocations;Check(R_FindShader(alias,LIGHTMAP_NONE,qtrue)==material && before==allocations,"maximum valid case-folded alias cache reuse");
+    for(i=128;i<=255;i++) {
+        Release();tr.defaultImage=&white;tr.whiteImage=&white;archive[0]=0;R_InitShaders();name[0]='t';name[1]=(char)i;name[2]=0;
+        material=R_FindShader(name,LIGHTMAP_NONE,qtrue);Check(material && material!=tr.defaultShader,"extended filename bytes stay valid");before=allocations;Check(R_FindShader(name,LIGHTMAP_NONE,qtrue)==material && before==allocations,"extended-byte hash/cache retains exact filename identity");
+    }
+    Release();tr.defaultImage=&white;tr.whiteImage=&white;archive[0]=0;R_InitShaders();tr.numLightmaps=1;tr.lightmaps[0]=&white;
+    for(i=0;i<5;i++) {
+        snprintf(name,sizeof(name),"tests/mode-%d",i);material=R_FindShader(name,modes[i],qtrue);Check(material->lightmapIndex==modes[i],"all native lighting modes remain valid");
+        snprintf(name,sizeof(name),"tests/image-mode-%d",i);kind=RE_RegisterShaderFromImage(name,modes[i],&white,qtrue);Check(kind>0 && R_GetShaderByHandle(kind)->lightmapIndex==modes[i],"image shader retains each native lighting mode");
+    }
+    before=allocations;
+    Check(R_FindShader("tests/invalid",INT_MIN,qtrue)==tr.defaultShader && !RE_RegisterShaderLightMap("tests/invalid",INT_MIN) && !RE_RegisterShaderFromImage("tests/invalid",INT_MIN,&white,qtrue) && before==allocations,"unknown negative lightmap modes reject before indexing/import");
+    material=R_FindShader("tests/outside-lightmap",INT_MAX,qtrue);Check(material->lightmapIndex==LIGHTMAP_BY_VERTEX,"native nonnegative out-of-range lightmap keeps vertex fallback");
+    kind=RE_RegisterShaderFromImage("tests/image-outside",INT_MAX,&white,qtrue);Check(kind>0 && R_GetShaderByHandle(kind)->lightmapIndex==LIGHTMAP_BY_VERTEX,"image shader uses safe native vertex fallback for missing lightmaps");
+    before=allocations;Check(!RE_RegisterShaderFromImage("tests/missing-image",LIGHTMAP_NONE,NULL,qtrue) && before==allocations,"new image shader rejects missing image before publication");
+    kind=RE_RegisterShaderFromImage("tests/cached-image",LIGHTMAP_NONE,&white,qtrue);before=allocations;Check(RE_RegisterShaderFromImage("tests/cached-image",LIGHTMAP_NONE,NULL,qtrue)==kind && before==allocations,"existing image shader keeps native cache probe without a new image");
+    source=R_FindShader("tests/source",LIGHTMAP_NONE,qtrue);target=R_FindShader("tests/target",LIGHTMAP_NONE,qtrue);
+    R_RemapShader("tests/source","tests/target","12.5");Check(source->remappedShader==target && target->timeOffset==12.5f,"valid native remap identity and offset unchanged");
+    for(i=0;i<6;i++) {
+        const char *bad[]={"nan","inf","-inf","1e400","1e39","-1e39"};R_RemapShader("tests/source","tests/target",bad[i]);Check(target->timeOffset==12.5f,"bad remap time retains prior target offset");
+    }
+    R_RemapShader("tests/source","tests/target","");Check(target->timeOffset==0,"native empty remap offset keeps atof-to-zero behavior");
+    source->remappedShader=NULL;before=allocations;R_RemapShader(NULL,"tests/target",NULL);R_RemapShader("tests/source",NULL,NULL);R_RemapShader(name,NULL,NULL);Check(!source->remappedShader && before==allocations,"invalid remap names have no allocation/remap side effects");
+    (void)text;Release();tr.whiteImage=&white;
+}
 int main(int argc,char **argv) {
 	int i;char *text;ri.Printf=Print;ri.Hunk_Alloc=Allocate;ri.CIN_PlayCinematic=Video;ri.Error=Com_Error;tr.whiteImage=&white;
 	for(i=0;i<MAX_SHADERTEXT_HASH;i++)shaderTextHashTable[i]=emptyHash;
-	if(argc>1) {int proof=atoi(argv[1]);if(proof<3)ConstantVectors(proof);else if(proof<8)WaveModifiers(proof-3);else Metadata(proof-8);Release();return 0;}
-	Metadata(-1);WaveModifiers(-1);ConstantVectors(-1);AlphaIdentity();AlphaWaves();FastAlpha();NativeStages();TailCases();
+	if(argc>1) {int proof=atoi(argv[1]);if(proof<3)ConstantVectors(proof);else if(proof<8)WaveModifiers(proof-3);else if(proof<13)Metadata(proof-8);else PublicInputs(proof-13);Release();return 0;}
+	PublicInputs(-1);Metadata(-1);WaveModifiers(-1);ConstantVectors(-1);AlphaIdentity();AlphaWaves();FastAlpha();NativeStages();TailCases();
 	ResetParser();text="{\nsurfaceParm fog\n}\n";Check(ParseShader(&text),"native zero-stage fog remains valid");
 	ResetParser();text="{\nskyparms - 512 -\n}\n";Check(ParseShader(&text) && shader.isSky,"native zero-stage sky remains valid");
 	Registration();

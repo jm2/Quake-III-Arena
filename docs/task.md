@@ -248,7 +248,10 @@ QVMs while any P0 item is open.
   - [x] Sky/sun/fog/sort metadata checks propagate numeric/path failures;
         rejected definitions retain previous sun state and valid fields/import
         order remain native; see [metadata evidence](shader-metadata-validation.md).
-  - [ ] Complete derived rendering conversions and public shader input checks.
+  - [x] Shader names/lightmap modes and image/remap inputs validate before
+        lookup/index/publication while retaining native valid cache behavior;
+        see [registration evidence](shader-registration-input-validation.md).
+  - [ ] Complete derived rendering conversions.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
       — **high**, server OOB access/infinite traversal.
   - [x] Local mover model boundary/look-up fixes cross-build.
