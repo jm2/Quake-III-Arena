@@ -133,10 +133,26 @@ static void AlphaWaves(void) {
 	}
 	Release();tr.whiteImage=&white;
 }
+static void FastAlpha(void) {
+	int kind,mode;const alphaGen_t alpha[]={AGEN_IDENTITY,AGEN_SKIP,AGEN_VERTEX,AGEN_WAVEFORM};
+	shader_t *registered;r_ignoreFastPath=&zero;
+	for(kind=0;kind<2;kind++)for(mode=0;mode<4;mode++) {
+		ResetParser();shader.numUnfoggedPasses=1;stages[0].rgbGen=kind?CGEN_IDENTITY:CGEN_LIGHTING_DIFFUSE;stages[0].alphaGen=alpha[mode];stages[0].bundle[0].tcGen=TCGEN_TEXTURE;
+		if(kind) { stages[0].bundle[1].tcGen=TCGEN_LIGHTMAP;shader.multitextureEnv=GL_MODULATE; }
+		ComputeStageIteratorFunc();
+		Check(shader.optimalStageIteratorFunc==(mode<2?(kind?RB_StageIteratorLightmappedMultitexture:RB_StageIteratorVertexLitTexture):RB_StageIteratorGeneric),"identity/skipped alpha retains eligible fast paths while varying alpha uses generic rendering");
+	}
+	Release();tr.whiteImage=&white;s_shaderText="tests/diffuse\n{\n{\nmap $whiteimage\nrgbGen lightingDiffuse\nalphaGen identity\n}\n}\n";
+	registered=R_FindShader("tests/diffuse",LIGHTMAP_NONE,qtrue);Check(!registered->defaultShader && registered->stages[0]->alphaGen==AGEN_SKIP && registered->optimalStageIteratorFunc==RB_StageIteratorVertexLitTexture,"actual explicit diffuse registration retains vertex-lit iterator after alpha skip");
+	Release();tr.whiteImage=&white;tr.numLightmaps=1;tr.lightmaps[0]=&white;qglActiveTextureARB=Texture;
+	s_shaderText="tests/lightmapped\n{\n{\nmap $whiteimage\nrgbGen identity\nalphaGen identity\n}\n{\nmap $lightmap\nrgbGen identity\nalphaGen identity\nblendFunc filter\n}\n}\n";
+	registered=R_FindShader("tests/lightmapped",0,qtrue);Check(!registered->defaultShader && registered->numUnfoggedPasses==1 && registered->stages[0]->alphaGen==AGEN_SKIP && registered->optimalStageIteratorFunc==RB_StageIteratorLightmappedMultitexture,"actual collapsed lightmapped registration retains its specialized iterator after alpha skip");
+	qglActiveTextureARB=NULL;r_ignoreFastPath=&one;Release();tr.whiteImage=&white;
+}
 int main(void) {
 	int i;char *text;ri.Printf=Print;ri.Hunk_Alloc=Allocate;ri.CIN_PlayCinematic=Video;tr.whiteImage=&white;
 	for(i=0;i<MAX_SHADERTEXT_HASH;i++)shaderTextHashTable[i]=emptyHash;
-	AlphaIdentity();AlphaWaves();NativeStages();TailCases();
+	AlphaIdentity();AlphaWaves();FastAlpha();NativeStages();TailCases();
 	ResetParser();text="{\nsurfaceParm fog\n}\n";Check(ParseShader(&text),"native zero-stage fog remains valid");
 	ResetParser();text="{\nskyparms - 512 -\n}\n";Check(ParseShader(&text) && shader.isSky,"native zero-stage sky remains valid");
 	Registration();

@@ -1690,7 +1690,7 @@ static void ComputeStageIteratorFunc( void )
 	{
 		if ( stages[0].rgbGen == CGEN_LIGHTING_DIFFUSE )
 		{
-			if ( stages[0].alphaGen == AGEN_IDENTITY )
+			if ( (stages[0].alphaGen == AGEN_IDENTITY || stages[0].alphaGen == AGEN_SKIP) )
 			{
 				if ( stages[0].bundle[0].tcGen == TCGEN_TEXTURE )
 				{
@@ -1715,7 +1715,7 @@ static void ComputeStageIteratorFunc( void )
 	//
 	if ( shader.numUnfoggedPasses == 1 )
 	{
-		if ( ( stages[0].rgbGen == CGEN_IDENTITY ) && ( stages[0].alphaGen == AGEN_IDENTITY ) )
+		if ( ( stages[0].rgbGen == CGEN_IDENTITY ) && ( (stages[0].alphaGen == AGEN_IDENTITY || stages[0].alphaGen == AGEN_SKIP) ) )
 		{
 			if ( stages[0].bundle[0].tcGen == TCGEN_TEXTURE && 
 				stages[0].bundle[1].tcGen == TCGEN_LIGHTMAP )
