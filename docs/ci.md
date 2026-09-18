@@ -701,3 +701,13 @@ casting, and NaN/infinity results reject. Eight nullable number/sign imports kee
 native queued next-line owners and release uncommitted copies, retaining copy
 factory fatal severity. Public directive flow and real character fields consume
 correct metadata. GCC/Clang normal and release fast-math sanitizers run the fixture.
+
+
+The expression collection runner links actual directive/evaluator/source/lexer/
+macro/character/core bodies. Undefined names, divide-by-zero, malformed operands,
+missing defined names, invalid dollar delimiters and lexical tails release copied
+operand chains before returning failure. Six nullable operand imports retain no
+partial tokens and initialize caller outputs. Real macro expansion failure keeps
+original definition owners, while valid macro/defined values and historical-error
+recovery retain native behavior. GCC/Clang normal and release fast-math sanitizers
+run the fixture.

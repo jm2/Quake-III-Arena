@@ -509,6 +509,11 @@ implementation or check, without implying issue completion.
         non-finite float results and safely clamp auxiliary integer values;
         number/sign copies publish atomically with native text/type behavior;
         see [expression token evidence](bot-eval-token-validation.md).
+  - [x] Expression collectors release copied operands on every parse/evaluation/
+        nullable-copy failure, reject lexical errors and malformed dollar/defined
+        grammar before publication, and retain valid macro/defined values and
+        historical source-error recovery;
+        see [operand evidence](bot-eval-collection-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
