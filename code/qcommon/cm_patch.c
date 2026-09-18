@@ -84,6 +84,26 @@ int	c_totalPatchBlocks;
 int	c_totalPatchSurfaces;
 int	c_totalPatchEdges;
 
+enum { CM_PATCH_PLANE_LIMIT = -2, CM_PATCH_UNRESOLVABLE_PLANE = -3, CM_PATCH_NONFINITE_PLANE = -4 };
+
+/* Check native float bits without aliasing or depending on finite-math flags. */
+static qboolean CM_PatchFiniteVector( const float *values, int count ) {
+	int i;
+	unsigned int word;
+	for ( i = 0 ; i < count ; i++ ) {
+		memcpy(&word,values+i,sizeof(word));
+		if ( (word & 0x7f800000u) == 0x7f800000u ) return qfalse;
+	}
+	return qtrue;
+}
+static qboolean CM_PatchFiniteWinding( const winding_t *w ) {
+	int i;
+	for ( i = 0 ; i < w->numpoints ; i++ ) {
+		if ( !CM_PatchFiniteVector(w->p[i],3) ) return qfalse;
+	}
+	return qtrue;
+}
+
 static const patchCollide_t	*debugPatchCollide;
 static const facet_t		*debugFacet;
 static qboolean		debugBlock;
@@ -124,17 +144,23 @@ Returns false if the triangle is degenrate.
 The normal will point out of the clock for clockwise ordered points
 =====================
 */
-static qboolean CM_PlaneFromPoints( vec4_t plane, vec3_t a, vec3_t b, vec3_t c ) {
+static int CM_PlaneFromPoints( vec4_t plane, vec3_t a, vec3_t b, vec3_t c ) {
 	vec3_t	d1, d2;
+	float length;
 
 	VectorSubtract( b, a, d1 );
 	VectorSubtract( c, a, d2 );
+	if ( !CM_PatchFiniteVector(d1,3) || !CM_PatchFiniteVector(d2,3) ) return CM_PATCH_NONFINITE_PLANE;
 	CrossProduct( d2, d1, plane );
-	if ( VectorNormalize( plane ) == 0 ) {
+	if ( !CM_PatchFiniteVector(plane,3) ) return CM_PATCH_NONFINITE_PLANE;
+	length = VectorNormalize( plane );
+	if ( !CM_PatchFiniteVector(&length,1) || !CM_PatchFiniteVector(plane,3) ) return CM_PATCH_NONFINITE_PLANE;
+	if ( length == 0 ) {
 		return qfalse;
 	}
 
 	plane[3] = DotProduct( a, plane );
+	if ( !CM_PatchFiniteVector(plane,4) ) return CM_PATCH_NONFINITE_PLANE;
 	return qtrue;
 }
 
@@ -155,7 +181,7 @@ Returns true if the given quadratic curve is not flat enough for our
 collision detection purposes
 =================
 */
-static qboolean	CM_NeedsSubdivision( vec3_t a, vec3_t b, vec3_t c ) {
+static int CM_NeedsSubdivision( vec3_t a, vec3_t b, vec3_t c ) {
 	vec3_t		cmid;
 	vec3_t		lmid;
 	vec3_t		delta;
@@ -173,8 +199,11 @@ static qboolean	CM_NeedsSubdivision( vec3_t a, vec3_t b, vec3_t c ) {
 	}
 
 	// see if the curve is far enough away from the linear mid
+	if ( !CM_PatchFiniteVector(cmid,3) || !CM_PatchFiniteVector(lmid,3) ) return CM_PATCH_NONFINITE_PLANE;
 	VectorSubtract( cmid, lmid, delta );
+	if ( !CM_PatchFiniteVector(delta,3) ) return CM_PATCH_NONFINITE_PLANE;
 	dist = VectorLength( delta );
+	if ( !CM_PatchFiniteVector(&dist,1) ) return CM_PATCH_NONFINITE_PLANE;
 	
 	return dist >= SUBDIVIDE_DISTANCE;
 }
@@ -286,8 +315,8 @@ all the aproximating points are within SUBDIVIDE_DISTANCE
 from the true curve
 =================
 */
-static qboolean CM_SubdivideGridColumns( cGrid_t *grid ) {
-	int		i, j, k;
+static const char *CM_SubdivideGridColumns( cGrid_t *grid ) {
+	int		i, j, k, needs;
 
 	for ( i = 0 ; i < grid->width - 2 ;  ) {
 		// grid->points[i][x] is an interpolating control point
@@ -298,7 +327,9 @@ static qboolean CM_SubdivideGridColumns( cGrid_t *grid ) {
 		// first see if we can collapse the aproximating collumn away
 		//
 		for ( j = 0 ; j < grid->height ; j++ ) {
-			if ( CM_NeedsSubdivision( grid->points[i][j], grid->points[i+1][j], grid->points[i+2][j] ) ) {
+			needs = CM_NeedsSubdivision( grid->points[i][j], grid->points[i+1][j], grid->points[i+2][j] );
+			if ( needs < 0 ) return "nonfinite collision patch refinement";
+			if ( needs ) {
 				break;
 			}
 		}
@@ -323,7 +354,7 @@ static qboolean CM_SubdivideGridColumns( cGrid_t *grid ) {
 		// we need to subdivide the curve
 		//
 		if ( grid->width > MAX_GRID_SIZE - 2 ) {
-			return qfalse;
+			return "collision patch subdivision exceeds native grid";
 		}
 		for ( j = 0 ; j < grid->height ; j++ ) {
 			vec3_t	prev, mid, next;
@@ -349,7 +380,7 @@ static qboolean CM_SubdivideGridColumns( cGrid_t *grid ) {
 		// the new aproximating point at i+1 may need to be removed
 		// or subdivided farther, so don't advance i
 	}
-	return qtrue;
+	return NULL;
 }
 
 /*
@@ -419,9 +450,10 @@ PATCH COLLIDE GENERATION
 */
 
 /* -1 is a native degenerate plane; lower values are build failures. */
-enum { CM_PATCH_PLANE_LIMIT = -2, CM_PATCH_UNRESOLVABLE_PLANE = -3 };
+
 static const char *CM_PatchPlaneError( int plane ) {
 	if ( plane == CM_PATCH_PLANE_LIMIT ) return "MAX_PATCH_PLANES";
+	if ( plane == CM_PATCH_NONFINITE_PLANE ) return "nonfinite collision patch geometry";
 	if ( plane < -1 ) return "unresolvable collision patch plane";
 	return NULL;
 }
@@ -501,6 +533,7 @@ CM_FindPlane2
 */
 int CM_FindPlane2(float plane[4], int *flipped) {
 	int i;
+	if ( !CM_PatchFiniteVector(plane,4) ) return CM_PATCH_NONFINITE_PLANE;
 
 	// see if the points are close enough to an existing plane
 	for ( i = 0 ; i < numPlanes ; i++ ) {
@@ -532,9 +565,10 @@ static int CM_FindPlane( float *p1, float *p2, float *p3 ) {
 	int		i;
 	float	d;
 
-	if ( !CM_PlaneFromPoints( plane, p1, p2, p3 ) ) {
-		return -1;
-	}
+	int result;
+
+	result = CM_PlaneFromPoints( plane, p1, p2, p3 );
+	if ( result <= 0 ) return result < 0 ? result : -1;
 
 	// see if the points are close enough to an existing plane
 	for ( i = 0 ; i < numPlanes ; i++ ) {
@@ -589,6 +623,7 @@ static int CM_PointOnPlaneSide( float *p, int planeNum ) {
 	plane = planes[ planeNum ].plane;
 
 	d = DotProduct( p, plane ) - plane[3];
+	if ( !CM_PatchFiniteVector(&d,1) ) return CM_PATCH_NONFINITE_PLANE;
 
 	if ( d > PLANE_TRI_EPSILON ) {
 		return SIDE_FRONT;
@@ -691,7 +726,7 @@ static int CM_EdgePlaneNum( cGrid_t *grid, int gridPlanes[MAX_GRID_SIZE][MAX_GRI
 CM_SetBorderInward
 ===================
 */
-static void CM_SetBorderInward( facet_t *facet, cGrid_t *grid, int gridPlanes[MAX_GRID_SIZE][MAX_GRID_SIZE][2],
+static const char *CM_SetBorderInward( facet_t *facet, cGrid_t *grid, int gridPlanes[MAX_GRID_SIZE][MAX_GRID_SIZE][2],
 						  int i, int j, int which ) {
 	int		k, l;
 	float	*points[4];
@@ -733,6 +768,7 @@ static void CM_SetBorderInward( facet_t *facet, cGrid_t *grid, int gridPlanes[MA
 			int		side;
 
 			side = CM_PointOnPlaneSide( points[l], facet->borderPlanes[k] );
+			if ( side < -1 ) return CM_PatchPlaneError(side);
 			if ( side == SIDE_FRONT ) {
 				front++;
 			} if ( side == SIDE_BACK ) {
@@ -760,6 +796,7 @@ static void CM_SetBorderInward( facet_t *facet, cGrid_t *grid, int gridPlanes[MA
 			}
 		}
 	}
+	return NULL;
 }
 
 /*
@@ -769,7 +806,7 @@ CM_ValidateFacet
 If the facet isn't bounded by its borders, we screwed up.
 ==================
 */
-static qboolean CM_ValidateFacet( facet_t *facet ) {
+static int CM_ValidateFacet( facet_t *facet ) {
 	float		plane[4];
 	int			j;
 	winding_t	*w;
@@ -781,6 +818,7 @@ static qboolean CM_ValidateFacet( facet_t *facet ) {
 
 	Vector4Copy( planes[ facet->surfacePlane ].plane, plane );
 	w = BaseWindingForPlane( plane,  plane[3] );
+	if ( !CM_PatchFiniteWinding(w) ) { FreeWinding(w);return CM_PATCH_NONFINITE_PLANE; }
 	for ( j = 0 ; j < facet->numBorders && w ; j++ ) {
 		if ( facet->borderPlanes[j] == -1 ) {
 			FreeWinding( w );
@@ -792,6 +830,7 @@ static qboolean CM_ValidateFacet( facet_t *facet ) {
 			plane[3] = -plane[3];
 		}
 		ChopWindingInPlace( &w, plane, plane[3], 0.1f );
+		if ( w && !CM_PatchFiniteWinding(w) ) { FreeWinding(w);return CM_PATCH_NONFINITE_PLANE; }
 	}
 
 	if ( !w ) {
@@ -838,6 +877,7 @@ static const char *CM_AddFacetBevels( facet_t *facet ) {
 	Vector4Copy( planes[ facet->surfacePlane ].plane, plane );
 
 	w = BaseWindingForPlane( plane,  plane[3] );
+	if ( !CM_PatchFiniteWinding(w) ) { FreeWinding(w);return "nonfinite collision patch geometry"; }
 	for ( j = 0 ; j < facet->numBorders && w ; j++ ) {
 		if (facet->borderPlanes[j] == facet->surfacePlane) continue;
 		Vector4Copy( planes[ facet->borderPlanes[j] ].plane, plane );
@@ -848,6 +888,7 @@ static const char *CM_AddFacetBevels( facet_t *facet ) {
 		}
 
 		ChopWindingInPlace( &w, plane, plane[3], 0.1f );
+		if ( w && !CM_PatchFiniteWinding(w) ) { FreeWinding(w);return "nonfinite collision patch geometry"; }
 	}
 	if ( !w ) {
 		return NULL;
@@ -882,7 +923,7 @@ static const char *CM_AddFacetBevels( facet_t *facet ) {
 			if ( i == facet->numBorders ) {
 				if (facet->numBorders >= bevelCapacity) { FreeWinding(w);return "MAX_FACET_BORDERS"; }
 				facet->borderPlanes[facet->numBorders] = CM_FindPlane2(plane, &flipped);
-				if (facet->borderPlanes[facet->numBorders] < -1) { FreeWinding(w);return "MAX_PATCH_PLANES"; }
+				if (facet->borderPlanes[facet->numBorders] < -1) { FreeWinding(w);return CM_PatchPlaneError(facet->borderPlanes[facet->numBorders]); }
 				facet->borderNoAdjust[facet->numBorders] = 0;
 				facet->borderInward[facet->numBorders] = flipped;
 				facet->numBorders++;
@@ -945,7 +986,7 @@ static const char *CM_AddFacetBevels( facet_t *facet ) {
 				if ( i == facet->numBorders ) {
 					if (facet->numBorders >= bevelCapacity) { FreeWinding(w);return "MAX_FACET_BORDERS"; }
 					facet->borderPlanes[facet->numBorders] = CM_FindPlane2(plane, &flipped);
-					if (facet->borderPlanes[facet->numBorders] < -1) { FreeWinding(w);return "MAX_PATCH_PLANES"; }
+					if (facet->borderPlanes[facet->numBorders] < -1) { FreeWinding(w);return CM_PatchPlaneError(facet->borderPlanes[facet->numBorders]); }
 
 					for ( k = 0 ; k < facet->numBorders ; k++ ) {
 						if (facet->borderPlanes[facet->numBorders] ==
@@ -963,6 +1004,7 @@ static const char *CM_AddFacetBevels( facet_t *facet ) {
 						newplane[3] = -newplane[3];
 					} //end if
 					ChopWindingInPlace( &w2, newplane, newplane[3], 0.1f );
+					if ( w2 && !CM_PatchFiniteWinding(w2) ) { FreeWinding(w2);FreeWinding(w);return "nonfinite collision patch geometry"; }
 					if (!w2) {
 						Com_DPrintf("WARNING: CM_AddFacetBevels... invalid bevel\n");
 						continue;
@@ -1012,6 +1054,7 @@ static const char *CM_PatchCollideFromGrid( cGrid_t *grid ) {
 	int				borders[4];
 	int				noAdjust[4];
 	const char *error;
+	int result;
 
 	numPlanes = 0;
 	numFacets = 0;
@@ -1105,8 +1148,10 @@ static const char *CM_PatchCollideFromGrid( cGrid_t *grid ) {
 				facet->borderNoAdjust[2] = noAdjust[EN_BOTTOM];
 				facet->borderPlanes[3] = borders[EN_LEFT];
 				facet->borderNoAdjust[3] = noAdjust[EN_LEFT];
-				CM_SetBorderInward( facet, grid, gridPlanes, i, j, -1 );
-				if ( CM_ValidateFacet( facet ) ) {
+				if ( (error = CM_SetBorderInward(facet,grid,gridPlanes,i,j,-1)) != NULL ) return error;
+				result = CM_ValidateFacet( facet );
+				if ( result < 0 ) return CM_PatchPlaneError(result);
+				if ( result ) {
 					if ( (error = CM_AddFacetBevels(facet)) != NULL ) return error;
 					numFacets++;
 				}
@@ -1126,8 +1171,10 @@ static const char *CM_PatchCollideFromGrid( cGrid_t *grid ) {
 					}
 				}
 				if ( (error = CM_PatchPlaneError(facet->borderPlanes[2])) != NULL ) return error;
-				CM_SetBorderInward( facet, grid, gridPlanes, i, j, 0 );
-				if ( CM_ValidateFacet( facet ) ) {
+				if ( (error = CM_SetBorderInward(facet,grid,gridPlanes,i,j,0)) != NULL ) return error;
+				result = CM_ValidateFacet( facet );
+				if ( result < 0 ) return CM_PatchPlaneError(result);
+				if ( result ) {
 					if ( (error = CM_AddFacetBevels(facet)) != NULL ) return error;
 					numFacets++;
 				}
@@ -1152,8 +1199,10 @@ static const char *CM_PatchCollideFromGrid( cGrid_t *grid ) {
 					}
 				}
 				if ( (error = CM_PatchPlaneError(facet->borderPlanes[2])) != NULL ) return error;
-				CM_SetBorderInward( facet, grid, gridPlanes, i, j, 1 );
-				if ( CM_ValidateFacet( facet ) ) {
+				if ( (error = CM_SetBorderInward(facet,grid,gridPlanes,i,j,1)) != NULL ) return error;
+				result = CM_ValidateFacet( facet );
+				if ( result < 0 ) return CM_PatchPlaneError(result);
+				if ( result ) {
 					if ( (error = CM_AddFacetBevels(facet)) != NULL ) return error;
 					numFacets++;
 				}
@@ -1177,6 +1226,7 @@ static void CM_CopyPatchCollide( patchCollide_t *pf ) {
 /* Share the exact native refinement with the map preflight. */
 static const char *CM_RefinePatchGrid( cGrid_t *grid, int width, int height, vec3_t *points ) {
 	int i, j;
+	const char *error;
 
 	if ( width <= 2 || height <= 2 || !points ) return "bad collision patch parameters";
 	if ( !(width & 1) || !(height & 1) ) return "even collision patch dimensions";
@@ -1188,16 +1238,19 @@ static const char *CM_RefinePatchGrid( cGrid_t *grid, int width, int height, vec
 	grid->wrapHeight = qfalse;
 	for ( i = 0 ; i < width ; i++ ) {
 		for ( j = 0 ; j < height ; j++ ) {
+			if ( !CM_PatchFiniteVector(points[j*width+i],3) ) return "nonfinite collision patch controls";
 			VectorCopy( points[j*width + i], grid->points[i][j] );
 		}
 	}
 
 	CM_SetGridWrapWidth( grid );
-	if ( !CM_SubdivideGridColumns( grid ) ) return "collision patch subdivision exceeds native grid";
+	error = CM_SubdivideGridColumns( grid );
+	if ( error ) return error;
 	CM_RemoveDegenerateColumns( grid );
 	CM_TransposeGrid( grid );
 	CM_SetGridWrapWidth( grid );
-	if ( !CM_SubdivideGridColumns( grid ) ) return "collision patch subdivision exceeds native grid";
+	error = CM_SubdivideGridColumns( grid );
+	if ( error ) return error;
 	CM_RemoveDegenerateColumns( grid );
 	return NULL;
 }

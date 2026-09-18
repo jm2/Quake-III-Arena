@@ -3,6 +3,7 @@
 #define BSP_FIXTURE_NATIVE_AREA_FLOOD
 #include "bsp_fixture.h"
 #include "../code/qcommon/cm_patch.h"
+#include <float.h>
 
 static void *gridTemporary, *zones[64];
 static int failGrid, gridAllocations, gridFrees, zoneLive;
@@ -130,8 +131,33 @@ static void RejectBudget(int width,int height,int axis,int amplitude,const char 
 	Check(error && !strcmp(error,expected) && !gridTemporary && !zoneLive,"actual native budget and preflight ownership");
 	Reject(width,height,axis,amplitude);
 }
+static void RejectNumeric(void) {
+	vec3_t points[9];unsigned int offset,golden=Fingerprint(cm.surfaces[0]->pc);
+	int i,j,a,mode;const char *error;
+	for(mode=0;mode<5;mode++) {
+		Build(3,3,0,0);offset=BSP_FileWord(source+8+LUMP_DRAWVERTS*8);
+		for(i=0;i<9;i++) {
+			float x=i%3-1,y=i/3-1,z=0;
+			if(mode==0) { x*=1e20f;y*=1e20f; }
+			if(mode==1) { x*=1e12f;y*=1e12f; }
+			if(mode==2) x*=FLT_MAX;
+			if(mode==3) x=FLT_MAX;
+			if(mode==4 && i%3==1) z=FLT_MAX;
+			Float(offset+i*sizeof(drawVert_t),x);Float(offset+i*sizeof(drawVert_t)+4,y);Float(offset+i*sizeof(drawVert_t)+8,z);
+			for(j=0;j<3;j++)points[i][j]=BSP_GeometryFloat(source+offset+i*sizeof(drawVert_t)+j*4);
+		}
+		error=CM_ValidatePatchCollide(3,3,points);
+		Check(error && strstr(error,"nonfinite collision patch") && !gridTemporary && !zoneLive,"finite source overflows reject derived geometry and release preflight ownership");
+		for(a=0;a<4;a++) {
+			alignment=a;RejectCM();
+			Check(!gridTemporary && !zoneLive && Fingerprint(cm.surfaces[0]->pc)==golden,"nonfinite derived geometry retains loaded patch and releases all temporaries");
+		}
+		alignment=0;
+	}
+}
 int main(void) {
 	Build(3,3,0,0);Load(3,3,0xe6e8e7d6u);
+	RejectNumeric();
 	RejectBudget(31,31,3,32,"MAX_FACETS");
 	RejectBudget(31,31,4,128,"MAX_PATCH_PLANES");
 	RejectDirect(31,31,3);
