@@ -41,6 +41,27 @@ long myftol( float f );
 #endif
 
 
+/* Preserve valid native conversion/rounding; unsafe derived values become zero. */
+static ID_INLINE qboolean R_FiniteFloat( float value ) {
+	unsigned int bits;
+	volatile unsigned int representation;
+	Com_Memcpy( &bits, &value, sizeof(bits) );
+	representation = bits;
+	return (representation & 0x7f800000u) != 0x7f800000u;
+}
+
+static ID_INLINE qboolean R_FloatToIntValid( float value ) {
+	return R_FiniteFloat(value) && value >= -2147483648.0f && value < 2147483648.0f;
+}
+
+static ID_INLINE int R_FloatToInt( float value ) {
+	return R_FloatToIntValid(value) ? (int)value : 0;
+}
+
+static ID_INLINE int R_Ftol( float value ) {
+	return R_FloatToIntValid(value) ? myftol(value) : 0;
+}
+
 // everything that is needed by the backend needs
 // to be double buffered to allow it to run in
 // parallel on a dual cpu machine
