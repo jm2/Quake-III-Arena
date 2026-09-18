@@ -261,6 +261,9 @@ QVMs while any P0 item is open.
   - [x] Cloud tables stage completely, preserve stable native results and use
         wide geometry for finite overflow; rejected definitions retain prior
         cloud state; see [cloud evidence](cloud-coordinate-validation.md).
+  - [x] Rejected definitions and missing textures cache a complete native
+        default material with discarded prefix metadata; see
+        [fallback evidence](shader-fallback-validation.md).
   - [ ] Complete derived rendering conversions.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
       — **high**, server OOB access/infinite traversal.
@@ -499,8 +502,10 @@ QVMs while any P0 item is open.
       exact-head CI, clean completed Codex and resolved bot findings.
 - [x] Sky subdivisions/shared cloud mesh #116 merged at `e59b66d` after
       exact-head CI, clean completed Codex and resolved bot findings.
-- [ ] Gate cloud-layer math/publication, review rejected material fallback and
-      finish remaining renderer transaction/capacity work.
+- [x] Cloud-layer math/publication #117 merged at `c4251e7` after the
+      same exact-head CI/Codex/resolved-finding gate.
+- [ ] Gate complete native material fallback, then continue renderer budgets/
+      transactions and AAS/preprocessor root causes; retain deferred acceptance.
 - [ ] Finish #45 renderer aggregate capacity and full transactional
       publication; retain remaining query/candidate costs and deferred target
       acceptance. Collision aggregate and derived geometry/facet checks are
