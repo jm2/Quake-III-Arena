@@ -36,12 +36,20 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "l_struct.h"
 #include "../game/botlib.h"
 #include "be_interface.h"
+#include "../game/be_ea.h"
+#include <limits.h>
 
 #define MAX_USERMOVE				400
 #define MAX_COMMANDARGUMENTS		10
 #define ACTION_JUMPEDLASTFRAME		128
 
 bot_input_t *botinputs;
+static int botInputCapacity;
+
+/** Check the actual input allocation rather than a later global client count. */
+qboolean EA_ClientValid(int client) {
+	return botinputs && client >= 0 && client < botInputCapacity;
+}
 
 //===========================================================================
 //
@@ -51,6 +59,7 @@ bot_input_t *botinputs;
 //===========================================================================
 void EA_Say(int client, char *str)
 {
+	if (!EA_ClientValid(client)) return;
 	botimport.BotClientCommand(client, va("say %s", str) );
 } //end of the function EA_Say
 //===========================================================================
@@ -61,6 +70,7 @@ void EA_Say(int client, char *str)
 //===========================================================================
 void EA_SayTeam(int client, char *str)
 {
+	if (!EA_ClientValid(client)) return;
 	botimport.BotClientCommand(client, va("say_team %s", str));
 } //end of the function EA_SayTeam
 //===========================================================================
@@ -71,6 +81,7 @@ void EA_SayTeam(int client, char *str)
 //===========================================================================
 void EA_Tell(int client, int clientto, char *str)
 {
+	if (!EA_ClientValid(client)) return;
 	botimport.BotClientCommand(client, va("tell %d, %s", clientto, str));
 } //end of the function EA_SayTeam
 //===========================================================================
@@ -81,6 +92,7 @@ void EA_Tell(int client, int clientto, char *str)
 //===========================================================================
 void EA_UseItem(int client, char *it)
 {
+	if (!EA_ClientValid(client)) return;
 	botimport.BotClientCommand(client, va("use %s", it));
 } //end of the function EA_UseItem
 //===========================================================================
@@ -91,6 +103,7 @@ void EA_UseItem(int client, char *it)
 //===========================================================================
 void EA_DropItem(int client, char *it)
 {
+	if (!EA_ClientValid(client)) return;
 	botimport.BotClientCommand(client, va("drop %s", it));
 } //end of the function EA_DropItem
 //===========================================================================
@@ -101,6 +114,7 @@ void EA_DropItem(int client, char *it)
 //===========================================================================
 void EA_UseInv(int client, char *inv)
 {
+	if (!EA_ClientValid(client)) return;
 	botimport.BotClientCommand(client, va("invuse %s", inv));
 } //end of the function EA_UseInv
 //===========================================================================
@@ -111,6 +125,7 @@ void EA_UseInv(int client, char *inv)
 //===========================================================================
 void EA_DropInv(int client, char *inv)
 {
+	if (!EA_ClientValid(client)) return;
 	botimport.BotClientCommand(client, va("invdrop %s", inv));
 } //end of the function EA_DropInv
 //===========================================================================
@@ -122,6 +137,7 @@ void EA_DropInv(int client, char *inv)
 void EA_Gesture(int client)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -135,6 +151,7 @@ void EA_Gesture(int client)
 //===========================================================================
 void EA_Command(int client, char *command)
 {
+	if (!EA_ClientValid(client)) return;
 	botimport.BotClientCommand(client, command);
 } //end of the function EA_Command
 //===========================================================================
@@ -146,6 +163,7 @@ void EA_Command(int client, char *command)
 void EA_SelectWeapon(int client, int weapon)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -160,6 +178,7 @@ void EA_SelectWeapon(int client, int weapon)
 void EA_Attack(int client)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -174,6 +193,7 @@ void EA_Attack(int client)
 void EA_Talk(int client)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -188,6 +208,7 @@ void EA_Talk(int client)
 void EA_Use(int client)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -202,6 +223,7 @@ void EA_Use(int client)
 void EA_Respawn(int client)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -216,6 +238,7 @@ void EA_Respawn(int client)
 void EA_Jump(int client)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -237,6 +260,7 @@ void EA_Jump(int client)
 void EA_DelayedJump(int client)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -258,6 +282,7 @@ void EA_DelayedJump(int client)
 void EA_Crouch(int client)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -272,6 +297,7 @@ void EA_Crouch(int client)
 void EA_Walk(int client)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -286,6 +312,7 @@ void EA_Walk(int client)
 void EA_Action(int client, int action)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -300,6 +327,7 @@ void EA_Action(int client, int action)
 void EA_MoveUp(int client)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -314,6 +342,7 @@ void EA_MoveUp(int client)
 void EA_MoveDown(int client)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -328,6 +357,7 @@ void EA_MoveDown(int client)
 void EA_MoveForward(int client)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -342,6 +372,7 @@ void EA_MoveForward(int client)
 void EA_MoveBack(int client)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -356,6 +387,7 @@ void EA_MoveBack(int client)
 void EA_MoveLeft(int client)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -370,6 +402,7 @@ void EA_MoveLeft(int client)
 void EA_MoveRight(int client)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -384,6 +417,7 @@ void EA_MoveRight(int client)
 void EA_Move(int client, vec3_t dir, float speed)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -402,6 +436,7 @@ void EA_Move(int client, vec3_t dir, float speed)
 void EA_View(int client, vec3_t viewangles)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 
@@ -415,6 +450,7 @@ void EA_View(int client, vec3_t viewangles)
 //===========================================================================
 void EA_EndRegular(int client, float thinktime)
 {
+	if (!EA_ClientValid(client)) return;
 /*
 	bot_input_t *bi;
 	int jumped = qfalse;
@@ -443,6 +479,7 @@ void EA_EndRegular(int client, float thinktime)
 void EA_GetInput(int client, float thinktime, bot_input_t *input)
 {
 	bot_input_t *bi;
+	if (!EA_ClientValid(client)) return;
 //	int jumped = qfalse;
 
 	bi = &botinputs[client];
@@ -471,6 +508,7 @@ void EA_ResetInput(int client)
 {
 	bot_input_t *bi;
 	int jumped = qfalse;
+	if (!EA_ClientValid(client)) return;
 
 	bi = &botinputs[client];
 	bi->actionflags &= ~ACTION_JUMPEDLASTFRAME;
@@ -490,10 +528,13 @@ void EA_ResetInput(int client)
 //===========================================================================
 int EA_Setup(void)
 {
+	if (botlibglobals.maxclients < 1 || botlibglobals.maxclients > INT_MAX / (int)sizeof(bot_input_t))
+		return BLERR_LIBRARYNOTSETUP;
 	//initialize the bot inputs
 	botinputs = (bot_input_t *) GetClearedHunkMemory(
 									botlibglobals.maxclients * sizeof(bot_input_t));
-	return BLERR_NOERROR;
+	botInputCapacity = botinputs ? botlibglobals.maxclients : 0;
+	return botinputs ? BLERR_NOERROR : BLERR_LIBRARYNOTSETUP;
 } //end of the function EA_Setup
 //===========================================================================
 //
@@ -505,4 +546,5 @@ void EA_Shutdown(void)
 {
 	FreeMemory(botinputs);
 	botinputs = NULL;
+	botInputCapacity = 0;
 } //end of the function EA_Shutdown
