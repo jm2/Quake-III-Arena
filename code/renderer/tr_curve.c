@@ -357,15 +357,33 @@ void R_FreeSurfaceGridMesh( srfGridMesh_t *grid ) {
 R_SubdividePatchToGrid
 =================
 */
-srfGridMesh_t *R_SubdividePatchToGrid( int width, int height,
-								drawVert_t points[MAX_PATCH_SIZE*MAX_PATCH_SIZE] ) {
-	int			i, j, k, l;
-	drawVert_t	prev, next, mid;
-	float		len, maxLen;
-	int			dir;
-	int			t;
-	MAC_STATIC drawVert_t	ctrl[MAX_GRID_SIZE][MAX_GRID_SIZE];
-	float		errorTable[2][MAX_GRID_SIZE];
+typedef struct {
+	drawVert_t ctrl[MAX_GRID_SIZE][MAX_GRID_SIZE];
+	float errorTable[2][MAX_GRID_SIZE];
+} patchGridWorkspace_t;
+
+static qboolean R_PatchFiniteVector( const float *values, int count ) {
+	int i;
+	unsigned int word;
+	for ( i = 0 ; i < count ; i++ ) {
+		memcpy(&word,values+i,sizeof(word));
+		if ( (word & 0x7f800000u) == 0x7f800000u ) return qfalse;
+	}
+	return qtrue;
+}
+
+/* The loader preflight and generator execute the same native curve operations. */
+static const char *R_RefinePatchGrid( int *widthOut, int *heightOut,
+		drawVert_t ctrl[MAX_GRID_SIZE][MAX_GRID_SIZE], float errorTable[2][MAX_GRID_SIZE],
+		const drawVert_t *points ) {
+	int i, j, k, l, dir, t;
+	int width = *widthOut, height = *heightOut;
+	drawVert_t prev, next, mid;
+	float len, maxLen, radius;
+	vec3_t bounds[2], origin, delta;
+
+	if ( !points || width<3 || height<3 || !(width&1) || !(height&1) ||
+	     width>MAX_GRID_SIZE || height>MAX_GRID_SIZE || width>MAX_PATCH_SIZE*MAX_PATCH_SIZE/height ) return "invalid renderer patch controls";
 
 	for ( i = 0 ; i < width ; i++ ) {
 		for ( j = 0 ; j < height ; j++ ) {
@@ -404,14 +422,19 @@ srfGridMesh_t *R_SubdividePatchToGrid( int width, int height,
 				// using dist-from-line will not account for internal
 				// texture warping, but it gives a lot less polygons than
 				// dist-from-midpoint
+				if ( !R_PatchFiniteVector(midxyz,3) ) return "nonfinite renderer patch midpoint";
 				VectorSubtract( midxyz, ctrl[i][j].xyz, midxyz );
 				VectorSubtract( ctrl[i][j+2].xyz, ctrl[i][j].xyz, dir );
-				VectorNormalize( dir );
+				if ( !R_PatchFiniteVector(midxyz,3) || !R_PatchFiniteVector(dir,3) ) return "nonfinite renderer patch deviation";
+				d = VectorNormalize( dir );
+				if ( !R_PatchFiniteVector(&d,1) || !R_PatchFiniteVector(dir,3) ) return "nonfinite renderer patch normalization";
 
 				d = DotProduct( midxyz, dir );
+				if ( !R_PatchFiniteVector(&d,1) ) return "nonfinite renderer patch projection";
 				VectorScale( dir, d, projected );
 				VectorSubtract( midxyz, projected, midxyz2);
 				len = VectorLengthSquared( midxyz2 );			// we will do the sqrt later
+				if ( !R_PatchFiniteVector(midxyz2,3) || !R_PatchFiniteVector(&len,1) ) return "nonfinite renderer patch distance";
 				if ( len > maxLen ) {
 					maxLen = len;
 				}
@@ -512,7 +535,49 @@ srfGridMesh_t *R_SubdividePatchToGrid( int width, int height,
 	// calculate normals
 	MakeMeshNormals( width, height, ctrl );
 
-	return R_CreateSurfaceGridMesh( width, height, ctrl, errorTable );
+	ClearBounds(bounds[0],bounds[1]);
+	for ( i = 0 ; i < height ; i++ ) {
+		for ( j = 0 ; j < width ; j++ ) {
+			drawVert_t *v = &ctrl[i][j];
+			if ( !R_PatchFiniteVector(v->xyz,3) || !R_PatchFiniteVector(v->st,2) ||
+			     !R_PatchFiniteVector(v->lightmap,2) || !R_PatchFiniteVector(v->normal,3) ) return "nonfinite renderer patch vertex";
+			AddPointToBounds(v->xyz,bounds[0],bounds[1]);
+		}
+	}
+	if ( !R_PatchFiniteVector(errorTable[0],width) || !R_PatchFiniteVector(errorTable[1],height) ) return "nonfinite renderer patch LOD error";
+	VectorAdd(bounds[0],bounds[1],origin);
+	VectorScale(origin,0.5f,origin);
+	VectorSubtract(bounds[0],origin,delta);
+	radius = VectorLength(delta);
+	if ( !R_PatchFiniteVector(origin,3) || !R_PatchFiniteVector(&radius,1) ) return "nonfinite renderer patch bounds";
+	*widthOut = width;
+	*heightOut = height;
+	return NULL;
+}
+
+/* No renderer/hunk state or mesh allocations are published during validation. */
+const char *R_ValidatePatchGrid( int width, int height, const drawVert_t *points ) {
+	patchGridWorkspace_t *workspace;
+	const char *error;
+
+	workspace = malloc(sizeof(*workspace));
+	if ( !workspace ) return "renderer patch preflight workspace allocation failed";
+	error = R_RefinePatchGrid(&width,&height,workspace->ctrl,workspace->errorTable,points);
+	free(workspace);
+	return error;
+}
+
+srfGridMesh_t *R_SubdividePatchToGrid( int width, int height,
+		drawVert_t points[MAX_PATCH_SIZE*MAX_PATCH_SIZE] ) {
+	MAC_STATIC patchGridWorkspace_t workspace;
+	const char *error;
+
+	error = R_RefinePatchGrid(&width,&height,workspace.ctrl,workspace.errorTable,points);
+	if ( error ) {
+		ri.Error(ERR_DROP,"R_SubdividePatchToGrid: %s",error);
+		return NULL;
+	}
+	return R_CreateSurfaceGridMesh(width,height,workspace.ctrl,workspace.errorTable);
 }
 
 /*

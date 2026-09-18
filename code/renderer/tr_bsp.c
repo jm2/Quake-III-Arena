@@ -1840,12 +1840,46 @@ static const char *R_ValidateBSPAllocations(const dheader_t *header) {
 }
 
 /** Face and triangle copies ultimately use the fixed native shader tessellation arrays. */
+static qboolean R_BSPFiniteVector(const float *values,int count) {
+	unsigned int word;int i;
+	for(i=0;i<count;i++) { memcpy(&word,values+i,sizeof(word));if((word&0x7f800000u)==0x7f800000u) return qfalse; }
+	return qtrue;
+}
+
 static const char *R_ValidateBSPGeometry(const void *buffer,const dheader_t *header) {
-	const byte *base=buffer,*record;unsigned int i,count,type,vertices,indexes;const char *error;
-	error=BSP_ValidateGeometry(buffer,header,MAX_GRID_SIZE,MAX_PATCH_SIZE*MAX_PATCH_SIZE);if(error) return error;
+	const byte *base=buffer,*record,*vertex,*shader;
+	unsigned int i,j,k,count,type,vertices,indexes,width,height,first;
+	drawVert_t points[MAX_PATCH_SIZE*MAX_PATCH_SIZE];
+	vec3_t bounds[2],origin,delta;
+	float radius;
+	const char *error;
+
+	/* A nodraw patch is skipped before native renderer control/LOD access. */
+	error=BSP_ValidateGeometry(buffer,header,MAX_PATCH_SIZE*MAX_PATCH_SIZE,MAX_PATCH_SIZE*MAX_PATCH_SIZE);
+	if(error) return error;
 	count=header->lumps[LUMP_SURFACES].filelen/sizeof(dsurface_t);
 	for(i=0;i<count;i++) {
-		record=base+header->lumps[LUMP_SURFACES].fileofs+i*sizeof(dsurface_t);type=BSP_FileWord(record+offsetof(dsurface_t,surfaceType));
+		record=base+header->lumps[LUMP_SURFACES].fileofs+i*sizeof(dsurface_t);
+		type=BSP_FileWord(record+offsetof(dsurface_t,surfaceType));
+		if(type==MST_PATCH) {
+			shader=base+header->lumps[LUMP_SHADERS].fileofs+BSP_FileWord(record+offsetof(dsurface_t,shaderNum))*sizeof(dshader_t);
+			if(BSP_FileWord(shader+offsetof(dshader_t,surfaceFlags)) & SURF_NODRAW) continue;
+			width=BSP_FileWord(record+offsetof(dsurface_t,patchWidth));height=BSP_FileWord(record+offsetof(dsurface_t,patchHeight));
+			/* Check native dimensions before filling the fixed source controls. */
+			if(width>MAX_GRID_SIZE || height>MAX_GRID_SIZE) return "invalid renderer patch controls";
+			first=BSP_FileWord(record+offsetof(dsurface_t,firstVert));
+			vertex=base+header->lumps[LUMP_DRAWVERTS].fileofs+first*sizeof(drawVert_t);
+			for(j=0;j<width*height;j++,vertex+=sizeof(drawVert_t)) {
+				for(k=0;k<3;k++) { points[j].xyz[k]=BSP_GeometryFloat(vertex+offsetof(drawVert_t,xyz)+k*4);points[j].normal[k]=BSP_GeometryFloat(vertex+offsetof(drawVert_t,normal)+k*4); }
+				for(k=0;k<2;k++) { points[j].st[k]=BSP_GeometryFloat(vertex+offsetof(drawVert_t,st)+k*4);points[j].lightmap[k]=BSP_GeometryFloat(vertex+offsetof(drawVert_t,lightmap)+k*4); }
+				memcpy(points[j].color,vertex+offsetof(drawVert_t,color),sizeof(points[j].color));
+			}
+			error=R_ValidatePatchGrid(width,height,points);if(error) return error;
+			for(j=0;j<2;j++)for(k=0;k<3;k++)bounds[j][k]=BSP_GeometryFloat(record+offsetof(dsurface_t,lightmapVecs)+(j*3+k)*4);
+			VectorAdd(bounds[0],bounds[1],origin);VectorScale(origin,0.5f,origin);VectorSubtract(bounds[0],origin,delta);radius=VectorLength(delta);
+			if(!R_BSPFiniteVector(origin,3) || !R_BSPFiniteVector(&radius,1)) return "nonfinite renderer patch LOD bounds";
+			continue;
+		}
 		if(type!=MST_PLANAR && type!=MST_TRIANGLE_SOUP) continue;
 		vertices=BSP_FileWord(record+offsetof(dsurface_t,numVerts));indexes=BSP_FileWord(record+offsetof(dsurface_t,numIndexes));
 		if(vertices>=SHADER_MAX_VERTEXES || indexes>=SHADER_MAX_INDEXES || (type==MST_PLANAR && !vertices)) return "BSP surface exceeds native tessellation storage";

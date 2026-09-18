@@ -308,6 +308,8 @@ implementation or check, without implying issue completion.
         map reset, with staged-build [evidence](bsp-patch-budget-validation.md).
   - [x] Collision refinement/plane/winding arithmetic rejects nonfinite
         derived values before publication; [evidence](bsp-patch-numeric-validation.md).
+  - [x] Renderer curves retain native output with checked derived geometry,
+        attributes and bounds; [evidence](bsp-curve-numeric-validation.md).
 - [ ] [#46 — shader/skin/font fixed limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.
