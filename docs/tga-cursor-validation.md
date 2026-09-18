@@ -44,8 +44,8 @@ validation using temporary libraries from [loading evidence](qvm-loading-validat
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,661,455 | `500fd12c298ac9be78c1efcf6a621e5192b2591af1094970ab02d25861a8a958` |
-| Quake3_TeamArena | 3,814,125 | `526bb423603f10e271051d6f26a012f9160b86bbbeedee2caabe33564b834c61` |
+| Quake3 | 3,673,885 | `fc23af815d85b1b0fa6167713bbe5e5c215aaf0c7013d6ac87f1d4fb1cf78ab6` |
+| Quake3_TeamArena | 3,822,459 | `c1b37e5757073cee0c94bae557e3942a682a83b98c7cfb7e682191e965af1ecc` |
 
 ## Remaining acceptance
 
@@ -53,3 +53,8 @@ Keep #42 open until all three image PRs merge through the review/CI gate and
 retail 1.32c textures/UI and strict-alignment PPC live acceptance are completed.
 The user has deferred those live checks. The related JPEG source/destination,
 fatal-error and duplicate-API work is tracked separately by #43.
+
+Reviewed QVM work through #64, single-run CI (#68) and the RoQ console
+shutdown fix are integrated. The affected sanitizer fixtures, nine Python
+checks and both Mac products pass; CI retains every runner. The table
+records these integrated artifacts.
