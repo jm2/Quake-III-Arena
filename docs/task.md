@@ -283,6 +283,9 @@ QVMs while any P0 item is open.
   - [x] Root/node/paired-plane/area-leaf references and every component
         terminate before loaded publication; temporary heap workspace releases
         and native point queries retain results; see [node evidence](aas-node-validation.md).
+  - [x] Reachability destinations/endpoints, area spans and aggregate reference
+        ownership validate before loaded; ordinary references stay signed and
+        special travel fields retain packed bits; see [reachability evidence](aas-reachability-validation.md).
   - [ ] Validate the entire AAS file and graph before setting `loaded`.
 - [ ] [#48 — bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48)
       — **high**, parser fixed-buffer corruption/invalid cleanup.

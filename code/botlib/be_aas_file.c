@@ -488,6 +488,36 @@ static qboolean AAS_ValidateNodes(void)
 	return valid;
 }
 
+/* Special travel types encode mover/velocity data in the index fields. */
+static qboolean AAS_ValidateReachability(void)
+{
+	int i, axis, total = 0;
+	for (i = 0; i < aasworld.numareasettings; i++)
+	{
+		aas_areasettings_t *settings = &aasworld.areasettings[i];
+		if (!AAS_IndexRange(settings->firstreachablearea, settings->numreachableareas,
+						   aasworld.reachabilitysize) ||
+			(settings->numreachableareas && (!i || !settings->firstreachablearea)) ||
+			settings->numreachableareas > aasworld.reachabilitysize - total)
+			return qfalse;
+		total += settings->numreachableareas;
+	}
+	for (i = 0; i < aasworld.reachabilitysize; i++)
+	{
+		aas_reachability_t *reach = &aasworld.reachability[i];
+		int type = reach->traveltype & TRAVELTYPE_MASK;
+		if (reach->areanum < 0 || reach->areanum >= aasworld.numareas ||
+			(i && !reach->areanum) || type >= MAX_TRAVELTYPES) return qfalse;
+		for (axis = 0; axis < 3; axis++)
+			if (!AAS_FiniteFloat(reach->start[axis]) || !AAS_FiniteFloat(reach->end[axis]))
+				return qfalse;
+		if (type != TRAVEL_ELEVATOR && type != TRAVEL_JUMPPAD && type != TRAVEL_FUNCBOB &&
+			(!AAS_SignedIndex(reach->facenum, aasworld.numfaces) ||
+			 !AAS_SignedIndex(reach->edgenum, aasworld.numedges))) return qfalse;
+	}
+	return qtrue;
+}
+
 int AAS_LoadAASFile(char *filename)
 {
 	fileHandle_t fp;
@@ -634,8 +664,8 @@ int AAS_LoadAASFile(char *filename)
 	if (!aasworld.clusters) { AAS_DumpAASData(); return BLERR_CANNOTREADAASLUMP; }
 	//swap everything
 	AAS_SwapAASData();
-	if (!AAS_ValidateGeometry() || !AAS_ValidateNodes()) {
-		AAS_Error("invalid aas geometry or node references, numeric fields or cycles\n");
+	if (!AAS_ValidateGeometry() || !AAS_ValidateNodes() || !AAS_ValidateReachability()) {
+		AAS_Error("invalid aas references, numeric fields, spans or node cycles\n");
 		botimport.FS_FCloseFile(fp);
 		AAS_DumpAASData();
 		return BLERR_CANNOTREADAASLUMP;
