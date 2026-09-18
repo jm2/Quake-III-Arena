@@ -747,3 +747,12 @@ cleanly; the native 128-parameter capacity remains and 129 rejects. Original val
 object/function/replacement/empty-marker/external macros pass separately. GCC and
 Clang run normal and release fast-math checks. Empty macro invocation is a separate
 source-reader defect, retained as outstanding work rather than claimed covered.
+
+The empty-expansion runner links actual source/macro/lexer/libvar/character bodies.
+Ten original-body proofs reproduce false EOF after object/function/empty-argument
+expansion, broken string concatenation, hidden lexical errors, premature included
+EOF, a false direct queue result, rejected complete character fields and unconsumed
+empty-only input. Fixed readers verify actual script EOF, native token/string order,
+unchanged queued bytes/no imports, physical included-script release and complete
+native character publication. Original nonempty object/function goldens remain.
+GCC/Clang run normal and release fast-math sanitizer modes.

@@ -425,6 +425,11 @@ QVMs while any P0 item is open.
         failures, parse parameter names without expanding prior macros and clean
         external temporary dictionaries/scripts on every failed import;
         see [definition evidence](bot-define-validation.md).
+  - [x] Complete empty macro expansion reports successful consumption so readers
+        continue to subsequent tokens, concatenated strings, included parents and
+        lexical errors; empty-only input reaches actual EOF and valid character
+        fields publish with native values;
+        see [empty-expansion evidence](bot-empty-expansion-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
