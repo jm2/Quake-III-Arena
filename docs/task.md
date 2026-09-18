@@ -215,6 +215,11 @@ QVMs while any P0 item is open.
         constant stack and no traversal allocation; see [LOD evidence](bsp-lod-validation.md).
 - [ ] [#46 — enforce shader/skin/font limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
       — **high**, fixed-array writes and unsafe serialized resources.
+  - [x] Shader stage capacity checks precede native array access and rejected
+        definitions preserve following parse/index/cache behavior; see
+        [stage evidence](shader-stage-validation.md).
+  - [ ] Complete skin/font bounds and ownership, including complete single-shader
+        surface allocation, and remaining shader semantic/file-allocation checks.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
       — **high**, server OOB access/infinite traversal.
   - [x] Local mover model boundary/look-up fixes cross-build.
