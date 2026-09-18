@@ -1265,6 +1265,13 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 							
 							// Buffer
 							fsh[*file].buffer = Z_Malloc(size);
+							if (!fsh[*file].buffer) {
+								unzCloseCurrentFile(readZip);
+								if (ownZip) unzClose(readZip);
+								Com_Memset(&fsh[*file], 0, sizeof(fsh[*file]));
+								*file = 0;
+								return -1;
+							}
 							fsh[*file].bufferLen = size;
 							readResult = unzReadCurrentFile( readZip, fsh[*file].buffer, size );
 							fsh[*file].bufferPos = 0;

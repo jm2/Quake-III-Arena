@@ -155,6 +155,9 @@ QVMs while any P0 item is open.
   - [x] Actual decoder initialization rejects every failed native import
         before root publication and releases private owners; stored/deflated
         success and retry have [evidence](unzip-open-validation.md).
+  - [x] Archive/clone/buffer factories validate complete inputs/imports and
+        release failed candidate streams/decoders while preserving prior
+        owners and retries; see [factory evidence](fs-zip-factory-validation.md).
   - [ ] Complete remaining metadata/open/read/handle paths and retail PK3
         acceptance before closing the issue.
 - [ ] [#41 — bound RoQ chunks, dimensions, audio output, and cursors](https://github.com/jm2/Quake-III-Arena/issues/41)
