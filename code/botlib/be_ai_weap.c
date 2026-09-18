@@ -196,6 +196,37 @@ void DumpWeaponConfig(weaponconfig_t *wc)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
+static int WeaponConfigCount(char *name, int *count)
+{
+	libvar_t *variable;
+	unsigned int bits;
+	volatile unsigned int representation;
+
+	variable = LibVar(name, "32");
+	if (!variable)
+	{
+		botimport.Print(PRT_ERROR, "couldn't initialize %s\n", name);
+		return qfalse;
+	}
+	Com_Memcpy(&bits, &variable->value, sizeof(bits));
+	representation = bits;
+	if ((representation & 0x7f800000U) == 0x7f800000U ||
+			(double)variable->value < INT_MIN || (double)variable->value > INT_MAX)
+	{
+		botimport.Print(PRT_ERROR, "invalid %s\n", name);
+		return qfalse;
+	}
+	*count = (int)variable->value;
+	if (*count < 0)
+	{
+		botimport.Print(PRT_ERROR, "%s = %d\n", name, *count);
+		LibVarSet(name, "32");
+		if (variable->value != 32.0f) return qfalse;
+		*count = 32;
+	}
+	return qtrue;
+}
+
 weaponconfig_t *LoadWeaponConfig(char *filename)
 {
 	int max_weaponinfo, max_projectileinfo;
@@ -203,24 +234,33 @@ weaponconfig_t *LoadWeaponConfig(char *filename)
 	char path[MAX_PATH];
 	int i, j;
 	source_t *source;
-	weaponconfig_t *wc;
+	weaponconfig_t *wc, *result;
 	weaponinfo_t weaponinfo;
+	unsigned long bytes;
 
-	max_weaponinfo = (int) LibVarValue("max_weaponinfo", "32");
-	if (max_weaponinfo < 0)
+	if (!filename || !*filename || strlen(filename) >= sizeof(path))
 	{
-		botimport.Print(PRT_ERROR, "max_weaponinfo = %d\n", max_weaponinfo);
-		max_weaponinfo = 32;
-		LibVarSet("max_weaponinfo", "32");
-	} //end if
-	max_projectileinfo = (int) LibVarValue("max_projectileinfo", "32");
-	if (max_projectileinfo < 0)
+		botimport.Print(PRT_ERROR, "invalid weapon configuration filename\n");
+		return NULL;
+	}
+	if (!WeaponConfigCount("max_weaponinfo", &max_weaponinfo) ||
+			!WeaponConfigCount("max_projectileinfo", &max_projectileinfo)) return NULL;
+	bytes = sizeof(weaponconfig_t);
+	if ((unsigned long)max_weaponinfo >
+			((unsigned long)INT_MAX - bytes) / sizeof(weaponinfo_t))
 	{
-		botimport.Print(PRT_ERROR, "max_projectileinfo = %d\n", max_projectileinfo);
-		max_projectileinfo = 32;
-		LibVarSet("max_projectileinfo", "32");
-	} //end if
-	strncpy(path, filename, MAX_PATH);
+		botimport.Print(PRT_ERROR, "weapon configuration allocation is too large\n");
+		return NULL;
+	}
+	bytes += (unsigned long)max_weaponinfo * sizeof(weaponinfo_t);
+	if ((unsigned long)max_projectileinfo >
+			((unsigned long)INT_MAX - bytes) / sizeof(projectileinfo_t))
+	{
+		botimport.Print(PRT_ERROR, "projectile configuration allocation is too large\n");
+		return NULL;
+	}
+	bytes += (unsigned long)max_projectileinfo * sizeof(projectileinfo_t);
+	strcpy(path, filename);
 	PC_SetBaseFolder(BOTFILESBASEFOLDER);
 	source = LoadSourceFile(path);
 	if (!source)
@@ -229,9 +269,13 @@ weaponconfig_t *LoadWeaponConfig(char *filename)
 		return NULL;
 	} //end if
 	//initialize weapon config
-	wc = (weaponconfig_t *) GetClearedHunkMemory(sizeof(weaponconfig_t) +
-										max_weaponinfo * sizeof(weaponinfo_t) +
-										max_projectileinfo * sizeof(projectileinfo_t));
+	wc = (weaponconfig_t *) GetClearedMemory(bytes);
+	if (!wc)
+	{
+		botimport.Print(PRT_ERROR, "couldn't allocate weapon configuration\n");
+		FreeSource(source);
+		return NULL;
+	}
 	wc->weaponinfo = (weaponinfo_t *) ((char *) wc + sizeof(weaponconfig_t));
 	wc->projectileinfo = (projectileinfo_t *) ((char *) wc->weaponinfo +
 										max_weaponinfo * sizeof(weaponinfo_t));
@@ -285,6 +329,12 @@ weaponconfig_t *LoadWeaponConfig(char *filename)
 			return NULL;
 		} //end else
 	} //end while
+	if (PC_SourceHasError(source))
+	{
+		FreeMemory(wc);
+		FreeSource(source);
+		return NULL;
+	}
 	FreeSource(source);
 	//fix up weapons
 	for (i = 0; i < wc->numweapons; i++)
@@ -318,9 +368,21 @@ weaponconfig_t *LoadWeaponConfig(char *filename)
 			return NULL;
 		} //end if
 	} //end for
-	if (!wc->numweapons) botimport.Print(PRT_WARNING, "no weapon info loaded\n");
+	result = (weaponconfig_t *) GetHunkMemory(bytes);
+	if (!result)
+	{
+		botimport.Print(PRT_ERROR, "couldn't publish weapon configuration\n");
+		FreeMemory(wc);
+		return NULL;
+	}
+	Com_Memcpy(result, wc, bytes);
+	result->weaponinfo = (weaponinfo_t *) ((char *) result + sizeof(weaponconfig_t));
+	result->projectileinfo = (projectileinfo_t *) ((char *) result->weaponinfo +
+			(unsigned long)max_weaponinfo * sizeof(weaponinfo_t));
+	FreeMemory(wc);
+	if (!result->numweapons) botimport.Print(PRT_WARNING, "no weapon info loaded\n");
 	botimport.Print(PRT_MESSAGE, "loaded %s\n", path);
-	return wc;
+	return result;
 } //end of the function LoadWeaponConfig
 //===========================================================================
 //

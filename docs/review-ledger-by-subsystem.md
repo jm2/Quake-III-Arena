@@ -587,6 +587,11 @@ implementation or check, without implying issue completion.
   - [x] Projectile model descriptors use the projectile offset, preserve every
         scalar field across string order/boundaries and retain native layouts;
         see [projectile evidence](bot-projectile-model-validation.md).
+  - [x] Weapon configuration checks native counts/full filenames and complete
+        allocation cost, parses checked heap staging, rejects source errors and
+        fixes projectiles before publishing rebased hunk arrays; failed loads keep
+        prior payload and consume no additional physical hunk;
+        see [weapon evidence](bot-weapon-config-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
