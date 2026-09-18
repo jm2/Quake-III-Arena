@@ -429,7 +429,7 @@ SV_BotClientCommand
 ==================
 */
 void BotClientCommand( int client, char *command ) {
-	SV_ExecuteClientCommand( &svs.clients[client], command, qtrue );
+	SV_ExecuteClientCommand( SV_BotClient(client), command, qtrue );
 }
 
 /*
@@ -593,7 +593,7 @@ int SV_BotGetConsoleMessage( int client, char *buf, int size )
 	client_t	*cl;
 	int			index;
 
-	cl = &svs.clients[client];
+	cl = SV_BotClient(client);
 	cl->lastPacketTime = svs.time;
 
 	if ( cl->reliableAcknowledge == cl->reliableSequence ) {
@@ -642,7 +642,7 @@ int SV_BotGetSnapshotEntity( int client, int sequence ) {
 	client_t			*cl;
 	clientSnapshot_t	*frame;
 
-	cl = &svs.clients[client];
+	cl = SV_BotClient(client);
 	frame = &cl->frames[cl->netchan.outgoingSequence & PACKET_MASK];
 	if (sequence < 0 || sequence >= frame->num_entities) {
 		return -1;

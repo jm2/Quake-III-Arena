@@ -49,11 +49,13 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
+/** Select only within the native fixed ranking capacity, including random endpoint one. */
 int GeneticSelection(int numranks, float *rankings)
 {
 	float sum, select;
 	int i, index;
 
+	if (numranks < 1 || numranks > 256 || !rankings) return 0;
 	sum = 0;
 	for (i = 0; i < numranks; i++)
 	{
@@ -74,6 +76,7 @@ int GeneticSelection(int numranks, float *rankings)
 	} //end if
 	//select a bot randomly
 	index = random() * numranks;
+	if (index >= numranks) index = numranks - 1;
 	for (i = 0; i < numranks; i++)
 	{
 		if (rankings[index] >= 0) return index;
