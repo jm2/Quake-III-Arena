@@ -495,6 +495,10 @@ implementation or check, without implying issue completion.
         releases staged output after numeric failure, preserves available equal
         fallback endpoints, and formats floating skill logs with matching types;
         see [blend evidence](bot-interpolation-numeric-validation.md).
+  - [x] Public float getters reject invalid stored representations and NaN
+        bounds while retaining exact finite clamping, signed integer conversion,
+        negative zero and defined native infinity-bound behavior;
+        see [float getter evidence](bot-character-float-getter-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)

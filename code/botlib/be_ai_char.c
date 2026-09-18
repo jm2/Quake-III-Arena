@@ -78,14 +78,24 @@ typedef struct bot_character_s
 
 bot_character_t *botcharacters[MAX_CLIENTS + 1];
 
-static int BotCharacterFloatFinite(const float *value)
+static unsigned int BotCharacterFloatBits(const float *value)
 {
 	unsigned int bits;
 	volatile unsigned int representation;
 	Com_Memcpy(&bits, value, sizeof(bits));
 	//keep representation checks observable under release finite-math assumptions
 	representation = bits;
-	return (representation & 0x7f800000u) != 0x7f800000u;
+	return representation;
+}
+
+static int BotCharacterFloatFinite(const float *value)
+{
+	return (BotCharacterFloatBits(value) & 0x7f800000u) != 0x7f800000u;
+}
+
+static int BotCharacterFloatNaN(const float *value)
+{
+	return (BotCharacterFloatBits(value) & 0x7fffffffu) > 0x7f800000u;
 }
 
 static int BotCharacterFilePathValid(const char *filename)
@@ -727,7 +737,7 @@ int BotLoadCharacter(char *charfile, float skill)
 	if (!BotCharacterFloatFinite(&skill))
 	{
 		unsigned int bits;
-		Com_Memcpy(&bits, &skill, sizeof(bits));
+		bits = BotCharacterFloatBits(&skill);
 		if ((bits & 0x7fffffffu) > 0x7f800000u)
 		{
 			botimport.Print(PRT_ERROR, "invalid character skill\n");
@@ -824,6 +834,11 @@ float Characteristic_Float(int character, int index)
 	//floats are just returned
 	else if (ch->c[index].type == CT_FLOAT)
 	{
+		if (!BotCharacterFloatFinite(&ch->c[index].value._float))
+		{
+			botimport.Print(PRT_ERROR, "characteristic %d is not a finite float\n", index);
+			return 0;
+		} //end if
 		return ch->c[index].value._float;
 	} //end else if
 	//cannot convert a string pointer to a float
@@ -847,9 +862,15 @@ float Characteristic_BFloat(int character, int index, float min, float max)
 
 	ch = BotCharacterFromHandle(character);
 	if (!ch) return 0;
-	if (min > max)
+	if (BotCharacterFloatNaN(&min) || BotCharacterFloatNaN(&max) || min > max)
 	{
 		botimport.Print(PRT_ERROR, "cannot bound characteristic %d between %f and %f\n", index, min, max);
+		return 0;
+	} //end if
+	if (index >= 0 && index < MAX_CHARACTERISTICS && ch->c[index].type == CT_FLOAT &&
+			!BotCharacterFloatFinite(&ch->c[index].value._float))
+	{
+		botimport.Print(PRT_ERROR, "characteristic %d is not a finite bounded float\n", index);
 		return 0;
 	} //end if
 	value = Characteristic_Float(character, index);
