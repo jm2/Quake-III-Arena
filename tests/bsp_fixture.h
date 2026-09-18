@@ -51,7 +51,9 @@ void Com_Memset(void *out,int value,size_t size) { memset(out,value,size); }
 #endif
 unsigned Com_BlockChecksum(const void *input,int size) { const byte *data=input; unsigned hash=2166136261u; int i; Check(size>=0 && size==readable,"checksum after length validation");checksums++;for(i=0;i<size;i++)hash=(hash^data[i])*16777619u;return hash; }
 void CM_ClearLevelPatches(void) { clears++; }
+#ifndef BSP_FIXTURE_NATIVE_AREA_FLOOD
 void CM_FloodAreaConnections(void) { floods++; }
+#endif
 struct patchCollide_s *CM_GeneratePatchCollide(int width,int height,vec3_t *points) {
 	Check(expectedPatch && width==3 && height==3 && points[0][0]==-1 && points[8][0]==1,"validated patch callback");patchCalls++;return (struct patchCollide_s *)&patchToken;
 }

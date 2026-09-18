@@ -176,6 +176,8 @@ QVMs while any P0 item is open.
         have [actual collision/renderer evidence](bsp-geometry-validation.md).
   - [x] Bounded entity parsing, checked light-grid calculations and boundary
         sampling have [actual renderer evidence](bsp-entity-grid-validation.md).
+  - [x] Acyclic native tree/forest topology and linear parent initialization
+        have [actual loader evidence](bsp-tree-validation.md).
   - [ ] Complete all payload cross-reference, graph and geometry validation
         before publishing a map; retain deferred retail/PPC map acceptance.
 - [ ] [#46 — enforce shader/skin/font limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
