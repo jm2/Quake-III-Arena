@@ -33,7 +33,7 @@ jobs:
           ./build_mac.sh --help
 
       - name: Check ZIP fixture script syntax
-        run: bash -n tests/run_fs_zip_tests.sh tests/run_fs_buffer_slot_tests.sh tests/run_fs_zip_mount_tests.sh tests/run_fs_zip_reopen_tests.sh tests/run_fs_zip_entry_tests.sh tests/run_fs_buffer_bounds_tests.sh tests/run_fs_handle_api_tests.sh tests/run_unzip_position_tests.sh
+        run: bash -n tests/run_fs_zip_tests.sh tests/run_fs_buffer_slot_tests.sh tests/run_fs_zip_mount_tests.sh tests/run_fs_zip_reopen_tests.sh tests/run_fs_zip_entry_tests.sh tests/run_fs_buffer_bounds_tests.sh tests/run_fs_handle_api_tests.sh tests/run_unzip_position_tests.sh tests/run_unzip_open_tests.sh
 
       - name: Check PowerShell syntax and help
         shell: pwsh
@@ -128,6 +128,11 @@ jobs:
         run: |
           bash tests/run_unzip_position_tests.sh
           CC=clang bash tests/run_unzip_position_tests.sh
+
+      - name: Check complete native ZIP decoder initialization
+        run: |
+          bash tests/run_unzip_open_tests.sh
+          CC=clang bash tests/run_unzip_open_tests.sh
 
       - name: Build and run host memory-safety checks
         run: |

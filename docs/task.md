@@ -152,6 +152,9 @@ QVMs while any P0 item is open.
   - [x] Actual unsigned metadata readers require complete scalar I/O and
         selected-entry setters propagate real decoder errors; hostile files,
         prior owners and native retry have [evidence](unzip-metadata-validation.md).
+  - [x] Actual decoder initialization rejects every failed native import
+        before root publication and releases private owners; stored/deflated
+        success and retry have [evidence](unzip-open-validation.md).
   - [ ] Complete remaining metadata/open/read/handle paths and retail PK3
         acceptance before closing the issue.
 - [ ] [#41 — bound RoQ chunks, dimensions, audio output, and cursors](https://github.com/jm2/Quake-III-Arena/issues/41)
