@@ -340,7 +340,8 @@ implementation or check, without implying issue completion.
 - [ ] P1 security: fix #38 and #39 with deterministic host regressions.
 - [ ] Add focused host tests for local candidates #18, #24, #25, #36, #40,
       #49, message/Huffman exact bounds, download pairs, and format strings.
-- [ ] Prioritize target runtime blockers: #11, #15, #16, #17, #5, then #20.
+- [ ] Prioritize target runtime blockers: #11 after #48, then #15, #16, #17,
+      #5, #20, #19.
 - [x] User authorized host checks and working cross-builds while legal retail
       assets and a Mac OS 9 environment are unavailable.
 - [ ] Execute deferred end-to-end acceptance in a follow-up session; preserve
