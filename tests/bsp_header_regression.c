@@ -103,7 +103,7 @@ int main(void) {
 	Lump(LUMP_ENTITIES,0,0);Lump(LUMP_VISIBILITY,sourceSize,0);Check(!BSP_ValidateHeader(source,sourceSize,&header),"zero/end empty lumps");
 	memset(&header,0xa5,sizeof(header));before=header;Check(BSP_ValidateHeader(NULL,144,&header) && BSP_ValidateHeader(source,-1,&header) && BSP_ValidateHeader(source,INT_MAX,&header) && BSP_ValidateHeader(source,144,NULL) && !memcmp(&header,&before,sizeof(header)),"invalid API lengths/output");
 	/* Exercise exact signed-allocation boundaries and reservation arithmetic without allocating. */
-	for(i=0;i<4;i++) {
+	for(i=0;i<5;i++) {
 		const unsigned int sizes[]={1,4,20,40,112};bspArrayAllocation_t array;array.elementSize=sizes[i];array.extraElements=12;array.count=(INT_MAX-4096u)/array.elementSize-12;
 		Check(!BSP_ValidateAllocations(&array,1),"exact allocation capacity");array.count++;Check(BSP_ValidateAllocations(&array,1)!=NULL,"allocation overflow boundary");array.count=0;array.extraElements=0xffffffffu;Check(BSP_ValidateAllocations(&array,1)!=NULL,"reservation overflow");array.elementSize=0;Check(BSP_ValidateAllocations(&array,1)!=NULL,"zero allocation size");
 	}
