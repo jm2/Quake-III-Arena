@@ -564,8 +564,15 @@ static qboolean AAS_ValidateClusterOwnership(void)
 	int *offsets;
 	unsigned char *owned, *seen;
 	qboolean valid = qtrue;
-	// Native unclustered/dummy-only roots do not have a completed slot mapping.
-	if (aasworld.numclusters <= 1) return qtrue;
+	// Zero-cluster roots are rebuilt by native clustering initialization.
+	if (!aasworld.numclusters) return qtrue;
+	// A dummy-only table skips rebuilding and cannot own reachable areas.
+	if (aasworld.numclusters == 1)
+	{
+		for (i = 1; i < aasworld.numareasettings; i++)
+			if (aasworld.areasettings[i].numreachableareas) return qfalse;
+		return qtrue;
+	}
 	if (aasworld.clusters[0].numareas || aasworld.clusters[0].numreachabilityareas ||
 		aasworld.clusters[0].numportals || aasworld.areasettings[0].cluster) return qfalse;
 	for (i = 1; i < aasworld.numareasettings; i++)
