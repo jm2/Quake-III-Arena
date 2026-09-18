@@ -513,3 +513,14 @@ pasting releases private argument/output chains without publishing partial
 output. Failed expansion retries and preexisting source tokens remain owned.
 Maximum native parameter count is retained. Eight original actual-body failure
 proofs fail; GCC and Clang normal/release sanitizer CI covers the fixed paths.
+
+The character runner links the actual native character parser, preprocessor,
+lexer, libvars and Q_shared core; file/heap/printing are imports. Real skill
+blocks retain integer/float/string values and public characteristic 79. Complete
+prefix/path boundaries reject before VFS imports or default fallback. Index 80
+and larger reject before narrowing/assignment. Nullable character/either string
+allocation and malformed selected skill blocks free prior source/character/string
+owners and retry. Real quote stripping uses overlap-safe copies and handles
+empty/unmatched text. Ten original actual-body proofs reproduce the previous
+path/index/null/EOF/quote defects. GCC and Clang run normal/release sanitizer
+configurations; default/interpolated-character ownership remains separate work.

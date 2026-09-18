@@ -76,6 +76,25 @@ typedef struct bot_character_s
 
 bot_character_t *botcharacters[MAX_CLIENTS + 1];
 
+static int BotCharacterFilePathValid(const char *filename)
+{
+	size_t length;
+#ifdef BOTLIB
+	size_t prefix;
+#endif
+	if (!filename || !*filename) goto invalid;
+	length = strlen(filename);
+	if (length >= sizeof(((bot_character_t *)0)->filename)) goto invalid;
+#ifdef BOTLIB
+	prefix = strlen(BOTFILESBASEFOLDER);
+	if (prefix && (prefix >= MAX_QPATH - 1 || length >= MAX_QPATH - prefix - 1)) goto invalid;
+#endif
+	return qtrue;
+invalid:
+	botimport.Print(PRT_ERROR, "invalid or overlong character file path\n");
+	return qfalse;
+}
+
 //========================================================================
 //
 // Parameter:			-
@@ -216,6 +235,7 @@ bot_character_t *BotLoadCharacterFromFile(char *charfile, int skill)
 	source_t *source;
 	token_t token;
 
+	if (!BotCharacterFilePathValid(charfile)) return NULL;
 	foundcharacter = qfalse;
 	//a bot character is parsed in two phases
 	PC_SetBaseFolder(BOTFILESBASEFOLDER);
@@ -227,6 +247,12 @@ bot_character_t *BotLoadCharacterFromFile(char *charfile, int skill)
 	} //end if
 	ch = (bot_character_t *) GetClearedMemory(sizeof(bot_character_t) +
 					MAX_CHARACTERISTICS * sizeof(bot_characteristic_t));
+	if (!ch)
+	{
+		SourceError(source, "could not allocate character");
+		FreeSource(source);
+		return NULL;
+	} //end if
 	strcpy(ch->filename, charfile);
 	while(PC_ReadToken(source, &token))
 	{
@@ -251,8 +277,15 @@ bot_character_t *BotLoadCharacterFromFile(char *charfile, int skill)
 			{
 				foundcharacter = qtrue;
 				ch->skill = token.intvalue;
-				while(PC_ExpectAnyToken(source, &token))
+				while(1)
 				{
+					if (!PC_ExpectAnyToken(source, &token))
+					{
+						FreeSource(source);
+						BotFreeCharacterStrings(ch);
+						FreeMemory(ch);
+						return NULL;
+					} //end if
 					if (!strcmp(token.string, "}")) break;
 					if (token.type != TT_NUMBER || !(token.subtype & TT_INTEGER))
 					{
@@ -262,15 +295,15 @@ bot_character_t *BotLoadCharacterFromFile(char *charfile, int skill)
 						FreeMemory(ch);
 						return NULL;
 					} //end if
-					index = token.intvalue;
-					if (index < 0 || index > MAX_CHARACTERISTICS)
+					if (token.intvalue >= MAX_CHARACTERISTICS)
 					{
-						SourceError(source, "characteristic index out of range [0, %d]\n", MAX_CHARACTERISTICS);
+						SourceError(source, "characteristic index out of range [0, %d]\n", MAX_CHARACTERISTICS - 1);
 						FreeSource(source);
 						BotFreeCharacterStrings(ch);
 						FreeMemory(ch);
 						return NULL;
 					} //end if
+					index = (int) token.intvalue;
 					if (ch->c[index].type)
 					{
 						SourceError(source, "characteristic %d already initialized\n", index);
@@ -303,6 +336,14 @@ bot_character_t *BotLoadCharacterFromFile(char *charfile, int skill)
 					{
 						StripDoubleQuotes(token.string);
 						ch->c[index].value.string = GetMemory(strlen(token.string)+1);
+						if (!ch->c[index].value.string)
+						{
+							SourceError(source, "could not allocate characteristic string");
+							FreeSource(source);
+							BotFreeCharacterStrings(ch);
+							FreeMemory(ch);
+							return NULL;
+						} //end if
 						strcpy(ch->c[index].value.string, token.string);
 						ch->c[index].type = CT_STRING;
 					} //end else if
@@ -389,6 +430,7 @@ int BotLoadCachedCharacter(char *charfile, float skill, int reload)
 
 	starttime = Sys_MilliSeconds();
 #endif //DEBUG
+	if (!BotCharacterFilePathValid(charfile)) return 0;
 
 	//find a free spot for a character
 	for (handle = 1; handle <= MAX_CLIENTS; handle++)
@@ -568,6 +610,7 @@ int BotInterpolateCharacters(int handle1, int handle2, float desiredskill)
 int BotLoadCharacter(char *charfile, float skill)
 {
 	int firstskill, secondskill, handle;
+	if (!BotCharacterFilePathValid(charfile)) return 0;
 
 	//make sure the skill is in the valid range
 	if (skill < 1.0) skill = 1.0;
@@ -787,4 +830,3 @@ void BotShutdownCharacters(void)
 		} //end if
 	} //end for
 } //end of the function BotShutdownCharacters
-
