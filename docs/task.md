@@ -312,6 +312,9 @@ QVMs while any P0 item is open.
   - [x] Bot allocation adapters check signed import/prefix sizes, propagate
         nullable clearing and accept null cleanup while retaining heap/hunk
         ownership; see [allocator evidence](bot-memory-validation.md).
+  - [x] Native numeric libvars preserve valid decimal values and reject malformed
+        fractions/unrepresentable floats without trailing-NUL overread or signed
+        divisor overflow; see [numeric evidence](bot-libvar-validation.md).
   - [ ] Finish token merge/stringize, include paths, time macros, character
         paths/indexes, and allocation cleanup.
 

@@ -457,3 +457,11 @@ stage with a pending cache-save request skips serialization of cleared tables.
 Pending reachability defers the request until a later initialized frame performs
 the actual native cache write/close/reset. Frame return values/bookkeeping stay
 compatible; the previous frame body dereferences a null cache table.
+
+The bot-libvar runner includes the actual converter and variable backend.
+Seventeen literal native-value goldens, long/trailing decimals, malformed text
+and unrepresentable integer text exercise normal/release fast-math sanitizers
+with GCC and Clang. Name lookup, cached defaults, setter replacement and physical
+name/string cleanup retain native behavior. Original actual-body proofs cover
+trailing-NUL overread, signed divisor overflow and incorrect malformed/overflow
+values. Allocation failure in other parser callers remains separate acceptance.
