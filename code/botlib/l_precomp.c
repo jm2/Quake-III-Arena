@@ -2539,42 +2539,108 @@ int PC_Directive_pragma(source_t *source)
 // Returns:					-
 // Changes Globals:		-
 //============================================================================
-void UnreadSignToken(source_t *source)
-{
-	token_t token;
 
-	token.line = source->scriptstack->line;
-	token.whitespace_p = source->scriptstack->script_p;
-	token.endwhitespace_p = source->scriptstack->script_p;
-	token.linescrossed = 0;
-	strcpy(token.string, "-");
-	token.type = TT_PUNCTUATION;
-	token.subtype = P_SUB;
-	PC_UnreadSourceToken(source, &token);
-} //end of the function UnreadSignToken
 //============================================================================
 //
 // Parameter:				-
 // Returns:					-
 // Changes Globals:		-
 //============================================================================
+/* Build complete magnitude tokens before making a signed result readable. */
+static void PC_InitEvalToken(source_t *source, token_t *token)
+{
+	Com_Memset(token, 0, sizeof(*token));
+	token->line = source->scriptstack->line;
+	token->whitespace_p = source->scriptstack->script_p;
+	token->endwhitespace_p = source->scriptstack->script_p;
+}
+
+static int PC_QueueEvalToken(source_t *source, token_t *token, int negative)
+{
+	token_t sign, *number, *minus = NULL;
+	number = PC_CopyToken(token);
+	if (!number)
+	{
+		SourceError(source, "could not allocate expression result");
+		return qfalse;
+	} //end if
+	if (negative)
+	{
+		PC_InitEvalToken(source, &sign);
+		strcpy(sign.string, "-");
+		sign.type = TT_PUNCTUATION;
+		sign.subtype = P_SUB;
+		minus = PC_CopyToken(&sign);
+		if (!minus)
+		{
+			PC_FreeToken(number);
+			SourceError(source, "could not allocate expression sign");
+			return qfalse;
+		} //end if
+	} //end if
+	number->next = source->tokens;
+	if (minus)
+	{
+		minus->next = number;
+		source->tokens = minus;
+	} //end if
+	else source->tokens = number;
+	return qtrue;
+}
+
+static int PC_IntegerEvalToken(source_t *source, signed long value)
+{
+	token_t token;
+	unsigned long magnitude = (unsigned long)value;
+	if (value < 0) magnitude = 0UL - magnitude;
+	PC_InitEvalToken(source, &token);
+	snprintf(token.string, sizeof(token.string), "%lu", magnitude);
+	token.type = TT_NUMBER;
+	token.subtype = TT_INTEGER|TT_LONG|TT_DECIMAL;
+#ifdef NUMBERVALUE
+	token.intvalue = magnitude;
+	token.floatvalue = magnitude;
+#endif //NUMBERVALUE
+	return PC_QueueEvalToken(source, &token, value < 0);
+}
+
+static int PC_FloatEvalToken(source_t *source, double value)
+{
+	token_t token;
+	unsigned long long bits;
+	volatile unsigned long long representation;
+	double magnitude;
+	int length;
+	Com_Memcpy(&bits, &value, sizeof(bits));
+	representation = bits;
+	if ((representation & 0x7ff0000000000000ULL) == 0x7ff0000000000000ULL)
+	{
+		SourceError(source, "expression result is not finite");
+		return qfalse;
+	} //end if
+	magnitude = fabs(value);
+	PC_InitEvalToken(source, &token);
+	length = snprintf(token.string, sizeof(token.string), "%1.2f", magnitude);
+	if (length < 0 || (size_t)length >= sizeof(token.string))
+	{
+		SourceError(source, "expression result text is too long");
+		return qfalse;
+	} //end if
+	token.type = TT_NUMBER;
+	token.subtype = TT_FLOAT|TT_LONG|TT_DECIMAL;
+#ifdef NUMBERVALUE
+	if ((long double)magnitude >= (long double)ULONG_MAX) token.intvalue = ULONG_MAX;
+	else token.intvalue = (unsigned long)magnitude;
+	token.floatvalue = magnitude;
+#endif //NUMBERVALUE
+	return PC_QueueEvalToken(source, &token, value < 0);
+}
+
 int PC_Directive_eval(source_t *source)
 {
 	signed long int value;
-	token_t token;
-
 	if (!PC_Evaluate(source, &value, NULL, qtrue)) return qfalse;
-	//
-	token.line = source->scriptstack->line;
-	token.whitespace_p = source->scriptstack->script_p;
-	token.endwhitespace_p = source->scriptstack->script_p;
-	token.linescrossed = 0;
-	sprintf(token.string, "%d", abs(value));
-	token.type = TT_NUMBER;
-	token.subtype = TT_INTEGER|TT_LONG|TT_DECIMAL;
-	PC_UnreadSourceToken(source, &token);
-	if (value < 0) UnreadSignToken(source);
-	return qtrue;
+	return PC_IntegerEvalToken(source, value);
 } //end of the function PC_Directive_eval
 //============================================================================
 //
@@ -2585,19 +2651,8 @@ int PC_Directive_eval(source_t *source)
 int PC_Directive_evalfloat(source_t *source)
 {
 	double value;
-	token_t token;
-
 	if (!PC_Evaluate(source, NULL, &value, qfalse)) return qfalse;
-	token.line = source->scriptstack->line;
-	token.whitespace_p = source->scriptstack->script_p;
-	token.endwhitespace_p = source->scriptstack->script_p;
-	token.linescrossed = 0;
-	sprintf(token.string, "%1.2f", fabs(value));
-	token.type = TT_NUMBER;
-	token.subtype = TT_FLOAT|TT_LONG|TT_DECIMAL;
-	PC_UnreadSourceToken(source, &token);
-	if (value < 0) UnreadSignToken(source);
-	return qtrue;
+	return PC_FloatEvalToken(source, value);
 } //end of the function PC_Directive_evalfloat
 //============================================================================
 //
@@ -2666,24 +2721,8 @@ int PC_ReadDirective(source_t *source)
 int PC_DollarDirective_evalint(source_t *source)
 {
 	signed long int value;
-	token_t token;
-
 	if (!PC_DollarEvaluate(source, &value, NULL, qtrue)) return qfalse;
-	//
-	token.line = source->scriptstack->line;
-	token.whitespace_p = source->scriptstack->script_p;
-	token.endwhitespace_p = source->scriptstack->script_p;
-	token.linescrossed = 0;
-	sprintf(token.string, "%d", abs(value));
-	token.type = TT_NUMBER;
-	token.subtype = TT_INTEGER|TT_LONG|TT_DECIMAL;
-#ifdef NUMBERVALUE
-	token.intvalue = value;
-	token.floatvalue = value;
-#endif //NUMBERVALUE
-	PC_UnreadSourceToken(source, &token);
-	if (value < 0) UnreadSignToken(source);
-	return qtrue;
+	return PC_IntegerEvalToken(source, value);
 } //end of the function PC_DollarDirective_evalint
 //============================================================================
 //
@@ -2694,23 +2733,8 @@ int PC_DollarDirective_evalint(source_t *source)
 int PC_DollarDirective_evalfloat(source_t *source)
 {
 	double value;
-	token_t token;
-
 	if (!PC_DollarEvaluate(source, NULL, &value, qfalse)) return qfalse;
-	token.line = source->scriptstack->line;
-	token.whitespace_p = source->scriptstack->script_p;
-	token.endwhitespace_p = source->scriptstack->script_p;
-	token.linescrossed = 0;
-	sprintf(token.string, "%1.2f", fabs(value));
-	token.type = TT_NUMBER;
-	token.subtype = TT_FLOAT|TT_LONG|TT_DECIMAL;
-#ifdef NUMBERVALUE
-	token.intvalue = (unsigned long) value;
-	token.floatvalue = value;
-#endif //NUMBERVALUE
-	PC_UnreadSourceToken(source, &token);
-	if (value < 0) UnreadSignToken(source);
-	return qtrue;
+	return PC_FloatEvalToken(source, value);
 } //end of the function PC_DollarDirective_evalfloat
 //============================================================================
 //

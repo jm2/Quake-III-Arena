@@ -690,3 +690,14 @@ Changed second-pass capacities, missing second sources, all eight source factory
 imports, heap staging and final hunk allocation failures retain no partial owners.
 Unrepresentable weights and non-finite aggregate float weights reject. Both
 GCC/Clang normal and release fast-math sanitizer configurations run the fixture.
+
+
+The expression token runner links actual directive/evaluator/source/lexer/libvar/
+character/core bodies. All four hash/dollar result helpers retain 324 native
+spelling/type/sign cohorts with complete magnitude metadata; 284 defined original
+text cohorts also pass the original body. Long magnitudes avoid signed absolute
+value overflow; wide finite floats clamp auxiliary unsigned integers before
+casting, and NaN/infinity results reject. Eight nullable number/sign imports keep
+native queued next-line owners and release uncommitted copies, retaining copy
+factory fatal severity. Public directive flow and real character fields consume
+correct metadata. GCC/Clang normal and release fast-math sanitizers run the fixture.
