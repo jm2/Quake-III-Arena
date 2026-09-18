@@ -550,6 +550,10 @@ QVMs while any P0 item is open.
         lists and native priority conversion, reject source errors and free
         failed candidates; native keys/order/selection/timing remain;
         see [reply dictionary evidence](bot-reply-dictionary-validation.md).
+  - [x] Initial dictionaries measure aligned complete record/string costs,
+        check packed heap imports and both source passes, reject changed
+        capacity/type names and free failed candidates; native selection remains;
+        see [initial dictionary evidence](bot-initial-dictionary-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 

@@ -2227,169 +2227,150 @@ void BotDumpInitialChat(bot_chat_t *chat)
 //===========================================================================
 bot_chat_t *BotLoadInitialChat(char *chatfile, char *chatname)
 {
-	int pass, foundchat, indent, size;
-	char *ptr = NULL;
+	int pass, foundchat, indent, size = 0, used, capacity;
+	char *staged = NULL, *ptr;
 	char chatmessagestring[MAX_MESSAGE_SIZE];
-	source_t *source;
+	source_t *source = NULL;
 	token_t token;
 	bot_chat_t *chat = NULL;
 	bot_chattype_t *chattype = NULL;
-	bot_chatmessage_t *chatmessage = NULL;
+	bot_chatmessage_t *chatmessage;
 #ifdef DEBUG
-	int starttime;
-
-	starttime = Sys_MilliSeconds();
-#endif //DEBUG
-	//
-	size = 0;
-	foundchat = qfalse;
-	//a bot chat is parsed in two phases
+	int starttime = Sys_MilliSeconds();
+#endif
+	if (!chatfile || !chatfile[0] || strlen(chatfile) >= MAX_PATH || !chatname)
+	{
+		botimport.Print(PRT_ERROR, "invalid initial chat filename/name\n");
+		return NULL;
+	}
 	for (pass = 0; pass < 2; pass++)
 	{
-		//allocate memory
-		if (pass && size) ptr = (char *) GetClearedMemory(size);
-		//load the source file
+		if (pass)
+		{
+			staged = (char *) GetClearedMemory(size);
+			if (!staged)
+			{
+				botimport.Print(PRT_ERROR, "couldn't allocate initial chat\n");
+				goto failed;
+			}
+		}
+		used = 0;
+		capacity = pass ? size : INT_MAX;
+		if (!BotSynonymReserve(&used, sizeof(bot_chat_t), sizeof(void *), capacity, staged, &ptr)) goto failed;
+		if (pass) chat = (bot_chat_t *) ptr;
 		PC_SetBaseFolder(BOTFILESBASEFOLDER);
 		source = LoadSourceFile(chatfile);
 		if (!source)
 		{
-			botimport.Print(PRT_ERROR, "counldn't load %s\n", chatfile);
-			return NULL;
-		} //end if
-		//chat structure
-		if (pass)
+			botimport.Print(PRT_ERROR, "couldn't load %s\n", chatfile);
+			goto failed;
+		}
+		foundchat = qfalse;
+		while(!PC_SourceHasError(source) && PC_ReadToken(source, &token))
 		{
-			chat = (bot_chat_t *) ptr;
-			ptr += sizeof(bot_chat_t);
-		} //end if
-		size = sizeof(bot_chat_t);
-		//
-		while(PC_ReadToken(source, &token))
-		{
-			if (!strcmp(token.string, "chat"))
-			{
-				if (!PC_ExpectTokenType(source, TT_STRING, 0, &token))
-				{
-					FreeSource(source);
-					return NULL;
-				} //end if
-				StripDoubleQuotes(token.string);
-				//after the chat name we expect a opening brace
-				if (!PC_ExpectTokenString(source, "{"))
-				{
-					FreeSource(source);
-					return NULL;
-				} //end if
-				//if the chat name is found
-				if (!Q_stricmp(token.string, chatname))
-				{
-					foundchat = qtrue;
-					//read the chat types
-					while(1)
-					{
-						if (!PC_ExpectAnyToken(source, &token))
-						{
-							FreeSource(source);
-							return NULL;
-						} //end if
-						if (!strcmp(token.string, "}")) break;
-						if (strcmp(token.string, "type"))
-						{
-							SourceError(source, "expected type found %s\n", token.string);
-							FreeSource(source);
-							return NULL;
-						} //end if
-						//expect the chat type name
-						if (!PC_ExpectTokenType(source, TT_STRING, 0, &token) ||
-							!PC_ExpectTokenString(source, "{"))
-						{
-							FreeSource(source);
-							return NULL;
-						} //end if
-						StripDoubleQuotes(token.string);
-						if (pass)
-						{
-							chattype = (bot_chattype_t *) ptr;
-							strncpy(chattype->name, token.string, MAX_CHATTYPE_NAME);
-							chattype->firstchatmessage = NULL;
-							//add the chat type to the chat
-							chattype->next = chat->types;
-							chat->types = chattype;
-							//
-							ptr += sizeof(bot_chattype_t);
-						} //end if
-						size += sizeof(bot_chattype_t);
-						//read the chat messages
-						while(!PC_CheckTokenString(source, "}"))
-						{
-							if (!BotLoadChatMessage(source, chatmessagestring))
-							{
-								FreeSource(source);
-								return NULL;
-							} //end if
-							if (pass)
-							{
-								chatmessage = (bot_chatmessage_t *) ptr;
-								chatmessage->time = -2*CHATMESSAGE_RECENTTIME;
-								//put the chat message in the list
-								chatmessage->next = chattype->firstchatmessage;
-								chattype->firstchatmessage = chatmessage;
-								//store the chat message
-								ptr += sizeof(bot_chatmessage_t);
-								chatmessage->chatmessage = ptr;
-								strcpy(chatmessage->chatmessage, chatmessagestring);
-								ptr += strlen(chatmessagestring) + 1;
-								//the number of chat messages increased
-								chattype->numchatmessages++;
-							} //end if
-							size += sizeof(bot_chatmessage_t) + strlen(chatmessagestring) + 1;
-						} //end if
-					} //end while
-				} //end if
-				else //skip the bot chat
-				{
-					indent = 1;
-					while(indent)
-					{
-						if (!PC_ExpectAnyToken(source, &token))
-						{
-							FreeSource(source);
-							return NULL;
-						} //end if
-						if (!strcmp(token.string, "{")) indent++;
-						else if (!strcmp(token.string, "}")) indent--;
-					} //end while
-				} //end else
-			} //end if
-			else
+			if (PC_SourceHasError(source)) goto failed;
+			if (strcmp(token.string, "chat"))
 			{
 				SourceError(source, "unknown definition %s\n", token.string);
-				FreeSource(source);
-				return NULL;
-			} //end else
-		} //end while
-		//free the source
-		FreeSource(source);
-		//if the requested character is not found
+				goto failed;
+			}
+			if (!PC_ExpectTokenType(source, TT_STRING, 0, &token)) goto failed;
+			StripDoubleQuotes(token.string);
+			if (!PC_ExpectTokenString(source, "{")) goto failed;
+			if (!Q_stricmp(token.string, chatname))
+			{
+				foundchat = qtrue;
+				while(!PC_SourceHasError(source))
+				{
+					if (!PC_ExpectAnyToken(source, &token) || PC_SourceHasError(source)) goto failed;
+					if (!strcmp(token.string, "}")) break;
+					if (strcmp(token.string, "type"))
+					{
+						SourceError(source, "expected type found %s\n", token.string);
+						goto failed;
+					}
+					if (!PC_ExpectTokenType(source, TT_STRING, 0, &token) || !PC_ExpectTokenString(source, "{")) goto failed;
+					if (PC_SourceHasError(source)) goto failed;
+					StripDoubleQuotes(token.string);
+					if (strlen(token.string) >= MAX_CHATTYPE_NAME)
+					{
+						SourceError(source, "initial chat type name exceeds capacity");
+						goto failed;
+					}
+					if (!BotSynonymReserve(&used, sizeof(bot_chattype_t), sizeof(void *), capacity, staged, &ptr)) goto failed;
+					if (pass)
+					{
+						chattype = (bot_chattype_t *) ptr;
+						Q_strncpyz(chattype->name, token.string, sizeof(chattype->name));
+						chattype->next = chat->types;
+						chat->types = chattype;
+					}
+					while(!PC_SourceHasError(source))
+					{
+						if (PC_CheckTokenString(source, "}")) break;
+						if (PC_SourceHasError(source) || !BotLoadChatMessage(source, chatmessagestring) || PC_SourceHasError(source)) goto failed;
+						if (!BotSynonymReserve(&used, sizeof(bot_chatmessage_t), sizeof(void *), capacity, staged, &ptr)) goto failed;
+						if (pass)
+						{
+							chatmessage = (bot_chatmessage_t *) ptr;
+							chatmessage->time = -2*CHATMESSAGE_RECENTTIME;
+							chatmessage->next = chattype->firstchatmessage;
+							chattype->firstchatmessage = chatmessage;
+							chattype->numchatmessages++;
+						}
+						if (!BotSynonymReserve(&used, strlen(chatmessagestring) + 1, 1, capacity, staged, &ptr)) goto failed;
+						if (pass)
+						{
+							chatmessage->chatmessage = ptr;
+							strcpy(ptr, chatmessagestring);
+						}
+					}
+				}
+			}
+			else
+			{
+				indent = 1;
+				while(indent)
+				{
+					if (!PC_ExpectAnyToken(source, &token) || PC_SourceHasError(source)) goto failed;
+					if (!strcmp(token.string, "{"))
+					{
+						if (indent == INT_MAX) goto failed;
+						indent++;
+					}
+					else if (!strcmp(token.string, "}")) indent--;
+				}
+			}
+		}
+		if (PC_SourceHasError(source)) goto failed;
 		if (!foundchat)
 		{
-			botimport.Print(PRT_ERROR, "couldn't find chat %s in %s\n", chatname, chatfile);
-			return NULL;
-		} //end if
-	} //end for
-	//
+			SourceError(source, "couldn't find chat %s in %s\n", chatname, chatfile);
+			goto failed;
+		}
+		if (pass && used != size)
+		{
+			SourceError(source, "initial chat changed measured capacity");
+			goto failed;
+		}
+		FreeSource(source);
+		source = NULL;
+		if (!pass) size = used;
+	}
 	botimport.Print(PRT_MESSAGE, "loaded %s from %s\n", chatname, chatfile);
-	//
-	//BotDumpInitialChat(chat);
-	if (bot_developer)
-	{
-		BotCheckInitialChatIntegrety(chat);
-	} //end if
+	if (bot_developer) BotCheckInitialChatIntegrety(chat);
 #ifdef DEBUG
 	botimport.Print(PRT_MESSAGE, "initial chats loaded in %d msec\n", Sys_MilliSeconds() - starttime);
-#endif //DEBUG
-	//character was read succesfully
+#endif
 	return chat;
+failed:
+	if (source)
+	{
+		if (!PC_SourceHasError(source)) SourceError(source, "could not load complete initial chat");
+		FreeSource(source);
+	}
+	if (staged) FreeMemory(staged);
+	return NULL;
 } //end of the function BotLoadInitialChat
 //===========================================================================
 //

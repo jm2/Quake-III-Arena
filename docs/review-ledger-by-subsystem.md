@@ -654,6 +654,10 @@ implementation or check, without implying issue completion.
         lists and native priority conversion, reject source errors and free
         failed candidates; native keys/order/selection/timing remain;
         see [reply dictionary evidence](bot-reply-dictionary-validation.md).
+  - [x] Initial dictionaries measure aligned complete record/string costs,
+        check packed heap imports and both source passes, reject changed
+        capacity/type names and free failed candidates; native selection remains;
+        see [initial dictionary evidence](bot-initial-dictionary-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
