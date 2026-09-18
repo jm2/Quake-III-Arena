@@ -515,6 +515,31 @@ static qboolean AAS_ValidateReachability(void)
 			(!AAS_SignedIndex(reach->facenum, aasworld.numfaces) ||
 			 !AAS_SignedIndex(reach->edgenum, aasworld.numedges))) return qfalse;
 	}
+	if (total)
+	{
+		unsigned char *owned;
+		int bytes = aasworld.reachabilitysize / 8 + (aasworld.reachabilitysize % 8 != 0);
+		owned = (unsigned char *)GetMemory(bytes);
+		if (!owned) return qfalse;
+		Com_Memset(owned, 0, bytes);
+		for (i = 0; i < aasworld.numareasettings; i++)
+		{
+			aas_areasettings_t *settings = &aasworld.areasettings[i];
+			int n;
+			for (n = 0; n < settings->numreachableareas; n++)
+			{
+				int index = settings->firstreachablearea + n;
+				unsigned int mask = 1u << (index & 7);
+				if (owned[index >> 3] & mask)
+				{
+					FreeMemory(owned);
+					return qfalse;
+				}
+				owned[index >> 3] |= mask;
+			}
+		}
+		FreeMemory(owned);
+	}
 	return qtrue;
 }
 
