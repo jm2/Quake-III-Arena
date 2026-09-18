@@ -159,7 +159,7 @@ static void ConstantVectors(int proof) {
     }
     for(mode=0;mode<6;mode++) {
         ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nrgbGen const ( %s 0.2 0.3 )\n}",bad[mode]);text=body;
-        Check(!ParseStage(&stages[0],&text),"non-finite/out-of-float-range RGB vectors reject before byte conversion");
+        if(ParseStage(&stages[0],&text)) {fprintf(stderr,"Accepted invalid RGB component: %s\n",bad[mode]);Check(0,"non-finite/out-of-float-range RGB vectors reject before byte conversion");}
         if(mode<4) {ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nalphaGen const %s\n}",bad[mode]);text=body;Check(!ParseStage(&stages[0],&text),"non-finite alpha rejects before byte conversion");}
         ResetParser();snprintf(body,sizeof(body),"map $whiteimage\ntcGen vector ( 0 1 %s ) ( 1 0 0 )\n}",bad[mode]);text=body;
         Check(!ParseStage(&stages[0],&text),"non-finite/overflow first texture vector rejects");

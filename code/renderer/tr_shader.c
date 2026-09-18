@@ -22,6 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "tr_local.h"
 #include <limits.h>
 #include <float.h>
+#include <stdint.h>
 
 // tr_shader.c -- this file deals with the parsing and definition of shaders
 
@@ -110,6 +111,16 @@ void R_RemapShader(const char *shaderName, const char *newShaderName, const char
 	}
 }
 
+/* Integer representation checks remain effective under release -ffast-math. */
+static qboolean ShaderFinite( double value ) {
+	uint64_t bits;
+	volatile uint64_t representation;
+	Com_Memcpy( &bits, &value, sizeof(bits) );
+	/* Prevent optimizers from replacing the bit test with finite-math assumptions. */
+	representation = bits;
+	return (representation & UINT64_C(0x7ff0000000000000)) != UINT64_C(0x7ff0000000000000);
+}
+
 /*
 ===============
 ParseVector
@@ -134,7 +145,7 @@ static qboolean ParseVector( char **text, int count, float *v ) {
 		}
 		{
 			double value = atof( token );
-			if ( !(value >= -FLT_MAX && value <= FLT_MAX) ) {
+			if ( !ShaderFinite(value) || value < -FLT_MAX || value > FLT_MAX ) {
 				ri.Printf( PRINT_WARNING, "WARNING: non-finite vector in shader '%s'\n", shader.name );
 				return qfalse;
 			}
@@ -154,7 +165,7 @@ static qboolean ParseVector( char **text, int count, float *v ) {
 
 /* RGB historically scales in float precision; alpha scales in double. */
 static qboolean ShaderColorByte( double value, qboolean rgb, byte *color ) {
-	if ( !(value >= -DBL_MAX && value <= DBL_MAX) ) return qfalse;
+	if ( !ShaderFinite(value) ) return qfalse;
 	if ( value <= 0 ) *color = 0;
 	else if ( value >= 1 ) *color = 255;
 	else *color = (byte)(rgb ? (double)(255.0f * (float)value) : 255.0 * value);
