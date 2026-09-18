@@ -24,7 +24,8 @@ Keep issues open when a merged step covers only part of their acceptance
 criteria, and link the PR and remaining evidence in the issue.
 
 The [2026-09-17 reassessment](review-2026-09-17.md) records the disposition of
-all 52 issues, implementation dependencies, and decisions awaiting input.
+all 52 issues, implementation dependencies, accepted decisions, and deferred
+acceptance checks.
 The July evidence below is historical unless explicitly dated otherwise;
 “local” candidate fixes from that pass are committed in `204fe36`.
 
@@ -98,12 +99,17 @@ QVMs while any P0 item is open.
         see [server evidence](qvm-server-core-validation.md).
   - [x] Connection-denial strings validate termination in their owning VM
         after calls return; see [return evidence](qvm-returned-string-validation.md).
+  - [x] User approved the original string length as the safe in-place limit
+        for the size-less legacy synonym syscall; preserve the 1.32c ABI and
+        skip growing replacements when they cannot fit. The implementation
+        remains in PR #66 until its merge gates pass.
   - [ ] Complete remaining syscall pointer/range checks and retain valid PPC
         QVM compatibility during deferred live acceptance.
 - [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)
       — **high**, connection redirection/injection/hijack.
   - [x] User selected commercial 1.32c compatibility (Quake3e/ioquake3 style).
-        Harden compatible paths without requiring a different wire protocol.
+        Preserve legacy protocol compatibility by default; harden compatible
+        paths without requiring a different wire protocol.
   - [ ] Document protection limits for legacy peers and test compatible setup,
         rejection of spoofed responses, and any explicitly negotiated extension.
 - [ ] [#36 — reject oversized and truncated PK3 entries](https://github.com/jm2/Quake-III-Arena/issues/36)
@@ -343,6 +349,11 @@ QVMs while any P0 item is open.
       #37, as supported by Quake3e/ioquake3; no mandatory incompatible fields.
 - [x] User authorized host tests and cross-builds without retail assets or a
       Mac OS 9 environment; live acceptance is deferred to a follow-up session.
+- [x] QVM steps #54–#64 and single-run CI #68 are merged at master
+      `1745dea`, each after successful CI, clean completed Codex review and
+      resolved CodeRabbit findings.
+- [ ] Finish gated bot syscall PRs #65–#67/#69 and RoQ/image/JPEG/MD3 PRs
+      #70–#77. Keep their parent issues open through remaining acceptance.
 - [ ] Record and execute the deferred retail/target compatibility checks when
       the user provides the assets and test environment.
 

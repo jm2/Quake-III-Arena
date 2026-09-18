@@ -232,8 +232,10 @@ implementation or check, without implying issue completion.
   - [x] Base and Team Arena PPC cross-builds pass.
   - [ ] Add malicious ZIP fixtures and prove every handle/buffer cleanup path.
 - [ ] [#37 — connection/netchan lacks challenge binding](https://github.com/jm2/Quake-III-Arena/issues/37)
-  - [ ] Decide secure/legacy wire compatibility, then port and test the complete
-        challenge/checksum protocol family.
+  - [x] User selected commercial 1.32c compatibility in the style of
+        Quake3e/ioquake3 and preserving the legacy protocol by default.
+  - [ ] Harden compatible challenge/setup paths, document protection limits
+        for legacy peers, and test the selected behavior.
 - [ ] [#38 — connectionless rate limiting is bypassable/unfair](https://github.com/jm2/Quake-III-Arena/issues/38)
 - [ ] [#39 — QVMs can modify protected cvars/commands](https://github.com/jm2/Quake-III-Arena/issues/39)
 - [ ] [#40 — server-controlled `clientNum` reached native indexes](https://github.com/jm2/Quake-III-Arena/issues/40)
@@ -325,14 +327,14 @@ implementation or check, without implying issue completion.
 - [x] Cross-build the full local security/UI/filesystem patch set as base and
       Team Arena, validate both PEFs, then return configuration to base-only.
 - [x] Run a clean rebuild with captured output and classify warnings.
-- [ ] P0 security: fix #35, #41, #42, #43, #44, #45, and #47 before treating
-      downloaded/installed mod content as untrusted.
-- [ ] P1 security: decide the compatibility policy for #37, then fix #38, #39,
-      #46, and #48.
+- [ ] P0 security: finish #35, #41, #42, #43, #44, #45, #46, #47, #48,
+      then compatibility-sensitive #37; retain #29 and #36 validation gates.
+- [ ] P1 security: fix #38 and #39 with deterministic host regressions.
 - [ ] Add focused host tests for local candidates #18, #24, #25, #36, #40,
       #49, message/Huffman exact bounds, download pairs, and format strings.
 - [ ] Prioritize target runtime blockers: #11, #15, #16, #17, #5, then #20.
-- [ ] Obtain legal retail assets and a Mac OS 9 emulator/hardware run for the
-      first end-to-end smoke test; preserve resulting logs outside generated
-      package staging.
+- [x] User authorized host checks and working cross-builds while legal retail
+      assets and a Mac OS 9 environment are unavailable.
+- [ ] Execute deferred end-to-end acceptance in a follow-up session; preserve
+      resulting logs outside generated package staging.
 - [ ] Do not close any issue solely because a cross-build passed.
