@@ -504,6 +504,10 @@ QVMs while any P0 item is open.
         reject absent tables/outputs and the exclusive array bound, and selection
         guards incomplete inputs while valid native bytes/evaluation stay;
         see [API evidence](bot-weapon-api-validation.md).
+  - [x] Chat state imports return native zero failure handles and retry
+        without prior-byte changes; shutdown releases the final client slot and
+        clears both console roots while valid properties/FIFO values stay;
+        see [chat lifecycle evidence](bot-chat-state-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 

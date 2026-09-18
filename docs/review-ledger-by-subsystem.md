@@ -608,6 +608,10 @@ implementation or check, without implying issue completion.
         reject absent tables/outputs and the exclusive array bound, and selection
         guards incomplete inputs while valid native bytes/evaluation stay;
         see [API evidence](bot-weapon-api-validation.md).
+  - [x] Chat state imports return native zero failure handles and retry
+        without prior-byte changes; shutdown releases the final client slot and
+        clears both console roots while valid properties/FIFO values stay;
+        see [chat lifecycle evidence](bot-chat-state-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
