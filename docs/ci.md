@@ -490,3 +490,14 @@ native fatal diagnostic and return no token if that diagnostic returns.
 Maximum valid filenames remain accepted. Six original actual-body failure
 proofs cover invalid static frees, null conversions, an unused copy leak and
 null token access. GCC and Clang run normal/release sanitizer modes in CI.
+
+The include runner executes the actual native preprocessor directive, token
+read/unread, path normalization, prefix updates and script publication. Native
+direct/fallback lookup order, complete angle pieces and the last fitting path
+remain valid. Oversized quoted fallback and angle paths reject before any
+partial lookup; angle failures consume through the delimiter while missing
+delimiters/operands preserve next-line tokens. Empty filenames, skipped includes,
+prefix/terminator/separator costs, overlapping separator removal and recursive
+script rejection exercise diagnostics and exact physical ownership. Eight
+original actual-body proofs cover the unsafe paths. GCC and Clang run normal
+and release fast-math sanitizer configurations in CI.

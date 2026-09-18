@@ -429,7 +429,11 @@ implementation or check, without implying issue completion.
         copied tokens on failed/empty expansion while retaining native token
         text, types and location metadata;
         see [builtin evidence](bot-builtin-validation.md).
-  - [ ] Finish token merging, include paths, character paths, and
+  - [x] Include paths append complete strings with NUL capacity, reject overflow
+        and incomplete angle directives without partial lookups, preserve
+        next-line tokens and release recursively rejected scripts;
+        see [include evidence](bot-include-validation.md).
+  - [ ] Finish token merging, character paths, and
         allocation cleanup.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
   - [x] Local pool/type/item/string checks, reload-name initialization, and
