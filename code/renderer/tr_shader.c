@@ -21,6 +21,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #include "tr_local.h"
 #include <limits.h>
+#include <float.h>
+#include <stdint.h>
 
 // tr_shader.c -- this file deals with the parsing and definition of shaders
 
@@ -109,6 +111,16 @@ void R_RemapShader(const char *shaderName, const char *newShaderName, const char
 	}
 }
 
+/* Integer representation checks remain effective under release -ffast-math. */
+static qboolean ShaderFinite( double value ) {
+	uint64_t bits;
+	volatile uint64_t representation;
+	Com_Memcpy( &bits, &value, sizeof(bits) );
+	/* Prevent optimizers from replacing the bit test with finite-math assumptions. */
+	representation = bits;
+	return (representation & UINT64_C(0x7ff0000000000000)) != UINT64_C(0x7ff0000000000000);
+}
+
 /*
 ===============
 ParseVector
@@ -131,7 +143,14 @@ static qboolean ParseVector( char **text, int count, float *v ) {
 			ri.Printf( PRINT_WARNING, "WARNING: missing vector element in shader '%s'\n", shader.name );
 			return qfalse;
 		}
-		v[i] = atof( token );
+		{
+			double value = atof( token );
+			if ( !ShaderFinite(value) || value < -FLT_MAX || value > FLT_MAX ) {
+				ri.Printf( PRINT_WARNING, "WARNING: non-finite vector in shader '%s'\n", shader.name );
+				return qfalse;
+			}
+			v[i] = (float)value;
+		}
 	}
 
 	token = COM_ParseExt( text, qfalse );
@@ -140,6 +159,16 @@ static qboolean ParseVector( char **text, int count, float *v ) {
 		return qfalse;
 	}
 
+	return qtrue;
+}
+
+
+/* RGB historically scales in float precision; alpha scales in double. */
+static qboolean ShaderColorByte( double value, qboolean rgb, byte *color ) {
+	if ( !ShaderFinite(value) ) return qfalse;
+	if ( value <= 0 ) *color = 0;
+	else if ( value >= 1 ) *color = 255;
+	else *color = (byte)(rgb ? (double)(255.0f * (float)value) : 255.0 * value);
 	return qtrue;
 }
 
@@ -819,10 +848,12 @@ static qboolean ParseStage( shaderStage_t *stage, char **text )
 			{
 				vec3_t	color;
 
-				ParseVector( text, 3, color );
-				stage->constantColor[0] = 255 * color[0];
-				stage->constantColor[1] = 255 * color[1];
-				stage->constantColor[2] = 255 * color[2];
+				if ( !ParseVector( text, 3, color ) ||
+				     !ShaderColorByte( color[0], qtrue, &stage->constantColor[0] ) ||
+				     !ShaderColorByte( color[1], qtrue, &stage->constantColor[1] ) ||
+				     !ShaderColorByte( color[2], qtrue, &stage->constantColor[2] ) ) {
+					return qfalse;
+				}
 
 				stage->rgbGen = CGEN_CONST;
 			}
@@ -886,8 +917,11 @@ static qboolean ParseStage( shaderStage_t *stage, char **text )
 			}
 			else if ( !Q_stricmp( token, "const" ) )
 			{
+				double value;
 				token = COM_ParseExt( text, qfalse );
-				stage->constantColor[3] = 255 * atof( token );
+				if ( !token[0] ) return qfalse;
+				value = atof( token );
+				if ( !ShaderColorByte( value, qfalse, &stage->constantColor[3] ) ) return qfalse;
 				stage->alphaGen = AGEN_CONST;
 			}
 			else if ( !Q_stricmp( token, "identity" ) )
@@ -960,8 +994,10 @@ static qboolean ParseStage( shaderStage_t *stage, char **text )
 			}
 			else if ( !Q_stricmp( token, "vector" ) )
 			{
-				ParseVector( text, 3, stage->bundle[0].tcGenVectors[0] );
-				ParseVector( text, 3, stage->bundle[0].tcGenVectors[1] );
+				if ( !ParseVector( text, 3, stage->bundle[0].tcGenVectors[0] ) ||
+				     !ParseVector( text, 3, stage->bundle[0].tcGenVectors[1] ) ) {
+					return qfalse;
+				}
 
 				stage->bundle[0].tcGen = TCGEN_VECTOR;
 			}

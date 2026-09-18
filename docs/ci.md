@@ -112,7 +112,9 @@ PR head while retaining checks on the merged default branch.
     progress, bones/back references, extreme frame indexes and tess bases;
   - executes native shader parsing/registration and both archive index passes
     with 0–10 stages, following definitions, quotes/comments/nesting, EOF tails,
-    skipped excess-stage cinematics, native modifiers and valid/default caching;
+    skipped excess-stage cinematics, native modifiers and valid/default caching,
+    malformed/non-finite color/texture vectors and 1,021 native byte goldens,
+    under both normal sanitizer and optimized release-fast-math configurations;
   - executes native shader archive initialization, checked file/aggregate sizes,
     reverse input release, empty startup/restarts, native paths and 4,096-file cap;
   - compares patch LOD propagation with 401 tiny stock-recursive oracles and

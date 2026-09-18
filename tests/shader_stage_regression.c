@@ -149,10 +149,59 @@ static void FastAlpha(void) {
 	registered=R_FindShader("tests/lightmapped",0,qtrue);Check(!registered->defaultShader && registered->numUnfoggedPasses==1 && registered->stages[0]->alphaGen==AGEN_SKIP && registered->optimalStageIteratorFunc==RB_StageIteratorLightmappedMultitexture,"actual collapsed lightmapped registration retains its specialized iterator after alpha skip");
 	qglActiveTextureARB=NULL;r_ignoreFastPath=&one;Release();tr.whiteImage=&white;
 }
-int main(void) {
+static void ConstantVectors(int proof) {
+    int mode,i;char body[512],*text;shader_t *registered;
+    const char *bad[]={"nan","inf","-inf","1e400","1e39","-1e39"};
+    const char *broken[]={"bad", "( 0.1 0.2 )", "( 0.1 0.2 0.3 bad", "( 0.1\n", "( \"\" 0.2 0.3 )"};
+    if(proof>=0) {
+        ResetParser();text=proof==0?"map $whiteimage\nrgbGen const ( nan 0.2 0.3 )\n}":proof==1?"map $whiteimage\nalphaGen const nan\n}":"map $whiteimage\ntcGen vector bad bad\n}";
+        Check(!ParseStage(&stages[0],&text),"non-finite constants and malformed tc vectors must reject");return;
+    }
+    for(mode=0;mode<6;mode++) {
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nrgbGen const ( %s 0.2 0.3 )\n}",bad[mode]);text=body;
+        if(ParseStage(&stages[0],&text)) {fprintf(stderr,"Accepted invalid RGB component: %s\n",bad[mode]);Check(0,"non-finite/out-of-float-range RGB vectors reject before byte conversion");}
+        if(mode<4) {ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nalphaGen const %s\n}",bad[mode]);text=body;Check(!ParseStage(&stages[0],&text),"non-finite alpha rejects before byte conversion");}
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\ntcGen vector ( 0 1 %s ) ( 1 0 0 )\n}",bad[mode]);text=body;
+        Check(!ParseStage(&stages[0],&text),"non-finite/overflow first texture vector rejects");
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\ntcGen vector ( 0 1 0 ) ( 1 %s 0 )\n}",bad[mode]);text=body;
+        Check(!ParseStage(&stages[0],&text),"non-finite/overflow second texture vector rejects");
+    }
+    for(mode=0;mode<5;mode++) {
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nrgbGen const %s\n}",broken[mode]);text=body;
+        Check(!ParseStage(&stages[0],&text),"malformed constant RGB propagates vector failure");
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\ntcGen vector %s bad\n}",broken[mode]);text=body;
+        Check(!ParseStage(&stages[0],&text),"malformed texture vector propagates failure");
+    }
+    ResetParser();text="map $whiteimage\ntcGen vector bad bad\n}";Check(!ParseStage(&stages[0],&text),"both missing texture parentheses reject");
+    ResetParser();text="map $whiteimage\nalphaGen const\n}";Check(!ParseStage(&stages[0],&text),"missing alpha constant rejects");
+    for(i=0;i<=512;i++) {
+        float value=(float)i/512.0f;double a=(double)i/512.0;byte rgb=(byte)(255.0f*value),alpha=(byte)(255.0*a);
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nrgbGen const ( %.9g %.9g %.9g )\nalphaGen const %.17g\n}",value,value,value,a);text=body;
+        Check(ParseStage(&stages[0],&text) && stages[0].rgbGen==CGEN_CONST && stages[0].alphaGen==AGEN_CONST && stages[0].constantColor[0]==rgb && stages[0].constantColor[1]==rgb && stages[0].constantColor[2]==rgb && stages[0].constantColor[3]==alpha,"all 513 valid RGB float/alpha double quantization goldens stay native");
+    }
+    for(i=1;i<255;i++)for(mode=0;mode<2;mode++) {
+        float value=nextafterf((float)i/255.0f,mode?1.0f:0.0f);byte rgb=(byte)(255.0f*value);
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nrgbGen const ( %.9g %.9g %.9g )\n}",value,value,value);text=body;
+        Check(ParseStage(&stages[0],&text) && stages[0].constantColor[0]==rgb && stages[0].constantColor[1]==rgb && stages[0].constantColor[2]==rgb,"adjacent float byte thresholds retain native rounding");
+    }
+    ResetParser();text="map $whiteimage\nrgbGen const ( -1e30 0.5 1e30 )\nalphaGen const -1e300\n}";
+    Check(ParseStage(&stages[0],&text) && stages[0].constantColor[0]==0 && stages[0].constantColor[1]==127 && stages[0].constantColor[2]==255 && stages[0].constantColor[3]==0,"finite out-of-range constants saturate before byte conversion");
+    ResetParser();text="map $whiteimage\nalphaGen const 1e300\ntcGen vector ( -3.4e38 0 3.4e38 ) ( 0 -1 1 )\n}";
+    Check(ParseStage(&stages[0],&text) && stages[0].constantColor[3]==255 && stages[0].bundle[0].tcGen==TCGEN_VECTOR && stages[0].bundle[0].tcGenVectors[0][0]<0 && stages[0].bundle[0].tcGenVectors[0][2]>0,"large finite alpha clamps and full finite texture vector range remains accepted");
+    for(mode=0;mode<4;mode++) {
+        Release();tr.whiteImage=&white;
+        snprintf(archive,sizeof(archive),"tests/material\n{\n{\nmap $whiteimage\n%s\n}\n}\ntests/following\n{\n{\nmap $whiteimage\n}\n}\n",mode==0?"rgbGen const bad":mode==1?"rgbGen const ( nan 0 0 )":mode==2?"alphaGen const nan":"tcGen vector bad bad");
+        s_shaderText=archive;registered=R_FindShader("tests/material",LIGHTMAP_NONE,qtrue);Check(registered->defaultShader,"actual invalid constant/vector definition caches default fallback");
+        i=allocations;Check(R_FindShader("tests/material",LIGHTMAP_NONE,qtrue)==registered && i==allocations,"invalid vector fallback cache reuse");
+        Check(!R_FindShader("tests/following",LIGHTMAP_NONE,qtrue)->defaultShader,"following definition survives malformed constant/vector");
+    }
+    Release();tr.whiteImage=&white;
+}
+int main(int argc,char **argv) {
 	int i;char *text;ri.Printf=Print;ri.Hunk_Alloc=Allocate;ri.CIN_PlayCinematic=Video;tr.whiteImage=&white;
 	for(i=0;i<MAX_SHADERTEXT_HASH;i++)shaderTextHashTable[i]=emptyHash;
-	AlphaIdentity();AlphaWaves();FastAlpha();NativeStages();TailCases();
+	if(argc>1) {ConstantVectors(atoi(argv[1]));Release();return 0;}
+	ConstantVectors(-1);AlphaIdentity();AlphaWaves();FastAlpha();NativeStages();TailCases();
 	ResetParser();text="{\nsurfaceParm fog\n}\n";Check(ParseShader(&text),"native zero-stage fog remains valid");
 	ResetParser();text="{\nskyparms - 512 -\n}\n";Check(ParseShader(&text) && shader.isSky,"native zero-stage sky remains valid");
 	Registration();
