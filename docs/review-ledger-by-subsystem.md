@@ -341,6 +341,9 @@ implementation or check, without implying issue completion.
   - [x] Shader archives check native allocation sizes, balance list/file input,
         and clear stale state on empty restarts; see
         [archive ownership evidence](shader-archive-ownership-validation.md).
+  - [x] Constant shader colors validate before byte conversion, preserve native
+        valid rounding and propagate vector failures; see
+        [constant/vector evidence](shader-constant-vector-validation.md).
   - [ ] Complete remaining shader definition/index and semantic checks.
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.

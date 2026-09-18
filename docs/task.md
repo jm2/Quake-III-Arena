@@ -236,6 +236,9 @@ QVMs while any P0 item is open.
   - [x] Shader archives check native allocation sizes, balance list/file input,
         and clear stale state on empty restarts; see
         [archive ownership evidence](shader-archive-ownership-validation.md).
+  - [x] Constant shader colors validate before byte conversion, preserve native
+        valid rounding and propagate vector failures; see
+        [constant/vector evidence](shader-constant-vector-validation.md).
   - [ ] Complete remaining shader definition/index and semantic checks.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
       — **high**, server OOB access/infinite traversal.
