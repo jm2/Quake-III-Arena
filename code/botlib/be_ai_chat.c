@@ -1381,32 +1381,35 @@ bot_matchpiece_t *BotLoadMatchPieces(source_t *source, char *endtoken)
 	bot_matchpiece_t *matchpiece, *firstpiece, *lastpiece;
 	bot_matchstring_t *matchstring, *lastmatchstring;
 
+	if (!source || !endtoken || !endtoken[0])
+	{
+		botimport.Print(PRT_ERROR, "missing match piece source/delimiter\n");
+		return NULL;
+	}
 	firstpiece = NULL;
 	lastpiece = NULL;
 	//
 	lastwasvariable = qfalse;
 	//
-	while(PC_ReadToken(source, &token))
+	while(!PC_SourceHasError(source) && PC_ReadToken(source, &token))
 	{
+		if (PC_SourceHasError(source)) goto failed;
 		if (token.type == TT_NUMBER && (token.subtype & TT_INTEGER))
 		{
-			if (token.intvalue < 0 || token.intvalue >= MAX_MATCHVARIABLES)
+			if (token.intvalue >= MAX_MATCHVARIABLES)
 			{
 				SourceError(source, "can't have more than %d match variables\n", MAX_MATCHVARIABLES);
-				FreeSource(source);
-				BotFreeMatchPieces(firstpiece);
-				return NULL;
+				goto failed;
 			} //end if
 			if (lastwasvariable)
 			{
 				SourceError(source, "not allowed to have adjacent variables\n");
-				FreeSource(source);
-				BotFreeMatchPieces(firstpiece);
-				return NULL;
+				goto failed;
 			} //end if
 			lastwasvariable = qtrue;
 			//
-			matchpiece = (bot_matchpiece_t *) GetClearedHunkMemory(sizeof(bot_matchpiece_t));
+			matchpiece = (bot_matchpiece_t *) GetClearedMemory(sizeof(bot_matchpiece_t));
+			if (!matchpiece) goto failed;
 			matchpiece->type = MT_VARIABLE;
 			matchpiece->variable = token.intvalue;
 			matchpiece->next = NULL;
@@ -1417,7 +1420,8 @@ bot_matchpiece_t *BotLoadMatchPieces(source_t *source, char *endtoken)
 		else if (token.type == TT_STRING)
 		{
 			//
-			matchpiece = (bot_matchpiece_t *) GetClearedHunkMemory(sizeof(bot_matchpiece_t));
+			matchpiece = (bot_matchpiece_t *) GetClearedMemory(sizeof(bot_matchpiece_t));
+			if (!matchpiece) goto failed;
 			matchpiece->firststring = NULL;
 			matchpiece->type = MT_STRING;
 			matchpiece->variable = 0;
@@ -1435,13 +1439,12 @@ bot_matchpiece_t *BotLoadMatchPieces(source_t *source, char *endtoken)
 				{
 					if (!PC_ExpectTokenType(source, TT_STRING, 0, &token))
 					{
-						FreeSource(source);
-						BotFreeMatchPieces(firstpiece);
-						return NULL;
+						goto failed;
 					} //end if
 				} //end if
 				StripDoubleQuotes(token.string);
-				matchstring = (bot_matchstring_t *) GetClearedHunkMemory(sizeof(bot_matchstring_t) + strlen(token.string) + 1);
+				matchstring = (bot_matchstring_t *) GetClearedMemory(sizeof(bot_matchstring_t) + strlen(token.string) + 1);
+				if (!matchstring) goto failed;
 				matchstring->string = (char *) matchstring + sizeof(bot_matchstring_t);
 				strcpy(matchstring->string, token.string);
 				if (!strlen(token.string)) emptystring = qtrue;
@@ -1449,26 +1452,32 @@ bot_matchpiece_t *BotLoadMatchPieces(source_t *source, char *endtoken)
 				if (lastmatchstring) lastmatchstring->next = matchstring;
 				else matchpiece->firststring = matchstring;
 				lastmatchstring = matchstring;
-			} while(PC_CheckTokenString(source, "|"));
+			} while(!PC_SourceHasError(source) && PC_CheckTokenString(source, "|"));
 			//if there was no empty string found
 			if (!emptystring) lastwasvariable = qfalse;
 		} //end if
 		else
 		{
 			SourceError(source, "invalid token %s\n", token.string);
-			FreeSource(source);
-			BotFreeMatchPieces(firstpiece);
-			return NULL;
+			goto failed;
 		} //end else
-		if (PC_CheckTokenString(source, endtoken)) break;
+		if (PC_SourceHasError(source)) goto failed;
+		if (PC_CheckTokenString(source, endtoken))
+		{
+			if (PC_SourceHasError(source)) goto failed;
+			return firstpiece;
+		}
+		if (PC_SourceHasError(source)) goto failed;
 		if (!PC_ExpectTokenString(source, ","))
 		{
-			FreeSource(source);
-			BotFreeMatchPieces(firstpiece);
-			return NULL;
+			goto failed;
 		} //end if
 	} //end while
-	return firstpiece;
+	if (!PC_SourceHasError(source)) SourceError(source, "missing match piece delimiter %s", endtoken);
+failed:
+	BotFreeMatchPieces(firstpiece);
+	if (!PC_SourceHasError(source)) SourceError(source, "could not load complete match pieces");
+	return NULL;
 } //end of the function BotLoadMatchPieces
 //===========================================================================
 //
@@ -1547,6 +1556,7 @@ bot_matchtemplate_t *BotLoadMatchTemplates(char *matchfile)
 			matchtemplate->first = BotLoadMatchPieces(source, "=");
 			if (!matchtemplate->first)
 			{
+				FreeSource(source);
 				BotFreeMatchTemplates(matches);
 				return NULL;
 			} //end if
@@ -2120,6 +2130,7 @@ bot_replychat_t *BotLoadReplyChat(char *filename)
 				key->match = BotLoadMatchPieces(source, ")");
 				if (!key->match)
 				{
+					FreeSource(source);
 					BotFreeReplyChat(replychatlist);
 					return NULL;
 				} //end if
