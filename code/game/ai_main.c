@@ -1357,8 +1357,9 @@ int BotAILoadMap( int restart ) {
 	if (restart) {
 		// Game DLL/QVM data resets on restart; the engine retains its bot map.
 		botmapready = qfalse;
+		// Retail engines return an empty string for an unknown variable.
 		if (trap_BotLibVarGet("botlib_mapready", ready, sizeof(ready)) != BLERR_NOERROR
-				|| ready[0] != '1' || ready[1] != '\0') return qfalse;
+				|| (ready[0] && (ready[0] != '1' || ready[1] != '\0'))) return qfalse;
 	}
 	if (!restart) {
 		trap_Cvar_Register( &mapname, "mapname", "", CVAR_SERVERINFO | CVAR_ROM );

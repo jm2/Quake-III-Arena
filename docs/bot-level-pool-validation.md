@@ -14,7 +14,9 @@ bot creation/frames for that map; human initialization continues with a warning.
 Successful reload restores readiness. An engine-owned map flag survives game
 DLL/QVM data reset and is queried through the existing variable syscall on
 tournament restart; an ordinary/stale variable cannot revive a failed map. This
-query allocates no cache and leaves the retail syscall table unchanged.
+query allocates no cache and leaves the retail syscall table unchanged. An empty
+unknown-variable response from a legacy engine preserves native restart behavior;
+this engine always supplies explicit 0/1 status and rejects stale failed maps.
 The retail void export/syscall remains unchanged. Prior pool/list bytes survive failure; complete shared cache variables retain
 native retry ownership. Existing 256 default, positive fractional truncation,
 allocation/free/list behavior, commercial 1.32c interfaces and protocol remain.
@@ -59,6 +61,10 @@ Fixed tests cover fresh VM restarts with successful/failed retained engine maps.
 Actual engine status queries check bounded output, no cache allocation, immunity
 to an ordinary stale variable and false status after failed load/uninitialized
 library. Setup clears the private flag; shutdown clears it before teardown.
+Four prior actual-body legacy-engine restart proofs fail against the required
+nonempty-status guard; ordinary and explicit-engine-status restart goldens pass
+separately. Fixed tests preserve fresh-VM restart with the historical empty
+unknown-variable response in all four game configurations with both compilers.
 Both changed game files also compile to baseq3/missionpack QVM bytecode assembly
 with the repository legacy compiler built as a 32-bit host tool. A full game QVM
 build reaches a pre-existing missing QVM-libc strrchr dependency in q_shared.c;
@@ -69,8 +75,8 @@ with zero diagnostics and valid PEF headers:
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,783,921 | `1da5e9595d7abca2db4012ad1077987dfcf3b05a55bd06123ae7db7d1f6cf72b` |
-| Quake3_TeamArena | 3,932,495 | `c6e19f3899a6c6812c41d666ee3c1edbee64021835097bce907f1a92654d176e` |
+| Quake3 | 3,783,921 | `9a764791b2a2ad12c6efa311aace994fa5138279ee969072579a802b9c6ed837` |
+| Quake3_TeamArena | 3,932,495 | `48bcc9a2aedce3fef7265f2b579e1d1f0c9366c3a1de18e7f018d539698dc873` |
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 
