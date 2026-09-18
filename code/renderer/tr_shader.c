@@ -1279,60 +1279,41 @@ ParseSkyParms
 skyParms <outerbox> <cloudheight> <innerbox>
 ===============
 */
-static void ParseSkyParms( char **text ) {
-	char		*token;
-	static char	*suf[6] = {"rt", "bk", "lf", "ft", "up", "dn"};
-	char		pathname[MAX_QPATH];
-	int			i;
+static qboolean ParseSkyParms( char **text ) {
+	static const char *suf[6] = {"rt", "bk", "lf", "ft", "up", "dn"};
+	char outer[MAX_QPATH], inner[MAX_QPATH], pathname[MAX_QPATH];
+	char *token;
+	float height;
+	int i;
 
-	// outerbox
 	token = COM_ParseExt( text, qfalse );
-	if ( token[0] == 0 ) {
-		ri.Printf( PRINT_WARNING, "WARNING: 'skyParms' missing parameter in shader '%s'\n", shader.name );
-		return;
-	}
-	if ( strcmp( token, "-" ) ) {
-		for (i=0 ; i<6 ; i++) {
-			Com_sprintf( pathname, sizeof(pathname), "%s_%s.tga"
-				, token, suf[i] );
-			shader.sky.outerbox[i] = R_FindImageFile( ( char * ) pathname, qtrue, qtrue, GL_CLAMP );
-			if ( !shader.sky.outerbox[i] ) {
-				shader.sky.outerbox[i] = tr.defaultImage;
-			}
+	if ( !token[0] || strlen(token) >= MAX_QPATH - 7 ) return qfalse;
+	Q_strncpyz( outer, token, sizeof(outer) );
+	token = COM_ParseExt( text, qfalse );
+	if ( !ShaderFloat( token, &height ) ) return qfalse;
+	if ( !height ) height = 512;
+	token = COM_ParseExt( text, qfalse );
+	if ( !token[0] || strlen(token) >= MAX_QPATH - 7 ) return qfalse;
+	Q_strncpyz( inner, token, sizeof(inner) );
+
+	if ( strcmp( outer, "-" ) ) {
+		for ( i = 0; i < 6; i++ ) {
+			Com_sprintf( pathname, sizeof(pathname), "%s_%s.tga", outer, suf[i] );
+			shader.sky.outerbox[i] = R_FindImageFile( pathname, qtrue, qtrue, GL_CLAMP );
+			if ( !shader.sky.outerbox[i] ) shader.sky.outerbox[i] = tr.defaultImage;
 		}
 	}
-
-	// cloudheight
-	token = COM_ParseExt( text, qfalse );
-	if ( token[0] == 0 ) {
-		ri.Printf( PRINT_WARNING, "WARNING: 'skyParms' missing parameter in shader '%s'\n", shader.name );
-		return;
-	}
-	shader.sky.cloudHeight = atof( token );
-	if ( !shader.sky.cloudHeight ) {
-		shader.sky.cloudHeight = 512;
-	}
-	R_InitSkyTexCoords( shader.sky.cloudHeight );
-
-
-	// innerbox
-	token = COM_ParseExt( text, qfalse );
-	if ( token[0] == 0 ) {
-		ri.Printf( PRINT_WARNING, "WARNING: 'skyParms' missing parameter in shader '%s'\n", shader.name );
-		return;
-	}
-	if ( strcmp( token, "-" ) ) {
-		for (i=0 ; i<6 ; i++) {
-			Com_sprintf( pathname, sizeof(pathname), "%s_%s.tga"
-				, token, suf[i] );
-			shader.sky.innerbox[i] = R_FindImageFile( ( char * ) pathname, qtrue, qtrue, GL_REPEAT );
-			if ( !shader.sky.innerbox[i] ) {
-				shader.sky.innerbox[i] = tr.defaultImage;
-			}
+	shader.sky.cloudHeight = height;
+	R_InitSkyTexCoords( height );
+	if ( strcmp( inner, "-" ) ) {
+		for ( i = 0; i < 6; i++ ) {
+			Com_sprintf( pathname, sizeof(pathname), "%s_%s.tga", inner, suf[i] );
+			shader.sky.innerbox[i] = R_FindImageFile( pathname, qtrue, qtrue, GL_REPEAT );
+			if ( !shader.sky.innerbox[i] ) shader.sky.innerbox[i] = tr.defaultImage;
 		}
 	}
-
 	shader.isSky = qtrue;
+	return qtrue;
 }
 
 
@@ -1341,13 +1322,13 @@ static void ParseSkyParms( char **text ) {
 ParseSort
 =================
 */
-void ParseSort( char **text ) {
+static qboolean ParseSort( char **text ) {
 	char	*token;
 
 	token = COM_ParseExt( text, qfalse );
 	if ( token[0] == 0 ) {
 		ri.Printf( PRINT_WARNING, "WARNING: missing sort parameter in shader '%s'\n", shader.name );
-		return;
+		return qfalse;
 	}
 
 	if ( !Q_stricmp( token, "portal" ) ) {
@@ -1369,8 +1350,9 @@ void ParseSort( char **text ) {
 	} else if ( !Q_stricmp( token, "underwater" ) ) {
 		shader.sort = SS_UNDERWATER;
 	} else {
-		shader.sort = atof( token );
+		if ( !ShaderFloat( token, &shader.sort ) ) return qfalse;
 	}
+	return qtrue;
 }
 
 
@@ -1492,6 +1474,29 @@ static void SkipShaderDefinition( char **text ) {
 	if ( token[0] == '{' && !token[1] ) SkipShaderTail( text, 1 );
 }
 
+/* Keep sun changes private until the entire shader parses successfully. */
+static qboolean ParseSun( char **text, vec3_t light, vec3_t direction ) {
+	float values[6], a, b, lengthSquared;
+	int i;
+	for ( i = 0; i < 6; i++ ) {
+		if ( !ShaderFloat( COM_ParseExt(text, qfalse), &values[i] ) ) return qfalse;
+	}
+	VectorCopy( values, light );
+	lengthSquared = DotProduct( light, light );
+	if ( !ShaderFinite(lengthSquared) ) return qfalse;
+	VectorNormalize( light );
+	VectorScale( light, values[3], light );
+	a = values[4]; a = a / 180 * M_PI;
+	b = values[5]; b = b / 180 * M_PI;
+	direction[0] = cos(a) * cos(b);
+	direction[1] = sin(a) * cos(b);
+	direction[2] = sin(b);
+	for ( i = 0; i < 3; i++ ) {
+		if ( !ShaderFinite(light[i]) || !ShaderFinite(direction[i]) ) return qfalse;
+	}
+	return qtrue;
+}
+
 /*
 =================
 ParseShader
@@ -1505,6 +1510,8 @@ static qboolean ParseShader( char **text )
 {
 	char *token;
 	int s;
+	vec3_t sunLight, sunDirection;
+	qboolean hasSun = qfalse;
 
 	s = 0;
 
@@ -1552,32 +1559,8 @@ static qboolean ParseShader( char **text )
 		}
 		// sun parms
 		else if ( !Q_stricmp( token, "q3map_sun" ) ) {
-			float	a, b;
-
-			token = COM_ParseExt( text, qfalse );
-			tr.sunLight[0] = atof( token );
-			token = COM_ParseExt( text, qfalse );
-			tr.sunLight[1] = atof( token );
-			token = COM_ParseExt( text, qfalse );
-			tr.sunLight[2] = atof( token );
-			
-			VectorNormalize( tr.sunLight );
-
-			token = COM_ParseExt( text, qfalse );
-			a = atof( token );
-			VectorScale( tr.sunLight, a, tr.sunLight);
-
-			token = COM_ParseExt( text, qfalse );
-			a = atof( token );
-			a = a / 180 * M_PI;
-
-			token = COM_ParseExt( text, qfalse );
-			b = atof( token );
-			b = b / 180 * M_PI;
-
-			tr.sunDirection[0] = cos( a ) * cos( b );
-			tr.sunDirection[1] = sin( a ) * cos( b );
-			tr.sunDirection[2] = sin( b );
+			if ( !ParseSun( text, sunLight, sunDirection ) ) return qfalse;
+			hasSun = qtrue;
 		}
 		else if ( !Q_stricmp( token, "deformVertexes" ) ) {
 			if ( !ParseDeform( text ) ) return qfalse;
@@ -1589,9 +1572,7 @@ static qboolean ParseShader( char **text )
 		}
 		else if ( !Q_stricmp( token, "clampTime" ) ) {
 			token = COM_ParseExt( text, qfalse );
-      if (token[0]) {
-        shader.clampTime = atof(token);
-      }
+      if ( !ShaderFloat( token, &shader.clampTime ) ) return qfalse;
     }
 		// skip stuff that only the q3map needs
 		else if ( !Q_stricmpn( token, "q3map", 5 ) ) {
@@ -1642,9 +1623,16 @@ static qboolean ParseShader( char **text )
 			if ( !token[0] ) 
 			{
 				ri.Printf( PRINT_WARNING, "WARNING: missing parm for 'fogParms' keyword in shader '%s'\n", shader.name );
-				continue;
+				return qfalse;
 			}
-			shader.fogParms.depthForOpaque = atof( token );
+			if ( !ShaderFloat( token, &shader.fogParms.depthForOpaque ) ) return qfalse;
+			{
+				int i;
+				for ( i = 0; i < 3; i++ ) {
+					if ( shader.fogParms.color[i] < 0 ) shader.fogParms.color[i] = 0;
+					else if ( shader.fogParms.color[i] > 1 ) shader.fogParms.color[i] = 1;
+				}
+			}
 
 			// skip any old gradient directions
 			SkipRestOfLine( text );
@@ -1659,7 +1647,7 @@ static qboolean ParseShader( char **text )
 		// skyparms <cloudheight> <outerbox> <innerbox>
 		else if ( !Q_stricmp( token, "skyparms" ) )
 		{
-			ParseSkyParms( text );
+			if ( !ParseSkyParms( text ) ) return qfalse;
 			continue;
 		}
 		// light <value> determines flaring in q3map, not needed here
@@ -1695,7 +1683,7 @@ static qboolean ParseShader( char **text )
 		// sort
 		else if ( !Q_stricmp( token, "sort" ) )
 		{
-			ParseSort( text );
+			if ( !ParseSort( text ) ) return qfalse;
 			continue;
 		}
 		else
@@ -1713,6 +1701,10 @@ static qboolean ParseShader( char **text )
 	}
 
 	shader.explicitlyDefined = qtrue;
+	if ( hasSun ) {
+		VectorCopy( sunLight, tr.sunLight );
+		VectorCopy( sunDirection, tr.sunDirection );
+	}
 
 	return qtrue;
 }
