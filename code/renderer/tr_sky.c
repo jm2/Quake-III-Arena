@@ -653,60 +653,85 @@ void R_BuildCloudData( shaderCommands_t *input )
 ** Called when a sky shader is parsed
 */
 #define SQR( a ) ((a)*(a))
-void R_InitSkyTexCoords( float heightCloud )
-{
-	int i, s, t;
-	float radiusWorld = 4096;
-	float p;
-	float sRad, tRad;
-	vec3_t skyVec;
+/* Preserve stable native float results; use wide geometry only when needed. */
+static qboolean NativeCloudPoint( float heightCloud, const vec3_t skyVec,
+	float *parameter, float coords[2] ) {
+	float radiusWorld = 4096, p, length;
 	vec3_t v;
+	p = ( 1.0f / ( 2 * DotProduct( skyVec, skyVec ) ) ) *
+		( -2 * skyVec[2] * radiusWorld +
+		   2 * sqrt( SQR( skyVec[2] ) * SQR( radiusWorld ) +
+		             2 * SQR( skyVec[0] ) * radiusWorld * heightCloud +
+					 SQR( skyVec[0] ) * SQR( heightCloud ) +
+					 2 * SQR( skyVec[1] ) * radiusWorld * heightCloud +
+					 SQR( skyVec[1] ) * SQR( heightCloud ) +
+					 2 * SQR( skyVec[2] ) * radiusWorld * heightCloud +
+					 SQR( skyVec[2] ) * SQR( heightCloud ) ) );
+	if ( !R_FiniteFloat(p) ) return qfalse;
+	VectorScale( skyVec, p, v );
+	v[2] += radiusWorld;
+	if ( !R_FiniteFloat(v[0]) || !R_FiniteFloat(v[1]) || !R_FiniteFloat(v[2]) ) return qfalse;
+	length = VectorNormalize( v );
+	if ( !R_FiniteFloat(length) ) return qfalse;
+	coords[0] = Q_acos( v[0] );
+	coords[1] = Q_acos( v[1] );
+	if ( !R_FiniteFloat(coords[0]) || !R_FiniteFloat(coords[1]) ) return qfalse;
+	*parameter = p;
+	return qtrue;
+}
 
-	// init zfar so MakeSkyVec works even though
-	// a world hasn't been bounded
-	backEnd.viewParms.zFar = 1024;
+static qboolean WideCloudPoint( float heightCloud, const vec3_t skyVec,
+	float *parameter, float coords[2] ) {
+	double x = skyVec[0], y = skyVec[1], z = skyVec[2], height = heightCloud;
+	double radius = 4096, norm = x*x + y*y + z*z;
+	double radicand = z*z*radius*radius + norm*(2*radius*height + height*height);
+	double p, length;
+	int axis;
+	/* All finite float inputs fit these double products; negative means no hit. */
+	if ( radicand < 0 ) return qfalse;
+	p = (-z*radius + sqrt(radicand)) / norm;
+	x *= p; y *= p; z = z*p + radius;
+	length = sqrt(x*x + y*y + z*z);
+	if ( length ) { x /= length; y /= length; }
+	/* Fixed sky vectors bound p below FLT_MAX, and normalized x/y within one. */
+	*parameter = (float)p;
+	for ( axis = 0; axis < 2; axis++ ) {
+		double value = axis ? y : x;
+		if ( value < -1 ) value = -1;
+		else if ( value > 1 ) value = 1;
+		coords[axis] = Q_acos( (float)value );
+	}
+	return R_FiniteFloat(*parameter) && R_FiniteFloat(coords[0]) && R_FiniteFloat(coords[1]);
+}
 
-	for ( i = 0; i < 6; i++ )
-	{
-		for ( t = 0; t <= SKY_SUBDIVISIONS; t++ )
-		{
-			for ( s = 0; s <= SKY_SUBDIVISIONS; s++ )
-			{
-				// compute vector from view origin to sky side integral point
-				MakeSkyVec( ( s - HALF_SKY_SUBDIVISIONS ) / ( float ) HALF_SKY_SUBDIVISIONS, 
-							( t - HALF_SKY_SUBDIVISIONS ) / ( float ) HALF_SKY_SUBDIVISIONS, 
-							i, 
-							NULL,
-							skyVec );
-
-				// compute parametric value 'p' that intersects with cloud layer
-				p = ( 1.0f / ( 2 * DotProduct( skyVec, skyVec ) ) ) *
-					( -2 * skyVec[2] * radiusWorld + 
-					   2 * sqrt( SQR( skyVec[2] ) * SQR( radiusWorld ) + 
-					             2 * SQR( skyVec[0] ) * radiusWorld * heightCloud +
-								 SQR( skyVec[0] ) * SQR( heightCloud ) + 
-								 2 * SQR( skyVec[1] ) * radiusWorld * heightCloud +
-								 SQR( skyVec[1] ) * SQR( heightCloud ) + 
-								 2 * SQR( skyVec[2] ) * radiusWorld * heightCloud +
-								 SQR( skyVec[2] ) * SQR( heightCloud ) ) );
-
-				s_cloudTexP[i][t][s] = p;
-
-				// compute intersection point based on p
-				VectorScale( skyVec, p, v );
-				v[2] += radiusWorld;
-
-				// compute vector from world origin to intersection point 'v'
-				VectorNormalize( v );
-
-				sRad = Q_acos( v[0] );
-				tRad = Q_acos( v[1] );
-
-				s_cloudTexCoords[i][t][s][0] = sRad;
-				s_cloudTexCoords[i][t][s][1] = tRad;
+static qboolean BuildCloudCoords( float height, float parameters[6][SKY_SUBDIVISIONS+1][SKY_SUBDIVISIONS+1],
+	float coords[6][SKY_SUBDIVISIONS+1][SKY_SUBDIVISIONS+1][2] ) {
+	int side, t, s;
+	for ( side = 0; side < 6; side++ ) {
+		for ( t = 0; t <= SKY_SUBDIVISIONS; t++ ) {
+			for ( s = 0; s <= SKY_SUBDIVISIONS; s++ ) {
+				vec3_t skyVec;
+				MakeSkyVec( (s - HALF_SKY_SUBDIVISIONS) / (float)HALF_SKY_SUBDIVISIONS,
+					(t - HALF_SKY_SUBDIVISIONS) / (float)HALF_SKY_SUBDIVISIONS, side, NULL, skyVec );
+				if ( !NativeCloudPoint(height, skyVec, &parameters[side][t][s], coords[side][t][s]) &&
+					 !WideCloudPoint(height, skyVec, &parameters[side][t][s], coords[side][t][s]) ) return qfalse;
 			}
 		}
 	}
+	return qtrue;
+}
+
+void R_InitSkyTexCoords( float heightCloud ) {
+	float parameters[6][SKY_SUBDIVISIONS+1][SKY_SUBDIVISIONS+1];
+	float coords[6][SKY_SUBDIVISIONS+1][SKY_SUBDIVISIONS+1][2];
+	/* Keep the native initialization prerequisite for MakeSkyVec. */
+	backEnd.viewParms.zFar = 1024;
+	if ( !R_FiniteFloat(heightCloud) || !BuildCloudCoords(heightCloud, parameters, coords) ) {
+		/* No intersection is an invalid layer, not a partially published table. */
+		if ( !BuildCloudCoords(512, parameters, coords) ) return;
+	}
+	Com_Memcpy( s_cloudTexP, parameters, sizeof(s_cloudTexP) );
+	Com_Memcpy( s_cloudTexCoords, coords, sizeof(s_cloudTexCoords) );
 }
 
 //======================================================================================

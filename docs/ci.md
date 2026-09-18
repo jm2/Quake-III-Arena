@@ -272,6 +272,15 @@ The runner extracts the unchanged native Q_acos body from common.c into TMPDIR;
 its exact source seam fails if the signature stops matching. Graphics callbacks
 are isolated and do not claim live GPU acceptance.
 
+The sky fixture also checks complete native cloud tables for 12 stable heights
+(5,832 points), six extreme heights against independent sphere/direction
+invariants and complete default fallback for invalid intersections/non-finite
+inputs. Normal parameters/UVs match native values exactly. Release reassociation
+must remain within eight float epsilons for parameters and four for normalized
+UV directions; acos near an endpoint can amplify a final-bit rounding change.
+The stage fixture checks that later shader failures preserve cloud state and
+accepted duplicate sky fields publish only the final layer.
+
 ## What this CI does not prove
 
 Portable CI does not compile a PowerPC PEF, preserve/inspect a Classic resource
