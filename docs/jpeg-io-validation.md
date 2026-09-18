@@ -73,11 +73,16 @@ using the temporary loader libraries recorded in [loading evidence](qvm-loading-
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,669,919 | `564fe7ba265d96f3437f0f882dd787db47d74c55fa728986437f8304ed8ccfa4` |
-| Quake3_TeamArena | 3,818,493 | `86fc1a6fc763a60843c3e7744daf5c508d7b9d7135c60ce3c667cc95829473cb` |
+| Quake3 | 3,678,237 | `a92df825f2770e8855447d9e34e899ce99620aeb14a2e8b047e73e9df487fd2f` |
+| Quake3_TeamArena | 3,826,811 | `f91566842d071a64a661c1df929d64f3320eec2d2f27f4dc6c9b2c114ca2abe9` |
 
 ## Remaining acceptance
 
 Keep #43 open until this PR merges through the CI/review gate and retail
 1.32c JPEG textures, screenshot color/orientation and Mac OS 9 failure/retry
 acceptance are completed. The user has deferred those live tests.
+
+Reviewed QVM work through #64, single-run CI (#68) and the RoQ console
+shutdown fix are integrated. The affected sanitizer fixtures, nine Python
+checks and both Mac products pass; CI retains every runner. The table
+records these integrated artifacts.
