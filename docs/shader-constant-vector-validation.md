@@ -2,7 +2,11 @@
 
 This focused #46 correction keeps commercial 1.32c renderer/QVM interfaces and
 valid shader syntax. ParseVector rejects non-finite values or values outside the
-finite native float range before conversion. Constant RGB and both texture
+finite native float range before conversion. Check the IEEE double exponent
+through an integer byte copy so release -ffast-math cannot discard finiteness
+validation. Read a volatile integer representation before masking to stop
+Clang from folding even the initial non-volatile bit test into fast-math
+assumptions. Constant RGB and both texture
 vectors now propagate parser failure instead of using incomplete/uninitialized
 vector data. Fog vectors already propagated failure and share the finite check.
 
@@ -20,7 +24,11 @@ conversion failures under UBSan, and the invariant failure accepting two
 malformed texture vectors. The existing actual-body stage/registration fixture
 now checks non-finite and overflowing components in both texture vectors,
 malformed/short/empty RGB vectors, missing alpha and full finite vector range.
-Finite extreme constants saturate without conversion UB. All 513 normalized
+Finite extreme constants saturate without conversion UB. Codex identified a release fast-math gap in the first comparison-based check;
+the unchanged first revision reproduces acceptance of non-finite alpha under
+-O2 -DNDEBUG -ffast-math. Both default and optimized fast-math sanitizer
+configurations now pass the complete stage fixture under Clang; a separate
+GCC 16 optimized fast-math run also passes. All 513 normalized
 RGB/alpha samples plus 508 adjacent float byte thresholds match the independent
 native scaling/truncation oracle: 1,021 valid quantization goldens.
 
@@ -36,8 +44,8 @@ diagnostics and validate as PPC PEFs.
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,737,497 | `e08845c8f85f994d942fd5a1f15b42c5a05e04fd8a5e9c453ab6f8852bd84ea0` |
-| Quake3_TeamArena | 3,886,071 | `1a2e5c6ee1e1c8a0264769da626fe1eb26a8eeaaa6ec65efe6618773d00ab872` |
+| Quake3 | 3,737,481 | `98312cb4a63691e04a48de63f11d6e544af1ae3890eff348d3d7e7583c365736` |
+| Quake3_TeamArena | 3,886,055 | `681e610aa350066c4fe82ae8df6e94290f7b3ba916c6dc94d799c4b2dab81a9d` |
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 
