@@ -154,10 +154,10 @@ QVMs while any P0 item is open.
   - [ ] Complete deferred retail 1.32c JPEG and screenshot acceptance.
 - [ ] [#44 — validate MD3/MD4 layouts before allocation or swapping](https://github.com/jm2/Quake-III-Arena/issues/44)
       — **high**, malformed model memory corruption/hangs.
-  - [ ] Merge the MD3 and MD4 validation steps after their current-head gates;
-        host fixtures exercise full layouts, native conversion, staging cleanup,
-        tag/frame bounds and actual MD4 skinning. Retail/PPC live acceptance
-        remains deferred.
+  - [x] MD3 step [#77](https://github.com/jm2/Quake-III-Arena/pull/77) and
+        MD4 step [#79](https://github.com/jm2/Quake-III-Arena/pull/79) merged
+        after their current-head CI/review gates. Host fixtures cover full
+        layouts, native conversion, cleanup, tag/frame bounds and MD4 skinning.
   - [x] Complete MD3 layout validation before copying/swapping and staged
         LOD registration have [host regressions](md3-layout-validation.md).
   - [x] Complete MD4 layout/weight/index validation before allocation and native
