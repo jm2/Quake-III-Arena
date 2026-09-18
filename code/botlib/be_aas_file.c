@@ -569,7 +569,11 @@ static qboolean AAS_ValidateClusterOwnership(void)
 	if (aasworld.clusters[0].numareas || aasworld.clusters[0].numreachabilityareas ||
 		aasworld.clusters[0].numportals || aasworld.areasettings[0].cluster) return qfalse;
 	for (i = 1; i < aasworld.numareasettings; i++)
-		if (aasworld.areasettings[i].cluster > 0) mapped++;
+	{
+		aas_areasettings_t *settings = &aasworld.areasettings[i];
+		if (!settings->cluster && settings->numreachableareas) return qfalse;
+		if (settings->cluster > 0) mapped++;
+	}
 	if (aasworld.numportals > 0)
 	{
 		if (aasworld.numportals - 1 > (INT_MAX - mapped) / 2) return qfalse;
