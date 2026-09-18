@@ -180,6 +180,7 @@ static void FirstGolden(int reload)
     PairValues(handle); WeightEnd();
 }
 
+#ifndef Q3_WEAPON_WEIGHT_NO_MAIN
 int main(int argc, char **argv)
 {
     int reload, position, count, total = 0;
@@ -203,3 +204,5 @@ int main(int argc, char **argv)
     printf("Actual weapon weight pair, %d nullable stages, cached aliases, prior bytes, evaluation/retry and public physical shutdown pass (issue #48)\n", total);
     return 0;
 }
+
+#endif /* Q3_WEAPON_WEIGHT_NO_MAIN */
