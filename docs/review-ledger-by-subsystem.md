@@ -228,6 +228,10 @@ implementation or check, without implying issue completion.
         allocated client indices have [sanitizer regressions](qvm-botlib-navigation-validation.md).
   - [x] Bot chat buffers, cumulative variables, bounded in-place synonyms,
         and embedded match spans have [sanitizer regressions](qvm-botlib-chat-validation.md).
+  - [x] Elementary-action VM arguments and native allocated client bounds
+        have [sanitizer regressions](qvm-botlib-actions-validation.md).
+  - [x] Remaining bot AI structures, inventory/rank arrays, optional goals,
+        and native genetic endpoints have [sanitizer regressions](qvm-botlib-ai-validation.md).
   - [ ] Complete remaining syscall pointer/range handling before accepting
         untrusted QVMs.
 - [ ] [#36 — oversized/truncated PK3 entries](https://github.com/jm2/Quake-III-Arena/issues/36)
