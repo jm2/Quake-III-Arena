@@ -30,6 +30,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  *****************************************************************************/
 
+//Validate a client against the allocated elementary-action input storage.
+qboolean EA_ClientValid(int client);
+
 //ClientCommand elementary actions
 void EA_Say(int client, char *str);
 void EA_SayTeam(int client, char *str);

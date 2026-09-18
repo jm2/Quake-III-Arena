@@ -200,6 +200,7 @@ typedef struct {
 	int			snapFlagServerBit;			// ^= SNAPFLAG_SERVERCOUNT every SV_SpawnServer()
 
 	client_t	*clients;					// [sv_maxclients->integer];
+	int			clientCapacity;			// actual allocated client slots
 	int			numSnapshotEntities;		// sv_maxclients->integer*PACKET_BACKUP*MAX_PACKET_ENTITIES
 	int			nextSnapshotEntities;		// next snapshotEntities to use
 	entityState_t	*snapshotEntities;		// [numSnapshotEntities]
@@ -330,6 +331,7 @@ qboolean	SV_inPVS (const vec3_t p1, const vec3_t p2);
 // sv_bot.c
 //
 void		SV_BotFrame( int time );
+client_t *SV_BotClient( int clientNum );
 int			SV_BotAllocateClient(void);
 void		SV_BotFreeClient( int clientNum );
 
