@@ -353,6 +353,12 @@ implementation or check, without implying issue completion.
 
 ## Exact continuation point
 
+- [x] Current progress reconciled at master `95a6c18` on 2026-09-18: steps
+      #70–#77/#79–#82 and assessment #78 are merged after CI/review gates.
+- [ ] Merge dependent BSP steps #83–#91 only after successful current-head
+      CI, clean completed Codex and resolved CodeRabbit findings; host/PPC
+      checks already pass. Finish derived geometry/facets, aggregate budgets
+      and complete transactional publication for #45.
 - [x] Cross-build the full local security/UI/filesystem patch set as base and
       Team Arena, validate both PEFs, then return configuration to base-only.
 - [x] Run a clean rebuild with captured output and classify warnings.

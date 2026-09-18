@@ -395,8 +395,12 @@ QVMs while any P0 item is open.
 - [x] QVM steps #54–#67/#69 and single-run CI #68 are merged at master
       `4fd62bd`, each after successful CI, clean completed Codex review and
       resolved CodeRabbit findings.
-- [ ] Finish gated RoQ/image/JPEG/model/BSP PRs #70–#77/#79/#80.
-      Keep their parent issues open through remaining acceptance.
+- [x] RoQ/image/JPEG/model/BSP steps #70–#77/#79–#82 and assessment #78
+      are merged at master `95a6c18`, after the same current-head CI/review gates.
+- [ ] Finish gated BSP PRs #83–#91, in dependency order; affected host checks
+      and both PPC builds pass, while queued CI still holds their merges.
+- [ ] Finish #45 derived geometry/facet bounds, aggregate map/query budgets
+      and complete transactional publication; keep parent acceptance open.
 - [ ] Record and execute the deferred retail/target compatibility checks when
       the user provides the assets and test environment.
 
