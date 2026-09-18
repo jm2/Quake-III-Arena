@@ -63,15 +63,15 @@ PEFs using temporary loader libraries from [loading evidence](qvm-loading-valida
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,686,669 | `47183f3897bda9517b86e5d76fcf89694eeba40fb2667893d9775537eb3cf7d8` |
-| Quake3_TeamArena | 3,835,243 | `e9ca719900673906e5e30de9075701166b47b68daa2beae9a25929af0743affe` |
+| Quake3 | 3,690,925 | `debf2657aa274ebc1797954433067cbc09357a5601aeae74c5eb0dd9f04da6fc` |
+| Quake3_TeamArena | 3,839,499 | `cf5db0a1a2705b2f1c9129a9cd0488548decc0549845a0ed69dee0f7f48b75a3` |
 
 ## Remaining acceptance
 
 Keep #44 open for the MD4 step, gated merges and deferred commercial 1.32c
 models/animations, mod LOD behavior and strict-alignment PPC acceptance.
 
-Reviewed QVM work through #64, single-run CI (#68) and the RoQ console
+Reviewed QVM work through #69, single-run CI (#68) and the RoQ console
 shutdown fix are integrated. The affected sanitizer fixtures, nine Python
 checks and both Mac products pass; CI retains every runner. The table
 records these integrated artifacts.
