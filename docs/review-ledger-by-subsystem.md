@@ -385,6 +385,9 @@ implementation or check, without implying issue completion.
   - [x] Finite geometric fields, ordered bounds and edge/face/area ranges
         validate before loaded publication; signed orientations and six legacy
         plane types retain native bytes; see [geometry evidence](aas-geometry-validation.md).
+  - [x] Root/node/paired-plane/area-leaf references and every component
+        terminate before loaded publication; temporary heap workspace releases
+        and native point queries retain results; see [node evidence](aas-node-validation.md).
   - [ ] Validate the complete file and graph before setting `loaded`.
 - [ ] [#48 — bot preprocessor/token/path bounds](https://github.com/jm2/Quake-III-Arena/issues/48)
   - [x] Several upstream primitive/preprocessor/diagnostic bounds fixes are

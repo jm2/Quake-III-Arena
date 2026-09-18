@@ -251,6 +251,7 @@ bash tests/run_aas_endian_tests.sh
 bash tests/run_aas_writer_tests.sh
 bash tests/run_aas_geometry_tests.sh
 bash tests/run_bot_memory_tests.sh
+bash tests/run_aas_node_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
@@ -333,6 +334,15 @@ and payload behavior. Nullable imports, unsigned/header/signed-length overflow
 and null cleanup cannot write or acquire ownership; tracked counter limits also
 reject before imports. Heap releases physically and hunk releases logically.
 This does not prove that every bot-parser caller handles allocation failure.
+
+The native AAS node runner checks paired plane and area-leaf references, root/
+settings storage and termination in every graph component. Iterative validation
+retains chains and shared acyclic graphs without modifying node bytes, releases
+its temporary heap workspace and rejects workspace failure. It extracts the
+actual AAS_PointAreaNum body through a strict source seam and retains native
+area/solid results in normal and release fast-math sanitizers. Optional empty
+lumps retain required safe root/plane/area/settings fixtures. Routing references
+and runtime/arena budgets remain follow-on work.
 
 ## What this CI does not prove
 

@@ -10,6 +10,8 @@ aas_t aasworld;
 botlib_import_t botimport;
 static unsigned char source[8192];
 static int sourceSize,advertised,readable,position,opened,opens,closes,reads,seeks,missing,failSeek,shortRead,allocations,releases,allocationRequests,failAllocation;
+static void *workspacePointer;
+static int workspaceRequests,workspaceFrees,failWorkspace;
 static void *arena[64];static int released[64];
 static void Check(int condition,const char *message) {if(!condition){fprintf(stderr,"AAS layout regression failed: %s\n",message);exit(1);}}
 void QDECL Com_Error(int level,const char *format,...) {(void)level;(void)format;Check(0,"unexpected native error");exit(1);}
@@ -24,8 +26,9 @@ void QDECL AAS_Error(char *format,...) {(void)format;}
 static void QDECL Print(int type,char *format,...) {(void)type;(void)format;}
 char *LibVarGetString(char *name) {Check(!strcmp(name,"sv_mapChecksum"),"native checksum variable");return "12345";}
 void *GetHunkMemory(unsigned long size) {void *p;allocationRequests++;if(failAllocation==allocationRequests)return NULL;Check(size>0&&size<8192&&allocations<64,"bounded native arena request");p=calloc(1,size);Check(p!=NULL,"exact fixture arena allocation");released[allocations]=0;arena[allocations++]=p;return p;}
-void FreeMemory(void *pointer) {int i;for(i=0;i<allocations;i++)if(arena[i]==pointer){Check(!released[i],"native logical release once");released[i]=1;releases++;return;}Check(0,"unknown native logical release");}
-static void ResetArena(void) {while(allocations)free(arena[--allocations]);memset(&aasworld,0,sizeof(aasworld));releases=0;}
+void *GetMemory(unsigned long size) {Check(!workspacePointer&&size>0&&size<8192,"bounded temporary node workspace");workspaceRequests++;if(failWorkspace)return NULL;workspacePointer=calloc(1,size);Check(workspacePointer!=NULL,"workspace fixture allocation");return workspacePointer;}
+void FreeMemory(void *pointer) {int i;if(pointer==workspacePointer&&pointer){free(workspacePointer);workspacePointer=NULL;workspaceFrees++;return;}for(i=0;i<allocations;i++)if(arena[i]==pointer){Check(!released[i],"native logical release once");released[i]=1;releases++;return;}Check(0,"unknown native logical release");}
+static void ResetArena(void) {Check(!workspacePointer,"temporary workspace physically released before arena reset");while(allocations)free(arena[--allocations]);memset(&aasworld,0,sizeof(aasworld));releases=0;}
 static int Open(const char *name,fileHandle_t *file,fsMode_t mode) {Check(name&&!strcmp(name,"fixture.aas")&&mode==FS_READ&&!opened,"native file open contract");opens++;if(missing){*file=0;return -1;}opened=1;*file=39;position=0;return advertised;}
 static int Read(void *buffer,int length,fileHandle_t file) {int n;Check(opened&&file==39&&buffer&&length>=0&&position>=0,"native bounded read contract");reads++;n=position<readable?readable-position:0;if(n>length)n=length;if(shortRead==reads&&n)n--;memcpy(buffer,source+position,n);position+=n;return n;}
 static int Seek(fileHandle_t file,long offset,int origin) {Check(opened&&file==39&&origin==FS_SEEK_SET&&offset>=0&&offset<=readable,"native bounded seek contract");seeks++;if(failSeek==seeks)return -1;position=(int)offset;return 0;}
@@ -34,7 +37,7 @@ static void Word(int offset,uint32_t value) {int i;for(i=0;i<4;i++)source[offset
 static const int sizes[AAS_LUMPS]={sizeof(aas_bbox_t),sizeof(aas_vertex_t),sizeof(aas_plane_t),sizeof(aas_edge_t),sizeof(aas_edgeindex_t),sizeof(aas_face_t),sizeof(aas_faceindex_t),sizeof(aas_area_t),sizeof(aas_areasettings_t),sizeof(aas_reachability_t),sizeof(aas_node_t),sizeof(aas_portal_t),sizeof(aas_portalindex_t),sizeof(aas_cluster_t)};
 static void Encode(int version) {int i;if(version==AASVERSION)for(i=0;i<(int)sizeof(aas_header_t)-8;i++)source[8+i]^=(unsigned char)(i*119);}
 static void Build(int version,int empty) {int lump,offset=sizeof(aas_header_t);memset(source,0,sizeof(source));Word(0,AASID);Word(4,version);Word(8,12345);for(lump=0;lump<AAS_LUMPS;lump++){int n=empty?0:sizes[lump];Word(12+lump*8,offset);Word(16+lump*8,n);offset+=n;}sourceSize=advertised=readable=offset;Encode(version);}
-static void Counters(void) {Check(!opened,"fixture starts with closed file");opens=closes=reads=seeks=missing=failSeek=shortRead=allocationRequests=failAllocation=0;}
+static void Counters(void) {Check(!opened,"fixture starts with closed file");workspaceRequests=workspaceFrees=failWorkspace=0;opens=closes=reads=seeks=missing=failSeek=shortRead=allocationRequests=failAllocation=0;}
 static void OldWorld(void) {ResetArena();aasworld.vertexes=GetHunkMemory(2*sizeof(aas_vertex_t));aasworld.numvertexes=2;aasworld.loaded=aasworld.initialized=aasworld.savefile=1;aasworld.bspchecksum=54321;aasworld.time=37;strcpy(aasworld.mapname,"previous");}
 static void RejectPreserving(int expected) {aas_t before=aasworld;int previousAllocations=allocations,previousReleases=releases,result;result=AAS_LoadAASFile("fixture.aas");Check(result==expected,"native rejection code");Check(!opened&&closes==(!missing)&&opens==1,"all rejection file paths close once");Check(!memcmp(&aasworld,&before,sizeof(before))&&allocations==previousAllocations&&releases==previousReleases,"layout rejection preserves prior world and arena ownership");}
 static void GeometryFailures(void) {

@@ -280,6 +280,9 @@ QVMs while any P0 item is open.
   - [x] Finite geometric fields, ordered bounds and edge/face/area ranges
         validate before loaded publication; signed orientations and six legacy
         plane types retain native bytes; see [geometry evidence](aas-geometry-validation.md).
+  - [x] Root/node/paired-plane/area-leaf references and every component
+        terminate before loaded publication; temporary heap workspace releases
+        and native point queries retain results; see [node evidence](aas-node-validation.md).
   - [ ] Validate the entire AAS file and graph before setting `loaded`.
 - [ ] [#48 — bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48)
       — **high**, parser fixed-buffer corruption/invalid cleanup.
@@ -513,8 +516,14 @@ QVMs while any P0 item is open.
       exact-head CI, clean completed Codex and resolved bot findings.
 - [x] Cloud-layer math/publication #117 merged at `c4251e7` after the
       same exact-head CI/Codex/resolved-finding gate.
-- [ ] Gate complete native material fallback, then continue renderer budgets/
-      transactions and AAS/preprocessor root causes; retain deferred acceptance.
+- [x] Native material fallback #118 merged at `f18ca23` after exact-head
+      CI, completed clean Codex and resolved review findings.
+- [ ] Continue renderer budgets/transactions and AAS/preprocessor roots;
+      retain deferred acceptance.
+- [x] AAS layout/endian/writer PRs #119–#121 merged at `431e272` after
+      exact-head CI, completed clean Codex and resolved review findings.
+- [ ] Gate geometry/allocation/node steps and finish #47 routing/reference,
+      derived runtime/budget and late-load transaction work.
 - [ ] Finish #45 renderer aggregate capacity and full transactional
       publication; retain remaining query/candidate costs and deferred target
       acceptance. Collision aggregate and derived geometry/facet checks are
