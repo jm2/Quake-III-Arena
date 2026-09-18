@@ -123,12 +123,70 @@ static void NativeGolden(char *path) {
     End();
 }
 
+static void PatternRead(fileHandle_t f, int offset, int length) {
+    unsigned char bytes[4096];
+    while (length) {
+        int i, count = length < sizeof(bytes) ? length : sizeof(bytes);
+        Check(FS_Read(bytes, count, f) == count, "complete stored stream refills");
+        for (i = 0; i < count; i++) {
+            Check(bytes[i] == (unsigned char)(offset + i), "stored payload survives each physical refill");
+        }
+        length -= count;
+        offset += count;
+    }
+}
+
+static void StoredRefill(char *path, int small) {
+    fileHandle_t shared, unique;
+    unz_s savedArchive;
+    file_in_zip_read_info_s savedRead;
+    unz_s *parent;
+    long cursor;
+    int i;
+    char payload[16];
+    Begin();
+    search.pack = FS_LoadZipFile(path, "large.pk3");
+    Check(search.pack && FS_FOpenFileRead("stored.bin", &shared, qfalse) == NATIVE_LARGE_SIZE,
+          "real complete stored ZIP reader");
+    PatternRead(shared, 0, 13);
+    parent = (unz_s *)search.pack->handle;
+    cursor = ftell(parent->file);
+    Check(cursor >= 0, "actual shared physical file position");
+    memcpy(&savedArchive, parent, sizeof(savedArchive));
+    memcpy(&savedRead, parent->pfile_in_zip_read, sizeof(savedRead));
+    retainedCount = priorFrees = 0;
+    for (i = 0; i < Q3_ZIP_ZONE_CAPACITY; i++) {
+        if (zone[i]) retained[retainedCount++] = (uintptr_t)zone[i];
+    }
+    watchFrees = 1;
+    Check(FS_FOpenFileRead(small ? "native.txt" : "large.bin", &unique, qtrue) ==
+          (small ? 12 : NATIVE_LARGE_SIZE) && unique > 0 && unique != shared,
+          "unique target opens beside an active stored reader");
+    watchFrees = 0;
+    Check(!priorFrees, "active shared decoder survives a buffered or streamed unique target");
+    Check(ftell(parent->file) == cursor, "active shared FILE cursor remains intact");
+    Check(!memcmp(&savedArchive, parent, sizeof(savedArchive)) &&
+          !memcmp(&savedRead, parent->pfile_in_zip_read, sizeof(savedRead)),
+          "complete active shared metadata and decoder remain intact");
+    if (small) {
+        Check(fsh[unique].buffer && FS_Read(payload, sizeof(payload), unique) == 12 &&
+              !memcmp(payload, "native data\n", 12), "native small-target buffering remains");
+    } else ZeroRead(unique, 19);
+    FS_FCloseFile(unique);
+    PatternRead(shared, 13, 2 * UNZ_BUFSIZE + 17);
+    Check(parent->pfile_in_zip_read->stream.total_out == 13 + 2 * UNZ_BUFSIZE + 17,
+          "active stored cursor crosses multiple native input refills");
+    FS_FCloseFile(shared);
+    End();
+}
+
 int main(int argc, char **argv) {
     Check(argc >= 2, "real complete 32 MiB compressed ZIP input");
     if (argc > 2) {
         int kind = atoi(argv[2]);
         if (kind < 2) Reopen(argv[1], kind);
         else if (kind == 2) DirectReopen(argv[1]);
+        else if (kind < 5) StoredRefill(argv[1], kind == 4);
         else NativeGolden(argv[1]);
         return 0;
     }
@@ -136,6 +194,8 @@ int main(int argc, char **argv) {
     Reopen(argv[1], 0);
     Reopen(argv[1], 1);
     DirectReopen(argv[1]);
+    StoredRefill(argv[1], 0);
+    StoredRefill(argv[1], 1);
     puts("Actual shared/unique ZIP streams retain independent decoder owners");
     return 0;
 }

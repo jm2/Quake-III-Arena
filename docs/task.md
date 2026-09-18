@@ -136,8 +136,9 @@ QVMs while any P0 item is open.
   - [x] ZIP mounts validate complete names, metadata, measured capacities and
         shared counts before publication; malformed real archives and both-pass
         physical cleanup have [mount evidence](fs-zip-mount-validation.md).
-  - [x] Unique ZIP clones retain independent decoder ownership across both
-        copy sites; actual shared/unique reads and both close orders have
+  - [x] Unique ZIP targets retain independent decoder ownership and preserve
+        active shared metadata/cursors through refills and both close orders;
+        native buffered/streamed paths have
         [stream evidence](fs-zip-reopen-validation.md).
   - [ ] Add malicious ZIP fixtures around caps, `INT_MAX`, `UINT32_MAX`, and
         truncated streams.
