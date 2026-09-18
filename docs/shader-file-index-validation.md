@@ -31,6 +31,19 @@ segments also retains the complete stock-order compressed text. Existing stage,
 constant/vector, waveform/iterator, archive size/cap/restart and consumer checks
 remain intact.
 
+Carry the corrected parent finiteness check through the actual merge ancestry.
+All five affected sanitizer runners (including both normal and release-fast-math
+stage configurations), nine Python checks, Bash syntax and diff checks pass
+without diagnostics. Both shipped Retro68 products build without diagnostics
+and validate as PPC PEFs.
+
+| Product | PEF bytes | SHA-256 |
+| --- | ---: | --- |
+| Quake3 | 3,737,503 | `4ea4a7f48c94c2e319797ad68f85358528c108da472355dfdb5f74df98209ed1` |
+| Quake3_TeamArena | 3,886,077 | `57f7e4fbbe5938f5062df57b31511e93323cc1eae2dc2b3ad3262b3f3cefc717` |
+
+Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
+
 ## Remaining acceptance
 
 Keep #46 open for remaining shader numeric/semantic paths and deferred commercial
