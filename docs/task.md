@@ -16,15 +16,19 @@ checks; they do not automatically require an unrelated engine rebuild.
 A checked nested item records only the stated implementation or check.
 
 Every new step goes through a pull request. Before merging, require successful
-CI for its current head and a clean Codex review, with every CodeRabbit
-finding resolved. CodeRabbit rate limits or skipped reviews do not replace
-the required completed Codex review. Re-run affected checks and obtain renewed bot review after fixes.
-Do not interpret absent, pending, failed, or unavailable review as clean.
+CI for its current head and a completed clean Codex review, with every
+CodeRabbit finding resolved. After fixes, re-run affected checks and obtain
+a renewed clean current-head Codex review. Do not interpret absent, pending,
+failed or unavailable CI/Codex review as clean. CodeRabbit rate limits or
+skipped reviews do not replace the required Codex review; the user does not
+require waiting for a follow-up CodeRabbit review during rate-limit backoff
+once every finding is resolved and the CI/Codex gate passes.
 Keep issues open when a merged step covers only part of their acceptance
 criteria, and link the PR and remaining evidence in the issue.
 
 The [2026-09-17 reassessment](review-2026-09-17.md) records the disposition of
-all 52 issues, implementation dependencies, and decisions awaiting input.
+all 52 issues, implementation dependencies, accepted decisions, and deferred
+acceptance checks.
 The July evidence below is historical unless explicitly dated otherwise;
 “local” candidate fixes from that pass are committed in `204fe36`.
 
@@ -98,6 +102,9 @@ QVMs while any P0 item is open.
         see [server evidence](qvm-server-core-validation.md).
   - [x] Connection-denial strings validate termination in their owning VM
         after calls return; see [return evidence](qvm-returned-string-validation.md).
+  - [x] User approved the original string length as the safe in-place limit
+        for the size-less legacy synonym syscall; preserve the 1.32c ABI and
+        skip growing replacements when they cannot fit. This merged in PR #66.
   - [x] Botlib common/navigation trap ranges, empty output capacities, and
         allocated client indices have [sanitizer regressions](qvm-botlib-navigation-validation.md).
   - [x] Bot chat buffers, cumulative variables, bounded in-place synonyms,
@@ -111,7 +118,8 @@ QVMs while any P0 item is open.
 - [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)
       — **high**, connection redirection/injection/hijack.
   - [x] User selected commercial 1.32c compatibility (Quake3e/ioquake3 style).
-        Harden compatible paths without requiring a different wire protocol.
+        Preserve legacy protocol compatibility by default; harden compatible
+        paths without requiring a different wire protocol.
   - [ ] Document protection limits for legacy peers and test compatible setup,
         rejection of spoofed responses, and any explicitly negotiated extension.
 - [ ] [#36 — reject oversized and truncated PK3 entries](https://github.com/jm2/Quake-III-Arena/issues/36)
@@ -390,6 +398,11 @@ QVMs while any P0 item is open.
       #37, as supported by Quake3e/ioquake3; no mandatory incompatible fields.
 - [x] User authorized host tests and cross-builds without retail assets or a
       Mac OS 9 environment; live acceptance is deferred to a follow-up session.
+- [x] QVM steps #54–#67/#69 and single-run CI #68 are merged at master
+      `4fd62bd`, each after successful CI, clean completed Codex review and
+      resolved CodeRabbit findings.
+- [ ] Finish gated RoQ/image/JPEG/model/BSP PRs #70–#77/#79/#80.
+      Keep their parent issues open through remaining acceptance.
 - [ ] Record and execute the deferred retail/target compatibility checks when
       the user provides the assets and test environment.
 
