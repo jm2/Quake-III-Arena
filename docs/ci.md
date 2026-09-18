@@ -252,6 +252,7 @@ bash tests/run_aas_writer_tests.sh
 bash tests/run_aas_geometry_tests.sh
 bash tests/run_bot_memory_tests.sh
 bash tests/run_aas_node_tests.sh
+bash tests/run_bot_zone_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
@@ -376,3 +377,9 @@ The next CI layers should be:
 When adding a regression for a GitHub issue, name the issue in the test and
 update its nested checkbox in [task.md](task.md); leave the issue-level
 checkbox open until all required target evidence exists.
+
+The bot-zone runner exercises the actual native zone allocator, engine bot
+imports and bot adapters under release/debug metadata and normal/optimized
+sanitizers. It checks payload/header/trailer/alignment costs, ownership and
+nullable rejection before native allocator expansion can overflow. CI also
+invokes this runner with explicit Clang.

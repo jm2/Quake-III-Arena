@@ -958,6 +958,14 @@ void Z_FreeTags( int tag ) {
 }
 
 
+/* Native zone cost includes the header, trash marker and 32-bit alignment. */
+int Z_AllocationSize( int size ) {
+	if ( size < 0 || size > INT_MAX - (int)sizeof(memblock_t) - 4 - 3 ) {
+		return -1;
+	}
+	return ( size + (int)sizeof(memblock_t) + 4 + 3 ) & ~3;
+}
+
 /*
 ================
 Z_TagMalloc
@@ -988,9 +996,11 @@ void *Z_TagMalloc( int size, int tag ) {
 	// scan through the block list looking for the first free block
 	// of sufficient size
 	//
-	size += sizeof(memblock_t);	// account for size of block header
-	size += 4;					// space for memory trash tester
-	size = (size + 3) & ~3;		// align to 32 bit boundary
+	size = Z_AllocationSize( size );
+	if ( size < 0 ) {
+		Com_Error( ERR_FATAL, "Z_TagMalloc: invalid allocation size %i", allocSize );
+		return NULL;
+	}
 	
 	base = rover = zone->rover;
 	start = base->prev;
