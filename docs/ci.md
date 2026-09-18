@@ -292,6 +292,13 @@ logical releases from physical arena reclamation: native hunk memory stays owned
 by the arena until reset. Graph/reference/numeric and aggregate budget checks
 remain follow-on #47 work; accepted layout fixtures are not live bot worlds.
 
+The stage fixture also verifies complete native default materials after shader
+rejection or missing implicit textures. Parsed sky/fog/deform/stage/render flags
+are discarded while the failed name remains cached, all lighting-mode probes
+reuse it, exported registration keeps returning zero, and the following healthy
+definition remains usable. Fixture bootstrap now supplies the native default
+image after each reset, matching the renderer's actual initialization contract.
+
 ## What this CI does not prove
 
 Portable CI does not compile a PowerPC PEF, preserve/inspect a Classic resource

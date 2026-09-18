@@ -42,6 +42,13 @@ diagnostics and validate as PPC PEFs.
 | Quake3 | 3,745,889 | `02028ffe3d62babed3b8d4d944b2a573c1fa51605c7f444679aafefe5ef78dd3` |
 | Quake3_TeamArena | 3,894,463 | `93dd93b8f6957f83bcca41b5fb833708af49a3636041554a68c8cf5732a44681` |
 
+After integrating merged shader fallback PR #118, the AAS/stage/archive sanitizer
+runners and nine Python checks pass again. Both product builds remain at the
+same sizes with zero diagnostics; combined-source hashes are
+`eb1cd923e894fb4be67b38289c2b5b333fb5cd5ea6e3c0d804f8dbf110b85cb6`
+(base) and `8a83418f8569d6323e3ed8d1e7619aceb9c96437578a0af6ca66f2cd359a471f`
+(Team Arena). The earlier table records the original candidate build.
+
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 
 ## Remaining acceptance
