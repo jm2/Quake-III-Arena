@@ -293,6 +293,9 @@ QVMs while any P0 item is open.
   - [x] Derived area travel times and cache sums saturate before overflowing
         native uint16 capacity; representable speed/minimum and route costs
         retain native results; see [travel-time evidence](aas-travel-time-validation.md).
+  - [x] Routing start scratch follows incoming degree with checked heap costs
+        and physical release; failed cache creation/update stays unpublished
+        and can retry; see [workspace evidence](aas-routing-workspace-validation.md).
   - [ ] Validate the entire AAS file and graph before setting `loaded`.
 - [ ] [#48 — bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48)
       — **high**, parser fixed-buffer corruption/invalid cleanup.
@@ -537,7 +540,7 @@ QVMs while any P0 item is open.
       CodeRabbit findings resolved.
 - [x] Node/reachability #124–#125 merged at `86c1667` after exact-head
       CI, clean completed Codex and resolved review findings.
-- [ ] Gate portal/derived-time steps and finish #47 runtime query, memory/
+- [ ] Gate portal/travel-cost/workspace steps and finish #47 runtime query, memory/
       work budget and late-load transaction work.
 - [ ] Finish #45 renderer aggregate capacity and full transactional
       publication; retain remaining query/candidate costs and deferred target
