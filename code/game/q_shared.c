@@ -465,7 +465,8 @@ char *COM_ParseExt( char **data_p, qboolean allowLineBreaks )
 			if (c=='\"' || !c)
 			{
 				com_token[len] = 0;
-				*data_p = ( char * ) data;
+				/* An unterminated quote must not publish a cursor past the NUL. */
+				*data_p = c ? data : NULL;
 				return com_token;
 			}
 			if (len < MAX_TOKEN_CHARS - 1)

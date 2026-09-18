@@ -147,12 +147,16 @@ static void R_SetupEntityLightingGrid( trRefEntity_t *ent ) {
 		float	v;
 
 		v = lightOrigin[i]*tr.world->lightGridInverseSize[i];
-		pos[i] = floor( v );
-		frac[i] = v - pos[i];
-		if ( pos[i] < 0 ) {
+		/* Clamp before conversion, including nonfinite entity coordinates. */
+		if ( !(v > 0) ) {
 			pos[i] = 0;
-		} else if ( pos[i] >= tr.world->lightGridBounds[i] - 1 ) {
+			frac[i] = 0;
+		} else if ( (double)v >= tr.world->lightGridBounds[i] - 1 ) {
 			pos[i] = tr.world->lightGridBounds[i] - 1;
+			frac[i] = 0;
+		} else {
+			pos[i] = (int)floor( v );
+			frac[i] = v - pos[i];
 		}
 	}
 
@@ -179,14 +183,14 @@ static void R_SetupEntityLightingGrid( trRefEntity_t *ent ) {
 		float d0, d1, d2, d3, d4, d5;
 		#endif
 		factor = 1.0;
+		for ( j = 0 ; j < 3 ; j++ ) {
+			factor *= (i & (1<<j)) ? frac[j] : (1.0f - frac[j]);
+		}
+		/* Boundary/one-point grids have no upper neighbor on these corners. */
+		if ( factor <= 0 ) continue;
 		data = gridData;
 		for ( j = 0 ; j < 3 ; j++ ) {
-			if ( i & (1<<j) ) {
-				factor *= frac[j];
-				data += gridStep[j];
-			} else {
-				factor *= (1.0f - frac[j]);
-			}
+			if ( i & (1<<j) ) data += gridStep[j];
 		}
 
 		if ( !(data[0]+data[1]+data[2]) ) {

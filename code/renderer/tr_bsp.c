@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "tr_local.h"
 #include "../qcommon/bsp_geometry.h"
+#include <float.h>
 
 /*
 
@@ -1649,130 +1650,144 @@ static	void R_LoadFogs( lump_t *l, lump_t *brushesLump, lump_t *sidesLump ) {
 }
 
 
-/*
-================
-R_LoadLightGrid
+/* Worldspawn parsing shares the same bounded owned text during preflight and loading. */
+typedef struct {
+	vec3_t size, inverseSize, origin;
+	int bounds[3], numPoints;
+} bspLightGrid_t;
 
-================
-*/
-void R_LoadLightGrid( lump_t *l ) {
-	int		i;
-	vec3_t	maxs;
-	int		numGridPoints;
-	world_t	*w;
-	float	*wMins, *wMaxs;
-
-	w = &s_worldData;
-
-	w->lightGridInverseSize[0] = 1.0f / w->lightGridSize[0];
-	w->lightGridInverseSize[1] = 1.0f / w->lightGridSize[1];
-	w->lightGridInverseSize[2] = 1.0f / w->lightGridSize[2];
-
-	wMins = w->bmodels[0].bounds[0];
-	wMaxs = w->bmodels[0].bounds[1];
-
-	for ( i = 0 ; i < 3 ; i++ ) {
-		w->lightGridOrigin[i] = w->lightGridSize[i] * ceil( wMins[i] / w->lightGridSize[i] );
-		maxs[i] = w->lightGridSize[i] * floor( wMaxs[i] / w->lightGridSize[i] );
-		w->lightGridBounds[i] = (maxs[i] - w->lightGridOrigin[i])/w->lightGridSize[i] + 1;
+static const char *R_ParseGridSize(const char *value,vec3_t size) {
+	char *end;
+	float number;
+	int i;
+	for(i=0;i<3;i++) {
+		/* Direct float conversion matches q3map's %f, including decimal midpoints. */
+		number=strtof(value,&end);
+		if(end==value) break; /* Keep the legacy partial-value/default behavior. */
+		if(!(number>0) || number>FLT_MAX || 1.0/(double)number>FLT_MAX) return "invalid BSP light grid size";
+		size[i]=number;
+		value=end;
 	}
+	return NULL;
+}
 
-	numGridPoints = w->lightGridBounds[0] * w->lightGridBounds[1] * w->lightGridBounds[2];
+static const char *R_ParseWorldspawn(char *text,vec3_t gridSize,qboolean remap) {
+	char *p=text,*token,*s;
+	char keyname[MAX_TOKEN_CHARS],value[MAX_TOKEN_CHARS];
+	const char *error;
+	gridSize[0]=64;gridSize[1]=64;gridSize[2]=128;
+	token=COM_ParseExt(&p,qtrue);
+	if(!*token || *token!='{') return NULL;
+	while(1) {
+		token=COM_ParseExt(&p,qtrue);
+		if(!*token || *token=='}') break;
+		Q_strncpyz(keyname,token,sizeof(keyname));
+		token=COM_ParseExt(&p,qtrue);
+		if(!*token || *token=='}') break;
+		Q_strncpyz(value,token,sizeof(value));
+		s="vertexremapshader";
+		if(!Q_strncmp(keyname,s,strlen(s))) {
+			s=strchr(value,';');
+			if(!s) {
+				if(remap) ri.Printf(PRINT_WARNING,"WARNING: no semi colon in vertexshaderremap '%s'\n",value);
+				break;
+			}
+			*s++=0;
+			if(remap && r_vertexLight->integer) R_RemapShader(value,s,"0");
+			continue;
+		}
+		s="remapshader";
+		if(!Q_strncmp(keyname,s,strlen(s))) {
+			s=strchr(value,';');
+			if(!s) {
+				if(remap) ri.Printf(PRINT_WARNING,"WARNING: no semi colon in shaderremap '%s'\n",value);
+				break;
+			}
+			*s++=0;
+			if(remap) R_RemapShader(value,s,"0");
+			continue;
+		}
+		if(!Q_stricmp(keyname,"gridsize")) {
+			error=R_ParseGridSize(value,gridSize);
+			if(error) return error;
+		}
+	}
+	return NULL;
+}
 
-	if ( l->filelen != numGridPoints * 8 ) {
-		ri.Printf( PRINT_WARNING, "WARNING: light grid mismatch\n" );
-		w->lightGridData = NULL;
+/* Header, references and finite model bounds are validated before this helper. */
+static const char *R_ValidateBSPLightGrid(const void *buffer,const dheader_t *header,bspLightGrid_t *grid) {
+	const byte *base=buffer,*model=base+header->lumps[LUMP_MODELS].fileofs;
+	const lump_t *entities=&header->lumps[LUMP_ENTITIES];
+	char *text;
+	const char *error;
+	double origin,maximum;
+	float minQuotient,maxQuotient,maxAligned,count;
+	unsigned int points=1,capacity=(INT_MAX-4096u)/8;
+	int i;
+	Com_Memset(grid,0,sizeof(*grid));
+	text=malloc(entities->filelen+1);
+	if(!text) return "BSP entity validation allocation failed";
+	Com_Memcpy(text,base+entities->fileofs,entities->filelen);text[entities->filelen]=0;
+	error=R_ParseWorldspawn(text,grid->size,qfalse);
+	free(text);
+	if(error) return error;
+	for(i=0;i<3;i++) grid->inverseSize[i]=1.0f/grid->size[i];
+	/* Disabled grids need no derived coordinates or native index strides. */
+	if(!header->lumps[LUMP_LIGHTGRID].filelen) return NULL;
+	for(i=0;i<3;i++) {
+		/* q3map/native loading round these divisions to float before ceil/floor. */
+		minQuotient=BSP_GeometryFloat(model+i*4)/grid->size[i];
+		maxQuotient=BSP_GeometryFloat(model+12+i*4)/grid->size[i];
+		if(!(minQuotient>=-FLT_MAX && minQuotient<=FLT_MAX && maxQuotient>=-FLT_MAX && maxQuotient<=FLT_MAX)) return "BSP light grid quotient overflow";
+		origin=grid->size[i]*ceil(minQuotient);
+		maximum=grid->size[i]*floor(maxQuotient);
+		if(!(origin>=-FLT_MAX && origin<=FLT_MAX && maximum>=-FLT_MAX && maximum<=FLT_MAX)) return "BSP light grid origin overflow";
+		grid->origin[i]=(float)origin;
+		maxAligned=(float)maximum;
+		/* Preserve both stored float coordinates and the native float count expression. */
+		count=(maxAligned-grid->origin[i])/grid->size[i]+1;
+		if(!((double)count<=INT_MAX)) return "BSP light grid dimension overflow";
+		grid->bounds[i]=count>0?(int)count:0;
+	}
+	if(!grid->bounds[0] || !grid->bounds[1] || !grid->bounds[2]) return NULL;
+	for(i=0;i<3;i++) {
+		if((unsigned int)grid->bounds[i]>capacity/points) return "BSP light grid native stride/allocation overflow";
+		points*=grid->bounds[i];
+	}
+	grid->numPoints=points;
+	return NULL;
+}
+
+/* The preflight result is used directly; no unchecked float casts/products remain here. */
+static void R_LoadLightGrid(lump_t *l,const bspLightGrid_t *grid) {
+	int i;
+	world_t *w=&s_worldData;
+	VectorCopy(grid->size,w->lightGridSize);
+	VectorCopy(grid->inverseSize,w->lightGridInverseSize);
+	VectorCopy(grid->origin,w->lightGridOrigin);
+	for(i=0;i<3;i++) w->lightGridBounds[i]=grid->bounds[i];
+	if(!grid->numPoints || l->filelen!=grid->numPoints*8) {
+		if(l->filelen || grid->numPoints) ri.Printf(PRINT_WARNING,"WARNING: light grid mismatch\n");
+		w->lightGridData=NULL;
 		return;
 	}
-
-	w->lightGridData = ri.Hunk_Alloc( l->filelen, h_low );
-	Com_Memcpy( w->lightGridData, (void *)(fileBase + l->fileofs), l->filelen );
-
-	// deal with overbright bits
-	for ( i = 0 ; i < numGridPoints ; i++ ) {
-		R_ColorShiftLightingBytes( &w->lightGridData[i*8], &w->lightGridData[i*8] );
-		R_ColorShiftLightingBytes( &w->lightGridData[i*8+3], &w->lightGridData[i*8+3] );
+	w->lightGridData=ri.Hunk_Alloc(l->filelen,h_low);
+	Com_Memcpy(w->lightGridData,fileBase+l->fileofs,l->filelen);
+	for(i=0;i<grid->numPoints;i++) {
+		R_ColorShiftLightingBytes(&w->lightGridData[i*8],&w->lightGridData[i*8]);
+		R_ColorShiftLightingBytes(&w->lightGridData[i*8+3],&w->lightGridData[i*8+3]);
 	}
 }
 
-/*
-================
-R_LoadEntities
-================
-*/
-void R_LoadEntities( lump_t *l ) {
-	char *p, *token, *s;
-	char keyname[MAX_TOKEN_CHARS];
-	char value[MAX_TOKEN_CHARS];
-	world_t	*w;
-
-	w = &s_worldData;
-	w->lightGridSize[0] = 64;
-	w->lightGridSize[1] = 64;
-	w->lightGridSize[2] = 128;
-
-	p = (char *)(fileBase + l->fileofs);
-
-	// store for reference by the cgame
-	w->entityString = ri.Hunk_Alloc( l->filelen + 1, h_low );
-	strcpy( w->entityString, p );
-	w->entityParsePoint = w->entityString;
-
-	token = COM_ParseExt( &p, qtrue );
-	if (!*token || *token != '{') {
-		return;
-	}
-
-	// only parse the world spawn
-	while ( 1 ) {	
-		// parse key
-		token = COM_ParseExt( &p, qtrue );
-
-		if ( !*token || *token == '}' ) {
-			break;
-		}
-		Q_strncpyz(keyname, token, sizeof(keyname));
-
-		// parse value
-		token = COM_ParseExt( &p, qtrue );
-
-		if ( !*token || *token == '}' ) {
-			break;
-		}
-		Q_strncpyz(value, token, sizeof(value));
-
-		// check for remapping of shaders for vertex lighting
-		s = "vertexremapshader";
-		if (!Q_strncmp(keyname, s, strlen(s)) ) {
-			s = strchr(value, ';');
-			if (!s) {
-				ri.Printf( PRINT_WARNING, "WARNING: no semi colon in vertexshaderremap '%s'\n", value );
-				break;
-			}
-			*s++ = 0;
-			if (r_vertexLight->integer) {
-				R_RemapShader(value, s, "0");
-			}
-			continue;
-		}
-		// check for remapping of shaders
-		s = "remapshader";
-		if (!Q_strncmp(keyname, s, strlen(s)) ) {
-			s = strchr(value, ';');
-			if (!s) {
-				ri.Printf( PRINT_WARNING, "WARNING: no semi colon in shaderremap '%s'\n", value );
-				break;
-			}
-			*s++ = 0;
-			R_RemapShader(value, s, "0");
-			continue;
-		}
-		// check for a different grid size
-		if (!Q_stricmp(keyname, "gridsize")) {
-			sscanf(value, "%f %f %f", &w->lightGridSize[0], &w->lightGridSize[1], &w->lightGridSize[2] );
-			continue;
-		}
-	}
+static void R_LoadEntities(lump_t *l) {
+	world_t *w=&s_worldData;
+	/* Entity lumps need not contain a NUL or stop before the following lump. */
+	w->entityString=ri.Hunk_Alloc(l->filelen+1,h_low);
+	Com_Memcpy(w->entityString,fileBase+l->fileofs,l->filelen);
+	w->entityString[l->filelen]=0;
+	w->entityParsePoint=w->entityString;
+	R_ParseWorldspawn(w->entityString,w->lightGridSize,qtrue);
 }
 
 /*
@@ -1833,6 +1848,7 @@ static const char *R_ValidateBSPGeometry(const void *buffer,const dheader_t *hea
 void RE_LoadWorldMap( const char *name ) {
 	int			length;
 	dheader_t	validatedHeader, *header = &validatedHeader;
+	bspLightGrid_t validatedGrid;
 	const char	*error;
 	byte		*buffer = NULL;
 	byte		*startMarker;
@@ -1851,6 +1867,7 @@ void RE_LoadWorldMap( const char *name ) {
 	if ( !error ) error = R_ValidateBSPAllocations(header);
 	if ( !error ) error = BSP_ValidateReferences(buffer,header);
 	if ( !error ) error = R_ValidateBSPGeometry(buffer,header);
+	if ( !error ) error = R_ValidateBSPLightGrid(buffer,header,&validatedGrid);
 	if ( error ) {
 		ri.FS_FreeFile(buffer);
 		ri.Error(ERR_DROP,"RE_LoadWorldMap: %s: %s",name,error);
@@ -1894,7 +1911,7 @@ void RE_LoadWorldMap( const char *name ) {
 	R_LoadSubmodels (&header->lumps[LUMP_MODELS]);
 	R_LoadVisibility( &header->lumps[LUMP_VISIBILITY] );
 	R_LoadEntities( &header->lumps[LUMP_ENTITIES] );
-	R_LoadLightGrid( &header->lumps[LUMP_LIGHTGRID] );
+	R_LoadLightGrid( &header->lumps[LUMP_LIGHTGRID], &validatedGrid );
 
 	s_worldData.dataSize = (byte *)ri.Hunk_Alloc(0, h_low) - startMarker;
 
