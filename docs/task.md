@@ -586,8 +586,8 @@ records the refreshed 52-issue inventory, pending #149–#181 stack and gates.
 All 52 issue-level entries remain open; nested implementation checks cover only
 the stated work. The milestones below retain their dated source evidence.
 
-- [x] AAS portal/travel/routing/workspace/cache/init steps #126–#132 and
-      native parser/character ownership and accessor steps #133–#148 merged
+- [x] AAS portal/travel/routing/workspace/cache/init steps #126–#130/#132 and
+      native variable/parser/character steps #131/#133–#148 merged
       after exact-head CI, completed clean Codex and resolved bot findings.
 - [ ] Merge eligible independent steps and the pending dependency chain,
       rechecking four successful Portable CI jobs, completed clean current-head

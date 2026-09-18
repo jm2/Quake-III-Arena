@@ -14,7 +14,7 @@ have merged, so obsolete pending-merge descriptions must give way to current
 implementation status. Source/build evidence does not establish complete
 malformed-input coverage, aggregate resource budgets or target compatibility.
 
-PRs #126–#132 finish selected AAS portal, travel/routing, workspace, cache,
+PRs #126–#130/#132 finish selected AAS portal, travel/routing, workspace, cache,
 initialization and cache-limit conversions. PRs #131/#133–#148 finish selected
 native variable/parser/character ownership, numeric, source-error, weight and
 getter checks. Each merged step passed its exact-head Portable CI, completed
