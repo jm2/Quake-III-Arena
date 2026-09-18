@@ -528,13 +528,18 @@ void EA_ResetInput(int client)
 //===========================================================================
 int EA_Setup(void)
 {
-	if (botlibglobals.maxclients < 1 || botlibglobals.maxclients > INT_MAX / (int)sizeof(bot_input_t))
+	bot_input_t *inputs;
+	int maxclients = botlibglobals.maxclients;
+
+	if (maxclients < 1 || maxclients > INT_MAX / (int)sizeof(bot_input_t))
 		return BLERR_LIBRARYNOTSETUP;
-	//initialize the bot inputs
-	botinputs = (bot_input_t *) GetClearedHunkMemory(
-									botlibglobals.maxclients * sizeof(bot_input_t));
-	botInputCapacity = botinputs ? botlibglobals.maxclients : 0;
-	return botinputs ? BLERR_NOERROR : BLERR_LIBRARYNOTSETUP;
+	inputs = (bot_input_t *) GetClearedHunkMemory(maxclients * sizeof(bot_input_t));
+	if (!inputs) return BLERR_LIBRARYNOTSETUP;
+	//Keep the complete prior input allocation/capacity until staging succeeds.
+	if (botinputs) FreeMemory(botinputs);
+	botinputs = inputs;
+	botInputCapacity = maxclients;
+	return BLERR_NOERROR;
 } //end of the function EA_Setup
 //===========================================================================
 //
