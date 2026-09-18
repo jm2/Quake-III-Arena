@@ -8,7 +8,8 @@ suffix pointer, preserving native case-sensitive extension matching.
 Check the native 32-surface capacity before allocating/indexing an additional
 surface or importing its shader. Reserve the token terminator for quoted and
 unquoted text; reject overlong tokens, unterminated quotes/block comments and
-missing shader tokens. Cache malformed skins with zero active surfaces, return
+missing shader tokens. Explicitly quoted empty shader values remain valid
+and map to the native default shader. Cache malformed skins with zero active surfaces, return
 the native default handle, and free the input exactly once. Native permanent
 hunk/cache allocations for prior valid rows remain owned until normal renderer
 shutdown; this is not a rollback of shader/hunk caches.
@@ -27,7 +28,9 @@ ASan/UBSan covers every name length 1–63 (including required 1–4), null/empt
 64-byte names, native .SKIN case behavior, 0–34 surfaces (including 31/32/33),
 exact complete surface allocations and native lowercase assignment/shader order.
 Quoted commas, whitespace/comments and ignored tags preserve native behavior,
-including an ignored tag after 32 surfaces. Test 1022–1025-byte quoted/unquoted
+including an ignored tag after 32 surfaces. The Codex follow-up reproduced
+rejection of a valid quoted-empty shader before the correction; both EOF and
+following-surface cases now preserve native assignments and cache behavior. Test 1022–1025-byte quoted/unquoted
 surface and shader tokens, EOF positions, truncated quotes/pairs/comments, every
 prefix of a complete legacy corpus, missing/empty files, full-cache limits,
 invalid handles and valid/default cache reuse without new imports. FS inputs
@@ -40,8 +43,8 @@ separate semantic follow-up; both Retro68 products build without diagnostics.
 
 | Product | PPC PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,737,425 | `1e3fdb0effa2512c124cdee38fe8f38c00b9188040f4f28d58b380ed252803a4` |
-| Quake3_TeamArena | 3,885,999 | `711d2a7ab7ccda3bff5b4f8ed3f2b25160feeac6de49d86e18b3dbcc6f1f7ac4` |
+| Quake3 | 3,737,425 | `f63914052c558951675f3bec24a0bb4afb07b64ee2e13a5f8c6131721b6e37e7` |
+| Quake3_TeamArena | 3,885,999 | `7f020e01df5002db40b897af153b0d791b661b140062d3917edb3a24a47163b1` |
 
 Temporary toolchain libraries are described in [loading evidence](qvm-loading-validation.md).
 

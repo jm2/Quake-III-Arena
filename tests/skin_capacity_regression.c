@@ -18,7 +18,7 @@ static void QDECL Print(int level,const char *format,...) { (void)level;(void)fo
 static void *Allocate(int size,ha_pref preference) { void *p;Check(size>0 && size<100000 && preference==h_low && allocations<1024,"bounded native skin hunk allocation");p=calloc(1,size);Check(p!=NULL,"exact fixture allocation");sizes[allocations]=size;owned[allocations++]=p;return p; }
 static int Read(const char *name,void **buffer) { int size=strlen(input);Check(name && !file,"native skin input ownership");reads++;if(missing) { *buffer=NULL;return -1; }file=malloc(size+1);Check(file!=NULL,"exact NUL-terminated FS input");memcpy(file,input,size+1);*buffer=file;return size; }
 static void FreeFile(void *pointer) { Check(pointer && pointer==file,"native skin file release");free(file);file=NULL;frees++; }
-shader_t *R_FindShader(const char *name,int lightmap,qboolean mipmap) { Check(name && *name && lightmap==LIGHTMAP_NONE && mipmap && shaderCalls<MD3_MAX_SURFACES,"bounded native skin shader import");Q_strncpyz(shaderNames[shaderCalls++],name,MAX_TOKEN_CHARS);return &material; }
+shader_t *R_FindShader(const char *name,int lightmap,qboolean mipmap) { Check(name && lightmap==LIGHTMAP_NONE && mipmap && shaderCalls<MD3_MAX_SURFACES,"bounded native skin shader import");Q_strncpyz(shaderNames[shaderCalls++],name,MAX_TOKEN_CHARS);return &material; }
 void R_SyncRenderThread(void) {}
 #ifndef Com_Memset
 void Com_Memset(void *destination,int value,size_t size) { memset(destination,value,size); }
@@ -67,6 +67,8 @@ static void Surfaces(void) {
 	}
 	Reset();strcpy(input,"// leading\n/* block */\ntag_weapon,\nfoo_tag_legacy,\n\"UpPeR\",\"textures/comma,name\"\n// trailing");
 	Check(RE_RegisterSkin("quoted.skin")==1 && shaderCalls==1 && !strcmp(tr.skins[1]->surfaces[0]->name,"upper") && !strcmp(shaderNames[0],"textures/comma,name") && frees==1,"native tags, quoted commas, comments and lowercase names");
+	Reset();strcpy(input,"first,\"\"\nsecond,textures/a\n");Check(RE_RegisterSkin("empty-map.skin")==1 && shaderCalls==2 && !shaderNames[0][0] && !strcmp(shaderNames[1],"textures/a") && tr.skins[1]->surfaces[0]->shader==tr.defaultShader && frees==1,"explicit empty quoted shader maps to native default without discarding following surfaces");Cache("empty-map.skin",1);
+	Reset();strcpy(input,"surface,\"\"");Check(RE_RegisterSkin("empty-map-eof.skin")==1 && shaderCalls==1 && !shaderNames[0][0] && frees==1,"explicit empty quoted shader remains valid at EOF");
 	Reset();Build(32);strcat(input,"tag_extra,\n");Check(RE_RegisterSkin("tags.skin")==1 && shaderCalls==32,"ignored tag after full native surface array");
 	Reset();missing=1;Check(!RE_RegisterSkin("missing.skin") && reads==1 && !frees && !file,"missing file keeps balanced ownership");Cache("missing.skin",0);
 	Reset();strcpy(input," \n// empty\n/* empty */");Check(!RE_RegisterSkin("empty.skin") && frees==1,"empty skin uses default");

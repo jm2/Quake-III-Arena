@@ -1380,9 +1380,9 @@ qhandle_t RE_RegisterSkin( const char *name ) {
 			break;
 		}
 
-		// parse the shader name
+		// A successful quoted empty value maps to the default shader.
 		token = CommaParse( &text_p, &invalid );
-		if ( !token[0] ) {
+		if ( invalid || (!token[0] && !text_p) ) {
 			invalid = qtrue;
 			break;
 		}
