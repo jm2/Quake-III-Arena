@@ -351,6 +351,10 @@ QVMs while any P0 item is open.
         releases partial output after nullable imports and preserves input
         characters and ordinary native values;
         see [interpolation evidence](bot-interpolation-validation.md).
+  - [x] Default inheritance clones missing strings before changing fields,
+        rejects failed cached/new/reload targets, preserves existing owners
+        and releases only newly loaded failed targets;
+        see [default evidence](bot-default-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 

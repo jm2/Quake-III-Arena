@@ -196,9 +196,27 @@ void BotFreeCharacter(int handle)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-void BotDefaultCharacteristics(bot_character_t *ch, bot_character_t *defaultch)
+qboolean BotDefaultCharacteristics(bot_character_t *ch, bot_character_t *defaultch)
 {
 	int i;
+	char *strings[MAX_CHARACTERISTICS];
+
+	Com_Memset(strings, 0, sizeof(strings));
+	for (i = 0; i < MAX_CHARACTERISTICS; i++)
+	{
+		if (ch->c[i].type || defaultch->c[i].type != CT_STRING) continue;
+		strings[i] = (char *) GetMemory(strlen(defaultch->c[i].value.string)+1);
+		if (!strings[i])
+		{
+			for (i = 0; i < MAX_CHARACTERISTICS; i++)
+			{
+				if (strings[i]) FreeMemory(strings[i]);
+			} //end for
+			botimport.Print(PRT_ERROR, "could not allocate default characteristic string\n");
+			return qfalse;
+		} //end if
+		strcpy(strings[i], defaultch->c[i].value.string);
+	} //end for
 
 	for (i = 0; i < MAX_CHARACTERISTICS; i++)
 	{
@@ -216,11 +234,11 @@ void BotDefaultCharacteristics(bot_character_t *ch, bot_character_t *defaultch)
 		} //end else if
 		else if (defaultch->c[i].type == CT_STRING)
 		{
+			ch->c[i].value.string = strings[i];
 			ch->c[i].type = CT_STRING;
-			ch->c[i].value.string = (char *) GetMemory(strlen(defaultch->c[i].value.string)+1);
-			strcpy(ch->c[i].value.string, defaultch->c[i].value.string);
 		} //end else if
 	} //end for
+	return qtrue;
 } //end of the function BotDefaultCharacteristics
 //===========================================================================
 //
@@ -537,14 +555,20 @@ int BotLoadCachedCharacter(char *charfile, float skill, int reload)
 //===========================================================================
 int BotLoadCharacterSkill(char *charfile, float skill)
 {
-	int ch, defaultch;
+	int ch, defaultch, i;
+	unsigned char occupied[MAX_CLIENTS + 1];
 
 	defaultch = BotLoadCachedCharacter(DEFAULT_CHARACTER, skill, qfalse);
+	for (i = 1; i <= MAX_CLIENTS; i++) occupied[i] = botcharacters[i] != NULL;
 	ch = BotLoadCachedCharacter(charfile, skill, LibVarGetValue("bot_reloadcharacters"));
 
 	if (defaultch && ch)
 	{
-		BotDefaultCharacteristics(botcharacters[ch], botcharacters[defaultch]);
+		if (!BotDefaultCharacteristics(botcharacters[ch], botcharacters[defaultch]))
+		{
+			if (!occupied[ch]) BotFreeCharacter2(ch);
+			return 0;
+		} //end if
 	} //end if
 
 	return ch;

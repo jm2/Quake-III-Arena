@@ -455,6 +455,10 @@ implementation or check, without implying issue completion.
         releases partial output after nullable imports and preserves input
         characters and ordinary native values;
         see [interpolation evidence](bot-interpolation-validation.md).
+  - [x] Default inheritance clones missing strings before changing fields,
+        rejects failed cached/new/reload targets, preserves existing owners
+        and releases only newly loaded failed targets;
+        see [default evidence](bot-default-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
