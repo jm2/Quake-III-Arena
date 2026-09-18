@@ -31,6 +31,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #define	BOTLIB_API_VERSION		2
 
+//Retail baseq3 and Team Arena inventory entries passed to bot AI.
+#define BOTLIB_INVENTORY_SIZE 256
+
 struct aas_clientmove_s;
 struct aas_entityinfo_s;
 struct aas_areainfo_s;
