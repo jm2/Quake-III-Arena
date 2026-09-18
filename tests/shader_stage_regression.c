@@ -31,7 +31,7 @@ void QDECL Com_Error(int level,const char *format,...) { (void)level;(void)forma
 void QDECL Com_Printf(const char *format,...) { (void)format; }
 static void QDECL Print(int level,const char *format,...) { (void)level;(void)format; }
 static void *Allocate(int size,ha_pref preference) { void *p;Check(size>=0 && size<100000 && preference==h_low && allocations<512,"bounded native shader allocation");p=calloc(1,size?size:1);Check(p!=NULL,"shader fixture allocation");owned[allocations++]=p;return p; }
-static void Release(void) { while(allocations)free(owned[--allocations]);memset(&tr,0,sizeof(tr));memset(hashTable,0,sizeof(hashTable)); }
+static void Release(void) { while(allocations)free(owned[--allocations]);memset(&tr,0,sizeof(tr));memset(hashTable,0,sizeof(hashTable));memset(shaderTextHashTable,0,sizeof(shaderTextHashTable));s_shaderText=NULL;s_shaderTextIndexed=qfalse; }
 image_t *R_FindImageFile(const char *name,qboolean mipmap,qboolean picmip,int wrap) { (void)name;(void)mipmap;(void)picmip;(void)wrap;return &white; }
 void R_InitSkyTexCoords(float height) { (void)height; }
 void R_SyncRenderThread(void) { Check(0,"unexpected threaded import"); }

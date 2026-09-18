@@ -126,7 +126,7 @@ static void BadPath(void) {
     }
 }
 static void ValidArchives(void) {
-    int bucket, before; char *p; char golden[2000]; shader_t *first,*second,*duplicate;
+    int bucket, before; char *p; char golden[2000], flattened[2000]; shader_t *first,*second,*duplicate;
     Setup(2);
     contents[0]="// first file\ntests/duplicate\n{\n{\nmap $whiteimage\nrgbGen vertex\n}\n}\ntests/first\n{\n{\nmap $whiteimage\n}\n}\n";
     contents[1]="/* second file */\ntests/duplicate\n{\n{\nmap $whiteimage\nrgbGen identity\n}\n}\ntests/second\n{\n{\nmap $whiteimage\n}\n}\n";
@@ -135,7 +135,9 @@ static void ValidArchives(void) {
         strcat(golden,"\n");p=golden+strlen(golden);strcat(golden,contents[bucket]);COM_Compress(p);
     }
     ScanAndLoadShaderFiles(); Balanced(2,2);
-    Check(!strcmp(s_shaderText,golden),"complete archive text matches stock concatenation/compression");
+    flattened[0]=0;p=s_shaderText;
+    for(bucket=0;bucket<2;bucket++) {strcat(flattened,p);p+=strlen(p)+1;}
+    Check(!strcmp(flattened,golden),"file-bounded archive text retains complete stock-order compression");
     Check(s_shaderText && s_shaderText[0]=='\n',"native reversed archive concatenation");
     p=s_shaderText;Check(!strcmp(COM_ParseExt(&p,qtrue),"tests/duplicate"),"last listed file remains first in text fallback");
     first=R_FindShader("tests/first",LIGHTMAP_NONE,qtrue);second=R_FindShader("tests/second",LIGHTMAP_NONE,qtrue);
@@ -158,6 +160,58 @@ static void EmptyArchives(void) {
     Setup(-1);ScanAndLoadShaderFiles();Balanced(0,0);Check(!s_shaderText,"negative list count rejected before file iteration");
     Setup(MAX_SHADER_FILES+2);ScanAndLoadShaderFiles();Balanced(MAX_SHADER_FILES,MAX_SHADER_FILES);Check(!FindShaderInShaderText("missing"),"legacy archive cap remains safe");
 }
+static void IsolatedFiles(void) {
+    int mode,position;
+    const char *bad[]={"tests/broken\n{\n{\nmap $whiteimage\n", "tests/broken\n{\n{\nmap \"unterminated", "tests/broken\n{\n/* unterminated"};
+    for(mode=0;mode<3;mode++)for(position=0;position<3;position++) {
+        int i;Setup(3);
+        for(i=0;i<3;i++) contents[i]="tests/first\n{\n{\nmap $whiteimage\n}\n}\ntests/healthy\n{\n{\nmap $whiteimage\nrgbGen vertex\n}\n}\n";
+        contents[position]=bad[mode];
+        ScanAndLoadShaderFiles();Balanced(3,3);
+        Check(R_FindShader("tests/broken",LIGHTMAP_NONE,qtrue)->defaultShader,"unterminated definition gets native default fallback");
+        Check(R_FindShader("tests/healthy",LIGHTMAP_NONE,qtrue)->explicitlyDefined,"a malformed file cannot consume another file's later healthy definition");
+    }
+}
+/* Tiny stock archive/index oracle; use its original cursor order/boundaries. */
+static char *StockDefinition(const char *name, int count, char *reference) {
+    char *starts[4],*p,*token;int i;
+    reference[0]=0;
+    for(i=count-1;i>=0;i--) {strcat(reference,"\n");starts[i]=reference+strlen(reference);strcat(reference,contents[i]);COM_Compress(starts[i]);}
+    for(i=0;i<count;i++) {
+        p=starts[i];
+        while(1) {
+            token=COM_ParseExt(&p,qtrue);if(!token[0])break;
+            if(!Q_stricmp(token,name))return p;
+            SkipShaderDefinition(&p);
+            if(i<count-1 && p && p>starts[i+1])break;
+        }
+    }
+    return NULL;
+}
+static void StockOrder(void) {
+    int count,pattern,i,target;char bodies[4][1200],reference[6000],*p;
+    const char *labels[]={"tests/duplicate-a","tests/duplicate-b","tests/duplicate-c"};
+    for(count=1;count<=4;count++)for(pattern=0;pattern<64;pattern++) {
+        Setup(count);
+        for(i=0;i<count;i++) {
+            if(pattern&(1<<i))bodies[i][0]=0;
+            else {
+                int rotation=(pattern>>(i+1))%3;
+                snprintf(bodies[i],sizeof(bodies[i]),"%s\n{\n{\nmap $whiteimage\nrgbGen const ( %.3f 0 0 )\n}\n}\n%s\n{\n{\nmap $whiteimage\nrgbGen const ( %.3f 0 0 )\n}\n}\n%s\n{\n{\nmap $whiteimage\nrgbGen const ( %.3f 0 0 )\n}\n}\n",labels[rotation],(i+1)/8.0,labels[(rotation+1)%3],(i+1)/8.0,labels[(rotation+2)%3],(i+1)/8.0);
+            }
+            contents[i]=bodies[i];
+        }
+        ScanAndLoadShaderFiles();Balanced(count,count);
+        for(target=0;target<3;target++) {
+            int present;byte color=0;shader_t *registered;
+            p=StockDefinition(labels[target],count,reference);present=p!=NULL;
+            if(p) {ResetParser();Check(ParseShader(&p),"valid stock duplicate oracle body");color=stages[0].constantColor[0];}
+            registered=R_FindShader(labels[target],LIGHTMAP_NONE,qtrue);
+            Check(registered->explicitlyDefined==present,"stock duplicate/oracle missing lookup remains unchanged");
+            if(present)Check(registered->stages[0]->constantColor[0]==color,"stock first/later duplicate priority survives file isolation, including empty files");
+        }
+    }
+}
 int main(int argc,char **argv) {
     int proof=argc>1?atoi(argv[1]):-1;
     if(proof==0)NoArchives();
@@ -165,6 +219,8 @@ int main(int argc,char **argv) {
     else if(proof==2)ReadFailure();
     else if(proof==3)LengthFailure();
     else if(proof==4)ValidArchives();
-    else {NoArchives();EmptyList();ReadFailure();LengthFailure();AggregateFailure();BadPath();ValidArchives();EmptyArchives();}
+    else if(proof==5)IsolatedFiles();
+    else if(proof==6)StockOrder();
+    else {NoArchives();EmptyList();ReadFailure();LengthFailure();AggregateFailure();BadPath();ValidArchives();EmptyArchives();IsolatedFiles();StockOrder();}
     Release();puts("Native shader archive ownership, checked lengths, no-file startup and restart checks passed (issue #46)");return 0;
 }

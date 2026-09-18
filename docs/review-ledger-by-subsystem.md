@@ -344,7 +344,10 @@ implementation or check, without implying issue completion.
   - [x] Constant shader colors validate before byte conversion, preserve native
         valid rounding and propagate vector failures; see
         [constant/vector evidence](shader-constant-vector-validation.md).
-  - [ ] Complete remaining shader definition/index and semantic checks.
+  - [x] Archive definitions/index walks stay within their own file and preserve
+        native duplicate priority across empty/multiple files; see
+        [index isolation evidence](shader-file-index-validation.md).
+  - [ ] Complete remaining shader numeric/semantic checks.
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.
   - [ ] Validate the complete file and graph before setting `loaded`.
