@@ -294,35 +294,75 @@ static glyphInfo_t *RE_ConstructGlyphInfo(unsigned char *imageOut, int *xOut, in
 }
 #endif
 
-static int fdOffset;
-static byte	*fdFile;
+/* Retail 1.32c legacy format (version 0): 256 LE 80-byte glyphs + scale/name. */
+#define LEGACY_FONT_GLYPH_BYTES 80
+#define LEGACY_FONT_FILE_BYTES ((GLYPHS_PER_FONT) * LEGACY_FONT_GLYPH_BYTES + 4 + MAX_QPATH)
 
-int readInt() {
-	int i = fdFile[fdOffset]+(fdFile[fdOffset+1]<<8)+(fdFile[fdOffset+2]<<16)+(fdFile[fdOffset+3]<<24);
-	fdOffset += 4;
-	return i;
+static unsigned int R_FontReadWord( const byte **data ) {
+	const byte *p = *data;
+	unsigned int word = (unsigned int)p[0] | ((unsigned int)p[1] << 8) |
+		((unsigned int)p[2] << 16) | ((unsigned int)p[3] << 24);
+	*data += 4;
+	return word;
 }
 
-typedef union {
-	byte	fred[4];
-	float	ffred;
-} poor;
+static int R_FontReadInt( const byte **data ) {
+	unsigned int word = R_FontReadWord( data );
+	int value;
+	Com_Memcpy( &value, &word, sizeof(value) );
+	return value;
+}
 
-float readFloat() {
-	poor	me;
-#if idppc
-	me.fred[0] = fdFile[fdOffset+3];
-	me.fred[1] = fdFile[fdOffset+2];
-	me.fred[2] = fdFile[fdOffset+1];
-	me.fred[3] = fdFile[fdOffset+0];
-#else
-	me.fred[0] = fdFile[fdOffset+0];
-	me.fred[1] = fdFile[fdOffset+1];
-	me.fred[2] = fdFile[fdOffset+2];
-	me.fred[3] = fdFile[fdOffset+3];
-#endif
-	fdOffset += 4;
-	return me.ffred;
+static float R_FontReadFloat( const byte **data ) {
+	unsigned int word = R_FontReadWord( data );
+	float value;
+	Com_Memcpy( &value, &word, sizeof(value) );
+	return value;
+}
+
+static qboolean R_ReadLegacyFont( const byte *data, int length, fontInfo_t *font ) {
+	const byte *p;
+	int i, j;
+	unsigned int word;
+	if ( length != LEGACY_FONT_FILE_BYTES ) return qfalse;
+
+	/* Validate every fixed name/float before importing any glyph shader. */
+	for ( i = 0; i < GLYPHS_PER_FONT; i++ ) {
+		p = data + i * LEGACY_FONT_GLYPH_BYTES;
+		if ( !memchr( p + 48, 0, sizeof(font->glyphs[i].shaderName) ) ) return qfalse;
+		p += 28;
+		for ( j = 0; j < 4; j++ ) {
+			word = R_FontReadWord( &p );
+			if ( (word & 0x7f800000u) == 0x7f800000u ) return qfalse;
+		}
+	}
+	p = data + (GLYPHS_PER_FONT) * LEGACY_FONT_GLYPH_BYTES;
+	word = R_FontReadWord( &p );
+	if ( (word & 0x7f800000u) == 0x7f800000u || (word & 0x80000000u) || !(word & 0x7fffffffu) ) return qfalse;
+
+	p = data;
+	for ( i = 0; i < GLYPHS_PER_FONT; i++ ) {
+		glyphInfo_t *glyph = &font->glyphs[i];
+		glyph->height = R_FontReadInt( &p );
+		glyph->top = R_FontReadInt( &p );
+		glyph->bottom = R_FontReadInt( &p );
+		glyph->pitch = R_FontReadInt( &p );
+		glyph->xSkip = R_FontReadInt( &p );
+		glyph->imageWidth = R_FontReadInt( &p );
+		glyph->imageHeight = R_FontReadInt( &p );
+		glyph->s = R_FontReadFloat( &p );
+		glyph->t = R_FontReadFloat( &p );
+		glyph->s2 = R_FontReadFloat( &p );
+		glyph->t2 = R_FontReadFloat( &p );
+		/* Serialized renderer handles are replaced with current registrations. */
+		R_FontReadWord( &p );
+		glyph->glyph = 0;
+		Com_Memcpy( glyph->shaderName, p, sizeof(glyph->shaderName) );
+		p += sizeof(glyph->shaderName);
+	}
+	font->glyphScale = R_FontReadFloat( &p );
+	/* The historical stored font name is unused; retain the actual asset path. */
+	return qtrue;
 }
 
 void RE_RegisterFont(const char *fontName, int pointSize, fontInfo_t *font) {
@@ -336,11 +376,14 @@ void RE_RegisterFont(const char *fontName, int pointSize, fontInfo_t *font) {
   qhandle_t h;
 	float max;
 #endif
-  void *faceData;
+  void *faceData = NULL;
 	int i, len;
   char name[1024];
 	float dpi = 72;											//
 	float glyphScale =  72.0f / dpi; 		// change the scale to be relative to 1 based on 72 dpi ( so dpi of 144 means a scale of .5 )
+
+	if ( !font ) return;
+	Com_Memset( font, 0, sizeof(*font) );
 
 	if (pointSize <= 0) {
 		pointSize = 12;
@@ -351,10 +394,6 @@ void RE_RegisterFont(const char *fontName, int pointSize, fontInfo_t *font) {
 	// make sure the render thread is stopped
 	R_SyncRenderThread();
 
-  if (registeredFontCount >= MAX_FONTS) {
-    ri.Printf(PRINT_ALL, "RE_RegisterFont: Too many fonts registered already.\n");
-    return;
-  }
 
 	Com_sprintf(name, sizeof(name), "fonts/fontImage_%i.dat",pointSize);
 	for (i = 0; i < registeredFontCount; i++) {
@@ -364,36 +403,30 @@ void RE_RegisterFont(const char *fontName, int pointSize, fontInfo_t *font) {
 		}
 	}
 
-	len = ri.FS_ReadFile(name, NULL);
-	if (len == sizeof(fontInfo_t)) {
-		ri.FS_ReadFile(name, &faceData);
-		fdOffset = 0;
-		fdFile = faceData;
-		for(i=0; i<GLYPHS_PER_FONT; i++) {
-			font->glyphs[i].height		= readInt();
-			font->glyphs[i].top			= readInt();
-			font->glyphs[i].bottom		= readInt();
-			font->glyphs[i].pitch		= readInt();
-			font->glyphs[i].xSkip		= readInt();
-			font->glyphs[i].imageWidth	= readInt();
-			font->glyphs[i].imageHeight = readInt();
-			font->glyphs[i].s			= readFloat();
-			font->glyphs[i].t			= readFloat();
-			font->glyphs[i].s2			= readFloat();
-			font->glyphs[i].t2			= readFloat();
-			font->glyphs[i].glyph		= readInt();
-			Com_Memcpy(font->glyphs[i].shaderName, &fdFile[fdOffset], 32);
-			fdOffset += 32;
-		}
-		font->glyphScale = readFloat();
-		Com_Memcpy(font->name, &fdFile[fdOffset], MAX_QPATH);
+  if (registeredFontCount >= MAX_FONTS) {
+    ri.Printf(PRINT_ALL, "RE_RegisterFont: Too many fonts registered already.\n");
+    return;
+  }
 
-//		Com_Memcpy(font, faceData, sizeof(fontInfo_t));
+	len = ri.FS_ReadFile(name, &faceData);
+	if ( faceData ) {
+		qboolean valid = R_ReadLegacyFont( faceData, len, font );
+		ri.FS_FreeFile( faceData );
+		faceData = NULL;
+		if ( !valid ) {
+			Com_Memset( font, 0, sizeof(*font) );
+			ri.Printf( PRINT_WARNING, "RE_RegisterFont: Invalid legacy font '%s'\n", name );
+			return;
+		}
 		Q_strncpyz(font->name, name, sizeof(font->name));
-		for (i = GLYPH_START; i < GLYPH_END; i++) {
+		for ( i = GLYPH_START; i <= GLYPH_END; i++ ) {
 			font->glyphs[i].glyph = RE_RegisterShaderNoMip(font->glyphs[i].shaderName);
 		}
-	  Com_Memcpy(&registeredFont[registeredFontCount++], font, sizeof(fontInfo_t));
+		Com_Memcpy(&registeredFont[registeredFontCount++], font, sizeof(fontInfo_t));
+		return;
+	}
+	if ( len > 0 ) {
+		ri.Printf( PRINT_WARNING, "RE_RegisterFont: Unable to read legacy font '%s'\n", name );
 		return;
 	}
 
