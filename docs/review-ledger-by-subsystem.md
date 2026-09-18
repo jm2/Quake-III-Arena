@@ -409,6 +409,9 @@ implementation or check, without implying issue completion.
         travel-matrix pointer rows stay aligned, partial owners release and
         failed initialization cannot enable the world;
         see [initialization evidence](aas-routing-init-validation.md).
+  - [x] Routing cache cvar kilobytes convert to signed bytes without overflowing
+        casts/multiplication; valid truncation/defaults remain intact;
+        see [limit evidence](aas-cache-limit-validation.md).
   - [ ] Validate the complete file and graph before setting `loaded`.
 - [ ] [#48 — bot preprocessor/token/path bounds](https://github.com/jm2/Quake-III-Arena/issues/48)
   - [x] Several upstream primitive/preprocessor/diagnostic bounds fixes are

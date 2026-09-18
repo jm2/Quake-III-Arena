@@ -465,3 +465,10 @@ with GCC and Clang. Name lookup, cached defaults, setter replacement and physica
 name/string cleanup retain native behavior. Original actual-body proofs cover
 trailing-NUL overread, signed divisor overflow and incorrect malformed/overflow
 values. Allocation failure in other parser callers remains separate acceptance.
+
+The native initialization fixture also checks twelve literal routing-cache cvar
+KB/byte limits, including defaults, fractional truncation, the last safe signed
+multiple, larger finite inputs and unsupported negative capacity. Original
+float-to-int and signed multiplication overflow proofs fail; checked conversion
+retains successful table initialization and cleanup. This establishes numeric
+representability; aggregate cache RAM/work budget enforcement remains separate.

@@ -1300,6 +1300,14 @@ qboolean AAS_InitReachabilityAreas(void)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
+/* LibVar's numeric grammar supplies finite values; byte counts use signed ints. */
+static int AAS_RoutingCacheByteLimit(float kilobytes)
+{
+	if (kilobytes <= 0) return 0;
+	if (kilobytes >= (float)(INT_MAX / 1024 + 1)) return INT_MAX;
+	return 1024 * (int)kilobytes;
+}
+
 qboolean AAS_InitRouting(void)
 {
 	aasworld.initialized = qfalse;
@@ -1331,7 +1339,7 @@ qboolean AAS_InitRouting(void)
 #endif //ROUTING_DEBUG
 	//
 	routingcachesize = 0;
-	max_routingcachesize = 1024 * (int) LibVarValue("max_routingcache", "4096");
+	max_routingcachesize = AAS_RoutingCacheByteLimit(LibVarValue("max_routingcache", "4096"));
 	// read any routing cache if available
 	AAS_ReadRouteCache();
 	return qtrue;
