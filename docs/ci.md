@@ -581,3 +581,16 @@ real character files reject wrapped indexes and release earlier owners. Eleven
 original proofs fail; original ordinary goldens pass too. GCC/Clang normal/release
 sanitizer CI covers these paths. Consumer numeric bounds and lexical cursors stay
 open.
+
+The escape runner executes real quoted-token reads and actual escape/legacy
+literal helpers. Eighteen escape spellings retain native bytes, decimal ASCII
+and hex letter mappings across direct/double/single-quoted paths. Oversized
+values clamp once before signed overflow, consume complete digits and preserve
+following tokens. Invalid escapes reject without modifying the direct output.
+Separate legacy literal tests cover bounded EOF/empty/newline failures and
+first-byte warnings without skipping closing quotes or following token bytes.
+Active single quotes still use the native string reader and length subtype.
+Concatenation, disabled escapes, string limits, comment EOF and short longest
+punctuation matches stay compatible. Eight original proofs fail; native goldens
+pass original and fixed code. GCC/Clang normal/release sanitizer CI covers these
+paths; lexer-error propagation and remaining parser consumers stay open.

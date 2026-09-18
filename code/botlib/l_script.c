@@ -364,7 +364,7 @@ int PS_ReadWhiteSpace(script_t *script)
 //============================================================================
 int PS_ReadEscapeCharacter(script_t *script, char *ch)
 {
-	int c, val, i;
+	int c, val = 0, i = 0, base = 0, overflow = qfalse;
 
 	//step over the leading '\\'
 	script->script_p++;
@@ -385,46 +385,48 @@ int PS_ReadEscapeCharacter(script_t *script, char *ch)
 		case 'x':
 		{
 			script->script_p++;
-			for (i = 0, val = 0; ; i++, script->script_p++)
-			{
-				c = *script->script_p;
-				if (c >= '0' && c <= '9') c = c - '0';
-				else if (c >= 'A' && c <= 'Z') c = c - 'A' + 10;
-				else if (c >= 'a' && c <= 'z') c = c - 'a' + 10;
-				else break;
-				val = (val << 4) + c;
-			} //end for
-			script->script_p--;
-			if (val > 0xFF)
-			{
-				ScriptWarning(script, "too large value in escape character");
-				val = 0xFF;
-			} //end if
-			c = val;
+			base = 16;
 			break;
 		} //end case
 		default: //NOTE: decimal ASCII code, NOT octal
 		{
-			if (*script->script_p < '0' || *script->script_p > '9') ScriptError(script, "unknown escape char");
-			for (i = 0, val = 0; ; i++, script->script_p++)
+			if (*script->script_p < '0' || *script->script_p > '9')
 			{
-				c = *script->script_p;
-				if (c >= '0' && c <= '9') c = c - '0';
-				else break;
-				val = val * 10 + c;
-			} //end for
-			script->script_p--;
-			if (val > 0xFF)
-			{
-				ScriptWarning(script, "too large value in escape character");
-				val = 0xFF;
+				ScriptError(script, "unknown escape char");
+				return 0;
 			} //end if
-			c = val;
+			base = 10;
 			break;
 		} //end default
 	} //end switch
-	//step over the escape character or the last digit of the number
-	script->script_p++;
+	if (base)
+	{
+		for (; ; i++, script->script_p++)
+		{
+			c = *script->script_p;
+			if (c >= '0' && c <= '9') c -= '0';
+			else if (base == 16 && c >= 'A' && c <= 'Z') c = c - 'A' + 10;
+			else if (base == 16 && c >= 'a' && c <= 'z') c = c - 'a' + 10;
+			else break;
+			if (!overflow)
+			{
+				if (val > (0xFF - c) / base) overflow = qtrue;
+				else val = val * base + c;
+			} //end if
+		} //end for
+		if (!i)
+		{
+			ScriptError(script, "missing numeric escape value");
+			return 0;
+		} //end if
+		if (overflow)
+		{
+			ScriptWarning(script, "too large value in escape character");
+			val = 0xFF;
+		} //end if
+		c = val;
+	}
+	else script->script_p++;
 	//store the escape character
 	*ch = c;
 	//succesfully read escape character
@@ -782,6 +784,11 @@ int PS_ReadLiteral(script_t *script, token_t *token)
 		ScriptError(script, "end of file before trailing \'");
 		return 0;
 	} //end if
+	if (*script->script_p == '\'' || *script->script_p == '\n')
+	{
+		ScriptError(script, "empty literal or newline before character");
+		return 0;
+	} //end if
 	//if it is an escape character
 	if (*script->script_p == '\\')
 	{
@@ -801,7 +808,11 @@ int PS_ReadLiteral(script_t *script, token_t *token)
 		{
 			script->script_p++;
 		} //end while
-		if (*script->script_p == '\'') script->script_p++;
+		if (*script->script_p != '\'')
+		{
+			ScriptError(script, "missing trailing quote in literal");
+			return 0;
+		} //end if
 	} //end if
 	//store the trailing quote
 	token->string[2] = *script->script_p++;
@@ -838,7 +849,7 @@ int PS_ReadPunctuation(script_t *script, token_t *token)
 		p = punc->p;
 		len = strlen(p);
 		//if the script contains at least as much characters as the punctuation
-		if (script->script_p + len <= script->end_p)
+		if (len <= script->end_p - script->script_p)
 		{
 			//if the script contains the punctuation
 			if (!strncmp(script->script_p, p, len))
