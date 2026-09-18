@@ -399,3 +399,10 @@ imports and bot adapters under release/debug metadata and normal/optimized
 sanitizers. It checks payload/header/trailer/alignment costs, ownership and
 nullable rejection before native allocator expansion can overflow. CI also
 invokes this runner with explicit Clang.
+
+The isolated-area routing runner uses actual native clustering and routing.
+Reachability-only clustering legitimately leaves isolated nonreachable areas
+in cluster zero. Distinct start/goal queries involving those areas return
+unreachable before cache allocation or mutation; their retail AAS bytes remain
+accepted. The previous native routing body aliases another cluster's cache.
+Normal and release fast-math sanitizer configurations cover both operations.

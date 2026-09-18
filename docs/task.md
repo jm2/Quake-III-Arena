@@ -288,7 +288,8 @@ QVMs while any P0 item is open.
         special travel fields retain packed bits; see [reachability evidence](aas-reachability-validation.md).
   - [x] Portal/cluster indices, local area slots, spans and inverse ownership
         validate before loaded; native side ordering and unclustered roots
-        retain bytes; see [portal evidence](aas-portal-validation.md).
+        retain bytes, while isolated-area routes preserve cache ownership;
+        see [portal evidence](aas-portal-validation.md).
   - [ ] Validate the entire AAS file and graph before setting `loaded`.
 - [ ] [#48 — bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48)
       — **high**, parser fixed-buffer corruption/invalid cleanup.

@@ -145,6 +145,16 @@ static void ReachableOrphanBuild(int version) {
     NormalSlotsBuild(version);PortalWord(version,settingsOffset+84+12,0);
     PortalWord(version,clusterOffset+16,2);PortalWord(version,clusterOffset+20,1);PortalWord(version,portalOffset+32,1);
 }
+static void NativeIsolatedAreas(void) {
+    int version;
+    for(version=4;version<=5;version++) {
+        ReachableOrphanBuild(version);Counters();OldWorld();
+        PortalWord(version,settingsOffset+84+20,0);PortalWord(version,16+8*AASLUMP_REACHABILITY,88);
+        Check(AAS_LoadAASFile("fixture.aas")==BLERR_NOERROR&&aasworld.loaded,"isolated nonreachable areas produced by native clustering remain accepted");
+        Check(!memcmp(aasworld.areasettings,source+settingsOffset,112)&&!memcmp(aasworld.clusters,source+clusterOffset,48),"native isolated areas retain bytes and complete slots");
+        Check(workspaceRequests==4&&workspaceFrees==4&&!workspacePointer,"isolated-area acceptance releases every validation heap");
+    }
+}
 static void ReachableOrphans(void) {
     int version;
     for(version=4;version<=5;version++) {
@@ -183,6 +193,6 @@ int main(int argc,char **argv) {
     else if(proof==5){SameClusterBuild(4);Counters();OldWorld();GeometryReject();}
     else if(proof==6){ReachableOrphanBuild(4);Counters();OldWorld();GeometryReject();}
     else if(proof==7){UnclusteredBuild(4,1);Counters();OldWorld();GeometryReject();}
-    else {ValidPortals();UnclusteredPortals();BadPortals();PortalSpanOwnership();ClusterMapping();ReachableOrphans();puts("Native AAS portal/cluster references, local slots, inverse ownership and spans passed (issue #47)");}
+    else {ValidPortals();UnclusteredPortals();BadPortals();PortalSpanOwnership();ClusterMapping();ReachableOrphans();NativeIsolatedAreas();puts("Native AAS portal/cluster references, local slots, inverse ownership and spans passed (issue #47)");}
     ResetArena();return 0;
 }

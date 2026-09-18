@@ -13,7 +13,10 @@ Preserve retail v4/v5 layouts, portal side order, reordered disjoint spans,
 native payload bytes and commercial 1.32c interfaces. Unclustered native roots
 remain supported when they have zero clusters and native initialization will
 rebuild them. A dummy-only cluster table cannot own reachable areas because
-initialization skips rebuilding it. Workspace costs are checked, and nullable failures reject
+initialization skips rebuilding it. Isolated areas without outgoing reachabilities can legitimately remain in
+cluster zero: native AAS_FindClusters explicitly skips them when nofaceflood is
+enabled. Preserve their bytes; distinct start/goal routing queries return
+unreachable before cache allocation or mutation. Workspace costs are checked, and nullable failures reject
 without temporary ownership. No hard map-size cap is introduced.
 
 ## Validation
@@ -23,7 +26,7 @@ indices, shared index spans, duplicate local slots, omitted sides and identical
 side clusters, reachable cluster-zero orphans and reachable dummy-only roots
 still report success. Independent literal data covers both versions,
 side orders, reordered spans, unclustered roots, multiple normal areas, reachable
-portals and multiple portals. Fourteen accepted worlds retain all native mapping
+portals and multiple portals. Sixteen accepted worlds retain all native mapping
 bytes. Ninety-four malformed signed/one-past/count/span/inverse/slot/prefix/side cases
 reject before publication, close once and clear partial logical owners.
 
@@ -33,14 +36,21 @@ bitmap or slot/side workspace reject cleanly in both versions. Clang normal/
 release fast-math sanitizers and optimized GCC checks pass. Existing AAS seams,
 nine Python checks, Bash syntax and diff checks pass. Both Retro68 products
 build with zero compiler diagnostics and validate as PPC PEFs. The table includes
-the inherited #125 complete reachability ownership fix and both cluster-zero
-orphan follow-ups. The original actual-loader proofs fail; fixed normal/fast
+the inherited #125 complete reachability ownership fix, both reachable
+cluster-zero orphan follow-ups and the isolated-area routing guard. The original actual-loader proofs fail; fixed normal/fast
 sanitizers and both PPC rebuilds pass with zero product diagnostics.
+
+One original actual-routing proof also fails: an isolated nonreachable goal
+allocates caches and aliases another cluster's cache storage. The regression
+runs actual AAS_FindClusters/AAS_NumberClusterAreas and routing/cache consumers,
+proving native isolated areas remain unclustered and distinct queries leave
+cache tables, physical owners and the LRU list unchanged. Clang normal/fast-math
+sanitizers and optimized GCC checks pass.
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,758,195 | `64e409c861cc49a62c488b383aeb8f4d184535558fc7c2c4d64e5bb02c18a29c` |
-| Quake3_TeamArena | 3,906,769 | `8ae0d6e08a0672337cdc531af397df5cf263b4ff6dd6ba2e194e60aadfa8b238` |
+| Quake3 | 3,758,195 | `89d2fea8e3f9875dc8a636ff6cdcab6593ccbba095245650195690863dedf743` |
+| Quake3_TeamArena | 3,906,769 | `a215311d19fc3b4f217d59a60b4a31692517b52c113debbd9a09681dde263e01` |
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 

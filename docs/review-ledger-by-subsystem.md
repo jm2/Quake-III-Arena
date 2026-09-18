@@ -393,7 +393,8 @@ implementation or check, without implying issue completion.
         special travel fields retain packed bits; see [reachability evidence](aas-reachability-validation.md).
   - [x] Portal/cluster indices, local area slots, spans and inverse ownership
         validate before loaded; native side ordering and unclustered roots
-        retain bytes; see [portal evidence](aas-portal-validation.md).
+        retain bytes, while isolated-area routes preserve cache ownership;
+        see [portal evidence](aas-portal-validation.md).
   - [ ] Validate the complete file and graph before setting `loaded`.
 - [ ] [#48 — bot preprocessor/token/path bounds](https://github.com/jm2/Quake-III-Arena/issues/48)
   - [x] Several upstream primitive/preprocessor/diagnostic bounds fixes are
