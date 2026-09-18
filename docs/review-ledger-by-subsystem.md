@@ -658,6 +658,10 @@ implementation or check, without implying issue completion.
         check packed heap imports and both source passes, reject changed
         capacity/type names and free failed candidates; native selection remains;
         see [initial dictionary evidence](bot-initial-dictionary-validation.md).
+  - [x] Public chat replacement stages complete owners, detaches shared
+        cache aliases, frees private data by actual ownership across policy
+        changes and preserves prior roots on failure; non-fitting keys remain
+        private; see [cache evidence](bot-chat-cache-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
