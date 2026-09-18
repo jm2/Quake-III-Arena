@@ -81,8 +81,11 @@ bot_character_t *botcharacters[MAX_CLIENTS + 1];
 static int BotCharacterFloatFinite(const float *value)
 {
 	unsigned int bits;
+	volatile unsigned int representation;
 	Com_Memcpy(&bits, value, sizeof(bits));
-	return (bits & 0x7f800000u) != 0x7f800000u;
+	//keep representation checks observable under release finite-math assumptions
+	representation = bits;
+	return (representation & 0x7f800000u) != 0x7f800000u;
 }
 
 static int BotCharacterFilePathValid(const char *filename)
@@ -135,7 +138,7 @@ void BotDumpCharacter(bot_character_t *ch)
 	int i;
 
 	Log_Write("%s", ch->filename);
-	Log_Write("skill %d\n", ch->skill);
+	Log_Write("skill %f\n", ch->skill);
 	Log_Write("{\n");
 	for (i = 0; i < MAX_CHARACTERISTICS; i++)
 	{
@@ -627,7 +630,7 @@ int BotInterpolateCharacters(int handle1, int handle2, float desiredskill)
 {
 	bot_character_t *ch1, *ch2, *out;
 	int i, handle;
-	float scale;
+	float scale, numerator, denominator;
 
 	ch1 = BotCharacterFromHandle(handle1);
 	ch2 = BotCharacterFromHandle(handle2);
@@ -639,6 +642,25 @@ int BotInterpolateCharacters(int handle1, int handle2, float desiredskill)
 		if (!botcharacters[handle]) break;
 	} //end for
 	if (handle > MAX_CLIENTS) return 0;
+	if (!BotCharacterFloatFinite(&desiredskill) ||
+			!BotCharacterFloatFinite(&ch1->skill) || !BotCharacterFloatFinite(&ch2->skill))
+	{
+		botimport.Print(PRT_ERROR, "invalid interpolation skill\n");
+		return 0;
+	} //end if
+	numerator = desiredskill - ch1->skill;
+	denominator = ch2->skill - ch1->skill;
+	if (!BotCharacterFloatFinite(&numerator) || !BotCharacterFloatFinite(&denominator) || !denominator)
+	{
+		botimport.Print(PRT_ERROR, "invalid interpolation endpoints\n");
+		return 0;
+	} //end if
+	scale = numerator / denominator;
+	if (!BotCharacterFloatFinite(&scale))
+	{
+		botimport.Print(PRT_ERROR, "interpolation scale out of range\n");
+		return 0;
+	} //end if
 	out = (bot_character_t *) GetClearedMemory(sizeof(bot_character_t) +
 					MAX_CHARACTERISTICS * sizeof(bot_characteristic_t));
 	if (!out)
@@ -649,15 +671,19 @@ int BotInterpolateCharacters(int handle1, int handle2, float desiredskill)
 	out->skill = desiredskill;
 	strcpy(out->filename, ch1->filename);
 
-	scale = (float) (desiredskill - ch1->skill) / (ch2->skill - ch1->skill);
 	for (i = 0; i < MAX_CHARACTERISTICS; i++)
 	{
 		//
 		if (ch1->c[i].type == CT_FLOAT && ch2->c[i].type == CT_FLOAT)
 		{
-			out->c[i].type = CT_FLOAT;
-			out->c[i].value._float = ch1->c[i].value._float +
+			float value;
+			if (!BotCharacterFloatFinite(&ch1->c[i].value._float) ||
+					!BotCharacterFloatFinite(&ch2->c[i].value._float)) goto numericfailure;
+			value = ch1->c[i].value._float +
 								(ch2->c[i].value._float - ch1->c[i].value._float) * scale;
+			if (!BotCharacterFloatFinite(&value)) goto numericfailure;
+			out->c[i].value._float = value;
+			out->c[i].type = CT_FLOAT;
 		} //end if
 		else if (ch1->c[i].type == CT_INTEGER)
 		{
@@ -680,6 +706,12 @@ int BotInterpolateCharacters(int handle1, int handle2, float desiredskill)
 	} //end for
 	botcharacters[handle] = out;
 	return handle;
+
+numericfailure:
+	botimport.Print(PRT_ERROR, "interpolated characteristic out of range\n");
+	BotFreeCharacterStrings(out);
+	FreeMemory(out);
+	return 0;
 } //end of the function BotInterpolateCharacters
 //===========================================================================
 //
@@ -736,6 +768,8 @@ int BotLoadCharacter(char *charfile, float skill)
 		secondskill = BotLoadCharacterSkill(charfile, 5);
 		if (!secondskill) return firstskill;
 	} //end else
+	if (firstskill == secondskill ||
+			botcharacters[firstskill]->skill == botcharacters[secondskill]->skill) return firstskill;
 	//interpolate between the two skills
 	handle = BotInterpolateCharacters(firstskill, secondskill, skill);
 	if (!handle) return 0;

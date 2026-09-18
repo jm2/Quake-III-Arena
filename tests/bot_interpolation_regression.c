@@ -48,7 +48,10 @@ static void Invalid(void) {
     Check(!BotInterpolateCharacters(1,2,2.5)&&requests==before&&liveOwners==7,"full native handle table rejects before allocation");
     for(i=3;i<=MAX_CLIENTS;i++)botcharacters[i]=NULL;End();
 }
-int main(int argc,char **argv) {
+#ifndef Q3_INTERPOLATION_ENTRY
+#define Q3_INTERPOLATION_ENTRY main
+#endif
+int Q3_INTERPOLATION_ENTRY(int argc,char **argv) {
     if(argc>1){int proof=atoi(argv[1]);if(proof<3)Failure(proof+1,0);else if(proof==3)InterpolationGolden(2.5,1);else {InterpolationGolden(1,0);InterpolationGolden(2.5,0);InterpolationGolden(4,0);InterpolationGolden(5,0);Invalid();}}
     else {int position;InterpolationGolden(1,1);InterpolationGolden(2.5,1);InterpolationGolden(4,1);InterpolationGolden(5,1);for(position=1;position<=3;position++)Failure(position,1);Invalid();puts("Real native interpolation values, private publication and nullable owner cleanup passed (issue #48)");}
     return 0;
