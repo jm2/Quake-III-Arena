@@ -1121,20 +1121,7 @@ int	VM_CallCompiled( vm_t *vm, int *args ) {
 
 	programCounter = 0;
 
-	programStack -= 48;
-
-	*(int *)&image[ programStack + 44] = args[9];
-	*(int *)&image[ programStack + 40] = args[8];
-	*(int *)&image[ programStack + 36] = args[7];
-	*(int *)&image[ programStack + 32] = args[6];
-	*(int *)&image[ programStack + 28] = args[5];
-	*(int *)&image[ programStack + 24] = args[4];
-	*(int *)&image[ programStack + 20] = args[3];
-	*(int *)&image[ programStack + 16] = args[2];
-	*(int *)&image[ programStack + 12] = args[1];
-	*(int *)&image[ programStack + 8 ] = args[0];
-	*(int *)&image[ programStack + 4 ] = 0;	// return stack
-	*(int *)&image[ programStack ] = -1;	// will terminate the loop on return
+	programStack = VM_SetupCallFrame( vm, args );
 
 	// off we go into generated code...
 	entryPoint = vm->codeBase;
@@ -1180,7 +1167,7 @@ int	VM_CallCompiled( vm_t *vm, int *args ) {
 	if ( opStack != &stack[1] ) {
 		Com_Error( ERR_DROP, "opStack corrupted in compiled code" );
 	}
-	if ( programStack != stackOnEntry - 48 ) {
+	if ( programStack != stackOnEntry - VM_ENTRY_FRAME_SIZE ) {
 		Com_Error( ERR_DROP, "programStack corrupted in compiled code" );
 	}
 

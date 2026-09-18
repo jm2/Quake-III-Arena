@@ -47,8 +47,8 @@ libraries documented in [loading evidence](qvm-loading-validation.md).
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,673,879 | `a7866d5a43d99b49539338f8f817f3c54449370113e07ab07c7ffcf22d5abec1` |
-| Quake3_TeamArena | 3,822,453 | `a0d163a190d767495927bda2673f31a09ec192dce130bdb0bc60f2848f75b910` |
+| Quake3 | 3,686,293 | `55ec794043837be233157b6abfc55225f6274bd24769a4c173863ea434a86540` |
+| Quake3_TeamArena | 3,834,867 | `4cf96e73d8304060372195d22a79e1b9fba5dba6370c26536965c0ff3109a358` |
 
 ## Remaining acceptance
 
@@ -57,3 +57,11 @@ VQ cursors, and motion-compensated source blocks still need bounded validation
 and regressions. This step does not establish that the entire RoQ decoder is
 safe for hostile movies. Retail 1.32c and Mac OS 9 live playback remain
 explicitly deferred; the intro/idlogo bypass remains tracked by #14.
+
+## Integration with reviewed QVM work
+
+After integrating master through PR #64 and the single-run CI step (#68),
+all eleven current host C runners, eight Python tests and both Retro68 products
+pass. The workflow and CI documentation retain every QVM and RoQ check.
+The table above records these integrated product artifacts. Frame/VQ work
+still belongs to the following RoQ PRs; live acceptance remains deferred.

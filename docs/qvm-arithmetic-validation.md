@@ -29,7 +29,7 @@ pass PEF validation with the temporary libraries described in the
 
 ## Remaining acceptance
 
-Keep #35 open. Syscall-specific pointer/range checks and VM call argument
-marshalling remain. Retail baseq3/Team Arena and Mac OS 9 acceptance remains
+The [next step](qvm-call-validation.md) covers VM call arguments.
+Keep #35 open: syscall-specific pointer/range checks remain. Retail baseq3/Team Arena and Mac OS 9 acceptance remains
 deferred. The controlled errors cover invalid arithmetic; no complete sandbox
 or target runtime compatibility claim is made.

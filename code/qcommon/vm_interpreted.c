@@ -298,6 +298,7 @@ int	VM_CallInterpreted( vm_t *vm, int *args ) {
 	int		v1;
 	int		dataMask;
 	int		stackFloor;
+	const int entryFrame = VM_ENTRY_FRAME_SIZE;
 	qboolean wasInterpreting;
 #ifdef DEBUG_VM
 	vmSymbol_t	*profileSymbol;
@@ -338,24 +339,7 @@ int	VM_CallInterpreted( vm_t *vm, int *args ) {
 	programCounter = 0;
 
 	stackFloor = vm->stackBottom > 0 ? vm->stackBottom : 0;
-	if ( (programStack & 3) || programStack < stackFloor ||
-	     programStack - stackFloor < 48 || programStack > dataMask + 1 ) {
-		VM_INTERPRETER_ERROR( "VM entry stack out of range" );
-	}
-	programStack -= 48;
-
-	*(int *)&image[ programStack + 44] = args[9];
-	*(int *)&image[ programStack + 40] = args[8];
-	*(int *)&image[ programStack + 36] = args[7];
-	*(int *)&image[ programStack + 32] = args[6];
-	*(int *)&image[ programStack + 28] = args[5];
-	*(int *)&image[ programStack + 24] = args[4];
-	*(int *)&image[ programStack + 20] = args[3];
-	*(int *)&image[ programStack + 16] = args[2];
-	*(int *)&image[ programStack + 12] = args[1];
-	*(int *)&image[ programStack + 8 ] = args[0];
-	*(int *)&image[ programStack + 4 ] = 0;	// return stack
-	*(int *)&image[ programStack ] = -1;	// will terminate the loop on return
+	programStack = VM_SetupCallFrame( vm, args );
 
 	vm->callLevel = 0;
 	
@@ -597,7 +581,7 @@ nextInstruction2:
 			// remove our stack frame
 			v1 = r2;
 
-			if ( v1 < 0 || (v1 & 3) || v1 > stackOnEntry - 48 - programStack ) {
+			if ( v1 < 0 || (v1 & 3) || v1 > stackOnEntry - entryFrame - programStack ) {
 				VM_INTERPRETER_ERROR( "VM LEAVE frame out of range" );
 			}
 			programStack += v1;
@@ -613,7 +597,7 @@ nextInstruction2:
 #endif
 			// check for leaving the VM
 			if ( programCounter == -1 ) {
-				if ( programStack != stackOnEntry - 48 ) {
+				if ( programStack != stackOnEntry - entryFrame ) {
 					VM_INTERPRETER_ERROR( "VM return stack mismatch" );
 				}
 				goto done;
