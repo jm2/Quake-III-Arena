@@ -233,7 +233,10 @@ QVMs while any P0 item is open.
   - [x] Optional font glyph/atlas arithmetic, complete page/final-glyph output,
         generated cache names and legacy LE serialization have
         [generation evidence](font-atlas-legacy-output-validation.md).
-  - [ ] Complete remaining shader semantic/file-allocation checks.
+  - [x] Shader archives check native allocation sizes, balance list/file input,
+        and clear stale state on empty restarts; see
+        [archive ownership evidence](shader-archive-ownership-validation.md).
+  - [ ] Complete remaining shader definition/index and semantic checks.
 - [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
       — **high**, server OOB access/infinite traversal.
   - [x] Local mover model boundary/look-up fixes cross-build.
