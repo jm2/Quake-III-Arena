@@ -739,7 +739,7 @@ $(B)/client/tr_light.o : $(RDIR)/tr_light.c; $(DO_CC)  $(GL_CFLAGS)
 $(B)/client/tr_main.o : $(RDIR)/tr_main.c; $(DO_CC)   $(GL_CFLAGS) 
 $(B)/client/tr_marks.o : $(RDIR)/tr_marks.c; $(DO_CC)   $(GL_CFLAGS) 
 $(B)/client/tr_mesh.o : $(RDIR)/tr_mesh.c; $(DO_CC)   $(GL_CFLAGS) 
-$(B)/client/tr_model.o : $(RDIR)/tr_model.c; $(DO_CC)   $(GL_CFLAGS) 
+$(B)/client/tr_model.o : $(RDIR)/tr_model.c $(RDIR)/tr_model_validate.h; $(DO_CC)   $(GL_CFLAGS)
 $(B)/client/tr_noise.o : $(RDIR)/tr_noise.c; $(DO_CC)   $(GL_CFLAGS) 
 $(B)/client/tr_scene.o : $(RDIR)/tr_scene.c; $(DO_CC)   $(GL_CFLAGS) 
 $(B)/client/tr_shade.o : $(RDIR)/tr_shade.c; $(DO_CC)   $(GL_CFLAGS) 
@@ -1780,7 +1780,7 @@ $(B)/q3static/tr_light.o : $(RDIR)/tr_light.c; $(DO_CC) -DQ3_STATIC
 $(B)/q3static/tr_main.o : $(RDIR)/tr_main.c; $(DO_CC) -DQ3_STATIC 
 $(B)/q3static/tr_marks.o : $(RDIR)/tr_marks.c; $(DO_CC) -DQ3_STATIC 
 $(B)/q3static/tr_mesh.o : $(RDIR)/tr_mesh.c; $(DO_CC) -DQ3_STATIC 
-$(B)/q3static/tr_model.o : $(RDIR)/tr_model.c; $(DO_CC) -DQ3_STATIC 
+$(B)/q3static/tr_model.o : $(RDIR)/tr_model.c $(RDIR)/tr_model_validate.h; $(DO_CC) -DQ3_STATIC
 $(B)/q3static/tr_noise.o : $(RDIR)/tr_noise.c; $(DO_CC) -DQ3_STATIC 
 $(B)/q3static/tr_scene.o : $(RDIR)/tr_scene.c; $(DO_CC) -DQ3_STATIC 
 $(B)/q3static/tr_shade.o : $(RDIR)/tr_shade.c; $(DO_CC) -DQ3_STATIC 
