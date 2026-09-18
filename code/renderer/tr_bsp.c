@@ -1721,7 +1721,8 @@ static const char *R_ValidateBSPLightGrid(const void *buffer,const dheader_t *he
 	const lump_t *entities=&header->lumps[LUMP_ENTITIES];
 	char *text;
 	const char *error;
-	double first,last,count,origin;
+	double origin,maximum;
+	float minQuotient,maxQuotient,maxAligned,count;
 	unsigned int points=1,capacity=(INT_MAX-4096u)/8;
 	int i;
 	Com_Memset(grid,0,sizeof(*grid));
@@ -1731,17 +1732,22 @@ static const char *R_ValidateBSPLightGrid(const void *buffer,const dheader_t *he
 	error=R_ParseWorldspawn(text,grid->size,qfalse);
 	free(text);
 	if(error) return error;
-	for(i=0;i<3;i++) grid->inverseSize[i]=(float)(1.0/(double)grid->size[i]);
+	for(i=0;i<3;i++) grid->inverseSize[i]=1.0f/grid->size[i];
 	/* Disabled grids need no derived coordinates or native index strides. */
 	if(!header->lumps[LUMP_LIGHTGRID].filelen) return NULL;
 	for(i=0;i<3;i++) {
-		first=ceil((double)BSP_GeometryFloat(model+i*4)/grid->size[i]);
-		last=floor((double)BSP_GeometryFloat(model+12+i*4)/grid->size[i]);
-		origin=first*grid->size[i];
-		if(!(origin>=-FLT_MAX && origin<=FLT_MAX)) return "BSP light grid origin overflow";
+		/* q3map/native loading round these divisions to float before ceil/floor. */
+		minQuotient=BSP_GeometryFloat(model+i*4)/grid->size[i];
+		maxQuotient=BSP_GeometryFloat(model+12+i*4)/grid->size[i];
+		if(!(minQuotient>=-FLT_MAX && minQuotient<=FLT_MAX && maxQuotient>=-FLT_MAX && maxQuotient<=FLT_MAX)) return "BSP light grid quotient overflow";
+		origin=grid->size[i]*ceil(minQuotient);
+		maximum=grid->size[i]*floor(maxQuotient);
+		if(!(origin>=-FLT_MAX && origin<=FLT_MAX && maximum>=-FLT_MAX && maximum<=FLT_MAX)) return "BSP light grid origin overflow";
 		grid->origin[i]=(float)origin;
-		count=last-first+1;
-		if(!(count<=INT_MAX)) return "BSP light grid dimension overflow";
+		maxAligned=(float)maximum;
+		/* Preserve both stored float coordinates and the native float count expression. */
+		count=(maxAligned-grid->origin[i])/grid->size[i]+1;
+		if(!((double)count<=INT_MAX)) return "BSP light grid dimension overflow";
 		grid->bounds[i]=count>0?(int)count:0;
 	}
 	if(!grid->bounds[0] || !grid->bounds[1] || !grid->bounds[2]) return NULL;

@@ -15,8 +15,12 @@ inverses. strtod checks range before float conversion rather than relying on
 an overflowing scanf assignment.
 
 The validated world model bounds and grid size determine origins/dimensions
-using double intermediates. Float origins and native integer dimensions must
-be representable; division checks precede products and the existing signed
+using the native float quotient before ceil/floor, stored float origins/maxima
+and float count expression. This retains q3map fractional-grid rounding:
+size 0.1 over bounds 0..1 has 11 samples per axis, not 10. Range checks use
+double comparisons before float/int conversion. Quotients/origins and native
+integer dimensions must be representable; division checks precede products
+and the existing signed
 8-byte grid strides/allocation must fit. Loading consumes this staged result
 rather than repeating unchecked float casts or products. Empty grid lumps
 skip unused derived coordinates. Safe mismatched sample lengths retain the
@@ -40,6 +44,8 @@ publish their entity/grid data and release the exact FS input. Cases cover
 empty/non-NUL entities, every small-worldspawn prefix, quotes/comments at EOF,
 embedded NULs, a following non-NUL sample lump, partial/unknown grid settings,
 remap arguments/vertex-light conditions and malformed remap stopping.
+Fractional-grid goldens execute native 11x11x11 and partial 11x1x1 grids,
+retaining all q3map-generated samples and actual lighting at their edges.
 
 Invalid zero/negative/nonfinite/underflow/overflow settings, finite bounds
 with unsafe grid dimensions/products/origins and injected temporary OOM
@@ -62,8 +68,8 @@ libraries from [loading evidence](qvm-loading-validation.md).
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,720,691 | `06d6d3d0e890cb5f78c22b9e8ad6214f2db86b3fb9820a6b711e89bcdf3e68fe` |
-| Quake3_TeamArena | 3,869,265 | `e5a7f7e397b516fc80b1334ef3b3882f8b4d863debd69a0227113c18c56516ea` |
+| Quake3 | 3,720,697 | `4741cf30c11e39fa866e59bb9e79e2d12329e20b003b1505e3534ec79d87636a` |
+| Quake3_TeamArena | 3,869,271 | `0f960937c4c02f21beedd2553c39ffd9ad04b1acbfa83530eb753cc9b08a3498` |
 
 ## Remaining acceptance
 

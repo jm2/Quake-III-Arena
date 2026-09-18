@@ -110,6 +110,11 @@ int main(void) {
 	Build("{}",2,1);Header(&header);tr.worldMapLoaded=qfalse;tr.world=&retainedWorld;for(i=0;i<4;i++) { alignment=i;failGridTemporary=1;RejectRenderer();Check(!failGridTemporary,"injected temporary failure consumed"); }alignment=0;
 	/* Entity parsing uses its declared span even when another non-NUL lump follows it. */
 	Build("{ \"gridsize\" \"32 48 96\" }",strlen("{ \"gridsize\" \"32 48 96\" }"),0);Append(LUMP_LIGHTGRID,8);memset(source+At(LUMP_LIGHTGRID,0),'X',8);Load();Check(s_worldData.lightGridSize[2]==96 && !s_worldData.entityString[strlen("{ \"gridsize\" \"32 48 96\" }")],"following sample bytes stay outside entity text");
+	/* q3map float quotient goldens: gridsize 0.1 over 0..1 emits 11 per axis. */
+	Build("{ \"gridsize\" \"0.1 0.1 0.1\" }",strlen("{ \"gridsize\" \"0.1 0.1 0.1\" }"),1331);Bounds(0,1);
+	for(i=0;i<1331;i++) { byte *sample=source+At(LUMP_LIGHTGRID,i*8);sample[0]=11;sample[1]=12;sample[2]=13;sample[3]=51;sample[4]=52;sample[5]=53; }
+	Header(&header);Check(!R_ValidateBSPLightGrid(source,&header,&checked) && checked.numPoints==1331 && checked.bounds[0]==11 && checked.bounds[1]==11 && checked.bounds[2]==11,"fractional q3map grid keeps all native samples");Load();Check(s_worldData.lightGridData && !memcmp(s_worldData.lightGridData,source+At(LUMP_LIGHTGRID,0),1331*8),"fractional native grid remains enabled");Sample(.5f,.5f,.5f,0);Sample(1,1,1,0);
+	Build("{ \"gridsize\" \"0.1\" }",strlen("{ \"gridsize\" \"0.1\" }"),11);Bounds(0,1);Load();Check(s_worldData.lightGridData && s_worldData.lightGridBounds[0]==11 && s_worldData.lightGridBounds[1]==1 && s_worldData.lightGridBounds[2]==1,"fractional partial grid preserves default axes");
 	/* Safe partial/mismatched records preserve the native disabled-grid behavior. */
 	Build(grid,strlen(grid),1);Bounds(0,1);beforeWarnings=warnings;Load();Check(!s_worldData.lightGridData && warnings==beforeWarnings+1,"safe mismatch disables data with one warning");
 	Build(grid,strlen(grid),1);Bounds(0.25f,0.5f);beforeWarnings=warnings;Load();Check(!s_worldData.lightGridData && warnings==beforeWarnings+1,"empty grid intersection never publishes a zero-sized sample array");
