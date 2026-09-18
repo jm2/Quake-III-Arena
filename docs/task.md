@@ -465,6 +465,10 @@ QVMs while any P0 item is open.
         integer words/bounds before writing destination bytes; 16-bit ranges and
         ordinary native field values stay;
         see [structure evidence](bot-structure-number-validation.md).
+  - [x] Goal setup validates native game-type conversion and stages complete
+        config/weight references before item parsing/publication; failed imports
+        retain prior goal payload and successful replacement releases its logical
+        record; see [goal evidence](bot-goal-setup-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
