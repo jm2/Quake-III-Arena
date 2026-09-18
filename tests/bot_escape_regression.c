@@ -60,7 +60,7 @@ static void QuotedBoundary(void) {
 }
 static void BoundedWhitespace(void) {
     const char *text[]={""," ","/","//","// tail","/*","/* tail\n","/**/"};unsigned int i;
-    for(i=0;i<sizeof(text)/sizeof(text[0]);i++){script_t *script=EscapeScript(text[i]);token_t token;int result=PS_ReadToken(script,&token);Check(result==(i==2)&&!errors&&!warnings,"existing whitespace/comment EOF and final punctuation remain bounded");EscapeEnd(script);}
+    for(i=0;i<sizeof(text)/sizeof(text[0]);i++){script_t *script=EscapeScript(text[i]);token_t token;int result=PS_ReadToken(script,&token);Check(result==(i==2)&&errors==((i==5||i==6)?1:0)&&!warnings,"whitespace/comment EOF stays bounded and unterminated blocks record failure");EscapeEnd(script);}
 }
 static void PunctuationEnds(void) {
     struct punctuation {const char *text;int subtype;} cases[]={{">",P_LOGIC_GREATER},{">>",P_RSHIFT},{">>=",P_RSHIFT_ASSIGN},{"<",P_LOGIC_LESS},{"<<",P_LSHIFT},{"<<=",P_LSHIFT_ASSIGN},{"!",P_LOGIC_NOT},{"!=",P_LOGIC_UNEQ}};

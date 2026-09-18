@@ -130,6 +130,8 @@ void QDECL SourceError(source_t *source, char *str, ...)
 	char text[1024];
 	va_list ap;
 
+	source->errorsequence++;
+	if (source->scriptstack) source->scriptstack->flags |= SCFL_SOURCEERROR;
 	va_start(ap, str);
 	Q_vsnprintf(text, sizeof(text), str, ap);
 	va_end(ap);
@@ -304,17 +306,34 @@ void PC_FreeToken(token_t *token)
 // Returns:					-
 // Changes Globals:		-
 //============================================================================
+static int PC_SourceErrorFlag(source_t *source, int mask)
+{
+	script_t *script;
+	for (script = source ? source->scriptstack : NULL; script; script = script->next)
+	{
+		if (script->flags & mask) return qtrue;
+	}
+	return qfalse;
+}
+
+int PC_SourceHasError(source_t *source)
+{
+	return PC_SourceErrorFlag(source, SCFL_LEXERROR | SCFL_SOURCEERROR);
+}
+
 int PC_ReadSourceToken(source_t *source, token_t *token)
 {
 	token_t *t;
 	script_t *script;
 	int type, skip;
 
+	if (PC_SourceErrorFlag(source, SCFL_LEXERROR)) return qfalse;
 	//if there's no token already available
 	while(!source->tokens)
 	{
 		//if there's a token to read from the script
 		if (PS_ReadToken(source->scriptstack, token)) return qtrue;
+		if (PC_SourceErrorFlag(source, SCFL_LEXERROR)) return qfalse;
 		//if at the end of the script
 		if (EndOfScript(source->scriptstack))
 		{
@@ -331,6 +350,7 @@ int PC_ReadSourceToken(source_t *source, token_t *token)
 		//remove the script and return to the last one
 		script = source->scriptstack;
 		source->scriptstack = source->scriptstack->next;
+		source->scriptstack->flags |= script->flags & SCFL_SOURCEERROR;
 		FreeScript(script);
 	} //end while
 	//copy the already available token
@@ -2833,6 +2853,7 @@ int PC_ReadToken(source_t *source, token_t *token)
 		if (token->type == TT_STRING)
 		{
 			token_t newtoken;
+			unsigned int errorsequence = source->errorsequence;
 			if (PC_ReadToken(source, &newtoken))
 			{
 				if (newtoken.type == TT_STRING)
@@ -2850,6 +2871,8 @@ int PC_ReadToken(source_t *source, token_t *token)
 					PC_UnreadToken(source, &newtoken);
 				}
 			}
+			else if (PC_SourceErrorFlag(source, SCFL_LEXERROR) ||
+					source->errorsequence != errorsequence) return qfalse;
 		} //end if
 		//if skipping source because of conditional compilation
 		if (source->skip) continue;

@@ -104,6 +104,7 @@ typedef struct source_s
 	define_t *defines;						//list with macro definitions
 	define_t **definehash;					//hash chain with defines
 	indent_t *indentstack;					//stack with indents
+	unsigned int errorsequence;			//private diagnostic generation for lookahead
 	int skip;								// > 0 if skipping conditional code
 	token_t token;							//last read token
 } source_t;
@@ -111,6 +112,8 @@ typedef struct source_s
 
 //read a token from the source
 int PC_ReadToken(source_t *source, token_t *token);
+//true after a lexical/preprocessor error anywhere in the source stack
+int PC_SourceHasError(source_t *source);
 //expect a certain token
 int PC_ExpectTokenString(source_t *source, char *string);
 //expect a certain token type

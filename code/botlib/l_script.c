@@ -237,6 +237,7 @@ void QDECL ScriptError(script_t *script, char *str, ...)
 	char text[1024];
 	va_list ap;
 
+	script->flags |= SCFL_LEXERROR;
 	if (script->flags & SCFL_NOERRORS) return;
 
 	va_start(ap, str);
@@ -305,6 +306,7 @@ void SetScriptPunctuations(script_t *script, punctuation_t *p)
 //============================================================================
 int PS_ReadWhiteSpace(script_t *script)
 {
+	if (script->flags & SCFL_LEXERROR) return 0;
 	while(1)
 	{
 		//skip white space
@@ -339,7 +341,11 @@ int PS_ReadWhiteSpace(script_t *script)
 				do
 				{
 					script->script_p++;
-					if (!*script->script_p) return 0;
+					if (!*script->script_p)
+					{
+						ScriptError(script, "unterminated block comment");
+						return 0;
+					}
 					if (*script->script_p == '\n') script->line++;
 				} //end do
 				while(!(*script->script_p == '*' && *(script->script_p+1) == '/'));
@@ -486,6 +492,7 @@ int PS_ReadString(script_t *script, token_t *token, int quote)
 			//read unusefull stuff between possible two following strings
 			if (!PS_ReadWhiteSpace(script))
 			{
+				if (script->flags & SCFL_LEXERROR) return 0;
 				script->script_p = tmpscript_p;
 				script->line = tmpline;
 				break;
@@ -899,6 +906,7 @@ int PS_ReadPrimitive(script_t *script, token_t *token)
 //============================================================================
 int PS_ReadToken(script_t *script, token_t *token)
 {
+	if (script->flags & SCFL_LEXERROR) return 0;
 	//if there is a token available (from UnreadToken)
 	if (script->tokenavailable)
 	{
@@ -1250,7 +1258,7 @@ signed long int ReadSignedInt(script_t *script)
 //============================================================================
 void SetScriptFlags(script_t *script, int flags)
 {
-	script->flags = flags;
+	script->flags = flags | (script->flags & (SCFL_LEXERROR | SCFL_SOURCEERROR));
 } //end of the function SetScriptFlags
 //============================================================================
 //
@@ -1270,6 +1278,7 @@ int GetScriptFlags(script_t *script)
 //============================================================================
 void ResetScript(script_t *script)
 {
+	script->flags &= ~(SCFL_LEXERROR | SCFL_SOURCEERROR);
 	//pointer in script buffer
 	script->script_p = script->buffer;
 	//pointer in script buffer before reading token
