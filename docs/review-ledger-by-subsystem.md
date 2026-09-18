@@ -286,6 +286,8 @@ implementation or check, without implying issue completion.
         [host/build evidence](bsp-entity-grid-validation.md).
   - [x] Tree/forest topology and linear parent initialization have
         [host/build evidence](bsp-tree-validation.md).
+  - [x] Remaining native model-registry capacity has
+        [real allocator evidence](bsp-model-capacity-validation.md).
   - [ ] Finish remaining geometry references, graph/geometry checks and full transactional
         loading, then deferred retail/PPC map acceptance.
 - [ ] [#46 — shader/skin/font fixed limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)

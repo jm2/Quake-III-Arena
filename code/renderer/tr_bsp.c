@@ -1822,6 +1822,9 @@ static const char *R_ValidateBSPAllocations(const dheader_t *header) {
 		{header->lumps[LUMP_MODELS].filelen/sizeof(dmodel_t),sizeof(bmodel_t),0},
 		{header->lumps[LUMP_ENTITIES].filelen,1,1}
 	};
+	/* Each brush submodel also consumes one slot through the real R_AllocModel. */
+	if(tr.numModels<0 || tr.numModels>MAX_MOD_KNOWN) return "invalid renderer model registry";
+	if(header->lumps[LUMP_MODELS].filelen/sizeof(dmodel_t)>(unsigned int)(MAX_MOD_KNOWN-tr.numModels)) return "BSP submodels exceed available renderer model slots";
 	return BSP_ValidateAllocations(arrays,sizeof(arrays)/sizeof(arrays[0]));
 }
 
