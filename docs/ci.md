@@ -247,6 +247,7 @@ bash tests/run_shader_archive_tests.sh
 bash tests/run_shader_runtime_tests.sh
 bash tests/run_sky_bounds_tests.sh
 bash tests/run_aas_layout_tests.sh
+bash tests/run_aas_endian_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
@@ -291,6 +292,13 @@ failure close once and clear partial logical owners. The fixture distinguishes
 logical releases from physical arena reclamation: native hunk memory stays owned
 by the arena until reset. Graph/reference/numeric and aggregate budget checks
 remain follow-on #47 work; accepted layout fixtures are not live bot worlds.
+
+The native AAS endian runner compiles the actual swap body with independent
+identity and byte-reversal helpers. It checks bbox integer and float fields,
+fractions, signed zero and finite float extremes against literal byte reversal,
+including complete round trips. Existing unsigned 16-bit reachability travel
+times retain their full range and round-trip bits. This models PowerPC byte
+order on the host; it does not execute a PowerPC binary.
 
 ## What this CI does not prove
 
