@@ -34,13 +34,18 @@ All six complete products link with zero assembler errors and retail 0x12721444
 QVM headers. Historical legacy compiler warnings for void-pointer NULL assignments
 to UI function pointers remain; PPC compilation emits no warnings.
 
+Artifact sizes/hashes below come from complete source builds combined with master
+`a0364783c25e7b242e2c0324275cb9df0086239e` through bot steps #170 and CI #180.
+The workflow conflict combines all current regression scripts with the five QVM
+recipe syntax checks. All six QVM products and both PPC products were rebuilt
+from this combined source, and shared-function checks passed both compilers.
 Artifact sizes/hashes are recorded below from the complete source builds. They
 are build evidence, not execution of retail assets or target acceptance.
 
 | Module | QVM bytes | SHA-256 |
 | --- | ---: | --- |
-| game | 470,136 | `e255b05d6c11ad006f6025d349f39bd709780e0f01c1d6ef2e1659a06b7d5812` |
-| game_ta | 552,116 | `2eb77600eee86266bb76ff992a898f3e1c023f047ad29de00ee6620896a89215` |
+| game | 470,592 | `39c26916c91a0eef34d066fc9a297347a04d4d10bd3b06414e11cc0f05a80a1a` |
+| game_ta | 552,572 | `28235cf6600f0b285e2080acc90ad284b71bbfa15cfca8d6cd5480fe0349ae40` |
 | cgame | 325,620 | `3a84375d417d5f8c46cd217519bdd41618a523b6a22ab33ed2e5e9c7468baca7` |
 | cgame_ta | 489,804 | `efe068bf875c0b870c218a42cb73e74f85893a185c79254782d1d28a1fc98e07` |
 | q3_ui | 275,276 | `f9508ee96bb237f67bf7e6e4284be26c63e1f67eecee6efbc77abc648351aa0d` |
@@ -50,8 +55,8 @@ Five actual Unix recipes (game/game_ta, cgame/cgame_ta and q3_ui) also run
 from clean module directories with the 32-bit tools on PATH. Only the assembler
 output destination is overridden into the owned scratch tree. Compiler logs have
 no errors; assemblers report zero errors and all five outputs have valid QVM
-headers. Both client recipes produce cg_particles.asm. These build-input-only
-corrections leave the recorded final PPC artifacts unchanged.
+headers. Both client recipes produce cg_particles.asm. Those recipe checks preceded the current-master rebuild; recipe inputs are
+unchanged. Updated complete QVM/PPC products are recorded here.
 
 Existing actual q_shared regressions pass Clang ASan/UBSan and optimized GCC,
 including ordinary/in-place extension removal, dots before slashes and truncated
@@ -61,8 +66,8 @@ headers; final artifact sizes/hashes are recorded below.
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,770,803 | `6c5687860fba58eb6bf829c4e545e89e4ee0f3b83596d063e7abbb9d051a9192` |
-| Quake3_TeamArena | 3,919,377 | `fd059db0cc5c3c6c920262caeb3ed85cf2090adae0459d7994a138adc82be3d8` |
+| Quake3 | 3,783,921 | `ac2d6c2679fbc6763e6ef84d6ac776ba769c8f96fda82e73225304aa0d062e67` |
+| Quake3_TeamArena | 3,932,495 | `2ef8204a0c4df7c20093715c04797ec656c1968c5dcfd34e21d861d0fa8db8aa` |
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 

@@ -648,3 +648,141 @@ signed/unsigned 32-bit integer word patterns retain stored bits. Oversized raw,
 macro and included floats/words reject before character publication, release
 prior strings and all physical source/table/dictionary/token owners, and can
 retry. Both GCC/Clang normal and release fast-math sanitizers run the fixture.
+
+
+The skill runner links actual public/cached character/source/lexer/libvar/core
+bodies. Quarter-step requested skills, finite extremes and signed infinities
+retain native one/five clamps and cohort interpolation/cache values. Cached
+rounding, exact cache hits and any-skill fallback retain behavior through safe
+signed endpoints. Invalid NaN/public or non-finite/unrepresentable cached skills
+reject in cold/occupied/reload states without file/heap activity or mutation of
+any cached header/field/string/slot. Both GCC/Clang normal and release fast-math
+sanitizers run the fixture.
+
+
+The interpolation numeric runner links the actual character/source/lexer/libvar/
+core bodies. Non-finite desired/endpoints, equal skills and overflowing endpoint/
+scale arithmetic reject before imports. Invalid fields/derived results reject
+with physical release of the output and any earlier copied strings. Native
+ordinary/extrapolated values and input owners remain intact; compiler
+reassociation may retain a complete mathematically finite zero for extreme
+opposite fields. Missing second-skill fallback returns the existing available
+character. A variadic log interface renders the actual dump, including floating
+skill text. Representation checks and fixture input words use volatile integer
+materialization to prevent release finite-math assumptions from erasing tests.
+Both GCC/Clang normal and release fast-math sanitizers run the fixture.
+
+
+The float getter runner links actual character/source/lexer/libvar/core bodies.
+It compares 9,612 finite result bit patterns against original getter bodies and
+retains signed integer conversion, negative zero, native error fallbacks and
+five defined infinity-bound pairs. NaN bounds and non-finite stored fields reject
+with zero/error in normal and release fast-math builds, preserving complete
+character/string/registry owners without heap imports. Both GCC/Clang sanitizer
+configurations run the fixture.
+
+
+The synonym runner links actual chat/source/lexer/libvar/core bodies with physical
+heap/hunk and file imports. It retains native contexts, list/entry/string order
+and float weights, checks aligned private entries and rebased final hunk pointers,
+and rejects root/included lexical/preprocessor errors before publication.
+Changed second-pass capacities, missing second sources, all eight source factory
+imports, heap staging and final hunk allocation failures retain no partial owners.
+Unrepresentable weights and non-finite aggregate float weights reject. Both
+GCC/Clang normal and release fast-math sanitizer configurations run the fixture.
+
+
+The expression token runner links actual directive/evaluator/source/lexer/libvar/
+character/core bodies. All four hash/dollar result helpers retain 324 native
+spelling/type/sign cohorts with complete magnitude metadata; 284 defined original
+text cohorts also pass the original body. Long magnitudes avoid signed absolute
+value overflow; wide finite floats clamp auxiliary unsigned integers before
+casting, and NaN/infinity results reject. Eight nullable number/sign imports keep
+native queued next-line owners and release uncommitted copies, retaining copy
+factory fatal severity. Public directive flow and real character fields consume
+correct metadata. GCC/Clang normal and release fast-math sanitizers run the fixture.
+
+
+The expression collection runner links actual directive/evaluator/source/lexer/
+macro/character/core bodies. Undefined names, divide-by-zero, malformed operands,
+missing defined names, invalid dollar delimiters and lexical tails release copied
+operand chains before returning failure. Six nullable operand imports retain no
+partial tokens and initialize caller outputs. Real macro expansion failure keeps
+original definition owners, while valid macro/defined values and historical-error
+recovery retain native behavior. GCC/Clang normal and release fast-math sanitizers
+run the fixture.
+
+
+The expression arithmetic runner links actual evaluators/source/lexer/character/
+libvar/core bodies. It compares 5,184 ordinary integer/float calculations, with
+4,536 defined original cases also passing the original body. Signed boundaries,
+division/remainder traps and invalid shifts reject without partial owners. Native
+negative/high-bit left shifts, arithmetic right shift, literal minimum words,
+fractional float division and finite float calculations retain intended results.
+Float mode avoids unused integer arithmetic; double narrowing and non-finite
+intermediates reject before unsafe operations/publication. GCC/Clang normal and
+release fast-math sanitizers run the fixture.
+
+
+The source factory runner links actual unread/indent/directive/source/lexer/
+expression/character/core bodies. Failed unread copies preserve complete prior
+queued token/caller bytes, record native copy-factory severity/source status and
+retry. Failed line lookahead records status without a partial queued owner.
+Conditional push failures preserve prior stack/skip bytes; if/ifdef/ifndef callers
+propagate failure, retaining native next-line token ownership. Else/elif reuse
+complete frames without replacement imports. Failed expressions preserve prior
+frame bytes/skip and subsequent endif recovery; exhausted included scripts reject
+cross-script replacement without touching an enclosing frame. Six pre-review
+proofs reproduce these failures. Real nested else/elif source conditionals and
+unread order pass original goldens. GCC/Clang normal and release
+fast-math sanitizers run the fixture.
+
+The definition runner links real macro/source/expression/lexer/libvar/character
+bodies and physical heap callbacks. Twenty-nine original actual-body proofs expose
+partial new/replacement definitions, external-factory leaks, nullable imports,
+lexical-prefix publication and prior-name parameter expansion. Fourteen malformed
+new/replacement cases preserve complete hash/header/name/token bytes and release
+staged owners. All seven new/replacement imports and nine external imports fail
+cleanly; the native 128-parameter capacity remains and 129 rejects. Original valid
+object/function/replacement/empty-marker/external macros pass separately. GCC and
+Clang run normal and release fast-math checks. Empty macro invocation is a separate
+source-reader defect, retained as outstanding work rather than claimed covered.
+
+The empty-expansion runner links actual source/macro/lexer/libvar/character bodies.
+Ten original-body proofs reproduce false EOF after object/function/empty-argument
+expansion, broken string concatenation, hidden lexical errors, premature included
+EOF, a false direct queue result, rejected complete character fields and unconsumed
+empty-only input. Fixed readers verify actual script EOF, native token/string order,
+unchanged queued bytes/no imports, physical included-script release and complete
+native character publication. Original nonempty object/function goldens remain.
+GCC/Clang run normal and release fast-math sanitizer modes.
+
+The movement-setup runner compiles the complete actual movement implementation,
+actual libvar backend and native brush classification. Forty original-body proofs
+cover both imports of all ten required variables with empty or complete prior
+references. Fixed failures stop setup before publishing references/model bytes,
+retain only complete shared cached owners, retry, and physically release all owners.
+Original default/configured/cached reference identity and brush classifications
+remain. GCC/Clang run normal/release fast-math sanitizers. The full source exposed an
+existing integer-abs-on-float elevator warning during initialization validation.
+The later [distance step](bot-elevator-distance-validation.md) corrects it; the
+current movement fixture compiles without diagnostics in both compiler modes.
+
+The file-comment runner validates actual file/source/include/character imports
+before compression can erase unterminated block comments. Six original-body proofs
+fail, including both native include forms/fallbacks and complete-prefix character
+publication. Two pre-review escaped/single-quote proofs additionally fail; the
+scan matches native compression delimiters exactly to prevent erased suffixes. Malformed files close/release all script/punctuation owners with raw
+line diagnostics; included failures preserve synchronized parent recovery. The
+1,035 valid cases retain native compressed bytes and actual token metadata across
+quotes/escapes/line comments/block lengths/newlines. Raw memory lexer behavior and
+native characters remain. GCC/Clang run normal/release fast-math sanitizers.
+
+The compressed-file EOF runner compiles real file/source/include/conditional and
+lexer bodies with physical ownership. Five original-body proofs expose stale
+nonempty/empty EOF intervals, retained root frames/skip state and active/skipped
+child conditions that survive script release. Fixed EOF updates reclaim exhausted
+child frames/scripts, preserve complete parent frame bytes/skip and recover native
+body/endif/tail token order. Repeated root EOF warns once and retains only complete
+source owners. The original 1,035 compressed-byte/token comparisons and unchanged
+noncompacting source EOF pass. GCC/Clang run normal/release fast-math sanitizers.

@@ -29,6 +29,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  *****************************************************************************/
 
+#include <limits.h>
+#include <float.h>
+
 #ifdef BOTLIB
 #include "../game/q_shared.h"
 #include "../game/botlib.h"				//for the include of be_interface.h
@@ -73,11 +76,22 @@ fielddef_t *FindField(fielddef_t *defs, char *name)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
+static qboolean StructureFloatFinite(const float *value)
+{
+	unsigned int bits;
+	volatile unsigned int representation;
+	Com_Memcpy(&bits, value, sizeof(bits));
+	representation = bits;
+	return (representation & 0x7f800000U) != 0x7f800000U;
+}
+
 qboolean ReadNumber(source_t *source, fielddef_t *fd, void *p)
 {
 	token_t token;
 	int negative = qfalse;
-	long int intval, intmin = 0, intmax = 0;
+	int intval, intmin = 0, intmax = 0;
+	unsigned int word;
+	float value;
 	double floatval;
 
 	if (!PC_ExpectAnyToken(source, &token)) return 0;
@@ -106,6 +120,13 @@ qboolean ReadNumber(source_t *source, fielddef_t *fd, void *p)
 		SourceError(source, "expected number, found %s", token.string);
 		return 0;
 	} //end if
+	if ((fd->type & FT_BOUNDED) &&
+			(!StructureFloatFinite(&fd->floatmin) || !StructureFloatFinite(&fd->floatmax) ||
+			fd->floatmin > fd->floatmax))
+	{
+		SourceError(source, "invalid structure numeric bounds");
+		return 0;
+	}
 	//check for a float value
 	if (token.subtype & TT_FLOAT)
 	{
@@ -114,8 +135,19 @@ qboolean ReadNumber(source_t *source, fielddef_t *fd, void *p)
 			SourceError(source, "unexpected float");
 			return 0;
 		} //end if
+		if (token.floatvalue < -FLT_MAX || token.floatvalue > FLT_MAX)
+		{
+			SourceError(source, "structure float out of range");
+			return 0;
+		}
 		floatval = token.floatvalue;
 		if (negative) floatval = -floatval;
+		value = (float)floatval;
+		if (!StructureFloatFinite(&value))
+		{
+			SourceError(source, "structure float is not finite");
+			return 0;
+		}
 		if (fd->type & FT_BOUNDED)
 		{
 			if (floatval < fd->floatmin || floatval > fd->floatmax)
@@ -124,12 +156,19 @@ qboolean ReadNumber(source_t *source, fielddef_t *fd, void *p)
 				return 0;
 			} //end if
 		} //end if
-		*(float *) p = (float) floatval;
+		*(float *) p = value;
 		return 1;
 	} //end if
 	//
-	intval = token.intvalue;
-	if (negative) intval = -intval;
+	if (token.intvalue > UINT_MAX)
+	{
+		SourceError(source, "structure integer exceeds native token word");
+		return 0;
+	}
+	//Use the native 32-bit signed token word and defined word negation.
+	word = (unsigned int)token.intvalue;
+	if (negative) word = 0U - word;
+	Com_Memcpy(&intval, &word, sizeof(intval));
 	//check bounds
 	if ((fd->type & FT_TYPE) == FT_CHAR)
 	{
@@ -145,8 +184,15 @@ qboolean ReadNumber(source_t *source, fielddef_t *fd, void *p)
 	{
 		if (fd->type & FT_BOUNDED)
 		{
-			intmin = Maximum(intmin, fd->floatmin);
-			intmax = Minimum(intmax, fd->floatmax);
+			double low = Maximum((double)intmin, (double)fd->floatmin);
+			double high = Minimum((double)intmax, (double)fd->floatmax);
+			if (low < INT_MIN || low > INT_MAX || high < INT_MIN || high > INT_MAX)
+			{
+				SourceError(source, "structure integer bounds out of range");
+				return 0;
+			}
+			intmin = (int)low;
+			intmax = (int)high;
 		} //end if
 		if (intval < intmin || intval > intmax)
 		{

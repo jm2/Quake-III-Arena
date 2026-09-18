@@ -45,6 +45,7 @@ typedef struct botlib_globals_s
 	vec3_t goalorigin;
 	int runai;
 #endif
+	int mapready;						//complete map setup survives game VM restart
 } botlib_globals_t;
 
 
@@ -55,3 +56,6 @@ extern int bot_developer;					//true if developer is on
 //
 int Sys_MilliSeconds(void);
 
+
+/* Engine-only status path; the retail BotInitLevelItems export remains void. */
+int BotInitLevelItemsChecked(void);

@@ -78,11 +78,24 @@ typedef struct bot_character_s
 
 bot_character_t *botcharacters[MAX_CLIENTS + 1];
 
-static int BotCharacterFloatFinite(const float *value)
+static unsigned int BotCharacterFloatBits(const float *value)
 {
 	unsigned int bits;
+	volatile unsigned int representation;
 	Com_Memcpy(&bits, value, sizeof(bits));
-	return (bits & 0x7f800000u) != 0x7f800000u;
+	//keep representation checks observable under release finite-math assumptions
+	representation = bits;
+	return representation;
+}
+
+static int BotCharacterFloatFinite(const float *value)
+{
+	return (BotCharacterFloatBits(value) & 0x7f800000u) != 0x7f800000u;
+}
+
+static int BotCharacterFloatNaN(const float *value)
+{
+	return (BotCharacterFloatBits(value) & 0x7fffffffu) > 0x7f800000u;
 }
 
 static int BotCharacterFilePathValid(const char *filename)
@@ -135,7 +148,7 @@ void BotDumpCharacter(bot_character_t *ch)
 	int i;
 
 	Log_Write("%s", ch->filename);
-	Log_Write("skill %d\n", ch->skill);
+	Log_Write("skill %f\n", ch->skill);
 	Log_Write("{\n");
 	for (i = 0; i < MAX_CHARACTERISTICS; i++)
 	{
@@ -487,6 +500,13 @@ int BotLoadCachedCharacter(char *charfile, float skill, int reload)
 #endif //DEBUG
 	if (!BotCharacterFilePathValid(charfile)) return 0;
 
+	if (!BotCharacterFloatFinite(&skill) ||
+			(double) skill + 0.5 < INT_MIN || (double) skill + 0.5 > INT_MAX)
+	{
+		botimport.Print(PRT_ERROR, "invalid cached character skill\n");
+		return 0;
+	} //end if
+
 	//find a free spot for a character
 	for (handle = 1; handle <= MAX_CLIENTS; handle++)
 	{
@@ -620,7 +640,7 @@ int BotInterpolateCharacters(int handle1, int handle2, float desiredskill)
 {
 	bot_character_t *ch1, *ch2, *out;
 	int i, handle;
-	float scale;
+	float scale, numerator, denominator;
 
 	ch1 = BotCharacterFromHandle(handle1);
 	ch2 = BotCharacterFromHandle(handle2);
@@ -632,6 +652,25 @@ int BotInterpolateCharacters(int handle1, int handle2, float desiredskill)
 		if (!botcharacters[handle]) break;
 	} //end for
 	if (handle > MAX_CLIENTS) return 0;
+	if (!BotCharacterFloatFinite(&desiredskill) ||
+			!BotCharacterFloatFinite(&ch1->skill) || !BotCharacterFloatFinite(&ch2->skill))
+	{
+		botimport.Print(PRT_ERROR, "invalid interpolation skill\n");
+		return 0;
+	} //end if
+	numerator = desiredskill - ch1->skill;
+	denominator = ch2->skill - ch1->skill;
+	if (!BotCharacterFloatFinite(&numerator) || !BotCharacterFloatFinite(&denominator) || !denominator)
+	{
+		botimport.Print(PRT_ERROR, "invalid interpolation endpoints\n");
+		return 0;
+	} //end if
+	scale = numerator / denominator;
+	if (!BotCharacterFloatFinite(&scale))
+	{
+		botimport.Print(PRT_ERROR, "interpolation scale out of range\n");
+		return 0;
+	} //end if
 	out = (bot_character_t *) GetClearedMemory(sizeof(bot_character_t) +
 					MAX_CHARACTERISTICS * sizeof(bot_characteristic_t));
 	if (!out)
@@ -642,15 +681,19 @@ int BotInterpolateCharacters(int handle1, int handle2, float desiredskill)
 	out->skill = desiredskill;
 	strcpy(out->filename, ch1->filename);
 
-	scale = (float) (desiredskill - ch1->skill) / (ch2->skill - ch1->skill);
 	for (i = 0; i < MAX_CHARACTERISTICS; i++)
 	{
 		//
 		if (ch1->c[i].type == CT_FLOAT && ch2->c[i].type == CT_FLOAT)
 		{
-			out->c[i].type = CT_FLOAT;
-			out->c[i].value._float = ch1->c[i].value._float +
+			float value;
+			if (!BotCharacterFloatFinite(&ch1->c[i].value._float) ||
+					!BotCharacterFloatFinite(&ch2->c[i].value._float)) goto numericfailure;
+			value = ch1->c[i].value._float +
 								(ch2->c[i].value._float - ch1->c[i].value._float) * scale;
+			if (!BotCharacterFloatFinite(&value)) goto numericfailure;
+			out->c[i].value._float = value;
+			out->c[i].type = CT_FLOAT;
 		} //end if
 		else if (ch1->c[i].type == CT_INTEGER)
 		{
@@ -673,6 +716,12 @@ int BotInterpolateCharacters(int handle1, int handle2, float desiredskill)
 	} //end for
 	botcharacters[handle] = out;
 	return handle;
+
+numericfailure:
+	botimport.Print(PRT_ERROR, "interpolated characteristic out of range\n");
+	BotFreeCharacterStrings(out);
+	FreeMemory(out);
+	return 0;
 } //end of the function BotInterpolateCharacters
 //===========================================================================
 //
@@ -684,6 +733,19 @@ int BotLoadCharacter(char *charfile, float skill)
 {
 	int firstskill, secondskill, handle;
 	if (!BotCharacterFilePathValid(charfile)) return 0;
+
+	if (!BotCharacterFloatFinite(&skill))
+	{
+		unsigned int bits;
+		bits = BotCharacterFloatBits(&skill);
+		if ((bits & 0x7fffffffu) > 0x7f800000u)
+		{
+			botimport.Print(PRT_ERROR, "invalid character skill\n");
+			return 0;
+		} //end if
+		//retain native signed infinity clamps without floating comparisons
+		skill = (bits & 0x80000000u) ? 1.0f : 5.0f;
+	} //end if
 
 	//make sure the skill is in the valid range
 	if (skill < 1.0) skill = 1.0;
@@ -716,6 +778,8 @@ int BotLoadCharacter(char *charfile, float skill)
 		secondskill = BotLoadCharacterSkill(charfile, 5);
 		if (!secondskill) return firstskill;
 	} //end else
+	if (firstskill == secondskill ||
+			botcharacters[firstskill]->skill == botcharacters[secondskill]->skill) return firstskill;
 	//interpolate between the two skills
 	handle = BotInterpolateCharacters(firstskill, secondskill, skill);
 	if (!handle) return 0;
@@ -770,6 +834,11 @@ float Characteristic_Float(int character, int index)
 	//floats are just returned
 	else if (ch->c[index].type == CT_FLOAT)
 	{
+		if (!BotCharacterFloatFinite(&ch->c[index].value._float))
+		{
+			botimport.Print(PRT_ERROR, "characteristic %d is not a finite float\n", index);
+			return 0;
+		} //end if
 		return ch->c[index].value._float;
 	} //end else if
 	//cannot convert a string pointer to a float
@@ -793,9 +862,15 @@ float Characteristic_BFloat(int character, int index, float min, float max)
 
 	ch = BotCharacterFromHandle(character);
 	if (!ch) return 0;
-	if (min > max)
+	if (BotCharacterFloatNaN(&min) || BotCharacterFloatNaN(&max) || min > max)
 	{
 		botimport.Print(PRT_ERROR, "cannot bound characteristic %d between %f and %f\n", index, min, max);
+		return 0;
+	} //end if
+	if (index >= 0 && index < MAX_CHARACTERISTICS && ch->c[index].type == CT_FLOAT &&
+			!BotCharacterFloatFinite(&ch->c[index].value._float))
+	{
+		botimport.Print(PRT_ERROR, "characteristic %d is not a finite bounded float\n", index);
 		return 0;
 	} //end if
 	value = Characteristic_Float(character, index);
