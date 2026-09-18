@@ -2470,147 +2470,130 @@ int BotLoadChatFile(int chatstate, char *chatfile, char *chatname)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-int BotExpandChatMessage(char *outmessage, char *message, unsigned long mcontext,
-							 bot_match_t *match, unsigned long vcontext, int reply)
+// Stage complete expansion before publishing text; retain the legacy flag wrapper.
+static int BotExpandChatMessageChecked(char *output, char *message, unsigned long mcontext,
+		bot_match_t *match, unsigned long vcontext, int reply, int *expanded)
 {
-	int num, len, i, expansion;
-	char *outputbuf, *ptr, *msgptr;
+	int num, digits, i, offset, length;
+	size_t len = 0, bytes;
+	char *ptr, *msgptr, *end;
 	char temp[MAX_MESSAGE_SIZE];
 
-	expansion = qfalse;
+	if (!message || strlen(message) >= MAX_MESSAGE_SIZE) goto invalid;
+	*expanded = qfalse;
 	msgptr = message;
-	outputbuf = outmessage;
-	len = 0;
-	//
-	while(*msgptr)
+	while (*msgptr)
 	{
-		if (*msgptr == ESCAPE_CHAR)
+		if (*msgptr != ESCAPE_CHAR)
 		{
-			msgptr++;
-			switch(*msgptr)
-			{
-				case 'v': //variable
-				{
-					msgptr++;
-					num = 0;
-					while(*msgptr && *msgptr != ESCAPE_CHAR)
-					{
-						num = num * 10 + (*msgptr++) - '0';
-					} //end while
-					//step over the trailing escape char
-					if (*msgptr) msgptr++;
-					if (num > MAX_MATCHVARIABLES)
-					{
-						botimport.Print(PRT_ERROR, "BotConstructChat: message %s variable %d out of range\n", message, num);
-						return qfalse;
-					} //end if
-					if (match->variables[num].offset >= 0)
-					{
-					        assert( match->variables[num].offset >= 0 ); // bk001204
-						ptr = &match->string[ (int) match->variables[num].offset];
-						for (i = 0; i < match->variables[num].length; i++)
-						{
-							temp[i] = ptr[i];
-						} //end for
-						temp[i] = 0;
-						//if it's a reply message
-						if (reply)
-						{
-							//replace the reply synonyms in the variables
-							BotReplaceReplySynonymsSized(temp, vcontext, sizeof(temp));
-						} //end if
-						else 
-						{
-							//replace synonyms in the variable context
-							BotReplaceSynonymsSized(temp, vcontext, sizeof(temp));
-						} //end else
-						//
-						if (len + strlen(temp) >= MAX_MESSAGE_SIZE)
-						{
-							botimport.Print(PRT_ERROR, "BotConstructChat: message %s too long\n", message);
-							return qfalse;
-						} //end if
-						strcpy(&outputbuf[len], temp);
-						len += strlen(temp);
-					} //end if
-					break;
-				} //end case
-				case 'r': //random
-				{
-					msgptr++;
-					for (i = 0; (*msgptr && *msgptr != ESCAPE_CHAR); i++)
-					{
-						temp[i] = *msgptr++;
-					} //end while
-					temp[i] = '\0';
-					//step over the trailing escape char
-					if (*msgptr) msgptr++;
-					//find the random keyword
-					ptr = RandomString(temp);
-					if (!ptr)
-					{
-						botimport.Print(PRT_ERROR, "BotConstructChat: unknown random string %s\n", temp);
-						return qfalse;
-					} //end if
-					if (len + strlen(ptr) >= MAX_MESSAGE_SIZE)
-					{
-						botimport.Print(PRT_ERROR, "BotConstructChat: message \"%s\" too long\n", message);
-						return qfalse;
-					} //end if
-					strcpy(&outputbuf[len], ptr);
-					len += strlen(ptr);
-					expansion = qtrue;
-					break;
-				} //end case
-				default:
-				{
-					botimport.Print(PRT_FATAL, "BotConstructChat: message \"%s\" invalid escape char\n", message);
-					break;
-				} //end default
-			} //end switch
-		} //end if
-		else
+			if (len >= MAX_MESSAGE_SIZE - 1) goto invalid;
+			output[len++] = *msgptr++;
+			continue;
+		}
+		msgptr++;
+		switch (*msgptr++)
 		{
-			outputbuf[len++] = *msgptr++;
-			if (len >= MAX_MESSAGE_SIZE)
-			{
-				botimport.Print(PRT_ERROR, "BotConstructChat: message \"%s\" too long\n", message);
+			case 'v':
+				num = digits = 0;
+				while (*msgptr && *msgptr != ESCAPE_CHAR)
+				{
+					if (*msgptr < '0' || *msgptr > '9' || num * 10 + *msgptr - '0' >= MAX_MATCHVARIABLES)
+						goto invalid;
+					num = num * 10 + *msgptr++ - '0';
+					digits++;
+				}
+				if (!digits || *msgptr != ESCAPE_CHAR || !match) goto invalid;
+				msgptr++;
+				offset = match->variables[num].offset;
+				if (offset < 0) continue;
+				length = match->variables[num].length;
+				end = (char *)memchr(match->string, '\0', sizeof(match->string));
+				if (!end || length < 0 || offset > end - match->string || length > end - match->string - offset)
+					goto invalid;
+				Com_Memcpy(temp, match->string + offset, length);
+				temp[length] = 0;
+				if (reply) BotReplaceReplySynonymsSized(temp, vcontext, sizeof(temp));
+				else BotReplaceSynonymsSized(temp, vcontext, sizeof(temp));
+				ptr = temp;
 				break;
-			} //end if
-		} //end else
-	} //end while
-	outputbuf[len] = '\0';
-	//replace synonyms weighted in the message context
-	BotReplaceWeightedSynonyms(outputbuf, mcontext);
-	//return true if a random was expanded
-	return expansion;
-} //end of the function BotExpandChatMessage
-//===========================================================================
-//
-// Parameter:			-
-// Returns:				-
-// Changes Globals:		-
-//===========================================================================
-void BotConstructChatMessage(bot_chatstate_t *chatstate, char *message, unsigned long mcontext,
-							 bot_match_t *match, unsigned long vcontext, int reply)
-{
-	int i;
-	char srcmessage[MAX_MESSAGE_SIZE];
+			case 'r':
+				for (i = 0; *msgptr && *msgptr != ESCAPE_CHAR; i++)
+				{
+					if (i >= sizeof(temp) - 1) goto invalid;
+					temp[i] = *msgptr++;
+				}
+				if (*msgptr != ESCAPE_CHAR) goto invalid;
+				msgptr++;
+				temp[i] = 0;
+				ptr = RandomString(temp);
+				if (!ptr) goto invalid;
+				*expanded = qtrue;
+				break;
+			default:
+				goto invalid;
+		}
+		bytes = strlen(ptr);
+		if (bytes >= MAX_MESSAGE_SIZE - len) goto invalid;
+		Com_Memcpy(output + len, ptr, bytes);
+		len += bytes;
+	}
+	output[len] = 0;
+	BotReplaceWeightedSynonyms(output, mcontext);
+	return qtrue;
+invalid:
+	botimport.Print(PRT_ERROR, "invalid or excessive encoded chat message\n");
+	return qfalse;
+}
 
+int BotExpandChatMessage(char *outmessage, char *message, unsigned long mcontext,
+		bot_match_t *match, unsigned long vcontext, int reply)
+{
+	char staged[MAX_MESSAGE_SIZE];
+	int expanded;
+
+	if (!outmessage)
+	{
+		botimport.Print(PRT_ERROR, "missing expansion output\n");
+		return qfalse;
+	}
+	if (!BotExpandChatMessageChecked(staged, message, mcontext, match, vcontext, reply, &expanded))
+		return qfalse;
+	strcpy(outmessage, staged);
+	return expanded;
+}
+
+static int BotConstructChatMessageChecked(bot_chatstate_t *chatstate, char *message, unsigned long mcontext,
+		bot_match_t *match, unsigned long vcontext, int reply)
+{
+	int i, expanded;
+	char srcmessage[MAX_MESSAGE_SIZE], staged[MAX_MESSAGE_SIZE];
+
+	if (!chatstate || !message || strlen(message) >= sizeof(srcmessage))
+	{
+		botimport.Print(PRT_ERROR, "invalid construction input\n");
+		return qfalse;
+	}
 	strcpy(srcmessage, message);
 	for (i = 0; i < 10; i++)
 	{
-		if (!BotExpandChatMessage(chatstate->chatmessage, srcmessage, mcontext, match, vcontext, reply))
-		{
-			break;
-		} //end if
-		strcpy(srcmessage, chatstate->chatmessage);
-	} //end for
+		if (!BotExpandChatMessageChecked(staged, srcmessage, mcontext, match, vcontext, reply, &expanded))
+			return qfalse;
+		if (!expanded) break;
+		strcpy(srcmessage, staged);
+	}
 	if (i >= 10)
 	{
 		botimport.Print(PRT_WARNING, "too many expansions in chat message\n");
-		botimport.Print(PRT_WARNING, "%s\n", chatstate->chatmessage);
-	} //end if
+		botimport.Print(PRT_WARNING, "%s\n", staged);
+	}
+	strcpy(chatstate->chatmessage, staged);
+	return qtrue;
+}
+
+void BotConstructChatMessage(bot_chatstate_t *chatstate, char *message, unsigned long mcontext,
+		bot_match_t *match, unsigned long vcontext, int reply)
+{
+	BotConstructChatMessageChecked(chatstate, message, mcontext, match, vcontext, reply);
 } //end of the function BotConstructChatMessage
 //===========================================================================
 // randomly chooses one of the chat message of the given type
@@ -2619,7 +2602,7 @@ void BotConstructChatMessage(bot_chatstate_t *chatstate, char *message, unsigned
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
-char *BotChooseInitialChatMessage(bot_chatstate_t *cs, char *type)
+static bot_chatmessage_t *BotChooseInitialChatLine(bot_chatstate_t *cs, char *type, int *recent)
 {
 	int n, numchatmessages;
 	float besttime;
@@ -2627,6 +2610,7 @@ char *BotChooseInitialChatMessage(bot_chatstate_t *cs, char *type)
 	bot_chatmessage_t *m, *bestchatmessage;
 	bot_chat_t *chat;
 
+	*recent = qfalse;
 	if (!cs || !cs->chat || !type) return NULL;
 	chat = cs->chat;
 	for (t = chat->types; t; t = t->next)
@@ -2652,7 +2636,7 @@ char *BotChooseInitialChatMessage(bot_chatstate_t *cs, char *type)
 						besttime = m->time;
 					} //end if
 				} //end for
-				if (bestchatmessage) return bestchatmessage->chatmessage;
+				if (bestchatmessage) return bestchatmessage;
 			} //end if
 			else //choose a chat message randomly
 			{
@@ -2662,8 +2646,8 @@ char *BotChooseInitialChatMessage(bot_chatstate_t *cs, char *type)
 					if (m->time > AAS_Time()) continue;
 					if (--n < 0)
 					{
-						m->time = AAS_Time() + CHATMESSAGE_RECENTTIME;
-						return m->chatmessage;
+						*recent = qtrue;
+						return m;
 					} //end if
 				} //end for
 			} //end else
@@ -2671,6 +2655,14 @@ char *BotChooseInitialChatMessage(bot_chatstate_t *cs, char *type)
 		} //end if
 	} //end for
 	return NULL;
+}
+
+char *BotChooseInitialChatMessage(bot_chatstate_t *cs, char *type)
+{
+	int recent;
+	bot_chatmessage_t *line = BotChooseInitialChatLine(cs, type, &recent);
+	if (line && recent) line->time = AAS_Time() + CHATMESSAGE_RECENTTIME;
+	return line ? line->chatmessage : NULL;
 } //end of the function BotChooseInitialChatMessage
 //===========================================================================
 //
@@ -2730,7 +2722,8 @@ static int BotAppendChatVariables(bot_match_t *match, char **variables)
 
 void BotInitialChat(int chatstate, char *type, int mcontext, char *var0, char *var1, char *var2, char *var3, char *var4, char *var5, char *var6, char *var7)
 {
-	char *message;
+	bot_chatmessage_t *line;
+	int recent;
 	char *variables[MAX_MATCHVARIABLES] = { var0, var1, var2, var3, var4, var5, var6, var7 };
 	bot_match_t match;
 	bot_chatstate_t *cs;
@@ -2742,9 +2735,9 @@ void BotInitialChat(int chatstate, char *type, int mcontext, char *var0, char *v
 	Com_Memset(&match, 0, sizeof(match));
 	if (!BotAppendChatVariables(&match, variables)) return;
 	//choose a chat message randomly of the given type
-	message = BotChooseInitialChatMessage(cs, type);
+	line = BotChooseInitialChatLine(cs, type, &recent);
 	//if there's no message of the given type
-	if (!message)
+	if (!line)
 	{
 #ifdef DEBUG
 		botimport.Print(PRT_MESSAGE, "no chat messages of type %s\n", type);
@@ -2753,7 +2746,8 @@ void BotInitialChat(int chatstate, char *type, int mcontext, char *var0, char *v
 	} //end if
 	//
  	//
-	BotConstructChatMessage(cs, message, mcontext, &match, 0, qfalse);
+	if (!BotConstructChatMessageChecked(cs, line->chatmessage, mcontext, &match, 0, qfalse)) return;
+	if (recent) line->time = AAS_Time() + CHATMESSAGE_RECENTTIME;
 } //end of the function BotInitialChat
 //===========================================================================
 //
@@ -2897,15 +2891,17 @@ int BotReplyChat(int chatstate, char *message, int mcontext, int vcontext, char 
 		{
 			for (m = bestrchat->firstchatmessage; m; m = m->next)
 			{
-				BotConstructChatMessage(cs, m->chatmessage, mcontext, &bestmatch, vcontext, qtrue);
+				if (!BotConstructChatMessageChecked(cs, m->chatmessage, mcontext, &bestmatch, vcontext, qtrue))
+					return qfalse;
 				BotRemoveTildes(cs->chatmessage);
 				botimport.Print(PRT_MESSAGE, "%s\n", cs->chatmessage);
 			} //end if
 		} //end if
 		else
 		{
+			if (!BotConstructChatMessageChecked(cs, bestchatmessage->chatmessage, mcontext, &bestmatch, vcontext, qtrue))
+				return qfalse;
 			bestchatmessage->time = AAS_Time() + CHATMESSAGE_RECENTTIME;
-			BotConstructChatMessage(cs, bestchatmessage->chatmessage, mcontext, &bestmatch, vcontext, qtrue);
 		} //end else
 		return qtrue;
 	} //end if
