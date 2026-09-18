@@ -98,7 +98,7 @@ R_ColorShiftLightingBytes
 
 ===============
 */
-static	void R_ColorShiftLightingBytes( byte in[4], byte out[4] ) {
+static void R_ColorShiftLightingRGB( const byte in[3], byte out[4] ) {
 	int		shift, r, g, b;
 
 	// shift the color data based on overbright range
@@ -123,7 +123,14 @@ static	void R_ColorShiftLightingBytes( byte in[4], byte out[4] ) {
 	out[0] = r;
 	out[1] = g;
 	out[2] = b;
-	out[3] = in[3];
+	out[3] = 255;
+}
+
+/* Geometry colors include alpha; RGB lightmap samples do not. Preserve aliases. */
+static void R_ColorShiftLightingBytes( const byte in[4], byte out[4] ) {
+	byte alpha = in[3];
+	R_ColorShiftLightingRGB(in,out);
+	out[3] = alpha;
 }
 
 /*
@@ -135,14 +142,19 @@ R_LoadLightmaps
 #define	LIGHTMAP_SIZE	128
 static	void R_LoadLightmaps( lump_t *l ) {
 	byte		*buf, *buf_p;
-	int			len;
+	int			len, sourceCount;
 	MAC_STATIC byte		image[LIGHTMAP_SIZE*LIGHTMAP_SIZE*4];
 	int			i, j;
 	float maxIntensity = 0;
 	double sumIntensity = 0;
 
     len = l->filelen;
+	if ( len < 0 || len % (LIGHTMAP_SIZE * LIGHTMAP_SIZE * 3) ) {
+		ri.Error(ERR_DROP,"R_LoadLightmaps: incomplete RGB lightmap records");
+		return;
+	}
 	if ( !len ) {
+		tr.numLightmaps = 0;
 		return;
 	}
 	buf = fileBase + l->fileofs;
@@ -151,7 +163,8 @@ static	void R_LoadLightmaps( lump_t *l ) {
 	R_SyncRenderThread();
 
 	// create all the lightmaps
-	tr.numLightmaps = len / (LIGHTMAP_SIZE * LIGHTMAP_SIZE * 3);
+	sourceCount = len / (LIGHTMAP_SIZE * LIGHTMAP_SIZE * 3);
+	tr.numLightmaps = sourceCount;
 	if ( tr.numLightmaps == 1 ) {
 		//FIXME: HACK: maps with only one lightmap turn up fullbright for some reason.
 		//this avoids this, but isn't the correct solution.
@@ -168,7 +181,8 @@ static	void R_LoadLightmaps( lump_t *l ) {
 
 	for ( i = 0 ; i < tr.numLightmaps ; i++ ) {
 		// expand the 24 bit on-disk to 32 bit
-		buf_p = buf + i * LIGHTMAP_SIZE*LIGHTMAP_SIZE * 3;
+		/* Keep the legacy second texture for a single source by reusing that source. */
+		buf_p = buf + (i < sourceCount ? i : 0) * LIGHTMAP_SIZE*LIGHTMAP_SIZE * 3;
 
 		if ( r_lightmap->integer == 2 )
 		{	// color code by intensity as development tool	(FIXME: check range)
@@ -201,7 +215,7 @@ static	void R_LoadLightmaps( lump_t *l ) {
 			}
 		} else {
 			for ( j = 0 ; j < LIGHTMAP_SIZE * LIGHTMAP_SIZE; j++ ) {
-				R_ColorShiftLightingBytes( &buf_p[j*3], &image[j*4] );
+				R_ColorShiftLightingRGB( &buf_p[j*3], &image[j*4] );
 				image[j*4+3] = 255;
 			}
 		}

@@ -279,6 +279,7 @@ implementation or check, without implying issue completion.
   - [x] Shared collision/renderer header and lump-layout preflight has
         [host/build evidence](bsp-header-validation.md).
   - [x] Collision/material references have [host/build evidence](bsp-reference-validation.md).
+  - [x] Exact RGB and duplicate lightmap uploads have [host/build evidence](bsp-lightmap-validation.md).
   - [ ] Finish remaining geometry references, graph/geometry checks and full transactional
         loading, then deferred retail/PPC map acceptance.
 - [ ] [#46 — shader/skin/font fixed limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
