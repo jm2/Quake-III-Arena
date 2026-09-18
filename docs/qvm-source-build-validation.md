@@ -7,7 +7,7 @@ QVM modules. These dependencies also prevent validating source modules alongside
 commercial 1.32c retail QVM compatibility.
 
 Use existing Q_strrchr and Q_stricmp helpers, compile/link cg_particles in both
-client batch recipes/manifests, and route existing UI diagnostic content through
+client batch/shell recipes and manifests, and route existing UI diagnostic content through
 the existing trap_Print/va console service. Keep path stripping semantics, ASCII animation names, menu behavior,
 retail syscall tables, bytecode format and protocol. Native diagnostics now use the
 same console service as QVM diagnostics. Static/QVM module selection remains a
@@ -27,6 +27,9 @@ Compile every C entry using -DQ3_VM -S -Wf-target=bytecode -Wf-g and the module/
 UI include directories, adding -DMISSIONPACK for Team Arena. Copy syscall assembly
 and link the exact source order from game/game_ta, cgame/cgame_ta, q3_ui/q3_ui and
 ui/ui manifests. Resolve shared game/UI source paths as their batch recipes do.
+Both client recipes define CGAME, which is also required when compiling their
+shared UI source. Native syscall C wrappers are excluded from QVM recipes; each
+manifest links the existing syscall assembly, using portable forward slash paths.
 All six complete products link with zero assembler errors and retail 0x12721444
 QVM headers. Historical legacy compiler warnings for void-pointer NULL assignments
 to UI function pointers remain; PPC compilation emits no warnings.
@@ -39,9 +42,16 @@ are build evidence, not execution of retail assets or target acceptance.
 | game | 470,136 | `e255b05d6c11ad006f6025d349f39bd709780e0f01c1d6ef2e1659a06b7d5812` |
 | game_ta | 552,116 | `2eb77600eee86266bb76ff992a898f3e1c023f047ad29de00ee6620896a89215` |
 | cgame | 325,620 | `3a84375d417d5f8c46cd217519bdd41618a523b6a22ab33ed2e5e9c7468baca7` |
-| cgame_ta | 489,804 | `3e523a757a613969670aa7dd5db73210bb14e08d1a70317e85698620698d2968` |
+| cgame_ta | 489,804 | `efe068bf875c0b870c218a42cb73e74f85893a185c79254782d1d28a1fc98e07` |
 | q3_ui | 275,276 | `f9508ee96bb237f67bf7e6e4284be26c63e1f67eecee6efbc77abc648351aa0d` |
 | ui | 284,848 | `3237aae43e6541729faa332b98e02a81dc0ca79434eb6a5a8dd3e29fa0077304` |
+
+Five actual Unix recipes (game/game_ta, cgame/cgame_ta and q3_ui) also run
+from clean module directories with the 32-bit tools on PATH. Only the assembler
+output destination is overridden into the owned scratch tree. Compiler logs have
+no errors; assemblers report zero errors and all five outputs have valid QVM
+headers. Both client recipes produce cg_particles.asm. These build-input-only
+corrections leave the recorded final PPC artifacts unchanged.
 
 Existing actual q_shared regressions pass Clang ASan/UBSan and optimized GCC,
 including ordinary/in-place extension removal, dots before slashes and truncated

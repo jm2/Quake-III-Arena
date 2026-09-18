@@ -1,6 +1,6 @@
 -o "\quake3\missionpack\vm\cgame"
 cg_main
-..\cg_syscalls
+../cg_syscalls
 cg_consolecmds
 cg_draw
 cg_drawtools
