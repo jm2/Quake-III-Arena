@@ -1108,9 +1108,12 @@ static int unzlocal_getShort (FILE* fin, uLong *pX)
 {
 	short	v;
 
-	fread( &v, sizeof(v), 1, fin );
+	if (fread( &v, sizeof(v), 1, fin ) != 1) {
+		*pX = 0;
+		return UNZ_ERRNO;
+	}
 
-	*pX = LittleShort( v);
+	*pX = (unsigned short)LittleShort( v);
 	return UNZ_OK;
 
 /*
@@ -1137,9 +1140,12 @@ static int unzlocal_getLong (FILE *fin, uLong *pX)
 {
 	int		v;
 
-	fread( &v, sizeof(v), 1, fin );
+	if (fread( &v, sizeof(v), 1, fin ) != 1) {
+		*pX = 0;
+		return UNZ_ERRNO;
+	}
 
-	*pX = LittleLong( v);
+	*pX = (unsigned int)LittleLong( v);
 	return UNZ_OK;
 
 /*
@@ -1714,7 +1720,7 @@ extern int unzSetCurrentFileInfoPosition (unzFile file, unsigned long pos )
 											   &s->cur_file_info_internal,
 											   NULL,0,NULL,0,NULL,0);
 	s->current_file_ok = (err == UNZ_OK);
-	return UNZ_OK;
+	return err;
 }
 
 /*

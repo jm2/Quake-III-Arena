@@ -253,6 +253,8 @@ implementation or check, without implying issue completion.
         [native behavior checks](fs-buffer-bounds-validation.md).
   - [x] Close/tell/length/write/flush ownership and exclusive handle bounds
         have actual [FILE/ZIP checks](fs-handle-api-validation.md).
+  - [x] Exact unsigned metadata I/O and genuine selected-entry error
+        propagation have [real-file checks](unzip-metadata-validation.md).
   - [ ] Complete remaining handle/read/metadata and retail acceptance paths.
 - [ ] [#37 — connection/netchan lacks challenge binding](https://github.com/jm2/Quake-III-Arena/issues/37)
   - [x] User selected commercial 1.32c compatibility in the style of
