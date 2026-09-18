@@ -28,8 +28,17 @@ Single-source uploads match across every pixel in both textures. Image
 creation copies/inspects actual RGBA bytes synchronously, matching the native
 factory's ownership contract; no GL/window/device behavior is claimed.
 
-All three BSP fixtures and nine Python checks pass. Both Retro68 products
-will be recorded after integrating the corrected reference preflight. The host
+All three BSP fixtures, nine Python checks and Bash syntax pass. Both
+Retro68 products build without compiler diagnostics and validate as PPC PEFs
+with master `4fd62bd` and the corrected reference preflight integrated.
+Temporary loader libraries are described in [loading evidence](qvm-loading-validation.md).
+
+| Product | PEF bytes | SHA-256 |
+| --- | ---: | --- |
+| Quake3 | 3,712,245 | `0518eafed1c8bb222485ae4d7653585e8394242ad0e66db2c32fb4f700a323a7` |
+| Quake3_TeamArena | 3,860,819 | `185b8c294521801a5fb1072b9496c479f66914a9a253b49ad6f750cb522849d8` |
+
+The host
 fixture reports the existing face-allocation pointer-to-int warning in an
 unused legacy function; the geometry follow-up will replace that expression.
 
