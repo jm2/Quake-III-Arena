@@ -31,6 +31,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "../game/q_shared.h"
 #include "l_memory.h"
+#include <limits.h>
+#include <float.h>
 #include "l_libvar.h"
 #include "l_script.h"
 #include "l_precomp.h"
@@ -582,16 +584,45 @@ void BotDumpSynonymList(bot_synonymlist_t *synlist)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
+/* Count/claim aligned private entries before advancing either parse pass. */
+static int BotSynonymReserve(int *used, int bytes, int alignment, int capacity,
+		char *block, char **entry)
+{
+	int padding = (alignment - *used % alignment) % alignment;
+	if (bytes < 0 || padding > INT_MAX - *used ||
+			bytes > INT_MAX - *used - padding) return qfalse;
+	if (*used + padding + bytes > capacity) return qfalse;
+	*used += padding;
+	if (block) *entry = block + *used;
+	*used += bytes;
+	return qtrue;
+}
+
+static int BotSynonymFloatFinite(const float *value)
+{
+	unsigned int bits;
+	volatile unsigned int representation;
+	Com_Memcpy(&bits, value, sizeof(bits));
+	representation = bits;
+	return (representation & 0x7f800000u) != 0x7f800000u;
+}
+
 bot_synonymlist_t *BotLoadSynonyms(char *filename)
 {
-	int pass, size, contextlevel, numsynonyms;
+	int pass, size, used, contextlevel, numsynonyms, stringsize;
+	float weight, totalweight;
 	unsigned long int context, contextstack[32];
-	char *ptr = NULL;
-	source_t *source;
+	char *ptr = NULL, *staged = NULL, *published;
+	source_t *source = NULL;
 	token_t token;
 	bot_synonymlist_t *synlist, *lastsyn, *syn;
 	bot_synonym_t *synonym, *lastsynonym;
 
+	if (!filename || !*filename)
+	{
+		botimport.Print(PRT_ERROR, "missing synonym filename\n");
+		return NULL;
+	} //end if
 	size = 0;
 	synlist = NULL; //make compiler happy
 	syn = NULL; //make compiler happy
@@ -600,14 +631,23 @@ bot_synonymlist_t *BotLoadSynonyms(char *filename)
 	for (pass = 0; pass < 2; pass++)
 	{
 		//
-		if (pass && size) ptr = (char *) GetClearedHunkMemory(size);
+		if (pass && size)
+		{
+			staged = (char *) GetClearedMemory(size);
+			if (!staged)
+			{
+				botimport.Print(PRT_ERROR, "could not stage synonyms\n");
+				return NULL;
+			} //end if
+		} //end if
+		used = 0;
 		//
 		PC_SetBaseFolder(BOTFILESBASEFOLDER);
 		source = LoadSourceFile(filename);
 		if (!source)
 		{
 			botimport.Print(PRT_ERROR, "counldn't load %s\n", filename);
-			return NULL;
+			goto failed;
 		} //end if
 		//
 		context = 0;
@@ -625,13 +665,11 @@ bot_synonymlist_t *BotLoadSynonyms(char *filename)
 				if (contextlevel >= 32)
 				{
 					SourceError(source, "more than 32 context levels");
-					FreeSource(source);
-					return NULL;
+					goto failed;
 				} //end if
 				if (!PC_ExpectTokenString(source, "{"))
 				{
-					FreeSource(source);
-					return NULL;
+					goto failed;
 				} //end if
 			} //end if
 			else if (token.type == TT_PUNCTUATION)
@@ -642,18 +680,22 @@ bot_synonymlist_t *BotLoadSynonyms(char *filename)
 					if (contextlevel < 0)
 					{
 						SourceError(source, "too many }");
-						FreeSource(source);
-						return NULL;
+						goto failed;
 					} //end if
 					context &= ~contextstack[contextlevel];
 				} //end if
 				else if (!strcmp(token.string, "["))
 				{
-					size += sizeof(bot_synonymlist_t);
+					if (!BotSynonymReserve(&used, sizeof(bot_synonymlist_t), sizeof(void *),
+							pass ? size : INT_MAX, staged, &ptr))
+					{
+						SourceError(source, "synonym list exceeds measured capacity");
+						goto failed;
+					} //end if
+					totalweight = 0;
 					if (pass)
 					{
 						syn = (bot_synonymlist_t *) ptr;
-						ptr += sizeof(bot_synonymlist_t);
 						syn->context = context;
 						syn->firstsynonym = NULL;
 						syn->next = NULL;
@@ -668,23 +710,34 @@ bot_synonymlist_t *BotLoadSynonyms(char *filename)
 						if (!PC_ExpectTokenString(source, "(") ||
 							!PC_ExpectTokenType(source, TT_STRING, 0, &token))
 						{
-							FreeSource(source);
-							return NULL;
+							goto failed;
 						} //end if
 						StripDoubleQuotes(token.string);
 						if (strlen(token.string) <= 0)
 						{
 							SourceError(source, "empty string", token.string);
-							FreeSource(source);
-							return NULL;
+							goto failed;
 						} //end if
-						size += sizeof(bot_synonym_t) + strlen(token.string) + 1;
+						stringsize = (int)strlen(token.string) + 1;
+						if (!BotSynonymReserve(&used, sizeof(bot_synonym_t), sizeof(void *),
+								pass ? size : INT_MAX, staged, &ptr))
+						{
+							SourceError(source, "synonym exceeds measured capacity");
+							goto failed;
+						} //end if
 						if (pass)
 						{
 							synonym = (bot_synonym_t *) ptr;
-							ptr += sizeof(bot_synonym_t);
+						} //end if
+						if (!BotSynonymReserve(&used, stringsize, 1,
+								pass ? size : INT_MAX, staged, &ptr))
+						{
+							SourceError(source, "synonym string exceeds measured capacity");
+							goto failed;
+						} //end if
+						if (pass)
+						{
 							synonym->string = ptr;
-							ptr += strlen(token.string) + 1;
 							strcpy(synonym->string, token.string);
 							//
 							if (lastsynonym) lastsynonym->next = synonym;
@@ -696,50 +749,93 @@ bot_synonymlist_t *BotLoadSynonyms(char *filename)
 							!PC_ExpectTokenType(source, TT_NUMBER, 0, &token) ||
 							!PC_ExpectTokenString(source, ")"))
 						{
-							FreeSource(source);
-							return NULL;
+							goto failed;
+						} //end if
+						if (!(token.floatvalue >= -FLT_MAX && token.floatvalue <= FLT_MAX))
+						{
+							SourceError(source, "synonym weight is not representable");
+							goto failed;
+						} //end if
+						weight = (float)token.floatvalue;
+						totalweight += weight;
+						if (!BotSynonymFloatFinite(&weight) || !BotSynonymFloatFinite(&totalweight))
+						{
+							SourceError(source, "synonym weight is not finite");
+							goto failed;
 						} //end if
 						if (pass)
 						{
-							synonym->weight = token.floatvalue;
-							syn->totalweight += synonym->weight;
+							synonym->weight = weight;
+							syn->totalweight = totalweight;
 						} //end if
 						if (PC_CheckTokenString(source, "]")) break;
 						if (!PC_ExpectTokenString(source, ","))
 						{
-							FreeSource(source);
-							return NULL;
+							goto failed;
 						} //end if
 					} //end while
 					if (numsynonyms < 2)
 					{
 						SourceError(source, "synonym must have at least two entries\n");
-						FreeSource(source);
-						return NULL;
+						goto failed;
 					} //end if
 				} //end else
 				else
 				{
 					SourceError(source, "unexpected %s", token.string);
-					FreeSource(source);
-					return NULL;
+					goto failed;
 				} //end if
 			} //end else if
 		} //end while
 		//
-		FreeSource(source);
-		//
 		if (contextlevel > 0)
 		{
 			SourceError(source, "missing }");
-			return NULL;
+			goto failed;
 		} //end if
+		if (PC_SourceHasError(source)) goto failed;
+		FreeSource(source);
+		source = NULL;
+		if (!pass) size = used;
+		else if (used != size)
+		{
+			botimport.Print(PRT_ERROR, "synonyms changed between parse passes\n");
+			goto failed;
+		} //end else if
 	} //end for
+	if (size)
+	{
+		published = (char *) GetClearedHunkMemory(size);
+		if (!published)
+		{
+			botimport.Print(PRT_ERROR, "could not publish synonyms\n");
+			goto failed;
+		} //end if
+		Com_Memcpy(published, staged, size);
+		for (syn = synlist; syn; syn = syn->next)
+		{
+			bot_synonymlist_t *out = (bot_synonymlist_t *)(published + ((char *)syn - staged));
+			out->next = syn->next ? (bot_synonymlist_t *)(published + ((char *)syn->next - staged)) : NULL;
+			out->firstsynonym = (bot_synonym_t *)(published + ((char *)syn->firstsynonym - staged));
+			for (synonym = syn->firstsynonym; synonym; synonym = synonym->next)
+			{
+				bot_synonym_t *entry = (bot_synonym_t *)(published + ((char *)synonym - staged));
+				entry->next = synonym->next ? (bot_synonym_t *)(published + ((char *)synonym->next - staged)) : NULL;
+				entry->string = published + (synonym->string - staged);
+			} //end for
+		} //end for
+		synlist = (bot_synonymlist_t *)(published + ((char *)synlist - staged));
+		FreeMemory(staged);
+	} //end if
 	botimport.Print(PRT_MESSAGE, "loaded %s\n", filename);
 	//
 	//BotDumpSynonymList(synlist);
 	//
 	return synlist;
+failed:
+	if (source) FreeSource(source);
+	if (staged) FreeMemory(staged);
+	return NULL;
 } //end of the function BotLoadSynonyms
 //===========================================================================
 // replace all the synonyms in the string

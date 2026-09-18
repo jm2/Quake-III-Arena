@@ -680,3 +680,13 @@ five defined infinity-bound pairs. NaN bounds and non-finite stored fields rejec
 with zero/error in normal and release fast-math builds, preserving complete
 character/string/registry owners without heap imports. Both GCC/Clang sanitizer
 configurations run the fixture.
+
+
+The synonym runner links actual chat/source/lexer/libvar/core bodies with physical
+heap/hunk and file imports. It retains native contexts, list/entry/string order
+and float weights, checks aligned private entries and rebased final hunk pointers,
+and rejects root/included lexical/preprocessor errors before publication.
+Changed second-pass capacities, missing second sources, all eight source factory
+imports, heap staging and final hunk allocation failures retain no partial owners.
+Unrepresentable weights and non-finite aggregate float weights reject. Both
+GCC/Clang normal and release fast-math sanitizer configurations run the fixture.

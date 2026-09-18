@@ -395,6 +395,11 @@ QVMs while any P0 item is open.
         bounds while retaining exact finite clamping, signed integer conversion,
         negative zero and defined native infinity-bound behavior;
         see [float getter evidence](bot-character-float-getter-validation.md).
+  - [x] Synonym loaders retain source diagnostics until validation, check aligned
+        measured capacity in both passes, stage nullable writes in heap memory
+        and publish/rebase one complete native hunk owner; invalid source/weight/
+        changed-capacity failures release all staged owners;
+        see [synonym evidence](bot-synonym-validation.md).
   - [ ] Finish expression bounds, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
