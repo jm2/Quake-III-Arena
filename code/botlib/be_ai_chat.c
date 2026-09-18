@@ -449,6 +449,11 @@ void BotQueueConsoleMessage(int chatstate, int type, char *message)
 	cs = BotChatStateFromHandle(chatstate);
 	if (!cs) return;
 
+	if (!message)
+	{
+		botimport.Print(PRT_ERROR, "missing console message input\n");
+		return;
+	}
 	m = AllocConsoleMessage();
 	if (!m)
 	{
@@ -460,7 +465,7 @@ void BotQueueConsoleMessage(int chatstate, int type, char *message)
 	m->handle = cs->handle;
 	m->time = AAS_Time();
 	m->type = type;
-	strncpy(m->message, message, MAX_MESSAGE_SIZE);
+	Q_strncpyz(m->message, message, sizeof(m->message));
 	m->next = NULL;
 	if (cs->lastmessage)
 	{
@@ -490,6 +495,11 @@ int BotNextConsoleMessage(int chatstate, bot_consolemessage_t *cm)
 	if (!cs) return 0;
 	if (cs->firstmessage)
 	{
+		if (!cm)
+		{
+			botimport.Print(PRT_ERROR, "missing console message output\n");
+			return 0;
+		}
 		Com_Memcpy(cm, cs->firstmessage, sizeof(bot_consolemessage_t));
 		cm->next = cm->prev = NULL;
 		return cm->handle;
@@ -1643,6 +1653,11 @@ int BotFindMatch(char *str, bot_match_t *match, unsigned long int context)
 	int i;
 	bot_matchtemplate_t *ms;
 
+	if (!str || !match)
+	{
+		botimport.Print(PRT_ERROR, "missing match input/output\n");
+		return qfalse;
+	}
 	Q_strncpyz(match->string, str, sizeof(match->string));
 	//remove any trailing enters
 	while(strlen(match->string) &&
@@ -3025,6 +3040,11 @@ void BotGetChatMessage(int chatstate, char *buf, int size)
 	cs = BotChatStateFromHandle(chatstate);
 	if (!cs) return;
 
+	if (!buf || size < 1)
+	{
+		botimport.Print(PRT_ERROR, "invalid chat message output\n");
+		return;
+	}
 	BotRemoveTildes(cs->chatmessage);
 	strncpy(buf, cs->chatmessage, size-1);
 	buf[size-1] = '\0';
@@ -3062,6 +3082,11 @@ void BotSetChatName(int chatstate, char *name, int client)
 
 	cs = BotChatStateFromHandle(chatstate);
 	if (!cs) return;
+	if (!name)
+	{
+		botimport.Print(PRT_ERROR, "missing chat name input\n");
+		return;
+	}
 	cs->client = client;
 	Com_Memset(cs->name, 0, sizeof(cs->name));
 	strncpy(cs->name, name, sizeof(cs->name));

@@ -514,6 +514,10 @@ QVMs while any P0 item is open.
         dereference or arena use; chat setup propagates failure
         before dictionary mutation, preserving the void helper and native values;
         see [console pool evidence](bot-chat-pool-validation.md).
+  - [x] Public chat queue text reserves its native NUL terminator; missing
+        input/output/name and nonpositive chat output sizes reject before prior
+        state changes, preserving valid FIFO/property/match/output behavior;
+        see [chat API evidence](bot-chat-api-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
