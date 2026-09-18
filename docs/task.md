@@ -469,6 +469,13 @@ QVMs while any P0 item is open.
         config/weight references before item parsing/publication; failed imports
         retain prior goal payload and successful replacement releases its logical
         record; see [goal evidence](bot-goal-setup-validation.md).
+  - [x] Level-item pool validates native count/cost, stages complete free links
+        before heap/list replacement and propagates failures before public map
+        information reset/map-API success; game load/setup failures disable bot
+        creation/frames until success while human initialization continues. Engine
+        readiness survives game VM resets through an existing syscall query. Retail
+        void ABI, prior pool bytes and native positive counts remain;
+        see [pool evidence](bot-level-pool-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 

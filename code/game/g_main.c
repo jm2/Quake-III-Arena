@@ -499,9 +499,11 @@ void G_InitGame( int levelTime, int randomSeed, int restart ) {
 	}
 
 	if ( trap_Cvar_VariableIntegerValue( "bot_enable" ) ) {
-		BotAISetup( restart );
-		BotAILoadMap( restart );
-		G_InitBots( restart );
+		if (BotAISetup( restart ) && BotAILoadMap( restart )) {
+			G_InitBots( restart );
+		} else {
+			G_Printf( "WARNING: Bot initialization failed; bots disabled for this map.\n" );
+		}
 	}
 
 	G_RemapTeamShaders();

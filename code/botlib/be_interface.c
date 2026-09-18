@@ -176,6 +176,7 @@ int Export_BotLibSetup(void)
 int Export_BotLibShutdown(void)
 {
 	if (!BotLibSetup("BotLibShutdown")) return BLERR_LIBRARYNOTSETUP;
+	botlibglobals.mapready = qfalse;
 #ifndef DEMO
 	//DumpFileCRCs();
 #endif //DEMO
@@ -231,7 +232,11 @@ int Export_BotLibVarGet(char *var_name, char *value, int size)
 {
 	char *varvalue;
 
-	varvalue = LibVarGetString(var_name);
+	// Engine-owned status; query through the existing retail variable syscall.
+	if (!strcmp(var_name, "botlib_mapready"))
+		varvalue = botlibglobals.botlibsetup && botlibglobals.mapready ? "1" : "0";
+	else
+		varvalue = LibVarGetString(var_name);
 	strncpy(value, varvalue, size-1);
 	value[size-1] = '\0';
 	return BLERR_NOERROR;
@@ -260,6 +265,7 @@ int Export_BotLibLoadMap(const char *mapname)
 #endif
 	int errnum;
 
+	botlibglobals.mapready = qfalse;
 	if (!BotLibSetup("BotLoadMap")) return BLERR_LIBRARYNOTSETUP;
 	//
 	botimport.Print(PRT_MESSAGE, "------------ Map Loading ------------\n");
@@ -267,8 +273,10 @@ int Export_BotLibLoadMap(const char *mapname)
 	errnum = AAS_LoadMap(mapname);
 	if (errnum != BLERR_NOERROR) return errnum;
 	//initialize the items in the level
-	BotInitLevelItems();		//be_ai_goal.h
+	errnum = BotInitLevelItemsChecked();
+	if (errnum != BLERR_NOERROR) return errnum;
 	BotSetBrushModelTypes();	//be_ai_move.h
+	botlibglobals.mapready = qtrue;
 	//
 	botimport.Print(PRT_MESSAGE, "-------------------------------------\n");
 #ifdef DEBUG
