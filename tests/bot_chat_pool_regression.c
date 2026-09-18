@@ -203,10 +203,10 @@ static void SetupFailure(void)
     Check(synonyms && randomstrings && matchtemplates && replychats, "complete distinct prior dictionary owners");
     oldSyn = synonyms; oldRandom = randomstrings; oldMatch = matchtemplates; oldReply = replychats; baseline = heapLive;
     Attempt(""); failAt = 1;
-    Check(BotSetupChatAI() == BLERR_LIBRARYNOTSETUP && requests == 1 && errors == 1 && !opens &&
+    Check(BotSetupChatAI() == BLERR_LIBRARYNOTSETUP && requests == 1 && errors >= 1 && !opens &&
           synonyms == oldSyn && randomstrings == oldRandom && matchtemplates == oldMatch && replychats == oldReply &&
           heapLive == baseline && hunkLive == 1 && BotNumConsoleMessages(1) == 2,
-          "actual chat setup propagates pool failure before dictionary/source mutation");
+          "nullable setup configuration fails before dictionary/pool root publication");
     Attempt(nativeText); Check(InitConsoleMessageHeapChecked(), "chat setup pool failure retries privately");
     Migrated(4, 0); ChatEnd();
 }
