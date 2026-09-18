@@ -42,8 +42,8 @@ validation with the temporary libraries in [loading evidence](qvm-loading-valida
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,682,175 | `2294425e69d93459e628bd3bd31d90d8d355b0d27543be852cc779354f6eecd2` |
-| Quake3_TeamArena | 3,830,749 | `ea8890808fa24150ad6272e1c38ae9fc04cbdf91946fa2fa00d7200bebbbf325` |
+| Quake3 | 3,690,527 | `2517744e3f67f256d239af97aaf52ba413533782a89e356cfce0b8c085a1bbd9` |
+| Quake3_TeamArena | 3,839,101 | `e2e9015cb2c86e8ee9939d075396ecfa325530617cbc0a56a79b424b0da79480` |
 
 ## Remaining acceptance
 
@@ -53,7 +53,7 @@ establish complete decoder safety. Actual retail 1.32c and Mac OS 9 playback,
 including texture/image quality and performance, remain deferred. #14 still
 tracks the intro/idlogo bypass.
 
-After integrating the stream PR with reviewed master through #64/#68, both
+After integrating the stream PR with reviewed master through #69/#68, both
 RoQ fixtures, eight Python tests and both Mac builds pass. The table records
 these integrated artifacts; the CI workflow retains every QVM/RoQ runner.
 

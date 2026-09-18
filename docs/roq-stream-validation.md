@@ -47,8 +47,8 @@ libraries documented in [loading evidence](qvm-loading-validation.md).
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,686,293 | `c13fb70ebe374686e19291bc856f661cf63a6a522974ceddbcb1c1a2fd6d20bb` |
-| Quake3_TeamArena | 3,834,867 | `7a1940aff74204b5326c7528172a317e66079e31a112fc26f29c18694531ed93` |
+| Quake3 | 3,690,549 | `68dd309ea0b33b701e1b0f5968b0252e99f030f14c204fb78efb21cb324aa8a0` |
+| Quake3_TeamArena | 3,839,123 | `ca86b2f366e1a2a86cfd5d6af857de751ab8ee36defbfdda8d0e98289d6cb360` |
 
 ## Remaining acceptance
 
@@ -60,8 +60,8 @@ explicitly deferred; the intro/idlogo bypass remains tracked by #14.
 
 ## Integration with reviewed QVM work
 
-After integrating master through PR #64 and the single-run CI step (#68),
-all eleven current host C runners, eight Python tests and both Retro68 products
+After integrating master through PR #69 and the single-run CI step (#68),
+all fifteen current host C runners, eight Python tests and both Retro68 products
 pass. The workflow and CI documentation retain every QVM and RoQ check.
 The table above records these integrated product artifacts. Frame/VQ work
 still belongs to the following RoQ PRs; live acceptance remains deferred.

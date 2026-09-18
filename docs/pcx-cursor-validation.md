@@ -42,8 +42,8 @@ validation using temporary libraries from [loading evidence](qvm-loading-validat
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,673,903 | `f8cd4c993a64558ca437b253166a520f5fb4b2ef26a9c7b465da5b88e9f9ca3a` |
-| Quake3_TeamArena | 3,822,477 | `2612390ca6fe338d91af44ebdfb46ccd9209a948d22189e32f5702a448af2681` |
+| Quake3 | 3,678,159 | `24d0604befff6332588d5f749d5f0f4b5108cdec34f99567b73d76cffd26c8ec` |
+| Quake3_TeamArena | 3,830,829 | `091820faf4d5b13c2d917c31f260d5c84d63de1d9673059da537e75068a3e063` |
 
 ## Remaining acceptance
 
@@ -52,7 +52,7 @@ Retail 1.32c textures/UI and strict-alignment PPC live acceptance remain
 explicitly deferred. This host corpus checks the supported PCX format and
 bounds; it does not establish acceptance of every retail or mod asset.
 
-Reviewed QVM work through #64, single-run CI (#68) and the RoQ console
+Reviewed QVM work through #69, single-run CI (#68) and the RoQ console
 shutdown fix are integrated. The affected sanitizer fixtures, nine Python
 checks and both Mac products pass; CI retains every runner. The table
 records these integrated artifacts.
