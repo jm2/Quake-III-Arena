@@ -502,6 +502,9 @@ static qboolean AAS_ValidateReachability(void)
 			return qfalse;
 		total += settings->numreachableareas;
 	}
+	// Native tables contain dummy slot 0 followed by exactly the owned records.
+	if (aasworld.reachabilitysize && total != aasworld.reachabilitysize - 1)
+		return qfalse;
 	for (i = 0; i < aasworld.reachabilitysize; i++)
 	{
 		aas_reachability_t *reach = &aasworld.reachability[i];
