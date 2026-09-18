@@ -756,3 +756,13 @@ empty-only input. Fixed readers verify actual script EOF, native token/string or
 unchanged queued bytes/no imports, physical included-script release and complete
 native character publication. Original nonempty object/function goldens remain.
 GCC/Clang run normal and release fast-math sanitizer modes.
+
+The movement-setup runner compiles the complete actual movement implementation,
+actual libvar backend and native brush classification. Forty original-body proofs
+cover both imports of all ten required variables with empty or complete prior
+references. Fixed failures stop setup before publishing references/model bytes,
+retain only complete shared cached owners, retry, and physically release all owners.
+Original default/configured/cached reference identity and brush classifications
+remain. GCC/Clang run normal/release fast-math sanitizers. Clang exposes an existing
+integer-abs-on-float elevator warning outside this initialization change; its
+numeric behavior is retained for separate assessment.
