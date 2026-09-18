@@ -461,6 +461,10 @@ QVMs while any P0 item is open.
         parses checked heap staging, rejects source errors and releases complete
         sources before publishing a rebased hunk owner; native item values stay;
         see [item evidence](bot-item-config-validation.md).
+  - [x] Structure numeric fields stage finite float results and checked native
+        integer words/bounds before writing destination bytes; 16-bit ranges and
+        ordinary native field values stay;
+        see [structure evidence](bot-structure-number-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
