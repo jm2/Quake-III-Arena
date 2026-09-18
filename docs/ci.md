@@ -106,6 +106,9 @@ PR head while retaining checks on the merged default branch.
   - executes actual MD4 registration, complete layout validation, native endian
     conversion and animation skinning, with variable weights, LOD/surface
     progress, bones/back references, extreme frame indexes and tess bases;
+  - validates all BSP tree/forest components before resets with actual loaders,
+    native parents/point queries, cycle/alias/OOM mutations, exhaustive small
+    graphs, deep/raised-budget trees and a limited test stack;
   - executes actual world loading, bounded entity tokenization and light-grid
     sampling with non-NUL/prefix text, remaps/partial settings, unsafe grid
     calculations, temporary OOM, exact one-point/corner arrays and RGB goldens;
@@ -162,6 +165,7 @@ bash tests/run_bsp_reference_tests.sh
 bash tests/run_bsp_lightmap_tests.sh
 bash tests/run_bsp_geometry_tests.sh
 bash tests/run_bsp_entity_grid_tests.sh
+bash tests/run_bsp_tree_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 

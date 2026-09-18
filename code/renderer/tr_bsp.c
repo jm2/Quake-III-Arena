@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "tr_local.h"
 #include "../qcommon/bsp_geometry.h"
+#include "../qcommon/bsp_tree.h"
 #include <float.h>
 
 /*
@@ -1354,20 +1355,6 @@ static	void R_LoadSubmodels( lump_t *l ) {
 
 /*
 =================
-R_SetParent
-=================
-*/
-static	void R_SetParent (mnode_t *node, mnode_t *parent)
-{
-	node->parent = parent;
-	if (node->contents != -1)
-		return;
-	R_SetParent (node->children[0], node);
-	R_SetParent (node->children[1], node);
-}
-
-/*
-=================
 R_LoadNodesAndLeafs
 =================
 */
@@ -1404,6 +1391,7 @@ static	void R_LoadNodesAndLeafs (lump_t *nodeLump, lump_t *leafLump) {
 		p = LittleLong(in->planeNum);
 		out->plane = s_worldData.planes + p;
 
+		out->parent = NULL;
 		out->contents = CONTENTS_NODE;	// differentiate from leafs
 
 		for (j=0 ; j<2 ; j++)
@@ -1426,6 +1414,7 @@ static	void R_LoadNodesAndLeafs (lump_t *nodeLump, lump_t *leafLump) {
 			out->maxs[j] = LittleLong (inLeaf->maxs[j]);
 		}
 
+		out->parent = NULL;
 		out->cluster = LittleLong(inLeaf->cluster);
 		out->area = LittleLong(inLeaf->area);
 
@@ -1438,8 +1427,13 @@ static	void R_LoadNodesAndLeafs (lump_t *nodeLump, lump_t *leafLump) {
 		out->nummarksurfaces = LittleLong(inLeaf->numLeafSurfaces);
 	}	
 
-	// chain decendants
-	R_SetParent (s_worldData.nodes, NULL);
+	// Validated unique parents allow linear initialization without recursive depth/work.
+	for ( i=0 ; i<numNodes ; i++ ) {
+		out = s_worldData.nodes + i;
+		out->children[0]->parent = out;
+		out->children[1]->parent = out;
+	}
+	s_worldData.nodes[0].parent = NULL;
 }
 
 //=============================================================================
@@ -1866,6 +1860,7 @@ void RE_LoadWorldMap( const char *name ) {
 	error = BSP_ValidateHeader(buffer,length,header);
 	if ( !error ) error = R_ValidateBSPAllocations(header);
 	if ( !error ) error = BSP_ValidateReferences(buffer,header);
+	if ( !error ) error = BSP_ValidateTree(buffer,header);
 	if ( !error ) error = R_ValidateBSPGeometry(buffer,header);
 	if ( !error ) error = R_ValidateBSPLightGrid(buffer,header,&validatedGrid);
 	if ( error ) {
