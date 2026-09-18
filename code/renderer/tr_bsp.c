@@ -22,7 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // tr_map.c
 
 #include "tr_local.h"
-#include "../qcommon/bsp_validate.h"
+#include "../qcommon/bsp_references.h"
 
 /*
 
@@ -1825,6 +1825,7 @@ void RE_LoadWorldMap( const char *name ) {
 
 	error = BSP_ValidateHeader(buffer,length,header);
 	if ( !error ) error = R_ValidateBSPAllocations(header);
+	if ( !error ) error = BSP_ValidateReferences(buffer,header);
 	if ( error ) {
 		ri.FS_FreeFile(buffer);
 		ri.Error(ERR_DROP,"RE_LoadWorldMap: %s: %s",name,error);

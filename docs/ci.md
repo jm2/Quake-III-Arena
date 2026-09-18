@@ -94,6 +94,9 @@ PR head while retaining checks on the merged default branch.
   - executes actual MD4 registration, complete layout validation, native endian
     conversion and animation skinning, with variable weights, LOD/surface
     progress, bones/back references, extreme frame indexes and tess bases;
+  - checks BSP payload material/index/span references through shared bytewise
+    preflight and actual collision loading, preserving map/checksum/ownership
+    before rejection, with retail area/submodel boundaries and ignored fields;
   - checks the shared collision/renderer BSP header preflight and actual
     collision loading with exact input, every header prefix, lump ranges/strides,
     actual native allocation sizes and raised map-compiler budgets,
@@ -130,6 +133,7 @@ bash tests/run_jpeg_io_tests.sh
 bash tests/run_md3_layout_tests.sh
 bash tests/run_md4_layout_tests.sh
 bash tests/run_bsp_header_tests.sh
+bash tests/run_bsp_reference_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
