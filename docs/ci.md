@@ -451,3 +451,9 @@ allocation. Valid and empty-dummy worlds retain their native table/route values.
 Unrepresentable array sums/products and a fully backed large graph's travel
 matrix reject before imports. Pointer rows remain aligned after odd 16-bit
 cost counts. Normal/release fast-math sanitizer runs cover the pipeline.
+
+Initialization regressions also execute the actual frame entry: each nullable
+stage with a pending cache-save request skips serialization of cleared tables.
+Pending reachability defers the request until a later initialized frame performs
+the actual native cache write/close/reset. Frame return values/bookkeeping stay
+compatible; the previous frame body dereferences a null cache table.

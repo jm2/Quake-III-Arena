@@ -272,7 +272,7 @@ int AAS_StartFrame(float time)
 		} //end if
 	} //end if
 	//
-	if (saveroutingcache->value)
+	if (aasworld.initialized && saveroutingcache->value)
 	{
 		AAS_WriteRouteCache();
 		LibVarSet("saveroutingcache", "0");

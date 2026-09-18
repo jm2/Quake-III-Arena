@@ -8,7 +8,7 @@ python3 - "$Q3_TEST_ROOT/code/botlib/be_aas_main.c" "$Q3_TEST_SOURCE/continuatio
 from pathlib import Path
 import sys
 source=Path(sys.argv[1]).read_text();parts=[]
-for name,signature in (('AAS_SetInitialized','void AAS_SetInitialized(void)'),('AAS_ContinueInit','void AAS_ContinueInit(float time)')):
+for name,signature in (('AAS_SetInitialized','void AAS_SetInitialized(void)'),('AAS_ContinueInit','void AAS_ContinueInit(float time)'),('AAS_StartFrame','int AAS_StartFrame(float time)')):
     start=signature+'\n{';end='} //end of the function '+name
     assert source.count(start)==source.count(end+'\n')==1,('native initialization continuation seam changed',name)
     first=source.index(start);last=source.index(end,first)+len(end);parts.append(source[first:last])

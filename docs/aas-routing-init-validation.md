@@ -11,6 +11,10 @@ propagate every nullable stage failure. Paired allocations release their first
 owner if the second fails. A failed pipeline releases partial routing owners,
 leaves `initialized` false and disables `loaded`, preventing retries every frame.
 Successful initialization keeps the native stage order, array counts and values.
+The native frame entry writes a requested cache only after initialization succeeds;
+pending reachability or failed initialization cannot serialize absent tables.
+A pending save survives until a successful initialized frame, and native frame
+return values/bookkeeping remain unchanged.
 Put all travel-matrix pointer rows before its 16-bit cost data so each row stays
 aligned without adding allocation bytes. The private in-memory layout changes;
 retail AAS, QVM, syscall, protocol and optional native cache-file layouts do not.
@@ -18,11 +22,12 @@ The legacy outgoing reverse-link clipping behavior remains unchanged.
 
 ## Validation
 
-Four original actual-body proofs fail: first-allocation null dereference,
+Five original actual-body proofs fail: first-allocation null dereference,
 unrepresentable area-cost/null use, fully backed 65,536-by-65,536 travel-matrix
-signed multiplication overflow, and an odd travel-cost count's misaligned
-pointer store. The fixture includes the entire actual routing source and
-strictly extracts only the actual initialization continuation bodies; native
+signed multiplication overflow, an odd travel-cost count's misaligned
+pointer store, and the original frame entry writing cleared cache tables after
+nullable initialization failure. The fixture includes the entire actual routing source and
+strictly extracts only the actual initialization continuation and frame bodies; native
 heap, clock, absent optional cache and completed clustering interfaces are seams.
 No production bounds/allocation/publication logic is replaced.
 
@@ -31,6 +36,10 @@ reverse-link ownership, travel-matrix values, contents classification and route
 time 12/reachability 2. Each of ten allocations is independently made nullable;
 initialization stops, all partial owners physically release, no initialized
 message or optional-cache lookup occurs, and the next frame does not allocate.
+All ten failures also run through the actual frame entry with a pending cache
+save; no cache writer or save-reset occurs on either that or the next frame.
+Pending reachability delays a save safely; the next successful frame performs
+the actual native version-two empty-cache write, closes it and resets the request.
 An empty-dummy world retains valid initialization with six positive allocations
 and null zero-capacity arrays. Seven unrepresentable derived shapes reject
 before imports, including the fully backed large graph matrix. Native successful
@@ -43,8 +52,8 @@ compiler diagnostics and valid PPC PEFs:
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,762,301 | `7ddd09f348920d4c12567adce8dff16be3af3bd70ff333fca38b563c7e17c24b` |
-| Quake3_TeamArena | 3,910,875 | `6eeaf21fb9e48fae6a0e5148583dc46c54f9013bc309f4016c9be52f36a98720` |
+| Quake3 | 3,762,301 | `dc3035bab8eeb8cc07447ab728cbf1d192f778e85acaffd208b966842f4652d6` |
+| Quake3_TeamArena | 3,910,875 | `2d68da6be360abf942e44089b549c2c51ccbba3f7fb072937fac0105ce69bc61` |
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 Source includes the checked/accounted native optional-cache reader.
