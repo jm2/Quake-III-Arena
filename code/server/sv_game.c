@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "server.h"
 
 #include "../game/botlib.h"
+#include "../game/be_aas.h"
 
 botlib_export_t	*botlib_export;
 
@@ -351,7 +352,130 @@ static void SV_GameLocateData( int *args ) {
 
 #define	VMF(x)	((float *)args)[x]
 
-/** Dispatch core game traps with checked QVM pointers; botlib families remain under review. */
+/** Bound server bot-client access by actual allocation, independent of later cvar changes. */
+static client_t *SV_GameBotClient( int index ) {
+	if ( !svs.clients || index < 0 || index >= svs.clientCapacity ) {
+		VM_ErrorForVM( gvm, "Server bot client index out of range" );
+		return NULL;
+	}
+	return &svs.clients[index];
+}
+
+/** Dispatch botlib common/navigation traps after checking all QVM arguments. */
+static int SV_BotLibNavigationCalls( int *args ) {
+	if ( !botlib_export && args[0] != BOTLIB_SETUP && args[0] != BOTLIB_SHUTDOWN &&
+	     args[0] != BOTLIB_GET_SNAPSHOT_ENTITY && args[0] != BOTLIB_GET_CONSOLE_MESSAGE &&
+	     args[0] != BOTLIB_USER_COMMAND ) {
+		VM_Error( "Botlib API is unavailable" );
+		return -1;
+	}
+	switch( args[0] ) {
+	case BOTLIB_SETUP:
+		return SV_BotLibSetup();
+	case BOTLIB_SHUTDOWN:
+		return SV_BotLibShutdown();
+	case BOTLIB_LIBVAR_SET:
+		return botlib_export->BotLibVarSet( VMAS(1), VMAS(2) );
+	case BOTLIB_LIBVAR_GET:
+		return botlib_export->BotLibVarGet( VMAS(1), VMAB(2, args[3]), args[3] );
+
+	case BOTLIB_PC_ADD_GLOBAL_DEFINE:
+		return botlib_export->PC_AddGlobalDefine( VMAS(1) );
+	case BOTLIB_PC_LOAD_SOURCE:
+		return botlib_export->PC_LoadSourceHandle( VMAS(1) );
+	case BOTLIB_PC_FREE_SOURCE:
+		return botlib_export->PC_FreeSourceHandle( args[1] );
+	case BOTLIB_PC_READ_TOKEN:
+		return botlib_export->PC_ReadTokenHandle( args[1], VMAP(2, pc_token_t) );
+	case BOTLIB_PC_SOURCE_FILE_AND_LINE:
+		return botlib_export->PC_SourceFileAndLine( args[1], VMAB(2, MAX_QPATH), VMAP(3, int) );
+
+	case BOTLIB_START_FRAME:
+		return botlib_export->BotLibStartFrame( VMF(1) );
+	case BOTLIB_LOAD_MAP:
+		return botlib_export->BotLibLoadMap( VMASN(1) );
+	case BOTLIB_UPDATENTITY:
+		return botlib_export->BotLibUpdateEntity( args[1], VMAPN(2, bot_entitystate_t) );
+	case BOTLIB_TEST:
+		return botlib_export->Test( args[1], VMASN(2), VMAP(3, vec3_t), VMAP(4, vec3_t) );
+
+	case BOTLIB_GET_SNAPSHOT_ENTITY:
+		SV_GameBotClient( args[1] );
+		return SV_BotGetSnapshotEntity( args[1], args[2] );
+	case BOTLIB_GET_CONSOLE_MESSAGE:
+		SV_GameBotClient( args[1] );
+		return SV_BotGetConsoleMessage( args[1], VMAB(2, args[3]), args[3] );
+	case BOTLIB_USER_COMMAND: {
+		client_t *client = SV_GameBotClient( args[1] );
+		usercmd_t *command = VMAP(2, usercmd_t);
+		SV_ClientThink( client, command );
+		return 0;
+	}
+
+	case BOTLIB_AAS_BBOX_AREAS:
+		if ( args[4] == 0 ) return 0;
+		return botlib_export->aas.AAS_BBoxAreas( VMAP(1, vec3_t), VMAP(2, vec3_t), VM_CheckedArgArray( args[3], args[4], sizeof(int) ), args[4] );
+	case BOTLIB_AAS_AREA_INFO:
+		return botlib_export->aas.AAS_AreaInfo( args[1], VMAPN(2, aas_areainfo_t) );
+	case BOTLIB_AAS_ALTERNATIVE_ROUTE_GOAL:
+		if ( args[7] == 0 ) return 0;
+		return botlib_export->aas.AAS_AlternativeRouteGoals( VMAPN(1, vec3_t), args[2], VMAPN(3, vec3_t), args[4], args[5], VM_CheckedArgArray( args[6], args[7], sizeof(aas_altroutegoal_t) ), args[7], args[8] );
+	case BOTLIB_AAS_ENTITY_INFO:
+		botlib_export->aas.AAS_EntityInfo( args[1], VMAP(2, aas_entityinfo_t) );
+		return 0;
+
+	case BOTLIB_AAS_INITIALIZED:
+		return botlib_export->aas.AAS_Initialized();
+	case BOTLIB_AAS_PRESENCE_TYPE_BOUNDING_BOX:
+		botlib_export->aas.AAS_PresenceTypeBoundingBox( args[1], VMAP(2, vec3_t), VMAP(3, vec3_t) );
+		return 0;
+	case BOTLIB_AAS_TIME:
+		return FloatAsInt( botlib_export->aas.AAS_Time() );
+
+	case BOTLIB_AAS_POINT_AREA_NUM:
+		return botlib_export->aas.AAS_PointAreaNum( VMAP(1, vec3_t) );
+	case BOTLIB_AAS_POINT_REACHABILITY_AREA_INDEX:
+		return botlib_export->aas.AAS_PointReachabilityAreaIndex( VMAPN(1, vec3_t) );
+	case BOTLIB_AAS_TRACE_AREAS:
+		if ( args[5] == 0 ) return 0;
+		return botlib_export->aas.AAS_TraceAreas( VMAP(1, vec3_t), VMAP(2, vec3_t), VM_CheckedArgArray( args[3], args[5], sizeof(int) ), (args[4] ? VM_CheckedArgArray( args[4], args[5], sizeof(vec3_t) ) : NULL), args[5] );
+
+	case BOTLIB_AAS_POINT_CONTENTS:
+		return botlib_export->aas.AAS_PointContents( VMAP(1, vec3_t) );
+	case BOTLIB_AAS_NEXT_BSP_ENTITY:
+		return botlib_export->aas.AAS_NextBSPEntity( args[1] );
+	case BOTLIB_AAS_VALUE_FOR_BSP_EPAIR_KEY:
+		return botlib_export->aas.AAS_ValueForBSPEpairKey( args[1], VMAS(2), VMAB(3, args[4]), args[4] );
+	case BOTLIB_AAS_VECTOR_FOR_BSP_EPAIR_KEY:
+		return botlib_export->aas.AAS_VectorForBSPEpairKey( args[1], VMAS(2), VMAP(3, vec3_t) );
+	case BOTLIB_AAS_FLOAT_FOR_BSP_EPAIR_KEY:
+		return botlib_export->aas.AAS_FloatForBSPEpairKey( args[1], VMAS(2), VMAP(3, float) );
+	case BOTLIB_AAS_INT_FOR_BSP_EPAIR_KEY:
+		return botlib_export->aas.AAS_IntForBSPEpairKey( args[1], VMAS(2), VMAP(3, int) );
+
+	case BOTLIB_AAS_AREA_REACHABILITY:
+		return botlib_export->aas.AAS_AreaReachability( args[1] );
+
+	case BOTLIB_AAS_AREA_TRAVEL_TIME_TO_GOAL_AREA:
+		return botlib_export->aas.AAS_AreaTravelTimeToGoalArea( args[1], VMAPN(2, vec3_t), args[3], args[4] );
+	case BOTLIB_AAS_ENABLE_ROUTING_AREA:
+		return botlib_export->aas.AAS_EnableRoutingArea( args[1], args[2] );
+	case BOTLIB_AAS_PREDICT_ROUTE:
+		return botlib_export->aas.AAS_PredictRoute( VMAP(1, aas_predictroute_t), args[2], VMAP(3, vec3_t), args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11] );
+
+	case BOTLIB_AAS_SWIMMING:
+		return botlib_export->aas.AAS_Swimming( VMAP(1, vec3_t) );
+	case BOTLIB_AAS_PREDICT_CLIENT_MOVEMENT:
+		return botlib_export->aas.AAS_PredictClientMovement( VMAP(1, aas_clientmove_t), args[2], VMAP(3, vec3_t), args[4], args[5],
+			VMAP(6, vec3_t), VMAP(7, vec3_t), args[8], args[9], VMF(10), args[11], args[12], args[13] );
+
+	default:
+		VM_Error( "Bad botlib navigation trap" );
+		return -1;
+	}
+}
+
+/** Dispatch game traps with checked core/navigation pointers; botlib EA/AI remain under review. */
 int SV_GameSystemCalls( int *args ) {
 	switch( args[0] ) {
 	case G_PRINT:
@@ -499,95 +623,44 @@ int SV_GameSystemCalls( int *args ) {
 		//====================================
 
 	case BOTLIB_SETUP:
-		return SV_BotLibSetup();
 	case BOTLIB_SHUTDOWN:
-		return SV_BotLibShutdown();
 	case BOTLIB_LIBVAR_SET:
-		return botlib_export->BotLibVarSet( VMA(1), VMA(2) );
 	case BOTLIB_LIBVAR_GET:
-		return botlib_export->BotLibVarGet( VMA(1), VMA(2), args[3] );
-
 	case BOTLIB_PC_ADD_GLOBAL_DEFINE:
-		return botlib_export->PC_AddGlobalDefine( VMA(1) );
 	case BOTLIB_PC_LOAD_SOURCE:
-		return botlib_export->PC_LoadSourceHandle( VMA(1) );
 	case BOTLIB_PC_FREE_SOURCE:
-		return botlib_export->PC_FreeSourceHandle( args[1] );
 	case BOTLIB_PC_READ_TOKEN:
-		return botlib_export->PC_ReadTokenHandle( args[1], VMA(2) );
 	case BOTLIB_PC_SOURCE_FILE_AND_LINE:
-		return botlib_export->PC_SourceFileAndLine( args[1], VMA(2), VMA(3) );
-
 	case BOTLIB_START_FRAME:
-		return botlib_export->BotLibStartFrame( VMF(1) );
 	case BOTLIB_LOAD_MAP:
-		return botlib_export->BotLibLoadMap( VMA(1) );
 	case BOTLIB_UPDATENTITY:
-		return botlib_export->BotLibUpdateEntity( args[1], VMA(2) );
 	case BOTLIB_TEST:
-		return botlib_export->Test( args[1], VMA(2), VMA(3), VMA(4) );
-
 	case BOTLIB_GET_SNAPSHOT_ENTITY:
-		return SV_BotGetSnapshotEntity( args[1], args[2] );
 	case BOTLIB_GET_CONSOLE_MESSAGE:
-		return SV_BotGetConsoleMessage( args[1], VMA(2), args[3] );
 	case BOTLIB_USER_COMMAND:
-		SV_ClientThink( &svs.clients[args[1]], VMA(2) );
-		return 0;
-
 	case BOTLIB_AAS_BBOX_AREAS:
-		return botlib_export->aas.AAS_BBoxAreas( VMA(1), VMA(2), VMA(3), args[4] );
 	case BOTLIB_AAS_AREA_INFO:
-		return botlib_export->aas.AAS_AreaInfo( args[1], VMA(2) );
 	case BOTLIB_AAS_ALTERNATIVE_ROUTE_GOAL:
-		return botlib_export->aas.AAS_AlternativeRouteGoals( VMA(1), args[2], VMA(3), args[4], args[5], VMA(6), args[7], args[8] );
 	case BOTLIB_AAS_ENTITY_INFO:
-		botlib_export->aas.AAS_EntityInfo( args[1], VMA(2) );
-		return 0;
-
 	case BOTLIB_AAS_INITIALIZED:
-		return botlib_export->aas.AAS_Initialized();
 	case BOTLIB_AAS_PRESENCE_TYPE_BOUNDING_BOX:
-		botlib_export->aas.AAS_PresenceTypeBoundingBox( args[1], VMA(2), VMA(3) );
-		return 0;
 	case BOTLIB_AAS_TIME:
-		return FloatAsInt( botlib_export->aas.AAS_Time() );
-
 	case BOTLIB_AAS_POINT_AREA_NUM:
-		return botlib_export->aas.AAS_PointAreaNum( VMA(1) );
 	case BOTLIB_AAS_POINT_REACHABILITY_AREA_INDEX:
-		return botlib_export->aas.AAS_PointReachabilityAreaIndex( VMA(1) );
 	case BOTLIB_AAS_TRACE_AREAS:
-		return botlib_export->aas.AAS_TraceAreas( VMA(1), VMA(2), VMA(3), VMA(4), args[5] );
-
 	case BOTLIB_AAS_POINT_CONTENTS:
-		return botlib_export->aas.AAS_PointContents( VMA(1) );
 	case BOTLIB_AAS_NEXT_BSP_ENTITY:
-		return botlib_export->aas.AAS_NextBSPEntity( args[1] );
 	case BOTLIB_AAS_VALUE_FOR_BSP_EPAIR_KEY:
-		return botlib_export->aas.AAS_ValueForBSPEpairKey( args[1], VMA(2), VMA(3), args[4] );
 	case BOTLIB_AAS_VECTOR_FOR_BSP_EPAIR_KEY:
-		return botlib_export->aas.AAS_VectorForBSPEpairKey( args[1], VMA(2), VMA(3) );
 	case BOTLIB_AAS_FLOAT_FOR_BSP_EPAIR_KEY:
-		return botlib_export->aas.AAS_FloatForBSPEpairKey( args[1], VMA(2), VMA(3) );
 	case BOTLIB_AAS_INT_FOR_BSP_EPAIR_KEY:
-		return botlib_export->aas.AAS_IntForBSPEpairKey( args[1], VMA(2), VMA(3) );
-
 	case BOTLIB_AAS_AREA_REACHABILITY:
-		return botlib_export->aas.AAS_AreaReachability( args[1] );
-
 	case BOTLIB_AAS_AREA_TRAVEL_TIME_TO_GOAL_AREA:
-		return botlib_export->aas.AAS_AreaTravelTimeToGoalArea( args[1], VMA(2), args[3], args[4] );
 	case BOTLIB_AAS_ENABLE_ROUTING_AREA:
-		return botlib_export->aas.AAS_EnableRoutingArea( args[1], args[2] );
 	case BOTLIB_AAS_PREDICT_ROUTE:
-		return botlib_export->aas.AAS_PredictRoute( VMA(1), args[2], VMA(3), args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11] );
-
 	case BOTLIB_AAS_SWIMMING:
-		return botlib_export->aas.AAS_Swimming( VMA(1) );
 	case BOTLIB_AAS_PREDICT_CLIENT_MOVEMENT:
-		return botlib_export->aas.AAS_PredictClientMovement( VMA(1), args[2], VMA(3), args[4], args[5],
-			VMA(6), VMA(7), args[8], args[9], VMF(10), args[11], args[12], args[13] );
+		return SV_BotLibNavigationCalls( args );
 
 	case BOTLIB_EA_SAY:
 		botlib_export->ea.EA_Say( args[1], VMA(2) );
