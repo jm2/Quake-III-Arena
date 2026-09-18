@@ -47,8 +47,8 @@ libraries documented in [loading evidence](qvm-loading-validation.md).
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,673,879 | `a7866d5a43d99b49539338f8f817f3c54449370113e07ab07c7ffcf22d5abec1` |
-| Quake3_TeamArena | 3,822,453 | `a0d163a190d767495927bda2673f31a09ec192dce130bdb0bc60f2848f75b910` |
+| Quake3 | 3,686,293 | `c13fb70ebe374686e19291bc856f661cf63a6a522974ceddbcb1c1a2fd6d20bb` |
+| Quake3_TeamArena | 3,834,867 | `7a1940aff74204b5326c7528172a317e66079e31a112fc26f29c18694531ed93` |
 
 ## Remaining acceptance
 
@@ -57,3 +57,15 @@ VQ cursors, and motion-compensated source blocks still need bounded validation
 and regressions. This step does not establish that the entire RoQ decoder is
 safe for hostile movies. Retail 1.32c and Mac OS 9 live playback remain
 explicitly deferred; the intro/idlogo bypass remains tracked by #14.
+
+## Integration with reviewed QVM work
+
+After integrating master through PR #64 and the single-run CI step (#68),
+all eleven current host C runners, eight Python tests and both Retro68 products
+pass. The workflow and CI documentation retain every QVM and RoQ check.
+The table above records these integrated product artifacts. Frame/VQ work
+still belongs to the following RoQ PRs; live acceptance remains deferred.
+
+The actual cinematic console command also runs malformed pre-frame movies in
+normal, hold and loop modes. Its first-frame wait condition uses the bounded
+active CL handle and stops after shutdown clears it, without indexing -1.

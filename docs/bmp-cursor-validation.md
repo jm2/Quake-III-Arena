@@ -42,8 +42,8 @@ using temporary libraries from [loading evidence](qvm-loading-validation.md).
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,661,495 | `740dba96bb7ef4504a12466258f942084d95d765b9ab08ab467a6ffe4cffc6c9` |
-| Quake3_TeamArena | 3,810,069 | `b23205cd44ca0d94d24d56d8d0b4384f1d57c78fa94687e4da24ba5e81bc0f7d` |
+| Quake3 | 3,669,829 | `cd1546507d1f4263782a8e97d9460595ce40899b33c3fa31f41d3a69d319b325` |
+| Quake3_TeamArena | 3,822,499 | `bacbcc259b008b375b9855ddae9b1591d0b0e37d1538f96306b297834eb3136f` |
 
 ## Remaining acceptance
 
@@ -51,3 +51,8 @@ Keep #42 open. PCX and TGA still need bounded decoding and their malformed
 corpora. Retail 1.32c textures/UI and strict-alignment PPC live acceptance
 remain explicitly deferred. The JPEG manager/API work is tracked separately
 by #43; this BMP step does not establish complete image-loader safety.
+
+After integrating the reviewed QVM work through #64, single-run CI (#68),
+and all three RoQ steps including the console shutdown fix, the BMP fixture,
+nine Python checks and both Mac products pass. CI retains every runner.
+The table records these integrated artifacts.
