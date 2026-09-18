@@ -83,8 +83,23 @@ QVMs while any P0 item is open.
         syscall argument snapshots; see [memory evidence](qvm-memory-validation.md).
   - [x] Define wrapping integer arithmetic and reject division, shift, and
         float conversion traps; see [arithmetic evidence](qvm-arithmetic-validation.md).
-  - [ ] Complete syscall pointer/range checks and VM call argument marshalling;
-        retain valid PPC QVM compatibility.
+  - [x] Marshal counted VM call arguments and zero padding explicitly for
+        all execution modes; see [call evidence](qvm-call-validation.md).
+  - [x] Common MEMSET/MEMCPY/STRNCPY syscalls validate full buffers and
+        string boundaries; see [trap evidence](qvm-memory-trap-validation.md).
+  - [x] UI syscall strings, buffers, structs, and arrays validate full ranges
+        and alignment; CD-key and parser filename output honor their bounds;
+        see [UI evidence](qvm-ui-syscall-validation.md).
+  - [x] Cgame syscall structures, strings, vectors, and arrays validate full
+        ranges, including polygon batches and fragment output capacities;
+        see [cgame evidence](qvm-cgame-syscall-validation.md).
+  - [x] Core server syscall ranges, persistent game-array registration and
+        indices, and native debug-polygon capacities have sanitizer coverage;
+        see [server evidence](qvm-server-core-validation.md).
+  - [x] Connection-denial strings validate termination in their owning VM
+        after calls return; see [return evidence](qvm-returned-string-validation.md).
+  - [ ] Complete remaining syscall pointer/range checks and retain valid PPC
+        QVM compatibility during deferred live acceptance.
 - [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)
       — **high**, connection redirection/injection/hijack.
   - [x] User selected commercial 1.32c compatibility (Quake3e/ioquake3 style).

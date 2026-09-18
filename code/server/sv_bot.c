@@ -24,12 +24,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "server.h"
 #include "../game/botlib.h"
 
+#define MAX_DEBUG_POLY_POINTS 128
+
 typedef struct bot_debugpoly_s
 {
 	int inuse;
 	int color;
 	int numPoints;
-	vec3_t points[128];
+	vec3_t points[MAX_DEBUG_POLY_POINTS];
 } bot_debugpoly_t;
 
 static bot_debugpoly_t *debugpolygons;
@@ -315,11 +317,13 @@ void *BotImport_HunkAlloc( int size ) {
 BotImport_DebugPolygonCreate
 ==================
 */
+/** Create only polygons that fit the native debug storage; zero points reserve a line handle. */
 int BotImport_DebugPolygonCreate(int color, int numPoints, vec3_t *points) {
 	bot_debugpoly_t *poly;
 	int i;
 
-	if (!debugpolygons)
+	if (!debugpolygons || numPoints < 0 || numPoints > MAX_DEBUG_POLY_POINTS ||
+	    (numPoints && !points))
 		return 0;
 
 	for (i = 1; i < bot_maxdebugpolys; i++) 	{
@@ -332,7 +336,7 @@ int BotImport_DebugPolygonCreate(int color, int numPoints, vec3_t *points) {
 	poly->inuse = qtrue;
 	poly->color = color;
 	poly->numPoints = numPoints;
-	Com_Memcpy(poly->points, points, numPoints * sizeof(vec3_t));
+	if (numPoints) Com_Memcpy(poly->points, points, numPoints * sizeof(vec3_t));
 	//
 	return i;
 }
@@ -342,15 +346,17 @@ int BotImport_DebugPolygonCreate(int color, int numPoints, vec3_t *points) {
 BotImport_DebugPolygonShow
 ==================
 */
+/** Update valid handles without crossing the fixed point capacity. */
 void BotImport_DebugPolygonShow(int id, int color, int numPoints, vec3_t *points) {
 	bot_debugpoly_t *poly;
 
-	if (!debugpolygons) return;
+	if (!debugpolygons || id < 1 || id >= bot_maxdebugpolys ||
+	    numPoints < 0 || numPoints > MAX_DEBUG_POLY_POINTS || (numPoints && !points)) return;
 	poly = &debugpolygons[id];
 	poly->inuse = qtrue;
 	poly->color = color;
 	poly->numPoints = numPoints;
-	Com_Memcpy(poly->points, points, numPoints * sizeof(vec3_t));
+	if (numPoints) Com_Memcpy(poly->points, points, numPoints * sizeof(vec3_t));
 }
 
 /*
@@ -358,9 +364,10 @@ void BotImport_DebugPolygonShow(int id, int color, int numPoints, vec3_t *points
 BotImport_DebugPolygonDelete
 ==================
 */
+/** Ignore invalid or reserved handles before indexing the debug array. */
 void BotImport_DebugPolygonDelete(int id)
 {
-	if (!debugpolygons) return;
+	if (!debugpolygons || id < 1 || id >= bot_maxdebugpolys) return;
 	debugpolygons[id].inuse = qfalse;
 }
 
