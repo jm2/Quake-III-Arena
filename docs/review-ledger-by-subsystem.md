@@ -320,6 +320,11 @@ implementation or check, without implying issue completion.
   - [x] Native patch LOD propagation retains stock depth-first results with
         constant stack and no traversal allocation; see [LOD evidence](bsp-lod-validation.md).
 - [ ] [#46 — shader/skin/font fixed limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
+  - [x] Shader stage capacity checks precede native array access and rejected
+        definitions preserve following parse/index/cache behavior; see
+        [stage evidence](shader-stage-validation.md).
+  - [ ] Complete skin/font bounds and ownership, including complete single-shader
+        surface allocation, and remaining shader semantic/file-allocation checks.
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.
   - [ ] Validate the complete file and graph before setting `loaded`.

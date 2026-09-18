@@ -1385,6 +1385,40 @@ static void ParseSurfaceParm( char **text ) {
 	}
 }
 
+/* The shader and overflowing stage are open. Consume their remaining tokens. */
+static void SkipShaderTail( char **text, unsigned int depth ) {
+	char *data = *text;
+	while ( data && *data && depth ) {
+		if ( *data <= ' ' ) { data++; continue; }
+		if ( data[0] == '/' && data[1] == '/' ) {
+			while ( *data && *data != '\n' ) data++;
+			continue;
+		}
+		if ( data[0] == '/' && data[1] == '*' ) {
+			data += 2;
+			while ( *data && !(data[0] == '*' && data[1] == '/') ) data++;
+			if ( *data ) data += 2;
+			continue;
+		}
+		if ( *data == '"' ) {
+			data++;
+			while ( *data && *data != '"' ) data++;
+			if ( *data ) data++;
+			continue;
+		}
+		if ( *data == '{' ) depth++;
+		else if ( *data == '}' ) depth--;
+		/* COM_ParseExt consumes an unquoted token through its next whitespace. */
+		while ( *data && *data > ' ' ) data++;
+	}
+	*text = depth ? NULL : data;
+}
+
+static void SkipShaderDefinition( char **text ) {
+	char *token = COM_ParseExt( text, qtrue );
+	if ( token[0] == '{' ) SkipShaderTail( text, 1 );
+}
+
 /*
 =================
 ParseShader
@@ -1425,6 +1459,11 @@ static qboolean ParseShader( char **text )
 		// stage definition
 		else if ( token[0] == '{' )
 		{
+			if ( s >= MAX_SHADER_STAGES ) {
+				ri.Printf( PRINT_WARNING, "WARNING: MAX_SHADER_STAGES in '%s'\n", shader.name );
+				SkipShaderTail( text, 2 );
+				return qfalse;
+			}
 			if ( !ParseStage( &stages[s], text ) )
 			{
 				return qfalse;
@@ -2003,7 +2042,7 @@ static shader_t *GeneratePermanentShader( void ) {
 		for ( b = 0 ; b < NUM_TEXTURE_BUNDLES ; b++ ) {
 			size = newShader->stages[i]->bundle[b].numTexMods * sizeof( texModInfo_t );
 			newShader->stages[i]->bundle[b].texMods = ri.Hunk_Alloc( size, h_low );
-			Com_Memcpy( newShader->stages[i]->bundle[b].texMods, stages[i].bundle[b].texMods, size );
+			if ( size ) Com_Memcpy( newShader->stages[i]->bundle[b].texMods, stages[i].bundle[b].texMods, size );
 		}
 	}
 
@@ -2326,7 +2365,7 @@ static char *FindShaderInShaderText( const char *shadername ) {
 		}
 		else {
 			// skip the definition
-			SkipBracedSection( &p );
+			SkipShaderDefinition(&p);
 		}
 	}
 
@@ -2911,7 +2950,7 @@ static void ScanAndLoadShaderFiles( void )
 			hash = generateHashValue(token, MAX_SHADERTEXT_HASH);
 			shaderTextHashTableSizes[hash]++;
 			size++;
-			SkipBracedSection(&p);
+			SkipShaderDefinition(&p);
 			// if we passed the pointer to the next shader file
 			if ( i < numShaders - 1 ) {
 				if ( p > buffers[i+1] ) {
@@ -2946,7 +2985,7 @@ static void ScanAndLoadShaderFiles( void )
 			hash = generateHashValue(token, MAX_SHADERTEXT_HASH);
 			shaderTextHashTable[hash][shaderTextHashTableSizes[hash]++] = oldp;
 
-			SkipBracedSection(&p);
+			SkipShaderDefinition(&p);
 			// if we passed the pointer to the next shader file
 			if ( i < numShaders - 1 ) {
 				if ( p > buffers[i+1] ) {

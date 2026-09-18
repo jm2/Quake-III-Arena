@@ -110,6 +110,9 @@ PR head while retaining checks on the merged default branch.
   - executes actual MD4 registration, complete layout validation, native endian
     conversion and animation skinning, with variable weights, LOD/surface
     progress, bones/back references, extreme frame indexes and tess bases;
+  - executes native shader parsing/registration and both archive index passes
+    with 0–10 stages, following definitions, quotes/comments/nesting, EOF tails,
+    skipped excess-stage cinematics, native modifiers and valid/default caching;
   - compares patch LOD propagation with 401 tiny stock-recursive oracles and
     passes a 4,096-patch chain with a 512 KB stack and no traversal allocation;
   - checks native planar face distances for finite-source product/sum/cancellation
@@ -205,6 +208,7 @@ bash tests/run_bsp_patch_grid_tests.sh
 bash tests/run_bsp_winding_tests.sh
 bash tests/run_hunk_allocation_tests.sh
 bash tests/run_bsp_lod_tests.sh
+bash tests/run_shader_stage_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
