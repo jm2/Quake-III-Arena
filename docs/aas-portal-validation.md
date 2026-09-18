@@ -11,17 +11,20 @@ has distinct sides and exactly one index occurrence in each declared cluster.
 
 Preserve retail v4/v5 layouts, portal side order, reordered disjoint spans,
 native payload bytes and commercial 1.32c interfaces. Unclustered native roots
-remain supported. Workspace costs are checked, and nullable failures reject
+remain supported when they have zero clusters and native initialization will
+rebuild them. A dummy-only cluster table cannot own reachable areas because
+initialization skips rebuilding it. Workspace costs are checked, and nullable failures reject
 without temporary ownership. No hard map-size cap is introduced.
 
 ## Validation
 
-Seven original actual-loader proofs fail: huge area-cluster and negative portal
+Eight original actual-loader proofs fail: huge area-cluster and negative portal
 indices, shared index spans, duplicate local slots, omitted sides and identical
-side clusters and reachable cluster-zero orphans still report success. Independent literal data covers both versions,
+side clusters, reachable cluster-zero orphans and reachable dummy-only roots
+still report success. Independent literal data covers both versions,
 side orders, reordered spans, unclustered roots, multiple normal areas, reachable
 portals and multiple portals. Fourteen accepted worlds retain all native mapping
-bytes. Ninety-two malformed signed/one-past/count/span/inverse/slot/prefix/side cases
+bytes. Ninety-four malformed signed/one-past/count/span/inverse/slot/prefix/side cases
 reject before publication, close once and clear partial logical owners.
 
 Duplicate and partial spans reject even when aggregate counts fit. Each temporary
@@ -30,14 +33,14 @@ bitmap or slot/side workspace reject cleanly in both versions. Clang normal/
 release fast-math sanitizers and optimized GCC checks pass. Existing AAS seams,
 nine Python checks, Bash syntax and diff checks pass. Both Retro68 products
 build with zero compiler diagnostics and validate as PPC PEFs. The table includes
-the inherited #125 complete reachability ownership fix and cluster-zero
-orphan follow-up. Its original actual-loader proof fails; fixed normal/fast
-sanitisers and both PPC rebuilds pass with zero product diagnostics.
+the inherited #125 complete reachability ownership fix and both cluster-zero
+orphan follow-ups. The original actual-loader proofs fail; fixed normal/fast
+sanitizers and both PPC rebuilds pass with zero product diagnostics.
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,758,195 | `7215fd885c59bd65832dbd82c427a1f0bb9b976c0f3a7b4e6f62a23176208c44` |
-| Quake3_TeamArena | 3,906,769 | `2932edbfc5d3629a8d4823231b91c2111afa36cf073a208f1e0c20cf7bccfcd6` |
+| Quake3 | 3,758,195 | `64e409c861cc49a62c488b383aeb8f4d184535558fc7c2c4d64e5bb02c18a29c` |
+| Quake3_TeamArena | 3,906,769 | `8ae0d6e08a0672337cdc531af397df5cf263b4ff6dd6ba2e194e60aadfa8b238` |
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 

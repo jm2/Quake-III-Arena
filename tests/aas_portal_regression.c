@@ -33,14 +33,19 @@ static void ValidPortals(void) {
         Check(!memcmp(aasworld.portals,source+portalOffset,40)&&!memcmp(aasworld.portalindex,source+indexOffset,8)&&!memcmp(aasworld.clusters,source+clusterOffset,48)&&!memcmp(aasworld.areasettings,source+settingsOffset,84),"every independent portal/index/cluster/settings byte unchanged");
     }
 }
+static void UnclusteredBuild(int version,int dummyOnly) {
+    PortalBuild(version);Encode(version);Word(16+8*AASLUMP_CLUSTERS,dummyOnly?16:0);
+    Word(16+8*AASLUMP_PORTALS,0);Word(16+8*AASLUMP_PORTALINDEX,0);
+    Word(settingsOffset+28+12,0);Word(settingsOffset+56+12,0);Encode(version);
+}
 static void UnclusteredPortals(void) {
     int version;
     for(version=4;version<=5;version++){
-        PortalBuild(version);Counters();OldWorld();Encode(version);Word(16+8*AASLUMP_CLUSTERS,16);
-        Word(settingsOffset+28+12,0);Word(settingsOffset+56+12,0);
-        Word(portalOffset+24,0);Word(portalOffset+28,0);Word(portalOffset+32,0);Word(portalOffset+36,0);Encode(version);
-        Check(AAS_LoadAASFile("fixture.aas")==BLERR_NOERROR&&aasworld.loaded&&!opened&&closes==1,"native unclustered roots remain eligible for clustering initialization");
-        Check(!memcmp(aasworld.portals,source+portalOffset,40)&&!memcmp(aasworld.areasettings,source+settingsOffset,84),"unclustered payload remains unchanged");
+        UnclusteredBuild(version,0);Counters();OldWorld();
+        Check(AAS_LoadAASFile("fixture.aas")==BLERR_NOERROR&&aasworld.loaded&&!opened&&closes==1,"zero-cluster roots remain eligible for native clustering initialization");
+        Check(!aasworld.numclusters&&!aasworld.numportals&&!aasworld.portalindexsize&&!memcmp(aasworld.areasettings,source+settingsOffset,84),"unclustered settings remain unchanged");
+        UnclusteredBuild(version,1);Counters();OldWorld();GeometryReject();
+        Check(workspaceRequests==2&&workspaceFrees==2&&!workspacePointer,"dummy-only reachable root rejects before portal workspaces");
     }
 }
 static void PortalSpanBuild(int version,int partial) {
@@ -177,6 +182,7 @@ int main(int argc,char **argv) {
     else if(proof==4){PortalBuild(4);Counters();OldWorld();PortalWord(4,clusterOffset+40,0);GeometryReject();}
     else if(proof==5){SameClusterBuild(4);Counters();OldWorld();GeometryReject();}
     else if(proof==6){ReachableOrphanBuild(4);Counters();OldWorld();GeometryReject();}
+    else if(proof==7){UnclusteredBuild(4,1);Counters();OldWorld();GeometryReject();}
     else {ValidPortals();UnclusteredPortals();BadPortals();PortalSpanOwnership();ClusterMapping();ReachableOrphans();puts("Native AAS portal/cluster references, local slots, inverse ownership and spans passed (issue #47)");}
     ResetArena();return 0;
 }
