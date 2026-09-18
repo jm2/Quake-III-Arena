@@ -393,7 +393,7 @@ static fileHandle_t	FS_HandleForFile(void) {
 	int		i;
 
 	for ( i = 1 ; i < MAX_FILE_HANDLES ; i++ ) {
-		if ( fsh[i].handleFiles.file.o == NULL ) {
+		if ( fsh[i].handleFiles.file.o == NULL && fsh[i].buffer == NULL ) {
 			return i;
 		}
 	}

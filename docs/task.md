@@ -130,6 +130,9 @@ QVMs while any P0 item is open.
         reject unrepresentable allocation products before engine imports;
         actual native ZIP/read/free regressions have
         [allocation evidence](unzip-allocation-validation.md).
+  - [x] Buffered PK3 owners retain their handle slots until close; actual
+        simultaneous reads, full table and physical release have
+        [handle evidence](fs-buffered-handle-validation.md).
   - [ ] Add malicious ZIP fixtures around caps, `INT_MAX`, `UINT32_MAX`, and
         truncated streams.
 - [ ] [#41 — bound RoQ chunks, dimensions, audio output, and cursors](https://github.com/jm2/Quake-III-Arena/issues/41)

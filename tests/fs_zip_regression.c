@@ -5,7 +5,10 @@
 #endif
 #include Q3_UNZIP_SOURCE
 /* Allocation imports own real storage; filesystem and decoder bodies are native. */
-static void *zone[32], *temporary[16];
+#ifndef Q3_ZIP_ZONE_CAPACITY
+#define Q3_ZIP_ZONE_CAPACITY 32
+#endif
+static void *zone[Q3_ZIP_ZONE_CAPACITY], *temporary[16];
 static int zoneLive, temporaryLive, zoneRequests, temporaryRequests;
 static unsigned long largestZone;
 qboolean com_fullyInitialized;
@@ -39,7 +42,7 @@ void *Z_Malloc(int size) {
     Check(size >= 0 && size <= 67108864,"bounded signed native zone request");
     zoneRequests++;
     if ((unsigned long)size > largestZone) largestZone = size;
-    for(i=0;i<32;i++)if(!zone[i]){
+    for(i=0;i<Q3_ZIP_ZONE_CAPACITY;i++)if(!zone[i]){
         zone[i]=calloc(1,size?size:1);
         Check(zone[i]!=NULL,"physical native zone owner");
         zoneLive++;
@@ -51,7 +54,7 @@ void *Z_Malloc(int size) {
 
 void Z_Free(void *p) {
     int i;
-    for(i=0;i<32;i++)if(zone[i]==p){
+    for(i=0;i<Q3_ZIP_ZONE_CAPACITY;i++)if(zone[i]==p){
         free(p);
         zone[i]=NULL;
         zoneLive--;
