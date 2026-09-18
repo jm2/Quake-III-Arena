@@ -51,7 +51,12 @@ Retro68 installation, proprietary retail data, or a Mac OS 9 emulator.
     allocations;
   - exercises the real cgame polygon-batch and fragment filters to check
     dimension multiplication, complete array ranges, empty submissions, and
-    rejection before renderer callbacks. Server syscalls still need checks.
+    rejection before renderer callbacks;
+  - exercises actual server game-data registration and persistent access with
+    private strides, saved client capacities, controlled index/slot rejection,
+    and unchanged registration on failure;
+  - checks native debug-polygon point limits, invalid handles, and zero-point
+    line reservation. Botlib syscall families still need range checks.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -72,6 +77,7 @@ bash tests/run_vm_call_tests.sh
 bash tests/run_vm_memory_trap_tests.sh
 bash tests/run_ui_syscall_tests.sh
 bash tests/run_cgame_syscall_tests.sh
+bash tests/run_server_core_syscall_tests.sh
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 
