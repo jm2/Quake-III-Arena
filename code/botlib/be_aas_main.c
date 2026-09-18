@@ -225,7 +225,12 @@ void AAS_ContinueInit(float time)
 		} //end else
 	} //end if
 	//initialize the routing
-	AAS_InitRouting();
+	if (!AAS_InitRouting())
+	{
+		botimport.Print(PRT_ERROR, "AAS routing initialization failed.\n");
+		aasworld.loaded = qfalse;
+		return;
+	}
 	//at this point AAS is initialized
 	AAS_SetInitialized();
 } //end of the function AAS_ContinueInit
@@ -267,7 +272,7 @@ int AAS_StartFrame(float time)
 		} //end if
 	} //end if
 	//
-	if (saveroutingcache->value)
+	if (aasworld.initialized && saveroutingcache->value)
 	{
 		AAS_WriteRouteCache();
 		LibVarSet("saveroutingcache", "0");

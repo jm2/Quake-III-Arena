@@ -443,3 +443,17 @@ Every file truncation, malformed headers/records/floats/indices, short reads,
 nullable imports and cumulative signed budget failure reject without changing
 existing cache/table/LRU ownership. Empty dumps remain valid. GCC and Clang
 normal/release fast-math sanitizer runs cover their different float assumptions.
+
+The routing-initialization runner executes the complete actual derived-table
+pipeline and native initialization continuation. Every one of ten allocation
+failures clears partial owners and prevents world publication/repeated frame
+allocation. Valid and empty-dummy worlds retain their native table/route values.
+Unrepresentable array sums/products and a fully backed large graph's travel
+matrix reject before imports. Pointer rows remain aligned after odd 16-bit
+cost counts. Normal/release fast-math sanitizer runs cover the pipeline.
+
+Initialization regressions also execute the actual frame entry: each nullable
+stage with a pending cache-save request skips serialization of cleared tables.
+Pending reachability defers the request until a later initialized frame performs
+the actual native cache write/close/reset. Frame return values/bookkeeping stay
+compatible; the previous frame body dereferences a null cache table.

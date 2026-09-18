@@ -399,16 +399,26 @@ int AAS_AreaContentsTravelFlags(int areanum)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-void AAS_InitAreaContentsTravelFlags(void)
+/* Derived routing arrays use signed engine import byte counts. */
+static qboolean AAS_AddRoutingCost(int *size, int count, int stride)
 {
-	int i;
+	if (*size < 0 || count < 0 || stride <= 0 || count > (INT_MAX - *size) / stride)
+		return qfalse;
+	*size += count * stride;
+	return qtrue;
+}
 
+qboolean AAS_InitAreaContentsTravelFlags(void)
+{
+	int i, size = 0;
+	int *flags;
+	if (!AAS_AddRoutingCost(&size, aasworld.numareas, sizeof(*flags))) return qfalse;
+	flags = size ? (int *)GetClearedMemory(size) : NULL;
+	if (size && !flags) return qfalse;
+	for (i = 0; i < aasworld.numareas; i++) flags[i] = AAS_GetAreaContentsTravelFlags(i);
 	if (aasworld.areacontentstravelflags) FreeMemory(aasworld.areacontentstravelflags);
-	aasworld.areacontentstravelflags = (int *) GetClearedMemory(aasworld.numareas * sizeof(int));
-	//
-	for (i = 0; i < aasworld.numareas; i++) {
-		aasworld.areacontentstravelflags[i] = AAS_GetAreaContentsTravelFlags(i);
-	}
+	aasworld.areacontentstravelflags = flags;
+	return qtrue;
 } //end of the function AAS_InitAreaContentsTravelFlags
 //===========================================================================
 //
@@ -416,9 +426,9 @@ void AAS_InitAreaContentsTravelFlags(void)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-void AAS_CreateReversedReachability(void)
+qboolean AAS_CreateReversedReachability(void)
 {
-	int i, n;
+	int i, n, size = 0, header = 0;
 	aas_reversedlink_t *revlink;
 	aas_reachability_t *reach;
 	aas_areasettings_t *settings;
@@ -428,15 +438,16 @@ void AAS_CreateReversedReachability(void)
 
 	starttime = Sys_MilliSeconds();
 #endif
-	//free reversed links that have already been created
+	if (!AAS_AddRoutingCost(&header, aasworld.numareas, sizeof(aas_reversedreachability_t))) return qfalse;
+	size = header;
+	if (!AAS_AddRoutingCost(&size, aasworld.reachabilitysize, sizeof(aas_reversedlink_t))) return qfalse;
+	ptr = size ? (char *)GetClearedMemory(size) : NULL;
+	if (size && !ptr) return qfalse;
 	if (aasworld.reversedreachability) FreeMemory(aasworld.reversedreachability);
-	//allocate memory for the reversed reachability links
-	ptr = (char *) GetClearedMemory(aasworld.numareas * sizeof(aas_reversedreachability_t) +
-							aasworld.reachabilitysize * sizeof(aas_reversedlink_t));
 	//
 	aasworld.reversedreachability = (aas_reversedreachability_t *) ptr;
 	//pointer to the memory for the reversed links
-	ptr += aasworld.numareas * sizeof(aas_reversedreachability_t);
+	if (header) ptr += header;
 	//check all reachabilities of all areas
 	for (i = 1; i < aasworld.numareas; i++)
 	{
@@ -464,6 +475,7 @@ void AAS_CreateReversedReachability(void)
 #ifdef DEBUG
 	botimport.Print(PRT_MESSAGE, "reversed reachability %d msec\n", Sys_MilliSeconds() - starttime);
 #endif
+	return qtrue;
 } //end of the function AAS_CreateReversedReachability
 //===========================================================================
 //
@@ -514,10 +526,11 @@ unsigned short int AAS_AreaTravelTime(int areanum, vec3_t start, vec3_t end)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-void AAS_CalculateAreaTravelTimes(void)
+qboolean AAS_CalculateAreaTravelTimes(void)
 {
-	int i, l, n, size;
+	int i, l, n, size = 0, header = 0, rows = 0, data = 0;
 	char *ptr;
+	unsigned short **rowptr;
 	vec3_t end;
 	aas_reversedreachability_t *revreach;
 	aas_reversedlink_t *revlink;
@@ -526,24 +539,31 @@ void AAS_CalculateAreaTravelTimes(void)
 	int starttime;
 
 	starttime = Sys_MilliSeconds();
-	//if there are still area travel times, free the memory
-	if (aasworld.areatraveltimes) FreeMemory(aasworld.areatraveltimes);
 	//get the total size of all the area travel times
-	size = aasworld.numareas * sizeof(unsigned short **);
+	if (!AAS_AddRoutingCost(&header, aasworld.numareas, sizeof(unsigned short **))) return qfalse;
 	for (i = 0; i < aasworld.numareas; i++)
 	{
 		revreach = &aasworld.reversedreachability[i];
 		//settings of the area
 		settings = &aasworld.areasettings[i];
 		//
-		size += settings->numreachableareas * sizeof(unsigned short *);
-		//
-		size += settings->numreachableareas * revreach->numlinks * sizeof(unsigned short);
+		if (!AAS_AddRoutingCost(&rows, settings->numreachableareas, sizeof(unsigned short *)) ||
+			revreach->numlinks < 0 || (settings->numreachableareas &&
+			revreach->numlinks > INT_MAX / settings->numreachableareas)) return qfalse;
+		if (!AAS_AddRoutingCost(&data, settings->numreachableareas * revreach->numlinks,
+			sizeof(unsigned short))) return qfalse;
 	} //end for
+	size = header;
+	if (!AAS_AddRoutingCost(&size, rows, 1) || !AAS_AddRoutingCost(&size, data, 1)) return qfalse;
+	// Keep all pointer rows before 16-bit costs so every row stays aligned.
 	//allocate memory for the area travel times
-	ptr = (char *) GetClearedMemory(size);
+	ptr = size ? (char *)GetClearedMemory(size) : NULL;
+	if (size && !ptr) return qfalse;
+	if (aasworld.areatraveltimes) FreeMemory(aasworld.areatraveltimes);
 	aasworld.areatraveltimes = (unsigned short ***) ptr;
-	ptr += aasworld.numareas * sizeof(unsigned short **);
+	if (header) ptr += header;
+	rowptr = (unsigned short **)ptr;
+	if (rows) ptr += rows;
 	//calcluate the travel times for all the areas
 	for (i = 0; i < aasworld.numareas; i++)
 	{
@@ -552,8 +572,8 @@ void AAS_CalculateAreaTravelTimes(void)
 		//settings of the area
 		settings = &aasworld.areasettings[i];
 		//
-		aasworld.areatraveltimes[i] = (unsigned short **) ptr;
-		ptr += settings->numreachableareas * sizeof(unsigned short *);
+		aasworld.areatraveltimes[i] = rowptr;
+		if (settings->numreachableareas) rowptr += settings->numreachableareas;
 		//
 		for (l = 0; l < settings->numreachableareas; l++)
 		{
@@ -573,6 +593,7 @@ void AAS_CalculateAreaTravelTimes(void)
 #ifdef DEBUG
 	botimport.Print(PRT_MESSAGE, "area travel times %d msec\n", Sys_MilliSeconds() - starttime);
 #endif
+	return qtrue;
 } //end of the function AAS_CalculateAreaTravelTimes
 //===========================================================================
 //
@@ -614,19 +635,17 @@ int AAS_PortalMaxTravelTime(int portalnum)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-void AAS_InitPortalMaxTravelTimes(void)
+qboolean AAS_InitPortalMaxTravelTimes(void)
 {
-	int i;
-
+	int i, size = 0;
+	int *times;
+	if (!AAS_AddRoutingCost(&size, aasworld.numportals, sizeof(*times))) return qfalse;
+	times = size ? (int *)GetClearedMemory(size) : NULL;
+	if (size && !times) return qfalse;
+	for (i = 0; i < aasworld.numportals; i++) times[i] = AAS_PortalMaxTravelTime(i);
 	if (aasworld.portalmaxtraveltimes) FreeMemory(aasworld.portalmaxtraveltimes);
-
-	aasworld.portalmaxtraveltimes = (int *) GetClearedMemory(aasworld.numportals * sizeof(int));
-
-	for (i = 0; i < aasworld.numportals; i++)
-	{
-		aasworld.portalmaxtraveltimes[i] = AAS_PortalMaxTravelTime(i);
-		//botimport.Print(PRT_MESSAGE, "portal %d max tt = %d\n", i, aasworld.portalmaxtraveltimes[i]);
-	} //end for
+	aasworld.portalmaxtraveltimes = times;
+	return qtrue;
 } //end of the function AAS_InitPortalMaxTravelTimes
 //===========================================================================
 //
@@ -806,28 +825,25 @@ void AAS_FreeAllClusterAreaCache(void)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-void AAS_InitClusterAreaCache(void)
+qboolean AAS_InitClusterAreaCache(void)
 {
-	int i, size;
+	int i, size = 0, header = 0;
 	char *ptr;
-
-	//
-	for (size = 0, i = 0; i < aasworld.numclusters; i++)
-	{
-		size += aasworld.clusters[i].numareas;
-	} //end for
-	//two dimensional array with pointers for every cluster to routing cache
-	//for every area in that cluster
-	ptr = (char *) GetClearedMemory(
-				aasworld.numclusters * sizeof(aas_routingcache_t **) +
-				size * sizeof(aas_routingcache_t *));
-	aasworld.clusterareacache = (aas_routingcache_t ***) ptr;
-	ptr += aasworld.numclusters * sizeof(aas_routingcache_t **);
+	if (!AAS_AddRoutingCost(&header, aasworld.numclusters, sizeof(aas_routingcache_t **))) return qfalse;
+	size = header;
+	for (i = 0; i < aasworld.numclusters; i++)
+		if (!AAS_AddRoutingCost(&size, aasworld.clusters[i].numareas, sizeof(aas_routingcache_t *))) return qfalse;
+	ptr = size ? (char *)GetClearedMemory(size) : NULL;
+	if (size && !ptr) return qfalse;
+	if (aasworld.clusterareacache) AAS_FreeAllClusterAreaCache();
+	aasworld.clusterareacache = (aas_routingcache_t ***)ptr;
+	if (header) ptr += header;
 	for (i = 0; i < aasworld.numclusters; i++)
 	{
-		aasworld.clusterareacache[i] = (aas_routingcache_t **) ptr;
+		aasworld.clusterareacache[i] = (aas_routingcache_t **)ptr;
 		ptr += aasworld.clusters[i].numareas * sizeof(aas_routingcache_t *);
-	} //end for
+	}
+	return qtrue;
 } //end of the function AAS_InitClusterAreaCache
 //===========================================================================
 //
@@ -861,11 +877,16 @@ void AAS_FreeAllPortalCache(void)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
-void AAS_InitPortalCache(void)
+qboolean AAS_InitPortalCache(void)
 {
-	//
-	aasworld.portalcache = (aas_routingcache_t **) GetClearedMemory(
-								aasworld.numareas * sizeof(aas_routingcache_t *));
+	int size = 0;
+	aas_routingcache_t **cache;
+	if (!AAS_AddRoutingCost(&size, aasworld.numareas, sizeof(*cache))) return qfalse;
+	cache = size ? (aas_routingcache_t **)GetClearedMemory(size) : NULL;
+	if (size && !cache) return qfalse;
+	if (aasworld.portalcache) AAS_FreeAllPortalCache();
+	aasworld.portalcache = cache;
+	return qtrue;
 } //end of the function AAS_InitPortalCache
 //===========================================================================
 //
@@ -873,29 +894,28 @@ void AAS_InitPortalCache(void)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
-void AAS_InitRoutingUpdate(void)
+qboolean AAS_InitRoutingUpdate(void)
 {
-	int i, maxreachabilityareas;
-
-	//free routing update fields if already existing
-	if (aasworld.areaupdate) FreeMemory(aasworld.areaupdate);
-	//
-	maxreachabilityareas = 0;
+	int i, maxreachabilityareas = 0, areasize = 0, portalsize = 0;
+	aas_routingupdate_t *areas, *portals;
 	for (i = 0; i < aasworld.numclusters; i++)
 	{
+		if (aasworld.clusters[i].numreachabilityareas < 0) return qfalse;
 		if (aasworld.clusters[i].numreachabilityareas > maxreachabilityareas)
-		{
 			maxreachabilityareas = aasworld.clusters[i].numreachabilityareas;
-		} //end if
-	} //end for
-	//allocate memory for the routing update fields
-	aasworld.areaupdate = (aas_routingupdate_t *) GetClearedMemory(
-									maxreachabilityareas * sizeof(aas_routingupdate_t));
-	//
+	}
+	if (!AAS_AddRoutingCost(&areasize, maxreachabilityareas, sizeof(*areas)) ||
+		aasworld.numportals < 0 || aasworld.numportals == INT_MAX ||
+		!AAS_AddRoutingCost(&portalsize, aasworld.numportals + 1, sizeof(*portals))) return qfalse;
+	areas = areasize ? (aas_routingupdate_t *)GetClearedMemory(areasize) : NULL;
+	if (areasize && !areas) return qfalse;
+	portals = (aas_routingupdate_t *)GetClearedMemory(portalsize);
+	if (!portals) { if (areas) FreeMemory(areas); return qfalse; }
+	if (aasworld.areaupdate) FreeMemory(aasworld.areaupdate);
 	if (aasworld.portalupdate) FreeMemory(aasworld.portalupdate);
-	//allocate memory for the portal update fields
-	aasworld.portalupdate = (aas_routingupdate_t *) GetClearedMemory(
-									(aasworld.numportals+1) * sizeof(aas_routingupdate_t));
+	aasworld.areaupdate = areas;
+	aasworld.portalupdate = portals;
+	return qtrue;
 } //end of the function AAS_InitRoutingUpdate
 //===========================================================================
 //
@@ -1203,22 +1223,26 @@ int AAS_ReadRouteCache(void)
 //===========================================================================
 #define MAX_REACHABILITYPASSAREAS		32
 
-void AAS_InitReachabilityAreas(void)
+qboolean AAS_InitReachabilityAreas(void)
 {
 	int i, j, numareas, areas[MAX_REACHABILITYPASSAREAS];
-	int numreachareas;
+	int numreachareas, size = 0, indexsize = 0;
+	aas_reachabilityareas_t *reachareas;
+	int *areaindex;
 	aas_reachability_t *reach;
 	vec3_t start, end;
 
-	if (aasworld.reachabilityareas)
-		FreeMemory(aasworld.reachabilityareas);
-	if (aasworld.reachabilityareaindex)
-		FreeMemory(aasworld.reachabilityareaindex);
-
-	aasworld.reachabilityareas = (aas_reachabilityareas_t *)
-				GetClearedMemory(aasworld.reachabilitysize * sizeof(aas_reachabilityareas_t));
-	aasworld.reachabilityareaindex = (int *)
-				GetClearedMemory(aasworld.reachabilitysize * MAX_REACHABILITYPASSAREAS * sizeof(int));
+	if (!AAS_AddRoutingCost(&size, aasworld.reachabilitysize, sizeof(*reachareas)) ||
+		!AAS_AddRoutingCost(&indexsize, aasworld.reachabilitysize,
+		MAX_REACHABILITYPASSAREAS * sizeof(*areaindex))) return qfalse;
+	reachareas = size ? (aas_reachabilityareas_t *)GetClearedMemory(size) : NULL;
+	if (size && !reachareas) return qfalse;
+	areaindex = indexsize ? (int *)GetClearedMemory(indexsize) : NULL;
+	if (indexsize && !areaindex) { if (reachareas) FreeMemory(reachareas); return qfalse; }
+	if (aasworld.reachabilityareas) FreeMemory(aasworld.reachabilityareas);
+	if (aasworld.reachabilityareaindex) FreeMemory(aasworld.reachabilityareaindex);
+	aasworld.reachabilityareas = reachareas;
+	aasworld.reachabilityareaindex = areaindex;
 	numreachareas = 0;
 	for (i = 0; i < aasworld.reachabilitysize; i++)
 	{
@@ -1268,6 +1292,7 @@ void AAS_InitReachabilityAreas(void)
 			aasworld.reachabilityareaindex[numreachareas++] = areas[j];
 		} //end for
 	} //end for
+	return qtrue;
 } //end of the function AAS_InitReachabilityAreas
 //===========================================================================
 //
@@ -1275,25 +1300,30 @@ void AAS_InitReachabilityAreas(void)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-void AAS_InitRouting(void)
+qboolean AAS_InitRouting(void)
 {
+	aasworld.initialized = qfalse;
+	if (aasworld.numareas <= 0 || aasworld.numareas != aasworld.numareasettings ||
+		aasworld.numclusters < 1 || aasworld.numportals < 0 || aasworld.reachabilitysize < 0) return qfalse;
+	AAS_FreeRoutingCaches();
+	routingcachesize = 0;
 	AAS_InitTravelFlagFromType();
 	//
-	AAS_InitAreaContentsTravelFlags();
+	if (!AAS_InitAreaContentsTravelFlags()) goto failed;
 	//initialize the routing update fields
-	AAS_InitRoutingUpdate();
+	if (!AAS_InitRoutingUpdate()) goto failed;
 	//create reversed reachability links used by the routing update algorithm
-	AAS_CreateReversedReachability();
+	if (!AAS_CreateReversedReachability()) goto failed;
 	//initialize the cluster cache
-	AAS_InitClusterAreaCache();
+	if (!AAS_InitClusterAreaCache()) goto failed;
 	//initialize portal cache
-	AAS_InitPortalCache();
+	if (!AAS_InitPortalCache()) goto failed;
 	//initialize the area travel times
-	AAS_CalculateAreaTravelTimes();
+	if (!AAS_CalculateAreaTravelTimes()) goto failed;
 	//calculate the maximum travel times through portals
-	AAS_InitPortalMaxTravelTimes();
+	if (!AAS_InitPortalMaxTravelTimes()) goto failed;
 	//get the areas reachabilities go through
-	AAS_InitReachabilityAreas();
+	if (!AAS_InitReachabilityAreas()) goto failed;
 	//
 #ifdef ROUTING_DEBUG
 	numareacacheupdates = 0;
@@ -1304,6 +1334,10 @@ void AAS_InitRouting(void)
 	max_routingcachesize = 1024 * (int) LibVarValue("max_routingcache", "4096");
 	// read any routing cache if available
 	AAS_ReadRouteCache();
+	return qtrue;
+failed:
+	AAS_FreeRoutingCaches();
+	return qfalse;
 } //end of the function AAS_InitRouting
 //===========================================================================
 //

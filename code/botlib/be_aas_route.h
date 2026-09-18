@@ -31,7 +31,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #ifdef AASINTERN
 //initialize the AAS routing
-void AAS_InitRouting(void);
+qboolean AAS_InitRouting(void);
 //free the AAS routing caches
 void AAS_FreeRoutingCaches(void);
 //returns the travel time from start to end in the given area
