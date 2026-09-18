@@ -101,25 +101,36 @@ R_ColorShiftLightingBytes
 ===============
 */
 static void R_ColorShiftLightingRGB( const byte in[3], byte out[4] ) {
-	int		shift, r, g, b;
+	int shift, max, r = in[0], g = in[1], b = in[2];
+	unsigned int difference;
 
-	// shift the color data based on overbright range
-	shift = r_mapOverBrightBits->integer - tr.overbrightBits;
+	/* Unsigned subtraction represents even INT_MAX - INT_MIN without overflow.
+	 * Beyond eight byte shifts, the result is already black or normalized. */
+	if ( r_mapOverBrightBits->integer >= tr.overbrightBits ) {
+		difference = (unsigned int)r_mapOverBrightBits->integer - (unsigned int)tr.overbrightBits;
+		shift = difference > 8 ? 8 : (int)difference;
+	} else {
+		difference = (unsigned int)tr.overbrightBits - (unsigned int)r_mapOverBrightBits->integer;
+		shift = difference > 8 ? -8 : -(int)difference;
+	}
 
-	// shift the data based on overbright range
-	r = in[0] << shift;
-	g = in[1] << shift;
-	b = in[2] << shift;
-	
-	// normalize by color instead of saturating to white
-	if ( ( r | g | b ) > 255 ) {
-		int		max;
-
+	if ( shift < 0 ) {
+		r >>= -shift;
+		g >>= -shift;
+		b >>= -shift;
+	} else {
 		max = r > g ? r : g;
 		max = max > b ? max : b;
-		r = r * 255 / max;
-		g = g * 255 / max;
-		b = b * 255 / max;
+		if ( max > (255 >> shift) ) {
+			/* The common power of two cancels; multiply original bytes only. */
+			r = r * 255 / max;
+			g = g * 255 / max;
+			b = b * 255 / max;
+		} else {
+			r <<= shift;
+			g <<= shift;
+			b <<= shift;
+		}
 	}
 
 	out[0] = r;

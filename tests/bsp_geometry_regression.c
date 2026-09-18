@@ -9,8 +9,9 @@ typedef unsigned int GLuint;
 trGlobals_t tr;
 glconfig_t glConfig;
 refimport_t ri;
-static cvar_t rendererVariable,subdivisions;
-cvar_t *r_vertexLight=&rendererVariable,*r_lightmap=&rendererVariable,*r_mapOverBrightBits=&rendererVariable;
+static cvar_t rendererVariable,subdivisions,mapOverbright;
+static byte surfaceColor[4]={255,255,255,255},surfaceExpected[4]={255,255,255,255};
+cvar_t *r_vertexLight=&rendererVariable,*r_lightmap=&rendererVariable,*r_mapOverBrightBits=&mapOverbright;
 cvar_t *r_singleShader=&rendererVariable,*r_fullbright=&rendererVariable,*r_subdivisions=&subdivisions;
 static shader_t knownShader;
 static model_t knownModel;
@@ -37,7 +38,7 @@ static void Build(int type,int vertices,int indexes,int width,int height) {
 	for(i=0;i<vertices;i++) {
 		Float(offset+i*sizeof(drawVert_t),width?(i%width)-1:i);Float(offset+i*sizeof(drawVert_t)+4,width?(i/width)-1:0);
 		Float(offset+i*sizeof(drawVert_t)+offsetof(drawVert_t,normal)+8,1);
-		for(j=0;j<4;j++)source[offset+i*sizeof(drawVert_t)+offsetof(drawVert_t,color)+j]=255;
+		for(j=0;j<4;j++)source[offset+i*sizeof(drawVert_t)+offsetof(drawVert_t,color)+j]=surfaceColor[j];
 	}
 	offset=Append(LUMP_DRAWINDEXES,indexes*4);for(i=0;i<indexes;i++)Word(offset+i*4,i%vertices);
 	offset=Append(LUMP_SURFACES,sizeof(dsurface_t));Word(offset+offsetof(dsurface_t,fogNum),0xffffffffu);Word(offset+offsetof(dsurface_t,lightmapNum),0xffffffffu);Word(offset+offsetof(dsurface_t,surfaceType),type);Word(offset+offsetof(dsurface_t,numVerts),vertices);Word(offset+offsetof(dsurface_t,numIndexes),indexes);Word(offset+offsetof(dsurface_t,patchWidth),width);Word(offset+offsetof(dsurface_t,patchHeight),height);
@@ -68,18 +69,29 @@ static void NativeSurface(int type,int vertices,int indexes,int width,int height
 	if(type==MST_PLANAR) {
 		srfSurfaceFace_t *face;ParseFace(surface,verts,&surf,ids);face=(void *)surf.data;
 		Check(face->numPoints==vertices && face->numIndices==indexes && face->ofsIndices==(int)(offsetof(srfSurfaceFace_t,points)+vertices*sizeof(face->points[0])) && face->plane.normal[2]==1,"complete native face layout and plane");
-		for(i=0;i<vertices;i++)Check(face->points[i][0]==i && ((byte *)&face->points[i][7])[3]==255,"face points beyond old 64-point clamp and geometry alpha");
+		for(i=0;i<vertices;i++)Check(face->points[i][0]==i && !memcmp((byte *)&face->points[i][7],surfaceExpected,4),"face points beyond old 64-point clamp and geometry alpha");
 		for(i=0;i<indexes;i++)Check(((int *)((byte *)face+face->ofsIndices))[i]==i%vertices,"native face indices");
 	} else if(type==MST_TRIANGLE_SOUP) {
 		srfTriangles_t *tri;ParseTriSurf(surface,verts,&surf,ids);tri=(void *)surf.data;Check(tri->numVerts==vertices && tri->numIndexes==indexes && (void *)tri->verts==(void *)(tri+1) && tri->indexes==(int *)(tri->verts+vertices),"native triangle allocation layout");
-		for(i=0;i<vertices;i++)Check(tri->verts[i].xyz[0]==i && tri->verts[i].color[3]==255,"native triangle vertices");
+		for(i=0;i<vertices;i++)Check(tri->verts[i].xyz[0]==i && !memcmp(tri->verts[i].color,surfaceExpected,4),"native triangle vertices");
 		for(i=0;i<indexes;i++)Check(tri->indexes[i]==i%vertices,"native triangle indices");
 	} else {
 		srfGridMesh_t *grid;ParseMesh(surface,verts,&surf);grid=(void *)surf.data;
 		Check(grid->width>=2 && grid->height>=2 && grid->width<=MAX_GRID_SIZE && grid->height<=MAX_GRID_SIZE && grid->meshBounds[0][0]==-1 && grid->meshBounds[1][0]==width-2 && grid->meshBounds[1][1]==height-2,"actual native patch subdivision boundary and endpoints");
-		for(i=0;i<grid->width*grid->height;i++)Check(isfinite(grid->verts[i].xyz[0]) && isfinite(grid->verts[i].normal[2]) && grid->verts[i].color[3]==255,"native subdivided geometry and alpha");
+		for(i=0;i<grid->width*grid->height;i++)Check(isfinite(grid->verts[i].xyz[0]) && isfinite(grid->verts[i].normal[2]) && !memcmp(grid->verts[i].color,surfaceExpected,4),"native subdivided geometry and alpha");
 		R_FreeSurfaceGridMesh(grid);Check(!heapCount,"curve temporary ownership released");
 	}
+}
+static void NativeLighting(void) {
+	static const byte expected[][4]={{18,10,6,173},{4,2,1,173},{255,141,85,173},{0,0,0,173}};
+	int maps[]={1,0,INT_MAX,INT_MIN},hardware[]={0,1,0,2},i;
+	surfaceColor[0]=9;surfaceColor[1]=5;surfaceColor[2]=3;surfaceColor[3]=173;
+	for(i=0;i<4;i++) {
+		mapOverbright.integer=maps[i];tr.overbrightBits=hardware[i];memcpy(surfaceExpected,expected[i],4);
+		NativeSurface(MST_PLANAR,3,3,0,0);NativeSurface(MST_TRIANGLE_SOUP,3,3,0,0);NativeSurface(MST_PATCH,9,0,3,3);
+		FreeHunks();
+	}
+	mapOverbright.integer=tr.overbrightBits=0;memset(surfaceColor,255,4);memset(surfaceExpected,255,4);
 }
 int main(void) {
 	unsigned int nonfinite[]={0x7f800000u,0xff800000u,0x7fc00001u},offset;int i,j,k,checksum;dheader_t h;
@@ -102,5 +114,5 @@ int main(void) {
 	NativeSurface(MST_PLANAR,999,5999,0,0);NativeSurface(MST_PLANAR,1,0,0,0);NativeSurface(MST_TRIANGLE_SOUP,999,5999,0,0);NativeSurface(MST_TRIANGLE_SOUP,0,0,0,0);
 	NativeSurface(MST_PATCH,31*31,0,31,31);NativeSurface(MST_PATCH,65*15,0,65,15);
 	Build(MST_PATCH,129*3,0,129,3);Header(&h);Check(!BSP_ValidateGeometry(source,&h,CM_MAX_PATCH_GRID_SIZE,MAX_PATCH_VERTS),"collision native 129-column boundary");
-	Check(!heapCount && !fileAllocation,"all fixture ownership released");FreeHunks();puts("BSP finite geometry, native storage, renderer rejection and surface/curve regressions passed (issue #45)");return 0;
+	NativeLighting();Check(!heapCount && !fileAllocation,"all fixture ownership released");FreeHunks();puts("BSP finite geometry, native storage, renderer rejection and surface/curve regressions passed (issue #45)");return 0;
 }
