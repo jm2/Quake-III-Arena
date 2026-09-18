@@ -137,7 +137,7 @@ static weaponconfig_t *weaponconfig;
 //========================================================================
 int BotValidWeaponNumber(int weaponnum)
 {
-	if (weaponnum <= 0 || weaponnum > weaponconfig->numweapons)
+	if (!weaponconfig || weaponnum <= 0 || weaponnum >= weaponconfig->numweapons)
 	{
 		botimport.Print(PRT_ERROR, "weapon number out of range\n");
 		return qfalse;
@@ -484,7 +484,11 @@ void BotGetWeaponInfo(int weaponstate, int weapon, weaponinfo_t *weaponinfo)
 	if (!BotValidWeaponNumber(weapon)) return;
 	ws = BotWeaponStateFromHandle(weaponstate);
 	if (!ws) return;
-	if (!weaponconfig) return;
+	if (!weaponinfo)
+	{
+		botimport.Print(PRT_ERROR, "missing weapon information output\n");
+		return;
+	}
 	Com_Memcpy(weaponinfo, &weaponconfig->weaponinfo[weapon], sizeof(weaponinfo_t));
 } //end of the function BotGetWeaponInfo
 //===========================================================================
@@ -506,7 +510,7 @@ int BotChooseBestFightWeapon(int weaponstate, int *inventory)
 	if (!weaponconfig) return 0;
 
 	//if the bot has no weapon weight configuration
-	if (!ws->weaponweightconfig) return 0;
+	if (!ws->weaponweightconfig || !ws->weaponweightindex || !inventory) return 0;
 
 	bestweight = 0;
 	bestweapon = 0;
@@ -560,6 +564,11 @@ int BotAllocWeaponState(void)
 		if (!botweaponstates[i])
 		{
 			botweaponstates[i] = GetClearedMemory(sizeof(bot_weaponstate_t));
+			if (!botweaponstates[i])
+			{
+				botimport.Print(PRT_ERROR, "couldn't allocate weapon state\n");
+				return 0;
+			}
 			return i;
 		} //end if
 	} //end for

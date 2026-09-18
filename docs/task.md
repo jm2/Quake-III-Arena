@@ -500,6 +500,10 @@ QVMs while any P0 item is open.
         before persistent allocation and publishes complete table/index roots
         together; growth/shrink, empty tables and all prior bytes stay safe;
         see [table evidence](bot-weapon-table-validation.md).
+  - [x] Public weapon factories return zero on failed state imports; getters
+        reject absent tables/outputs and the exclusive array bound, and selection
+        guards incomplete inputs while valid native bytes/evaluation stay;
+        see [API evidence](bot-weapon-api-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
