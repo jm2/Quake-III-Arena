@@ -35,10 +35,11 @@ QVM headers. Historical legacy compiler warnings for void-pointer NULL assignmen
 to UI function pointers remain; PPC compilation emits no warnings.
 
 Artifact sizes/hashes below come from complete source builds combined with master
-`a0364783c25e7b242e2c0324275cb9df0086239e` through bot steps #170 and CI #180.
-The workflow conflict combines all current regression scripts with the five QVM
-recipe syntax checks. All six QVM products and both PPC products were rebuilt
-from this combined source, and shared-function checks passed both compilers.
+`31a6554caa3c941d6657d664849511e27233089d` through bot step #172 and CI #180.
+The renewed workflow conflict retains every master regression script and checks
+the five QVM shell recipes in a separate step. All six QVM products and both
+PPC products were rebuilt from this combined source. Shared-function and native
+projectile-model checks passed both compilers.
 Artifact sizes/hashes are recorded below from the complete source builds. They
 are build evidence, not execution of retail assets or target acceptance.
 
@@ -66,8 +67,8 @@ headers; final artifact sizes/hashes are recorded below.
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,783,921 | `ac2d6c2679fbc6763e6ef84d6ac776ba769c8f96fda82e73225304aa0d062e67` |
-| Quake3_TeamArena | 3,932,495 | `2ef8204a0c4df7c20093715c04797ec656c1968c5dcfd34e21d861d0fa8db8aa` |
+| Quake3 | 3,783,921 | `b76090a784e6f8d2a48b644d417e9dabacf6c472f3e02f11aa327728ac757653` |
+| Quake3_TeamArena | 3,932,495 | `d3f1df002b13a6c8aa3ffb9ea1cfa8ce8adc31328237171807ce8c1934ba25a1` |
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 
