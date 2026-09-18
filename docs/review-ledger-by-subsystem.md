@@ -278,6 +278,8 @@ implementation or check, without implying issue completion.
         [host/build evidence](bsp-header-validation.md).
   - [x] Collision/material references have [host/build evidence](bsp-reference-validation.md).
   - [x] Exact RGB and duplicate lightmap uploads have [host/build evidence](bsp-lightmap-validation.md).
+  - [x] Finite inputs, native control/tessellation storage and complete face
+        allocations have [host/build evidence](bsp-geometry-validation.md).
   - [ ] Finish remaining geometry references, graph/geometry checks and full transactional
         loading, then deferred retail/PPC map acceptance.
 - [ ] [#46 — shader/skin/font fixed limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
