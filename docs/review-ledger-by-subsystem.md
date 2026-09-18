@@ -290,6 +290,8 @@ implementation or check, without implying issue completion.
         [real allocator evidence](bsp-model-capacity-validation.md).
   - [ ] Finish remaining geometry references, graph/geometry checks and full transactional
         loading, then deferred retail/PPC map acceptance.
+  - [x] Overbright RGB/grid/geometry conversion handles signed cvar extremes
+        without shift/product overflow; [evidence](bsp-lighting-arithmetic-validation.md).
 - [ ] [#46 — shader/skin/font fixed limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
 - [ ] [#47 — AAS lumps and graph indexes are trusted](https://github.com/jm2/Quake-III-Arena/issues/47)
   - [x] Local mover model boundary/look-up fixes cross-build.
