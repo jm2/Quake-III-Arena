@@ -2209,10 +2209,11 @@ extern int unzGetLocalExtrafield (unzFile file,void *buf,unsigned len)
 	
 	if (fseek(pfile_in_zip_read_info->file,
               pfile_in_zip_read_info->offset_local_extrafield + 
-			  pfile_in_zip_read_info->pos_local_extrafield,SEEK_SET)!=0)
+			  pfile_in_zip_read_info->pos_local_extrafield +
+			  pfile_in_zip_read_info->byte_before_the_zipfile,SEEK_SET)!=0)
 		return UNZ_ERRNO;
 
-	if (fread(buf,(uInt)size_to_read,1,pfile_in_zip_read_info->file)!=1)
+	if (fread(buf,read_now,1,pfile_in_zip_read_info->file)!=1)
 		return UNZ_ERRNO;
 
 	return (int)read_now;
@@ -2267,7 +2268,7 @@ extern int unzGetGlobalComment (unzFile file, char *szComment, uLong uSizeBuf)
 {
 	unz_s* s;
 	uLong uReadThis ;
-	if (file==NULL)
+	if (file==NULL || (szComment==NULL && uSizeBuf>0))
 		return UNZ_PARAMERROR;
 	s=(unz_s*)file;
 
