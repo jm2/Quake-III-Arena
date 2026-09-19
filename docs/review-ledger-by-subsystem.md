@@ -690,7 +690,9 @@ Earlier milestone snapshots below remain historical.
       then compatibility-sensitive #37; retain #29 and #36 validation gates.
 - [ ] P1 security: fix #38 and #39 with deterministic host regressions.
 - [ ] Add focused host tests for local candidates #18, #24, #25, #36, #40,
-      #49, message/Huffman exact bounds, download pairs, and format strings.
+      #49, message/Huffman exact bounds and download pairs.
+- [x] Add normal/optimized GCC/Clang sanitizer coverage for the known native
+      format-string fixes and the shared error/network formatting boundaries.
 - [ ] Prioritize target runtime blockers: #11 after #48, then #15, #16, #17,
       #5, #20, #19.
 - [x] User authorized host checks and working cross-builds while legal retail

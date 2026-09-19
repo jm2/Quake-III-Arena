@@ -682,8 +682,11 @@ QVMs while any P0 item is open.
 - [x] Deterministic MacBinary fixture is recognized with valid dates, CRC,
       type, creator, name, and fork length.
 - [ ] Host ASan/UBSan malformed-input corpora for messages/Huffman, downloads,
-      ZIP, QVM, RoQ, images/JPEG, models, BSP, shader/skin/font, bot/AAS, UI
-      allocation, and format strings.
+      ZIP, QVM, RoQ, images/JPEG, models, BSP, shader/skin/font, bot/AAS and UI
+      allocation.
+- [x] Host ASan/UBSan corpus for the known native format-string call sites and
+      central error/network formatting boundaries; retain the QVM formatter
+      under the broader QVM audit.
 - [ ] PowerShell setup/build/package on native Windows.
 - [ ] Offline package from an explicit legal asset root.
 - [ ] Mounted package resource/Finder validation.
@@ -774,7 +777,9 @@ the stated work. The milestones below retain their dated source evidence.
 - [ ] P0 implementation order: #35, #41, #42, #43, #44, #45, #46, #47,
       #48, then the compatibility-sensitive #37.
 - [ ] P0 validation order for local candidates: #36, message/Huffman exact
-      bounds, downloads, and known format-string fixes.
+      bounds and downloads.
+- [x] Validate the known native format-string fixes from the two authoritative
+      upstream commits and bound the locally audited native error sink.
 - [ ] P1 target/runtime order: #11 after #48; #15, #16, #17, #5, #20, #19.
       Re-enable #12 after #47/#48, #13 after #35/#39, and #14 after #41.
       Validate fullscreen/gamma behavior after #15/#16.
