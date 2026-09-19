@@ -161,6 +161,9 @@ QVMs while any P0 item is open.
   - [x] Archive/clone/buffer factories validate complete inputs/imports and
         release failed candidate streams/decoders while preserving prior
         owners and retries; see [factory evidence](fs-zip-factory-validation.md).
+  - [x] Active decoder replacement stages complete private candidates before
+        releasing prior owners and restores failed-header/import FILE cursors;
+        [native continuation/retry checks](unzip-replacement-validation.md) pass.
   - [ ] Complete remaining metadata/open/read/handle paths and retail PK3
         acceptance before closing the issue.
 - [ ] [#41 — bound RoQ chunks, dimensions, audio output, and cursors](https://github.com/jm2/Quake-III-Arena/issues/41)

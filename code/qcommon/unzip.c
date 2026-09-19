@@ -1884,7 +1884,8 @@ extern int unzOpenCurrentFile (unzFile file)
 	int Store;
 	uInt iSizeVar;
 	unz_s* s;
-	file_in_zip_read_info_s* pfile_in_zip_read_info;
+	file_in_zip_read_info_s* pfile_in_zip_read_info = NULL;
+	long previous_file_pos = -1;
 	uLong offset_local_extrafield;  /* offset of the static extra field */
 	uInt  size_local_extrafield;    /* size of the static extra field */
 
@@ -1894,17 +1895,25 @@ extern int unzOpenCurrentFile (unzFile file)
 	if (!s->current_file_ok)
 		return UNZ_PARAMERROR;
 
-    if (s->pfile_in_zip_read != NULL)
-        unzCloseCurrentFile(file);
+	if (s->pfile_in_zip_read != NULL) {
+		previous_file_pos = ftell(s->file);
+		if (previous_file_pos < 0)
+			return UNZ_ERRNO;
+	}
 
 	if (unzlocal_CheckCurrentFileCoherencyHeader(s,&iSizeVar,
 				&offset_local_extrafield,&size_local_extrafield)!=UNZ_OK)
-		return UNZ_BADZIPFILE;
+	{
+		err = UNZ_BADZIPFILE;
+		goto failed;
+	}
 
 	pfile_in_zip_read_info = (file_in_zip_read_info_s*)
 									    ALLOC(sizeof(file_in_zip_read_info_s));
-	if (pfile_in_zip_read_info==NULL)
-		return UNZ_INTERNALERROR;
+	if (pfile_in_zip_read_info==NULL) {
+		err = UNZ_INTERNALERROR;
+		goto failed;
+	}
 
 	pfile_in_zip_read_info->read_buffer=(char*)ALLOC(UNZ_BUFSIZE);
 	pfile_in_zip_read_info->offset_local_extrafield = offset_local_extrafield;
@@ -1913,8 +1922,8 @@ extern int unzOpenCurrentFile (unzFile file)
 
 	if (pfile_in_zip_read_info->read_buffer==NULL)
 	{
-		TRYFREE(pfile_in_zip_read_info);
-		return UNZ_INTERNALERROR;
+		err = UNZ_INTERNALERROR;
+		goto failed;
 	}
 
 	pfile_in_zip_read_info->stream_initialised=0;
@@ -1950,11 +1959,8 @@ extern int unzOpenCurrentFile (unzFile file)
          * size of both compressed and uncompressed data
          */
 	}
-	if (err != UNZ_OK) {
-		TRYFREE(pfile_in_zip_read_info->read_buffer);
-		TRYFREE(pfile_in_zip_read_info);
-		return err;
-	}
+	if (err != UNZ_OK)
+		goto failed;
 	pfile_in_zip_read_info->rest_read_compressed =
             s->cur_file_info.compressed_size ;
 	pfile_in_zip_read_info->rest_read_uncompressed = 
@@ -1968,8 +1974,21 @@ extern int unzOpenCurrentFile (unzFile file)
 	pfile_in_zip_read_info->stream.avail_in = (uInt)0;
 
 
+	/* Replace the active decoder only after the candidate is complete. */
+	if (s->pfile_in_zip_read != NULL)
+		unzCloseCurrentFile(file);
 	s->pfile_in_zip_read = pfile_in_zip_read_info;
     return UNZ_OK;
+
+failed:
+	if (pfile_in_zip_read_info != NULL) {
+		TRYFREE(pfile_in_zip_read_info->read_buffer);
+		TRYFREE(pfile_in_zip_read_info);
+	}
+	if (previous_file_pos >= 0 &&
+		fseek(s->file, previous_file_pos, SEEK_SET) != 0)
+		err = UNZ_ERRNO;
+	return err;
 }
 
 
@@ -2021,11 +2040,11 @@ extern int unzReadCurrentFile  (unzFile file, void *buf, unsigned len)
 				uReadThis = (uInt)pfile_in_zip_read_info->rest_read_compressed;
 			if (uReadThis == 0)
 				return UNZ_EOF;
-			if (s->cur_file_info.compressed_size == pfile_in_zip_read_info->rest_read_compressed)
-				if (fseek(pfile_in_zip_read_info->file,
-						  pfile_in_zip_read_info->pos_in_zipfile + 
-							 pfile_in_zip_read_info->byte_before_the_zipfile,SEEK_SET)!=0)
-					return UNZ_ERRNO;
+			/* Metadata queries can move the FILE independently of this decoder. */
+			if (fseek(pfile_in_zip_read_info->file,
+					  pfile_in_zip_read_info->pos_in_zipfile +
+					  pfile_in_zip_read_info->byte_before_the_zipfile,SEEK_SET)!=0)
+				return UNZ_ERRNO;
 			if (fread(pfile_in_zip_read_info->read_buffer,uReadThis,1,
                          pfile_in_zip_read_info->file)!=1)
 				return UNZ_ERRNO;
