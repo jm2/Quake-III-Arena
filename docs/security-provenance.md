@@ -1,6 +1,7 @@
 # Security provenance review
 
 Review date: 2026-07-28
+Last validation update: 2026-09-18
 Local baseline: `abe5028afda280240d48d012a62c09e713689fd2`
 ioquake3 comparison point:
 [`588393618dbc82e7207c21c6ddecca229944a03a`](https://github.com/ioquake/ioq3/commit/588393618dbc82e7207c21c6ddecca229944a03a)
@@ -18,7 +19,7 @@ Every accepted family still needs a focused malformed-input regression.
 | Arbitrary server file download (CVE-2006-2082) | [`60293f49`](https://github.com/ioquake/ioq3/commit/60293f49ee8c665673202e80ecd103f13a9fa6ab) | Missing: any requested server path could reach `FS_SV_FOpenFileRead` | Locally ported: only exact referenced `.pk3` names are opened; retail paks remain blocked |
 | Shader-remap/extension overflow (CVE-2006-2236) | [`d2141145`](https://github.com/ioquake/ioq3/commit/d21411452ef32b86c0b79ddcaf49221701dcdb07) | Missing two-argument unbounded `COM_StripExtension` | Locally ported with destination sizes at every call site |
 | Malicious download and snapshot lengths | [`99abd01c`](https://github.com/ioquake/ioq3/commit/99abd01c2f5e1a181acb8623edceff10cd918751) | Missing | Locally ported |
-| Truncated Huffman/message reads and exact-capacity writes | [`d2b1d124`](https://github.com/ioquake/ioq3/commit/d2b1d124d4055c2fcbe5126863487c52fd58cca1), [`1e309787`](https://github.com/ioquake/ioq3/commit/1e309787224326b66f04cd166fbd9e200f5fded5) | Missing | Locally ported, including unaligned OOB integer access fixes for PowerPC |
+| Truncated Huffman/message reads and exact-capacity writes | [`d2b1d124`](https://github.com/ioquake/ioq3/commit/d2b1d124d4055c2fcbe5126863487c52fd58cca1), [`1e309787`](https://github.com/ioquake/ioq3/commit/1e309787224326b66f04cd166fbd9e200f5fded5) | Missing | Locally ported, including unaligned OOB integer access fixes for PowerPC; [exact-limit sanitizer evidence](message-huffman-validation.md) covers the codec and out-of-band caller |
 | Reliable-acknowledgement server DoS | [`47c96419`](https://github.com/ioquake/ioq3/commit/47c9641939d84cfae249b38d2691d37ff84be817) | Missing | Locally ported |
 | Cgame shader-state/configstring overflows | [`797168fa`](https://github.com/ioquake/ioq3/commit/797168fa0898fd81491b093ee9c5f9c6f82fee36), [`604b63f0`](https://github.com/ioquake/ioq3/commit/604b63f00f3f38ab8be33d8e1e72c086d9148fbd) | Missing | Locally ported |
 | Cgame item configstring overflow | [`fc244c97`](https://github.com/ioquake/ioq3/commit/fc244c97ef1a5f1c6e7c1f46a098c8f57f271153) | Missing | Locally ported |
@@ -68,9 +69,11 @@ Every accepted family still needs a focused malformed-input regression.
 
 ## Required validation
 
-- [ ] Add host ASan/UBSan harnesses for message, download, format-string, image,
-      model, BSP, bot/AAS, cinematic, and QVM malformed-input corpora.
-- [ ] Exercise accepted message patches at empty, one-bit-short, exact-capacity,
+- [x] Add a host ASan/UBSan corpus for message/Huffman and out-of-band caller
+      bounds; see [message/Huffman evidence](message-huffman-validation.md).
+- [ ] Add remaining host ASan/UBSan corpora for download, format-string, image,
+      model, BSP, bot/AAS, cinematic, and QVM malformed inputs.
+- [x] Exercise accepted message patches at empty, one-bit-short, exact-capacity,
       and one-bit-over limits.
 - [ ] Exercise every download rejection spelling (`../`, `..\\`, `::`,
       absolute, empty, non-pk3, unreferenced, and truncated pair).
