@@ -112,6 +112,7 @@ typedef struct directive_s
 #define TOKEN_HEAP_SIZE		4096
 #define MAX_SOURCE_TOKEN_WORK	TOKEN_HEAP_SIZE
 #define MAX_SOURCE_TOKEN_DEPTH	128
+#define MAX_SOURCE_INCLUDE_DEPTH 64
 
 int numtokens;
 /*
@@ -233,15 +234,22 @@ void PC_PopIndent(source_t *source, int *type, int *skip)
 int PC_PushScript(source_t *source, script_t *script)
 {
 	script_t *s;
+	int depth = 0;
 
 	for (s = source->scriptstack; s; s = s->next)
 	{
+		depth++;
 		if (!Q_stricmp(s->filename, script->filename))
 		{
 			SourceError(source, "%s recursively included", script->filename);
 			return qfalse;
 		} //end if
 	} //end for
+	if (depth >= MAX_SOURCE_INCLUDE_DEPTH)
+	{
+		SourceError(source, "more than %d active source files", MAX_SOURCE_INCLUDE_DEPTH);
+		return qfalse;
+	}
 	//push the script on the script stack
 	script->next = source->scriptstack;
 	source->scriptstack = script;

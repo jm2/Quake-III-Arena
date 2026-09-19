@@ -628,8 +628,11 @@ QVMs while any P0 item is open.
         string lookahead has a fixed depth, and ordinary large sources reset the
         budget after every published token; see
         [work-budget evidence](bot-preprocessor-budget-validation.md).
-  - [ ] Finish remaining character/source allocation consumers, include depth,
-        and aggregate parser memory budgets.
+  - [x] Native includes preserve lookup, ordering and ownership through 64 active
+        source files; the 65th rejects before publication and releases its loaded
+        candidate; see [include-depth evidence](bot-include-depth-validation.md).
+  - [ ] Finish remaining character/source allocation consumers and aggregate
+        parser memory budgets.
 
 ## P1 — high-impact security, runtime, and release blockers
 
