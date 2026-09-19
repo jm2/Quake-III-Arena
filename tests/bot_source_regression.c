@@ -7,6 +7,7 @@ static void ReturnedFatal(int level);
 #include "bot_character_regression.c"
 #undef main
 extern define_t *globaldefines;
+extern define_t *PC_FindHashedDefine(define_t **definehash, char *name);
 static int fatalErrors, reportLength, shortRead, closed, allowLarge;
 static int LargeNullable(unsigned long size) {return allowLarge&&size>65536;}
 static void ReturnedFatal(int level) {Check(level==ERR_FATAL,"native token-copy fatal error preserved");fatalErrors++;}
@@ -80,11 +81,30 @@ static void LargestNullable(int memory) {
     Check(!source&&requests==1&&!liveOwners&&!numtokens&&!fileReads,"last signed buffer cost remains representable and propagates a nullable import");Check(memory?(!opens&&!closes):(opens==1&&closes==1),"large nullable file import closes the opened handle");
 }
 static void PathOverflow(void) {SourceReset("");PC_SetBaseFolder("prefix");Check(!LoadSourceFile("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")&&!opens&&!requests&&!formatWarnings,"full native source path rejects before lookup/truncation");}
+static void Builtins(int fault) {
+    static const char *names[]={"__LINE__","__FILE__","__DATE__","__TIME__"};
+    static const int values[]={BUILTIN_LINE,BUILTIN_FILE,BUILTIN_DATE,BUILTIN_TIME};
+    source_t *source;define_t *define;int base,i;
+    SourceReset("");source=LoadSourceMemory("",0,"builtin-source");Check(source&&liveOwners==4&&!numtokens,"complete native source prepares for builtin dictionary");base=requests;
+    if(fault){
+        failAt=base+fault;PC_AddBuiltinDefines(source);
+        Check(requests==base+fault&&liveOwners==4&&!numtokens&&errors==1&&PC_SourceHasError(source),"nullable builtin allocation releases every staged owner and records source failure");
+        for(i=0;i<4;i++)Check(!PC_FindHashedDefine(source->definehash,(char *)names[i]),"failed builtin transaction publishes no partial name");
+        failAt=0;
+    }
+    PC_AddBuiltinDefines(source);
+    Check(requests==base+(fault?fault:0)+4&&liveOwners==8&&!numtokens,"complete builtin dictionary publishes all four owners together");
+    for(i=0;i<4;i++){
+        define=PC_FindHashedDefine(source->definehash,(char *)names[i]);
+        Check(define&&define->builtin==values[i]&&(define->flags&DEFINE_FIXED)&&!define->tokens&&!define->parms,"published builtin retains native name/type/empty-body metadata");
+    }
+    SourceDone(source);
+}
 #ifndef Q3_SOURCE_ENTRY
 #define Q3_SOURCE_ENTRY main
 #endif
 int Q3_SOURCE_ENTRY(int argc,char **argv) {
-    if(argc>1){int proof=atoi(argv[1]);if(proof==0)BaseFailure(0,1);else if(proof==1)BaseFailure(0,2);else if(proof==2)BaseFailure(0,3);else if(proof==3)BaseFailure(0,4);else if(proof==4)Short();else if(proof==5)InvalidCost(0,INT_MAX);else if(proof==6)BaseFailure(1,2);else if(proof==7)Names();else if(proof==8)HighByte();else if(proof==9)Globals(1,5);else if(proof==10)Globals(1,6);else if(proof==11)Globals(1,9);else if(proof==12)PathOverflow();else InvalidCost(1,-1);}
-    else {int memory,position;for(memory=0;memory<2;memory++){Plain(memory,0);Plain(memory,1);for(position=1;position<=4;position++)BaseFailure(memory,position);InvalidCost(memory,-1);InvalidCost(memory,INT_MAX);LargestNullable(memory);}Short();Names();MemoryMacros();HighByte();Globals(0,0);Globals(1,0);puts("Real native source owner transactions, file costs/reads, memory punctuation and copied-global rollback passed (issue #48)");}
+    if(argc>1){int proof=atoi(argv[1]);if(proof==0)BaseFailure(0,1);else if(proof==1)BaseFailure(0,2);else if(proof==2)BaseFailure(0,3);else if(proof==3)BaseFailure(0,4);else if(proof==4)Short();else if(proof==5)InvalidCost(0,INT_MAX);else if(proof==6)BaseFailure(1,2);else if(proof==7)Names();else if(proof==8)HighByte();else if(proof==9)Globals(1,5);else if(proof==10)Globals(1,6);else if(proof==11)Globals(1,9);else if(proof==12)PathOverflow();else if(proof>=13&&proof<=16)Builtins(proof-12);else InvalidCost(1,-1);}
+    else {int memory,position;for(memory=0;memory<2;memory++){Plain(memory,0);Plain(memory,1);for(position=1;position<=4;position++)BaseFailure(memory,position);InvalidCost(memory,-1);InvalidCost(memory,INT_MAX);LargestNullable(memory);}Short();Names();MemoryMacros();HighByte();Globals(0,0);Globals(1,0);Builtins(0);for(position=1;position<=4;position++)Builtins(position);puts("Real native source owner transactions, file costs/reads, builtin/global publication and rollback passed (issue #48)");}
     return 0;
 }

@@ -724,8 +724,11 @@ implementation or check, without implying issue completion.
   - [x] Native includes preserve lookup, ordering and ownership through 64 active
         source files; the 65th rejects before publication and releases its loaded
         candidate; see [include-depth evidence](bot-include-depth-validation.md).
-  - [ ] Finish remaining character/source allocation consumers and aggregate
-        parser memory budgets.
+  - [x] Fixed builtin definitions stage all four checked owners before dictionary
+        publication; nullable failure releases candidates, records source status
+        and permits a complete retry; see
+        [builtin dictionary evidence](bot-builtin-dictionary-validation.md).
+  - [ ] Finish aggregate parser memory budgets.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
   - [x] Local pool/type/item/string checks, reload-name initialization, and
         bounded player-model cvar copies cross-build in both products.

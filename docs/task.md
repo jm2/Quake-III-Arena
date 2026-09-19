@@ -631,8 +631,11 @@ QVMs while any P0 item is open.
   - [x] Native includes preserve lookup, ordering and ownership through 64 active
         source files; the 65th rejects before publication and releases its loaded
         candidate; see [include-depth evidence](bot-include-depth-validation.md).
-  - [ ] Finish remaining character/source allocation consumers and aggregate
-        parser memory budgets.
+  - [x] Fixed builtin definitions stage all four checked owners before dictionary
+        publication; nullable failure releases candidates, records source status
+        and permits a complete retry; see
+        [builtin dictionary evidence](bot-builtin-dictionary-validation.md).
+  - [ ] Finish aggregate parser memory budgets.
 
 ## P1 — high-impact security, runtime, and release blockers
 

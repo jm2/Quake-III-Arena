@@ -779,7 +779,7 @@ void PC_FreeDefine(define_t *define)
 //============================================================================
 void PC_AddBuiltinDefines(source_t *source)
 {
-	int i;
+	int i, j;
 	define_t *define;
 	struct builtin
 	{
@@ -793,21 +793,33 @@ void PC_AddBuiltinDefines(source_t *source)
 //		{ "__STDC__", BUILTIN_STDC },
 		{ NULL, 0 }
 	};
+	define_t *defines[sizeof(builtin) / sizeof(builtin[0])];
 
+	Com_Memset(defines, 0, sizeof(defines));
 	for (i = 0; builtin[i].string; i++)
 	{
 		define = (define_t *) GetMemory(sizeof(define_t) + strlen(builtin[i].string) + 1);
+		if (!define)
+		{
+			for (j = 0; j < i; j++) PC_FreeDefine(defines[j]);
+			SourceError(source, "could not allocate builtin definitions");
+			return;
+		} //end if
 		Com_Memset(define, 0, sizeof(define_t));
 		define->name = (char *) define + sizeof(define_t);
 		strcpy(define->name, builtin[i].string);
 		define->flags |= DEFINE_FIXED;
 		define->builtin = builtin[i].builtin;
+		defines[i] = define;
+	} //end for
+	for (i = 0; builtin[i].string; i++)
+	{
 		//add the define to the source
 #if DEFINEHASHING
-		PC_AddDefineToHash(define, source->definehash);
+		PC_AddDefineToHash(defines[i], source->definehash);
 #else
-		define->next = source->defines;
-		source->defines = define;
+		defines[i]->next = source->defines;
+		source->defines = defines[i];
 #endif //DEFINEHASHING
 	} //end for
 } //end of the function PC_AddBuiltinDefines
