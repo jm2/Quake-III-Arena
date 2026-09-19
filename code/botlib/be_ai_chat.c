@@ -2061,154 +2061,138 @@ bot_replychat_t *BotLoadReplyChat(char *filename)
 	char namebuffer[MAX_MESSAGE_SIZE];
 	source_t *source;
 	token_t token;
-	bot_chatmessage_t *chatmessage = NULL;
+	bot_chatmessage_t *chatmessage;
 	bot_replychat_t *replychat, *replychatlist;
 	bot_replychatkey_t *key;
+	int nameused, namelen, separator;
 
+	if (!filename || !filename[0] || strlen(filename) >= MAX_PATH)
+	{
+		botimport.Print(PRT_ERROR, "invalid reply chat filename\n");
+		return NULL;
+	}
 	PC_SetBaseFolder(BOTFILESBASEFOLDER);
 	source = LoadSourceFile(filename);
 	if (!source)
 	{
-		botimport.Print(PRT_ERROR, "counldn't load %s\n", filename);
+		botimport.Print(PRT_ERROR, "couldn't load %s\n", filename);
 		return NULL;
-	} //end if
-	//
+	}
 	replychatlist = NULL;
-	//
-	while(PC_ReadToken(source, &token))
+	while(!PC_SourceHasError(source) && PC_ReadToken(source, &token))
 	{
+		if (PC_SourceHasError(source)) goto failed;
 		if (strcmp(token.string, "["))
 		{
 			SourceError(source, "expected [, found %s", token.string);
-			BotFreeReplyChat(replychatlist);
-			FreeSource(source);
-			return NULL;
-		} //end if
-		//
-		replychat = GetClearedHunkMemory(sizeof(bot_replychat_t));
-		replychat->keys = NULL;
+			goto failed;
+		}
+		replychat = GetClearedMemory(sizeof(bot_replychat_t));
+		if (!replychat) goto failed;
 		replychat->next = replychatlist;
 		replychatlist = replychat;
-		//read the keys, there must be at least one key
 		do
 		{
-			//allocate a key
-			key = (bot_replychatkey_t *) GetClearedHunkMemory(sizeof(bot_replychatkey_t));
-			key->flags = 0;
-			key->string = NULL;
-			key->match = NULL;
+			if (PC_SourceHasError(source)) goto failed;
+			key = (bot_replychatkey_t *) GetClearedMemory(sizeof(bot_replychatkey_t));
+			if (!key) goto failed;
 			key->next = replychat->keys;
 			replychat->keys = key;
-			//check for MUST BE PRESENT and MUST BE ABSENT keys
 			if (PC_CheckTokenString(source, "&")) key->flags |= RCKFL_AND;
 			else if (PC_CheckTokenString(source, "!")) key->flags |= RCKFL_NOT;
-			//special keys
+			if (PC_SourceHasError(source)) goto failed;
 			if (PC_CheckTokenString(source, "name")) key->flags |= RCKFL_NAME;
 			else if (PC_CheckTokenString(source, "female")) key->flags |= RCKFL_GENDERFEMALE;
 			else if (PC_CheckTokenString(source, "male")) key->flags |= RCKFL_GENDERMALE;
 			else if (PC_CheckTokenString(source, "it")) key->flags |= RCKFL_GENDERLESS;
-			else if (PC_CheckTokenString(source, "(")) //match key
+			else if (PC_CheckTokenString(source, "("))
 			{
 				key->flags |= RCKFL_VARIABLES;
 				key->match = BotLoadMatchPieces(source, ")");
-				if (!key->match)
-				{
-					FreeSource(source);
-					BotFreeReplyChat(replychatlist);
-					return NULL;
-				} //end if
-			} //end else if
-			else if (PC_CheckTokenString(source, "<")) //bot names
+				if (!key->match) goto failed;
+			}
+			else if (PC_CheckTokenString(source, "<"))
 			{
 				key->flags |= RCKFL_BOTNAMES;
-				strcpy(namebuffer, "");
+				nameused = 0;
+				namebuffer[0] = '\0';
 				do
 				{
-					if (!PC_ExpectTokenType(source, TT_STRING, 0, &token))
-					{
-						BotFreeReplyChat(replychatlist);
-						FreeSource(source);
-						return NULL;
-					} //end if
+					if (PC_SourceHasError(source) || !PC_ExpectTokenType(source, TT_STRING, 0, &token)) goto failed;
+					if (PC_SourceHasError(source)) goto failed;
 					StripDoubleQuotes(token.string);
-					if (strlen(namebuffer)) strcat(namebuffer, "\\");
-					strcat(namebuffer, token.string);
-				} while(PC_CheckTokenString(source, ","));
-				if (!PC_ExpectTokenString(source, ">"))
-				{
-					BotFreeReplyChat(replychatlist);
-					FreeSource(source);
-					return NULL;
-				} //end if
-				key->string = (char *) GetClearedHunkMemory(strlen(namebuffer) + 1);
-				strcpy(key->string, namebuffer);
-			} //end else if
-			else //normal string key
+					namelen = strlen(token.string);
+					separator = nameused != 0;
+					if (namelen > (int)sizeof(namebuffer) - 1 - nameused - separator)
+					{
+						SourceError(source, "reply chat name list exceeds capacity");
+						goto failed;
+					}
+					if (separator) namebuffer[nameused++] = '\\';
+					Com_Memcpy(namebuffer + nameused, token.string, namelen + 1);
+					nameused += namelen;
+				} while(!PC_SourceHasError(source) && PC_CheckTokenString(source, ","));
+				if (PC_SourceHasError(source) || !PC_ExpectTokenString(source, ">")) goto failed;
+				key->string = (char *) GetClearedMemory(nameused + 1);
+				if (!key->string) goto failed;
+				Com_Memcpy(key->string, namebuffer, nameused + 1);
+			}
+			else
 			{
 				key->flags |= RCKFL_STRING;
-				if (!PC_ExpectTokenType(source, TT_STRING, 0, &token))
-				{
-					BotFreeReplyChat(replychatlist);
-					FreeSource(source);
-					return NULL;
-				} //end if
+				if (PC_SourceHasError(source) || !PC_ExpectTokenType(source, TT_STRING, 0, &token)) goto failed;
+				if (PC_SourceHasError(source)) goto failed;
 				StripDoubleQuotes(token.string);
-				key->string = (char *) GetClearedHunkMemory(strlen(token.string) + 1);
+				key->string = (char *) GetClearedMemory(strlen(token.string) + 1);
+				if (!key->string) goto failed;
 				strcpy(key->string, token.string);
-			} //end else
-			//
+			}
+			if (PC_SourceHasError(source)) goto failed;
 			PC_CheckTokenString(source, ",");
-		} while(!PC_CheckTokenString(source, "]"));
-		//
+			if (PC_SourceHasError(source)) goto failed;
+			if (PC_CheckTokenString(source, "]")) break;
+		} while(!PC_SourceHasError(source));
+		if (PC_SourceHasError(source)) goto failed;
 		BotCheckValidReplyChatKeySet(source, replychat->keys);
-		//read the = sign and the priority
-		if (!PC_ExpectTokenString(source, "=") ||
-			!PC_ExpectTokenType(source, TT_NUMBER, 0, &token))
+		if (!PC_ExpectTokenString(source, "=") || !PC_ExpectTokenType(source, TT_NUMBER, 0, &token)) goto failed;
+		if (token.floatvalue < -2147483648.0L || token.floatvalue >= 2147483648.0L)
 		{
-			BotFreeReplyChat(replychatlist);
-			FreeSource(source);
-			return NULL;
-		} //end if
+			SourceError(source, "reply chat priority is outside its native integer range");
+			goto failed;
+		}
 		replychat->priority = token.floatvalue;
-		//read the leading {
-		if (!PC_ExpectTokenString(source, "{"))
+		if (!BotSynonymFloatFinite(&replychat->priority) || replychat->priority >= 2147483648.0f)
 		{
-			BotFreeReplyChat(replychatlist);
-			FreeSource(source);
-			return NULL;
-		} //end if
-		replychat->numchatmessages = 0;
-		//while the trailing } is not found
-		while(!PC_CheckTokenString(source, "}"))
+			SourceError(source, "reply chat priority is not representable");
+			goto failed;
+		}
+		if (!PC_ExpectTokenString(source, "{")) goto failed;
+		while(!PC_SourceHasError(source))
 		{
-			if (!BotLoadChatMessage(source, chatmessagestring))
-			{
-				BotFreeReplyChat(replychatlist);
-				FreeSource(source);
-				return NULL;
-			} //end if
-			chatmessage = (bot_chatmessage_t *) GetClearedHunkMemory(sizeof(bot_chatmessage_t) + strlen(chatmessagestring) + 1);
+			if (PC_CheckTokenString(source, "}")) break;
+			if (PC_SourceHasError(source) || !BotLoadChatMessage(source, chatmessagestring)) goto failed;
+			if (PC_SourceHasError(source)) goto failed;
+			chatmessage = (bot_chatmessage_t *) GetClearedMemory(sizeof(bot_chatmessage_t) + strlen(chatmessagestring) + 1);
+			if (!chatmessage) goto failed;
 			chatmessage->chatmessage = (char *) chatmessage + sizeof(bot_chatmessage_t);
 			strcpy(chatmessage->chatmessage, chatmessagestring);
 			chatmessage->time = -2*CHATMESSAGE_RECENTTIME;
 			chatmessage->next = replychat->firstchatmessage;
-			//add the chat message to the reply chat
 			replychat->firstchatmessage = chatmessage;
 			replychat->numchatmessages++;
-		} //end while
-	} //end while
+		}
+	}
+	if (PC_SourceHasError(source)) goto failed;
 	FreeSource(source);
 	botimport.Print(PRT_MESSAGE, "loaded %s\n", filename);
-	//
-	//BotDumpReplyChat(replychatlist);
-	if (bot_developer)
-	{
-		BotCheckReplyChatIntegrety(replychatlist);
-	} //end if
-	//
+	if (bot_developer) BotCheckReplyChatIntegrety(replychatlist);
 	if (!replychatlist) botimport.Print(PRT_MESSAGE, "no rchats\n");
-	//
 	return replychatlist;
+failed:
+	if (!PC_SourceHasError(source)) SourceError(source, "could not load complete reply chat");
+	BotFreeReplyChat(replychatlist);
+	FreeSource(source);
+	return NULL;
 } //end of the function BotLoadReplyChat
 //===========================================================================
 //
