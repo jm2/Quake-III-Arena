@@ -334,18 +334,56 @@ void Huff_offsetTransmit (huff_t *huff, int ch, byte *fout, int *offset, int max
 	*offset = bloc;
 }
 
+static qboolean Huff_ReceiveBounded( node_t *node, int *ch, byte *fin, int maxoffset ) {
+	while ( node && node->symbol == INTERNAL_NODE ) {
+		if ( bloc >= maxoffset ) {
+			return qfalse;
+		}
+		node = get_bit(fin) ? node->right : node->left;
+	}
+	if ( !node ) {
+		return qfalse;
+	}
+	*ch = node->symbol;
+	return qtrue;
+}
+
+static void Huff_DecompressFailure( msg_t *mbuf, int offset ) {
+	mbuf->overflowed = qtrue;
+	if ( offset >= 0 && offset <= mbuf->cursize && offset <= mbuf->maxsize ) {
+		mbuf->cursize = offset;
+	} else {
+		mbuf->cursize = 0;
+	}
+}
+
 void Huff_Decompress(msg_t *mbuf, int offset) {
-	int			ch, cch, i, j, size;
-	byte		seq[65536];
+	int			ch, cch, i, j, size, maxoffset;
+	/* Network processing is single-threaded; avoid a >64 KiB classic Mac stack frame. */
+	static byte	seq[65536];
 	byte*		buffer;
-	huff_t		huff;
+	static huff_t	huff;
 
-	size = mbuf->cursize - offset;
-	buffer = mbuf->data + offset;
-
-	if ( size <= 0 ) {
+	if ( !mbuf ) {
 		return;
 	}
+	if ( !mbuf->data || offset < 0 || mbuf->maxsize < 0 || mbuf->cursize < 0 ||
+		mbuf->cursize > mbuf->maxsize || offset > mbuf->cursize ) {
+		mbuf->overflowed = qtrue;
+		mbuf->cursize = 0;
+		return;
+	}
+
+	size = mbuf->cursize - offset;
+	if ( size == 0 ) {
+		return;
+	}
+	if ( size < 2 || size > INT_MAX / 8 ) {
+		Huff_DecompressFailure( mbuf, offset );
+		return;
+	}
+	buffer = mbuf->data + offset;
+	maxoffset = size * 8;
 
 	Com_Memset(&huff, 0, sizeof(huff_t));
 	// Initialize the tree & list with the NYT node 
@@ -364,14 +402,15 @@ void Huff_Decompress(msg_t *mbuf, int offset) {
 
 	for ( j = 0; j < cch; j++ ) {
 		ch = 0;
-		// don't overflow reading from the messages
-		// FIXME: would it be better to have a overflow check in get_bit ?
-		if ( (bloc >> 3) > size ) {
-			seq[j] = 0;
-			break;
+		if ( !Huff_ReceiveBounded(huff.tree, &ch, buffer, maxoffset) ) {
+			Huff_DecompressFailure( mbuf, offset );
+			return;
 		}
-		Huff_Receive(huff.tree, &ch, buffer);				/* Get a character */
 		if ( ch == NYT ) {								/* We got a NYT, get the symbol associated with it */
+			if ( bloc > maxoffset - 8 ) {
+				Huff_DecompressFailure( mbuf, offset );
+				return;
+			}
 			ch = 0;
 			for ( i = 0; i < 8; i++ ) {
 				ch = (ch<<1) + get_bit(buffer);
@@ -389,17 +428,31 @@ void Huff_Decompress(msg_t *mbuf, int offset) {
 extern 	int oldsize;
 
 void Huff_Compress(msg_t *mbuf, int offset) {
-	int			i, ch, size;
-	byte		seq[65536];
+	int			i, ch, size, maxoffset, outputSize;
+	/* Network processing is single-threaded; avoid a >64 KiB classic Mac stack frame. */
+	static byte	seq[65536];
 	byte*		buffer;
-	huff_t		huff;
+	static huff_t	huff;
 
-	size = mbuf->cursize - offset;
-	buffer = mbuf->data+ + offset;
-
-	if (size<=0) {
+	if ( !mbuf ) {
 		return;
 	}
+	if ( !mbuf->data || offset < 0 || mbuf->maxsize < 0 || mbuf->cursize < 0 ||
+		mbuf->cursize > mbuf->maxsize || offset > mbuf->cursize ) {
+		mbuf->overflowed = qtrue;
+		return;
+	}
+
+	size = mbuf->cursize - offset;
+	if ( size <= 0 ) {
+		return;
+	}
+	if ( size > 65535 ) {
+		mbuf->overflowed = qtrue;
+		return;
+	}
+	buffer = mbuf->data + offset;
+	maxoffset = ((int)sizeof(seq) - 1) * 8;
 
 	Com_Memset(&huff, 0, sizeof(huff_t));
 	// Add the NYT (not yet transmitted) node into the tree/list */
@@ -417,18 +470,27 @@ void Huff_Compress(msg_t *mbuf, int offset) {
 
 	for (i=0; i<size; i++ ) {
 		ch = buffer[i];
-		Huff_transmit(&huff, ch, seq, sizeof(seq) << 3);			/* Transmit symbol */
-		if (bloc > sizeof(seq) << 3) {
+		Huff_transmit(&huff, ch, seq, maxoffset);				/* Transmit symbol */
+		if ( bloc > maxoffset ) {
 			mbuf->overflowed = qtrue;
 			return;
 		}
 		Huff_addRef(&huff, (byte)ch);								/* Do update */
 	}
 
+	/* Preserve the historical pad byte without copying stale scratch data. */
+	if ( (bloc & 7) == 0 ) {
+		seq[bloc >> 3] = 0;
+	}
 	bloc += 8;												// next byte
+	outputSize = bloc >> 3;
+	if ( outputSize > mbuf->maxsize - offset ) {
+		mbuf->overflowed = qtrue;
+		return;
+	}
 
-	mbuf->cursize = (bloc>>3) + offset;
-	Com_Memcpy(mbuf->data+offset, seq, (bloc>>3));
+	mbuf->cursize = outputSize + offset;
+	Com_Memcpy(mbuf->data + offset, seq, outputSize);
 }
 
 void Huff_Init(huffman_t *huff) {

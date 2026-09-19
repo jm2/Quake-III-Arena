@@ -1,9 +1,9 @@
 # Empty macro source continuation — 2026-09-18
 
-PC_ExpandDefine returns success for a complete expansion that produces no tokens.
-PC_ExpandDefineIntoSource instead reports failure, so the source reader returns
-false before it reaches actual EOF. Subsequent tokens or lexical errors can be
-hidden, concatenated strings split and valid character fields rejected.
+Before this fix, PC_ExpandDefine returned success for a complete expansion that
+produced no tokens, but PC_ExpandDefineIntoSource reported failure. The source
+reader could stop before actual EOF, hiding subsequent tokens or lexical errors,
+splitting concatenated strings and rejecting valid character fields.
 
 A complete empty expansion now reports successful consumption. Readers continue
 with the existing queue/script until they return a real token, reach actual EOF or
