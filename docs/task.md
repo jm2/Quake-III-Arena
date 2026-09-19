@@ -483,6 +483,15 @@ QVMs while any P0 item is open.
   - [x] Projectile model descriptors use the projectile offset, preserve every
         scalar field across string order/boundaries and retain native layouts;
         see [projectile evidence](bot-projectile-model-validation.md).
+  - [x] Weapon configuration checks native counts/full filenames and complete
+        allocation cost, parses checked heap staging, rejects source errors and
+        fixes projectiles before publishing rebased hunk arrays; failed loads keep
+        prior payload and consume no additional physical hunk;
+        see [weapon evidence](bot-weapon-config-validation.md).
+  - [x] Weapon setup checks its filename variable and stages complete config
+        before replacing the shared root; failure keeps every prior array/fixup
+        byte and success releases the prior logical record;
+        see [setup evidence](bot-weapon-setup-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
