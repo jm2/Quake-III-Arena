@@ -2985,6 +2985,11 @@ int BotAllocChatState(void)
 		if (!botchatstates[i])
 		{
 			botchatstates[i] = GetClearedMemory(sizeof(bot_chatstate_t));
+			if (!botchatstates[i])
+			{
+				botimport.Print(PRT_ERROR, "couldn't allocate chat state\n");
+				return 0;
+			}
 			return i;
 		} //end if
 	} //end for
@@ -3071,7 +3076,7 @@ void BotShutdownChatAI(void)
 	int i;
 
 	//free all remaining chat states
-	for(i = 0; i < MAX_CLIENTS; i++)
+	for(i = 1; i <= MAX_CLIENTS; i++)
 	{
 		if (botchatstates[i])
 		{
@@ -3090,6 +3095,7 @@ void BotShutdownChatAI(void)
 	} //end for
 	if (consolemessageheap) FreeMemory(consolemessageheap);
 	consolemessageheap = NULL;
+	freeconsolemessages = NULL;
 	if (matchtemplates) BotFreeMatchTemplates(matchtemplates);
 	matchtemplates = NULL;
 	if (randomstrings) FreeMemory(randomstrings);
