@@ -402,14 +402,17 @@ static fileHandle_t	FS_HandleForFile(void) {
 }
 
 static FILE	*FS_FileForHandle( fileHandle_t f ) {
-	if ( f < 0 || f > MAX_FILE_HANDLES ) {
-		Com_Error( ERR_DROP, "FS_FileForHandle: out of reange" );
+	if ( f <= 0 || f >= MAX_FILE_HANDLES ) {
+		Com_Error( ERR_DROP, "FS_FileForHandle: out of range" );
+		return NULL;
 	}
 	if (fsh[f].zipFile == qtrue) {
 		Com_Error( ERR_DROP, "FS_FileForHandle: can't get FILE on zip file" );
+		return NULL;
 	}
 	if ( ! fsh[f].handleFiles.file.o ) {
 		Com_Error( ERR_DROP, "FS_FileForHandle: NULL" );
+		return NULL;
 	}
 	
 	return fsh[f].handleFiles.file.o;
@@ -418,6 +421,9 @@ static FILE	*FS_FileForHandle( fileHandle_t f ) {
 void	FS_ForceFlush( fileHandle_t f ) {
 	FILE *file;
 
+	if (f <= 0 || f >= MAX_FILE_HANDLES || fsh[f].buffer ||
+		fsh[f].zipFile || !fsh[f].handleFiles.file.o)
+		return;
 	file = FS_FileForHandle(f);
 	setvbuf( file, NULL, _IONBF, 0 );
 }
@@ -432,13 +438,16 @@ size of the file.
 ================
 */
 int FS_filelength( fileHandle_t f ) {
-    if (fsh[f].buffer) {
-        return fsh[f].bufferLen;
-    }
 	int		pos;
 	int		end;
 	FILE*	h;
 
+	if (f <= 0 || f >= MAX_FILE_HANDLES ||
+		(!fsh[f].buffer && !fsh[f].handleFiles.file.o))
+		return -1;
+    if (fsh[f].buffer) {
+        return fsh[f].bufferLen;
+    }
 	h = FS_FileForHandle(f);
 	pos = ftell (h);
 	fseek (h, 0, SEEK_END);
@@ -866,6 +875,9 @@ void FS_FCloseFile( fileHandle_t f ) {
 	if ( !fs_searchpaths ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
 	}
+	if (f <= 0 || f >= MAX_FILE_HANDLES ||
+		(!fsh[f].buffer && !fsh[f].handleFiles.file.o))
+		return;
 
 	if (fsh[f].streamed) {
 		Sys_EndStreamedFile(f);
@@ -1489,7 +1501,10 @@ int FS_Write( const void *buffer, int len, fileHandle_t h ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
 	}
 
-	if ( !h ) {
+	if (h <= 0 || h >= MAX_FILE_HANDLES || len <= 0 || !buffer) {
+		return 0;
+	}
+	if (fsh[h].buffer || fsh[h].zipFile || !fsh[h].handleFiles.file.o) {
 		return 0;
 	}
 
@@ -3704,6 +3719,9 @@ int		FS_FOpenFileByMode( const char *qpath, fileHandle_t *f, fsMode_t mode ) {
 
 int		FS_FTell( fileHandle_t f ) {
 	int pos;
+	if (f <= 0 || f >= MAX_FILE_HANDLES ||
+		(!fsh[f].buffer && !fsh[f].handleFiles.file.o))
+		return -1;
     // Antigravity: Buffered tell
     if (fsh[f].buffer) {
         return fsh[f].bufferPos;
@@ -3717,5 +3735,8 @@ int		FS_FTell( fileHandle_t f ) {
 }
 
 void	FS_Flush( fileHandle_t f ) {
+	if (f <= 0 || f >= MAX_FILE_HANDLES || fsh[f].buffer ||
+		fsh[f].zipFile || !fsh[f].handleFiles.file.o)
+		return;
 	fflush(fsh[f].handleFiles.file.o);
 }
