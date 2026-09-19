@@ -578,6 +578,9 @@ void SV_PacketEvent( netadr_t from, msg_t *msg ) {
 		SV_ConnectionlessPacket( from, msg );
 		return;
 	}
+	if ( msg->cursize < 6 ) {
+		return;
+	}
 
 	// read the qport out of the message so we can fix up
 	// stupid address translating routers
@@ -599,16 +602,14 @@ void SV_PacketEvent( netadr_t from, msg_t *msg ) {
 			continue;
 		}
 
-		// the IP port can't be used to differentiate them, because
-		// some address translating routers periodically change UDP
-		// port assignments
-		if (cl->netchan.remoteAddress.port != from.port) {
-			Com_Printf( "SV_PacketEvent: fixing up a translated port\n" );
-			cl->netchan.remoteAddress.port = from.port;
-		}
-
 		// make sure it is a valid, in sequence packet
 		if (SV_Netchan_Process(cl, msg)) {
+			// Only an accepted packet may update a translated UDP port.
+			if (cl->netchan.remoteAddress.port != from.port) {
+				Com_Printf( "SV_PacketEvent: fixing up a translated port\n" );
+				cl->netchan.remoteAddress.port = from.port;
+			}
+
 			// zombie clients still need to do the Netchan_Process
 			// to make sure they don't need to retransmit the final
 			// reliable message, but they don't do any other processing
@@ -619,10 +620,6 @@ void SV_PacketEvent( netadr_t from, msg_t *msg ) {
 		}
 		return;
 	}
-	
-	// if we received a sequenced packet from an address we don't recognize,
-	// send an out of band disconnect packet to it
-	NET_OutOfBandPrint( NS_SERVER, from, "disconnect" );
 }
 
 

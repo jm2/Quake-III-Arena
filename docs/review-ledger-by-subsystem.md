@@ -1,6 +1,6 @@
 # Quake III Arena Mac OS 9 subsystem evidence appendix
 
-Last updated: 2026-09-18
+Last updated: 2026-09-19
 
 This preserves the first review session's subsystem-oriented evidence and
 local-fix notes. It is not the work-order queue. Use the priority/severity
@@ -276,8 +276,14 @@ implementation or check, without implying issue completion.
 - [ ] [#37 — connection/netchan lacks challenge binding](https://github.com/jm2/Quake-III-Arena/issues/37)
   - [x] User selected commercial 1.32c compatibility in the style of
         Quake3e/ioquake3 and preserving the legacy protocol by default.
-  - [ ] Harden compatible challenge/setup paths, document protection limits
-        for legacy peers, and test the selected behavior.
+  - [x] Protocol 68 stays byte-compatible by default; nonce-aware peers
+        explicitly negotiate protocol 69, bind both setup responses, checksum
+        sequenced packets and update translated ports only after validation.
+  - [x] Legacy/extended negotiation, spoof rejection, exact stock headers,
+        fragments and protection limits have
+        [host evidence](network-challenge-validation.md).
+  - [ ] Run stock/extended peer, proxy and NAT-rebinding interoperability in
+        the deferred retail target environment.
 - [ ] [#38 — connectionless rate limiting is bypassable/unfair](https://github.com/jm2/Quake-III-Arena/issues/38)
 - [ ] [#39 — QVMs can modify protected cvars/commands](https://github.com/jm2/Quake-III-Arena/issues/39)
 - [ ] [#40 — server-controlled `clientNum` reached native indexes](https://github.com/jm2/Quake-III-Arena/issues/40)

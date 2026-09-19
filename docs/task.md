@@ -1,6 +1,6 @@
 # Quake III Arena Mac OS 9 prioritized review queue
 
-Last updated: 2026-09-18
+Last updated: 2026-09-19
 
 This is the authoritative continuation ledger. Work is sorted first by
 priority (`P0` through `P3`), then by severity and exploit/runtime impact
@@ -123,8 +123,14 @@ QVMs while any P0 item is open.
   - [x] User selected commercial 1.32c compatibility (Quake3e/ioquake3 style).
         Preserve legacy protocol compatibility by default; harden compatible
         paths without requiring a different wire protocol.
-  - [ ] Document protection limits for legacy peers and test compatible setup,
-        rejection of spoofed responses, and any explicitly negotiated extension.
+  - [x] Protocol 68 remains the exact default/advertised commercial stream;
+        nonce-aware peers explicitly negotiate the checksum-only protocol 69
+        extension, while stock peers fall back in both directions.
+  - [x] Protection limits, compatible setup, exact endpoint binding, spoofed
+        response/checksum rejection, fragments and legacy wire bytes have
+        [sanitizer evidence](network-challenge-validation.md).
+  - [ ] Run stock/extended peer, proxy and NAT-rebinding interoperability with
+        legal retail data in the deferred target environment.
 - [ ] [#36 — reject oversized and truncated PK3 entries](https://github.com/jm2/Quake-III-Arena/issues/36)
       — **high**, ZIP-controlled allocation/decompression corruption.
   - [x] Local size/cast, exact-read, open-result, cleanup, and short-suffix

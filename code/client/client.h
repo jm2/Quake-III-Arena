@@ -159,6 +159,7 @@ typedef struct {
 	char		serverMessage[MAX_STRING_TOKENS];	// for display on connection dialog
 
 	int			challenge;					// from the server to use for connecting
+	qboolean	compat;					// use the commercial protocol-68 netchan header
 	int			checksumFeed;				// from the server for checksum calculations
 
 	// these are our reliable messages that go to the server

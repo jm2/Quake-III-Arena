@@ -1028,6 +1028,17 @@ void CL_Reconnect_f( void ) {
 	Cbuf_AddText( va("connect %s\n", cls.servername ) );
 }
 
+static int CL_CreateConnectionChallenge( void ) {
+	unsigned challenge;
+
+	challenge = ( (unsigned)rand() << 16 ) ^ (unsigned)rand() ^
+		(unsigned)Com_Milliseconds();
+	if ( !challenge ) {
+		challenge = 1;
+	}
+	return (int)challenge;
+}
+
 /*
 ================
 CL_Connect_f
@@ -1083,11 +1094,16 @@ void CL_Connect_f( void ) {
 		clc.serverAddress.ip[2], clc.serverAddress.ip[3],
 		BigShort( clc.serverAddress.port ) );
 
+	// Start in the commercial protocol-68 compatibility mode.  A remote
+	// server can explicitly negotiate the challenge-bound extension.
+	clc.compat = qtrue;
+
 	// if we aren't playing on a lan, we need to authenticate
 	// with the cd key
 	if ( NET_IsLocalAddress( clc.serverAddress ) ) {
 		cls.state = CA_CHALLENGING;
 	} else {
+		clc.challenge = CL_CreateConnectionChallenge();
 		cls.state = CA_CONNECTING;
 	}
 
@@ -1565,7 +1581,8 @@ void CL_CheckForResend( void ) {
 		if ( !Sys_IsLANAddress( clc.serverAddress ) ) {
 			CL_RequestAuthorization();
 		}
-		NET_OutOfBandPrint(NS_CLIENT, clc.serverAddress, "getchallenge");
+		NET_OutOfBandPrint( NS_CLIENT, clc.serverAddress,
+			"getchallenge %i", clc.challenge );
 		break;
 		
 	case CA_CHALLENGING:
@@ -1573,7 +1590,8 @@ void CL_CheckForResend( void ) {
 		port = Cvar_VariableValue ("net_qport");
 
 		Q_strncpyz( info, Cvar_InfoString( CVAR_USERINFO ), sizeof( info ) );
-		Info_SetValueForKey( info, "protocol", va("%i", PROTOCOL_VERSION ) );
+		Info_SetValueForKey( info, "protocol", va( "%i",
+			clc.compat ? PROTOCOL_LEGACY_VERSION : PROTOCOL_SECURE_VERSION ) );
 		Info_SetValueForKey( info, "qport", va("%i", port ) );
 		Info_SetValueForKey( info, "challenge", va("%i", clc.challenge ) );
 		
@@ -1807,6 +1825,17 @@ Responses to broadcasts, etc
 void CL_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 	char	*s;
 	char	*c;
+	int		responseChallenge;
+	int		echoedChallenge;
+	int		responseProtocol;
+	qboolean	hasChallenge;
+	qboolean	hasEcho;
+	qboolean	hasProtocol;
+	qboolean	compat;
+
+	responseChallenge = 0;
+	echoedChallenge = 0;
+	responseProtocol = 0;
 
 	MSG_BeginReadingOOB( msg );
 	MSG_ReadLong( msg );	// skip the -1
@@ -1823,18 +1852,46 @@ void CL_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 	if ( !Q_stricmp(c, "challengeResponse") ) {
 		if ( cls.state != CA_CONNECTING ) {
 			Com_Printf( "Unwanted challenge response received.  Ignored.\n" );
-		} else {
-			// start sending challenge repsonse instead of challenge request packets
-			clc.challenge = atoi(Cmd_Argv(1));
-			cls.state = CA_CHALLENGING;
-			clc.connectPacketCount = 0;
-			clc.connectTime = -99999;
-
-			// take this address as the new server address.  This allows
-			// a server proxy to hand off connections to multiple servers
-			clc.serverAddress = from;
-			Com_DPrintf ("challengeResponse: %d\n", clc.challenge);
+			return;
 		}
+
+		if ( !Netchan_ParseInteger( Cmd_Argv( 1 ), &responseChallenge ) ) {
+			Com_Printf( "Malformed challengeResponse.  Ignored.\n" );
+			return;
+		}
+
+		hasEcho = Cmd_Argc() > 2;
+		if ( hasEcho &&
+			!Netchan_ParseInteger( Cmd_Argv( 2 ), &echoedChallenge ) ) {
+			Com_Printf( "Malformed challengeResponse echo.  Ignored.\n" );
+			return;
+		}
+		hasProtocol = Cmd_Argc() > 3;
+		if ( hasProtocol &&
+			!Netchan_ParseInteger( Cmd_Argv( 3 ), &responseProtocol ) ) {
+			Com_Printf( "Malformed challengeResponse protocol.  Ignored.\n" );
+			return;
+		}
+		compat = !( hasProtocol && responseProtocol == PROTOCOL_SECURE_VERSION );
+
+		if ( !Netchan_ChallengeResponseValid( compat,
+			NET_CompareAdr( from, clc.serverAddress ), hasEcho,
+			clc.challenge, echoedChallenge ) ) {
+			Com_Printf( "Unbound challengeResponse.  Ignored.\n" );
+			return;
+		}
+
+		// start sending a connect request instead of challenge requests
+		clc.compat = compat;
+		clc.challenge = responseChallenge;
+		cls.state = CA_CHALLENGING;
+		clc.connectPacketCount = 0;
+		clc.connectTime = -99999;
+
+		// A matching client challenge permits an intentional proxy handoff.
+		clc.serverAddress = from;
+		Com_DPrintf( "challengeResponse: %d (%s)\n", clc.challenge,
+			clc.compat ? "protocol 68 compatibility" : "protocol 69 secure" );
 		return;
 	}
 
@@ -1848,13 +1905,27 @@ void CL_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 			Com_Printf ("connectResponse packet while not connecting.  Ignored.\n");
 			return;
 		}
-		if ( !NET_CompareBaseAdr( from, clc.serverAddress ) ) {
+		if ( !NET_CompareAdr( from, clc.serverAddress ) ) {
 			Com_Printf( "connectResponse from a different address.  Ignored.\n" );
 			Com_Printf( "%s should have been %s\n", NET_AdrToString( from ), 
 				NET_AdrToString( clc.serverAddress ) );
 			return;
 		}
-		Netchan_Setup (NS_CLIENT, &clc.netchan, from, Cvar_VariableValue( "net_qport" ) );
+
+		hasChallenge = Cmd_Argc() > 1;
+		if ( hasChallenge &&
+			!Netchan_ParseInteger( Cmd_Argv( 1 ), &responseChallenge ) ) {
+			Com_Printf( "Malformed connectResponse.  Ignored.\n" );
+			return;
+		}
+		if ( !Netchan_ConnectResponseValid( clc.compat, hasChallenge,
+			clc.challenge, responseChallenge ) ) {
+			Com_Printf( "Unbound connectResponse.  Ignored.\n" );
+			return;
+		}
+
+		Netchan_Setup( NS_CLIENT, &clc.netchan, from,
+			Cvar_VariableValue( "net_qport" ), clc.challenge, clc.compat );
 		cls.state = CA_CONNECTED;
 		clc.lastPacketSentTime = -9999;		// send first packet immediately
 		return;
@@ -1924,8 +1995,6 @@ A packet has arrived from the main event loop
 */
 void CL_PacketEvent( netadr_t from, msg_t *msg ) {
 	int		headerBytes;
-
-	clc.lastPacketTime = cls.realtime;
 
 	if ( msg->cursize >= 4 && *(int *)msg->data == -1 ) {
 		CL_ConnectionlessPacket( from, msg );
