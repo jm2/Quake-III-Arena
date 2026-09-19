@@ -635,7 +635,12 @@ QVMs while any P0 item is open.
         publication; nullable failure releases candidates, records source status
         and permits a complete retry; see
         [builtin dictionary evidence](bot-builtin-dictionary-validation.md).
-  - [ ] Finish aggregate parser memory budgets.
+  - [x] Raw scripts are capped at 8 MiB including punctuation indexes; all
+        concurrent source headers, hash tables, scripts/includes, definitions,
+        queued tokens and conditional frames share a checked 16 MiB parser
+        budget, with conditional nesting capped at 128. Failed reservations
+        leave prior owners intact and complete cleanup restores the budget;
+        see [memory-budget evidence](bot-parser-memory-validation.md).
 
 ## P1 — high-impact security, runtime, and release blockers
 

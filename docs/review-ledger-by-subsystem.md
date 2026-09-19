@@ -728,7 +728,12 @@ implementation or check, without implying issue completion.
         publication; nullable failure releases candidates, records source status
         and permits a complete retry; see
         [builtin dictionary evidence](bot-builtin-dictionary-validation.md).
-  - [ ] Finish aggregate parser memory budgets.
+  - [x] Raw scripts are capped at 8 MiB including punctuation indexes; all
+        concurrent source headers, hash tables, scripts/includes, definitions,
+        queued tokens and conditional frames share a checked 16 MiB parser
+        budget, with conditional nesting capped at 128. Failed reservations
+        leave prior owners intact and complete cleanup restores the budget;
+        see [memory-budget evidence](bot-parser-memory-validation.md).
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
   - [x] Local pool/type/item/string checks, reload-name initialization, and
         bounded player-model cvar copies cross-build in both products.
