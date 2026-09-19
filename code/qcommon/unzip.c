@@ -1446,7 +1446,7 @@ extern int unzClose (unzFile file)
 extern int unzGetGlobalInfo (unzFile file,unz_global_info *pglobal_info)
 {
 	unz_s* s;
-	if (file==NULL)
+	if (file==NULL || pglobal_info==NULL)
 		return UNZ_PARAMERROR;
 	s=(unz_s*)file;
 	*pglobal_info=s->gi;
@@ -1705,7 +1705,7 @@ extern int unzGetCurrentFileInfoPosition (unzFile file, unsigned long *pos )
 {
 	unz_s* s;	
 
-	if (file==NULL)
+	if (file==NULL || pos==NULL)
 		return UNZ_PARAMERROR;
 	s=(unz_s*)file;
 
@@ -1750,13 +1750,19 @@ extern int unzLocateFile (unzFile file, const char *szFileName, int iCaseSensiti
 	
 	uLong num_fileSaved;
 	uLong pos_in_central_dirSaved;
+	uLong current_file_okSaved;
+	unz_file_info cur_file_infoSaved;
+	unz_file_info_internal cur_file_info_internalSaved;
+	long file_posSaved;
+	size_t fileNameLength;
 
 
-	if (file==NULL)
+	if (file==NULL || szFileName==NULL)
 		return UNZ_PARAMERROR;
 
-    if (strlen(szFileName)>=UNZ_MAXFILENAMEINZIP)
-        return UNZ_PARAMERROR;
+	fileNameLength = strlen(szFileName);
+	if (fileNameLength>=UNZ_MAXFILENAMEINZIP)
+		return UNZ_PARAMERROR;
 
 	s=(unz_s*)file;
 	if (!s->current_file_ok)
@@ -1764,23 +1770,38 @@ extern int unzLocateFile (unzFile file, const char *szFileName, int iCaseSensiti
 
 	num_fileSaved = s->num_file;
 	pos_in_central_dirSaved = s->pos_in_central_dir;
+	current_file_okSaved = s->current_file_ok;
+	cur_file_infoSaved = s->cur_file_info;
+	cur_file_info_internalSaved = s->cur_file_info_internal;
+	file_posSaved = ftell(s->file);
+	if (file_posSaved < 0)
+		return UNZ_ERRNO;
 
 	err = unzGoToFirstFile(file);
 
 	while (err == UNZ_OK)
 	{
 		char szCurrentFileName[UNZ_MAXFILENAMEINZIP+1];
-		unzGetCurrentFileInfo(file,NULL,
+		unz_file_info file_info;
+		err = unzGetCurrentFileInfo(file,&file_info,
 								szCurrentFileName,sizeof(szCurrentFileName)-1,
 								NULL,0,NULL,0);
-		if (unzStringFileNameCompare(szCurrentFileName,
-										szFileName,iCaseSensitivity)==0)
+		if (err != UNZ_OK)
+			break;
+		if (file_info.size_filename == fileNameLength &&
+			unzStringFileNameCompare(szCurrentFileName,
+									szFileName,iCaseSensitivity)==0)
 			return UNZ_OK;
 		err = unzGoToNextFile(file);
 	}
 
 	s->num_file = num_fileSaved ;
 	s->pos_in_central_dir = pos_in_central_dirSaved ;
+	s->current_file_ok = current_file_okSaved;
+	s->cur_file_info = cur_file_infoSaved;
+	s->cur_file_info_internal = cur_file_info_internalSaved;
+	if (fseek(s->file, file_posSaved, SEEK_SET) != 0)
+		return UNZ_ERRNO;
 	return err;
 }
 
@@ -2021,6 +2042,8 @@ extern int unzReadCurrentFile  (unzFile file, void *buf, unsigned len)
 		return UNZ_END_OF_LIST_OF_FILE;
 	if (len==0)
 		return 0;
+	if (buf==NULL)
+		return UNZ_PARAMERROR;
 
 	pfile_in_zip_read_info->stream.next_out = (Byte*)buf;
 

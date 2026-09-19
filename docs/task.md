@@ -177,8 +177,12 @@ QVMs while any P0 item is open.
         SET/CUR/END semantics, checked chunked skips and failure-propagating
         single platform delegation;
         [native compatibility checks](fs-zip-seek-validation.md) pass.
-  - [ ] Complete remaining metadata/open/read/handle paths and retail PK3
-        acceptance before closing the issue.
+  - [x] Required public unzip pointers reject before access; positive reads
+        require a destination, failed filename searches restore the complete
+        selection/cursor, and embedded-NUL names cannot impersonate prefixes;
+        see [public API evidence](unzip-public-api-validation.md).
+  - [ ] Complete remaining central-directory discovery/navigation/open
+        arithmetic and retail PK3 acceptance before closing the issue.
 - [ ] [#41 — bound RoQ chunks, dimensions, audio output, and cursors](https://github.com/jm2/Quake-III-Arena/issues/41)
       — **high**, deterministic cinematic buffer corruption.
   - [x] Bound disk/packet payloads, exact reads, mono/stereo output and early
