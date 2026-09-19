@@ -152,6 +152,9 @@ QVMs while any P0 item is open.
   - [x] Remaining close/tell/length/write/flush paths validate live exclusive
         handles and ordinary FILE ownership; payloads, errors and final-slot
         release have [native evidence](fs-handle-api-validation.md).
+  - [x] Actual unsigned metadata readers require complete scalar I/O and
+        selected-entry setters propagate real decoder errors; hostile files,
+        prior owners and native retry have [evidence](unzip-metadata-validation.md).
   - [ ] Complete remaining metadata/open/read/handle paths and retail PK3
         acceptance before closing the issue.
 - [ ] [#41 — bound RoQ chunks, dimensions, audio output, and cursors](https://github.com/jm2/Quake-III-Arena/issues/41)
