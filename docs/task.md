@@ -69,6 +69,9 @@ QVMs while any P0 item is open.
       — **assurance gate**.
   - [x] First upstream/local status matrix and GitHub provenance comment added;
         the matrix is committed in `204fe36`, not an uncommitted draft.
+  - [x] Message/Huffman exact limits and the real out-of-band caller have
+        isolated GCC/Clang ASan/UBSan coverage while preserving the commercial
+        compressed stream; see [validation evidence](message-huffman-validation.md).
   - [ ] Complete the advisory inventory and add a malformed-input regression
         for every accepted security family.
 - [ ] [#35 — harden interpreted QVM validation and sandbox bounds](https://github.com/jm2/Quake-III-Arena/issues/35)
@@ -668,9 +671,11 @@ QVMs while any P0 item is open.
 - [x] Base and Team Arena PPC cross-build and strong PEF checks pass.
 - [x] Deterministic MacBinary fixture is recognized with valid dates, CRC,
       type, creator, name, and fork length.
-- [ ] Host ASan/UBSan malformed-input corpora for messages/Huffman, downloads,
-      ZIP, QVM, RoQ, images/JPEG, models, BSP, shader/skin/font, bot/AAS, UI
-      allocation, and format strings.
+- [x] Host ASan/UBSan malformed-input corpus for message/Huffman and the
+      out-of-band caller, including commercial stream goldens.
+- [ ] Host ASan/UBSan malformed-input corpora for downloads, ZIP, QVM, RoQ,
+      images/JPEG, models, BSP, shader/skin/font, bot/AAS, UI allocation, and
+      format strings that are not already covered by focused runners.
 - [ ] PowerShell setup/build/package on native Windows.
 - [ ] Offline package from an explicit legal asset root.
 - [ ] Mounted package resource/Finder validation.
@@ -734,8 +739,8 @@ QVMs while any P0 item is open.
 - [x] Remove only the review-generated `__pycache__/`; preserve `q3-logs/`.
 - [ ] P0 implementation order: #35, #41, #42, #43, #44, #45, #46, #47,
       #48, then the compatibility-sensitive #37.
-- [ ] P0 validation order for local candidates: #36, message/Huffman exact
-      bounds, downloads, and known format-string fixes.
+- [ ] P0 validation order for local candidates: #36, downloads, and known
+      format-string fixes. Message/Huffman exact bounds are complete.
 - [ ] P1 target/runtime order: #11 after #48; #15, #16, #17, #5, #20, #19.
       Re-enable #12 after #47/#48, #13 after #35/#39, and #14 after #41.
       Validate fullscreen/gamma behavior after #15/#16.

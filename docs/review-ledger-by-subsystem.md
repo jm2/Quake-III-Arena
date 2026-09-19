@@ -200,6 +200,9 @@ implementation or check, without implying issue completion.
 - [ ] [#29 — modern CVE coverage lacks provenance/tests](https://github.com/jm2/Quake-III-Arena/issues/29)
   - [x] Treat the “all modern CVEs fixed” claim as unverified in review docs.
   - [x] Add the first authoritative upstream-commit/local-code status matrix.
+  - [x] Cover message/Huffman exact limits and the real out-of-band caller with
+        isolated GCC/Clang ASan/UBSan cases and a commercial stream golden; see
+        [validation evidence](message-huffman-validation.md).
   - [ ] Finish the advisory inventory and malformed-input regression matrix.
 - [ ] [#35 — interpreted QVM validation and sandbox bounds](https://github.com/jm2/Quake-III-Arena/issues/35)
   - [x] Create/restart header, file-range, allocation arithmetic, and restart
@@ -673,8 +676,10 @@ implementation or check, without implying issue completion.
 - [ ] P0 security: finish #35, #41, #42, #43, #44, #45, #46, #47, #48,
       then compatibility-sensitive #37; retain #29 and #36 validation gates.
 - [ ] P1 security: fix #38 and #39 with deterministic host regressions.
+- [x] Add focused host tests for message/Huffman exact bounds and the
+      out-of-band caller.
 - [ ] Add focused host tests for local candidates #18, #24, #25, #36, #40,
-      #49, message/Huffman exact bounds, download pairs, and format strings.
+      #49, download pairs, and format strings.
 - [ ] Prioritize target runtime blockers: #11 after #48, then #15, #16, #17,
       #5, #20, #19.
 - [x] User authorized host checks and working cross-builds while legal retail
