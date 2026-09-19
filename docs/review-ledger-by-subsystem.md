@@ -660,6 +660,11 @@ implementation or check, without implying issue completion.
 
 ## Exact continuation point
 
+Current master is `31a6554caa3c941d6657d664849511e27233089d` through #172
+and independent #180. The latest dated inventory, pending stack and exact-head
+gates are in [continuation evidence](review-continuation-2026-09-18.md).
+Earlier milestone snapshots below remain historical.
+
 - [x] Current progress reconciled at master `cdc8c38` on 2026-09-18: BSP
       steps #83–#91/#93–#101 and shader capacity #102 are merged after
       successful current-head CI, clean Codex and resolved CodeRabbit findings.
