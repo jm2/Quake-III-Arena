@@ -25,13 +25,15 @@ byte over capacity and twice capacity through the real abort-frame path. The
 other fixtures cover the 1,024-byte AAS buffer, bot base-folder capacity and
 the complete `MAX_MSGLEN` out-of-band header/payload boundary.
 
-The source contract also checks every changed call site in both upstream
-commits and rejects each original vulnerable expression. GCC and Clang run all
-four actual-body fixtures under ASan/UBSan in normal and optimized fast-math
-modes. The exact parent `common.c` fails the twice-capacity proof with an ASan
-global-buffer-overflow; the bounded source passes the complete matrix. Bash and
-Python syntax, five ledger/manifest tests and the whitespace/error diff checks
-pass locally.
+The source contract tokenizes C call expressions, ignores comments and checks
+that every audited printf-style sink has a literal format argument. It also
+requires the exact safe calls from both upstream commits, so alternate spacing,
+nested-call spelling or a nearby comment cannot hide a nonliteral format. GCC
+and Clang run all four actual-body fixtures under ASan/UBSan in normal and
+optimized fast-math modes. The exact parent `common.c` fails the twice-capacity
+proof with an ASan global-buffer-overflow; the bounded source passes the
+complete matrix. Bash and Python syntax, five ledger/manifest tests and the
+whitespace/error diff checks pass locally.
 
 Both PPC products build without compiler diagnostics and have valid
 `Joy!peffpwpc` headers.
