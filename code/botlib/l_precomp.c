@@ -113,8 +113,14 @@ typedef struct directive_s
 #define MAX_SOURCE_TOKEN_WORK	TOKEN_HEAP_SIZE
 #define MAX_SOURCE_TOKEN_DEPTH	128
 #define MAX_SOURCE_INCLUDE_DEPTH 64
+#define MAX_SOURCE_INDENT_DEPTH	128
+#ifndef MAX_SOURCE_PARSE_MEMORY
+#define MAX_SOURCE_PARSE_MEMORY	(16UL * 1024UL * 1024UL)
+#endif
 
 int numtokens;
+unsigned long sourceparsememory;
+static int parsermemoryfailure;
 /*
 int tokenheapinitialized;				//true when the token heap is initialized
 token_t token_heap[TOKEN_HEAP_SIZE];	//heap with tokens
@@ -123,6 +129,32 @@ token_t *freetokens;					//free tokens from the heap
 
 //list with global defines added to every source loaded
 define_t *globaldefines;
+
+static int PC_ReserveParserMemory(unsigned long size)
+{
+	parsermemoryfailure = qfalse;
+	if (size > MAX_SOURCE_PARSE_MEMORY ||
+			sourceparsememory > MAX_SOURCE_PARSE_MEMORY - size)
+	{
+		parsermemoryfailure = qtrue;
+		return qfalse;
+	}
+	sourceparsememory += size;
+	return qtrue;
+}
+
+static void PC_ReleaseParserMemory(unsigned long size)
+{
+	if (size > sourceparsememory) sourceparsememory = 0;
+	else sourceparsememory -= size;
+}
+
+static void PC_ReleaseScriptMemory(script_t *script)
+{
+	if (!script || !script->memoryreserved) return;
+	script->memoryreserved = qfalse;
+	PC_ReleaseParserMemory(script->memorysize);
+}
 
 //============================================================================
 //
@@ -186,9 +218,20 @@ int PC_PushIndent(source_t *source, int type, int skip)
 {
 	indent_t *indent;
 
+	if (source->indentdepth >= MAX_SOURCE_INDENT_DEPTH)
+	{
+		SourceError(source, "more than %d nested conditional directives", MAX_SOURCE_INDENT_DEPTH);
+		return qfalse;
+	}
+	if (!PC_ReserveParserMemory(sizeof(indent_t)))
+	{
+		SourceError(source, "preprocessor memory limit exceeded");
+		return qfalse;
+	}
 	indent = (indent_t *) GetMemory(sizeof(indent_t));
 	if (!indent)
 	{
+		PC_ReleaseParserMemory(sizeof(indent_t));
 		SourceError(source, "could not allocate conditional indent");
 		return qfalse;
 	} //end if
@@ -198,6 +241,7 @@ int PC_PushIndent(source_t *source, int type, int skip)
 	source->skip += indent->skip;
 	indent->next = source->indentstack;
 	source->indentstack = indent;
+	source->indentdepth++;
 	return qtrue;
 } //end of the function PC_PushIndent
 //============================================================================
@@ -224,6 +268,8 @@ void PC_PopIndent(source_t *source, int *type, int *skip)
 	source->indentstack = source->indentstack->next;
 	source->skip -= indent->skip;
 	FreeMemory(indent);
+	if (source->indentdepth) source->indentdepth--;
+	PC_ReleaseParserMemory(sizeof(indent_t));
 } //end of the function PC_PopIndent
 //============================================================================
 //
@@ -250,6 +296,12 @@ int PC_PushScript(source_t *source, script_t *script)
 		SourceError(source, "more than %d active source files", MAX_SOURCE_INCLUDE_DEPTH);
 		return qfalse;
 	}
+	if (!PC_ReserveParserMemory(script->memorysize))
+	{
+		SourceError(source, "preprocessor memory limit exceeded");
+		return qfalse;
+	}
+	script->memoryreserved = qtrue;
 	//push the script on the script stack
 	script->next = source->scriptstack;
 	source->scriptstack = script;
@@ -286,6 +338,7 @@ token_t *PC_CopyToken(token_t *token)
 {
 	token_t *t;
 
+	if (!PC_ReserveParserMemory(sizeof(token_t))) return NULL;
 //	t = (token_t *) malloc(sizeof(token_t));
 	t = (token_t *) GetMemory(sizeof(token_t));
 //	t = freetokens;
@@ -296,6 +349,7 @@ token_t *PC_CopyToken(token_t *token)
 #else
 		Com_Error(ERR_FATAL, "out of token space\n");
 #endif
+		PC_ReleaseParserMemory(sizeof(token_t));
 		return NULL;
 	} //end if
 //	freetokens = freetokens->next;
@@ -304,6 +358,14 @@ token_t *PC_CopyToken(token_t *token)
 	numtokens++;
 	return t;
 } //end of the function PC_CopyToken
+
+static token_t *PC_CopySourceToken(source_t *source, token_t *token)
+{
+	token_t *copy = PC_CopyToken(token);
+	if (!copy && parsermemoryfailure)
+		SourceError(source, "preprocessor memory limit exceeded");
+	return copy;
+}
 //============================================================================
 //
 // Parameter:				-
@@ -317,6 +379,7 @@ void PC_FreeToken(token_t *token)
 //	token->next = freetokens;
 //	freetokens = token;
 	numtokens--;
+	PC_ReleaseParserMemory(sizeof(token_t));
 } //end of the function PC_FreeToken
 
 static void PC_DiscardSourceTokens(source_t *source)
@@ -416,6 +479,7 @@ int PC_ReadSourceToken(source_t *source, token_t *token)
 		script = source->scriptstack;
 		source->scriptstack = source->scriptstack->next;
 		source->scriptstack->flags |= script->flags & SCFL_SOURCEERROR;
+		PC_ReleaseScriptMemory(script);
 		FreeScript(script);
 	} //end while
 	//copy the already available token
@@ -539,7 +603,7 @@ int PC_ReadDefineParms(source_t *source, define_t *define, token_t **parms, int 
 			if (numparms < define->numparms)
 			{
 				//
-				t = PC_CopyToken(&token);
+				t = PC_CopySourceToken(source, &token);
 				if (!t) return qfalse;
 				t->next = NULL;
 				if (last) last->next = t;
@@ -752,9 +816,31 @@ int PC_FindDefineParm(define_t *define, char *name)
 // Returns:					-
 // Changes Globals:		-
 //============================================================================
+static define_t *PC_AllocDefine(const char *name)
+{
+	define_t *define;
+	unsigned long size;
+
+	if (!name || strlen(name) > ULONG_MAX - sizeof(define_t) - 1) return NULL;
+	size = sizeof(define_t) + strlen(name) + 1;
+	if (!PC_ReserveParserMemory(size)) return NULL;
+	define = (define_t *) GetMemory(size);
+	if (!define)
+	{
+		PC_ReleaseParserMemory(size);
+		return NULL;
+	}
+	Com_Memset(define, 0, sizeof(define_t));
+	define->name = (char *) define + sizeof(define_t);
+	strcpy(define->name, name);
+	define->memorysize = size;
+	return define;
+}
+
 void PC_FreeDefine(define_t *define)
 {
 	token_t *t, *next;
+	unsigned long memorysize = define->memorysize;
 
 	//free the define parameters
 	for (t = define->parms; t; t = next)
@@ -770,6 +856,7 @@ void PC_FreeDefine(define_t *define)
 	} //end for
 	//free the define
 	FreeMemory(define);
+	if (memorysize) PC_ReleaseParserMemory(memorysize);
 } //end of the function PC_FreeDefine
 //============================================================================
 //
@@ -798,16 +885,13 @@ void PC_AddBuiltinDefines(source_t *source)
 	Com_Memset(defines, 0, sizeof(defines));
 	for (i = 0; builtin[i].string; i++)
 	{
-		define = (define_t *) GetMemory(sizeof(define_t) + strlen(builtin[i].string) + 1);
+		define = PC_AllocDefine(builtin[i].string);
 		if (!define)
 		{
 			for (j = 0; j < i; j++) PC_FreeDefine(defines[j]);
 			SourceError(source, "could not allocate builtin definitions");
 			return;
 		} //end if
-		Com_Memset(define, 0, sizeof(define_t));
-		define->name = (char *) define + sizeof(define_t);
-		strcpy(define->name, builtin[i].string);
 		define->flags |= DEFINE_FIXED;
 		define->builtin = builtin[i].builtin;
 		defines[i] = define;
@@ -838,7 +922,7 @@ int PC_ExpandBuiltinDefine(source_t *source, token_t *deftoken, define_t *define
 
 	*firsttoken = NULL;
 	*lasttoken = NULL;
-	token = PC_CopyToken(deftoken);
+	token = PC_CopySourceToken(source, deftoken);
 	if (!token) return qfalse;
 	switch(define->builtin)
 	{
@@ -975,7 +1059,7 @@ int PC_ExpandDefine(source_t *source, token_t *deftoken, define_t *define,
 			for (pt = parms[parmnum]; pt; pt = pt->next)
 			{
 				if (!PC_ConsumeTokenWork(source)) goto cleanup;
-				t = PC_CopyToken(pt);
+				t = PC_CopySourceToken(source, pt);
 				if (!t) goto cleanup;
 				//add the token to the list
 				t->next = NULL;
@@ -1004,7 +1088,7 @@ int PC_ExpandDefine(source_t *source, token_t *deftoken, define_t *define,
 						SourceError(source, "can't stringize tokens");
 						goto cleanup;
 					} //end if
-					t = PC_CopyToken(&token);
+					t = PC_CopySourceToken(source, &token);
 				} //end if
 				else
 				{
@@ -1015,7 +1099,7 @@ int PC_ExpandDefine(source_t *source, token_t *deftoken, define_t *define,
 			else
 			{
 				if (!PC_ConsumeTokenWork(source)) goto cleanup;
-				t = PC_CopyToken(dt);
+				t = PC_CopySourceToken(source, dt);
 			} //end else
 			//add the token to the list
 			if (!t) goto cleanup;
@@ -1399,15 +1483,12 @@ int PC_Directive_define(source_t *source)
 		SourceWarning(source, "redefinition of %s", token.string);
 	} //end if
 	//allocate define
-	define = (define_t *) GetMemory(sizeof(define_t) + strlen(token.string) + 1);
+	define = PC_AllocDefine(token.string);
 	if (!define)
 	{
 		SourceError(source, "could not allocate definition");
 		goto failed;
 	} //end if
-	Com_Memset(define, 0, sizeof(define_t));
-	define->name = (char *) define + sizeof(define_t);
-	strcpy(define->name, token.string);
 	//if nothing is defined, just return
 	if (!PC_ReadLine(source, &token)) goto publish;
 	//if it is a define with parameters
@@ -1557,13 +1638,27 @@ define_t *PC_DefineFromString(char *string)
 	PC_InitTokenHeap();
 	script = LoadScriptMemory(string, (int)length, "*extern");
 	if (!script) return NULL;
+	if (!PC_ReserveParserMemory(script->memorysize))
+	{
+		FreeScript(script);
+		return NULL;
+	}
+	script->memoryreserved = qtrue;
 	Com_Memset(&src, 0, sizeof(src));
 	strcpy(src.filename, "*extern");
 	src.scriptstack = script;
 #if DEFINEHASHING
+	if (!PC_ReserveParserMemory(DEFINEHASHSIZE * sizeof(define_t *)))
+	{
+		PC_ReleaseScriptMemory(script);
+		FreeScript(script);
+		return NULL;
+	}
 	src.definehash = GetClearedMemory(DEFINEHASHSIZE * sizeof(define_t *));
 	if (!src.definehash)
 	{
+		PC_ReleaseParserMemory(DEFINEHASHSIZE * sizeof(define_t *));
+		PC_ReleaseScriptMemory(script);
 		FreeScript(script);
 		return NULL;
 	} //end if
@@ -1572,7 +1667,9 @@ define_t *PC_DefineFromString(char *string)
 	{
 #if DEFINEHASHING
 		FreeMemory(src.definehash);
+		PC_ReleaseParserMemory(DEFINEHASHSIZE * sizeof(define_t *));
 #endif
+		PC_ReleaseScriptMemory(script);
 		FreeScript(script);
 		return NULL;
 	}
@@ -1587,10 +1684,12 @@ define_t *PC_DefineFromString(char *string)
 	for (i = 0; i < DEFINEHASHSIZE; i++)
 		if (src.definehash[i]) { def = src.definehash[i]; break; }
 	FreeMemory(src.definehash);
+	PC_ReleaseParserMemory(DEFINEHASHSIZE * sizeof(define_t *));
 #else
 	def = src.defines;
 #endif //DEFINEHASHING
 	if (PC_SourceHasError(&src)) res = qfalse;
+	PC_ReleaseScriptMemory(script);
 	FreeScript(script);
 	if (res) return def;
 	if (def) PC_FreeDefine(def);
@@ -1687,12 +1786,8 @@ define_t *PC_CopyDefine(source_t *source, define_t *define)
 	size_t length = strlen(define->name);
 
 	if (length > (size_t)INT_MAX - sizeof(define_t) - 1) return NULL;
-	newdefine = (define_t *) GetMemory(sizeof(define_t) + length + 1);
+	newdefine = PC_AllocDefine(define->name);
 	if (!newdefine) return NULL;
-	Com_Memset(newdefine, 0, sizeof(define_t));
-	//copy the define name
-	newdefine->name = (char *) newdefine + sizeof(define_t);
-	strcpy(newdefine->name, define->name);
 	newdefine->flags = define->flags;
 	newdefine->builtin = define->builtin;
 	newdefine->numparms = define->numparms;
@@ -1703,7 +1798,7 @@ define_t *PC_CopyDefine(source_t *source, define_t *define)
 	newdefine->tokens = NULL;
 	for (lasttoken = NULL, token = define->tokens; token; token = token->next)
 	{
-		newtoken = PC_CopyToken(token);
+		newtoken = PC_CopySourceToken(source, token);
 		if (!newtoken) goto failure;
 		newtoken->next = NULL;
 		if (lasttoken) lasttoken->next = newtoken;
@@ -1714,7 +1809,7 @@ define_t *PC_CopyDefine(source_t *source, define_t *define)
 	newdefine->parms = NULL;
 	for (lasttoken = NULL, token = define->parms; token; token = token->next)
 	{
-		newtoken = PC_CopyToken(token);
+		newtoken = PC_CopySourceToken(source, token);
 		if (!newtoken) goto failure;
 		newtoken->next = NULL;
 		if (lasttoken) lasttoken->next = newtoken;
@@ -3466,10 +3561,24 @@ static source_t *PC_CreateSource(script_t *script, const char *name)
 	if (!script) return NULL;
 
 	script->next = NULL;
+	if (!PC_ReserveParserMemory(script->memorysize))
+	{
+		FreeScript(script);
+		return NULL;
+	}
+	script->memoryreserved = qtrue;
 
+	if (!PC_ReserveParserMemory(sizeof(source_t)))
+	{
+		PC_ReleaseScriptMemory(script);
+		FreeScript(script);
+		return NULL;
+	}
 	source = (source_t *) GetMemory(sizeof(source_t));
 	if (!source)
 	{
+		PC_ReleaseParserMemory(sizeof(source_t));
+		PC_ReleaseScriptMemory(script);
 		FreeScript(script);
 		return NULL;
 	}
@@ -3483,11 +3592,16 @@ static source_t *PC_CreateSource(script_t *script, const char *name)
 	source->skip = 0;
 
 #if DEFINEHASHING
+	if (!PC_ReserveParserMemory(DEFINEHASHSIZE * sizeof(define_t *)))
+	{
+		FreeSource(source);
+		return NULL;
+	}
 	source->definehash = GetClearedMemory(DEFINEHASHSIZE * sizeof(define_t *));
 	if (!source->definehash)
 	{
-		FreeScript(script);
-		FreeMemory(source);
+		PC_ReleaseParserMemory(DEFINEHASHSIZE * sizeof(define_t *));
+		FreeSource(source);
 		return NULL;
 	}
 #endif //DEFINEHASHING
@@ -3535,6 +3649,7 @@ void FreeSource(source_t *source)
 	{
 		script = source->scriptstack;
 		source->scriptstack = source->scriptstack->next;
+		PC_ReleaseScriptMemory(script);
 		FreeScript(script);
 	} //end for
 	//free all the tokens
@@ -3545,15 +3660,18 @@ void FreeSource(source_t *source)
 		PC_FreeToken(token);
 	} //end for
 #if DEFINEHASHING
-	for (i = 0; i < DEFINEHASHSIZE; i++)
+	if (source->definehash)
 	{
-		while(source->definehash[i])
+		for (i = 0; i < DEFINEHASHSIZE; i++)
 		{
-			define = source->definehash[i];
-			source->definehash[i] = source->definehash[i]->hashnext;
-			PC_FreeDefine(define);
-		} //end while
-	} //end for
+			while(source->definehash[i])
+			{
+				define = source->definehash[i];
+				source->definehash[i] = source->definehash[i]->hashnext;
+				PC_FreeDefine(define);
+			} //end while
+		} //end for
+	}
 #else //DEFINEHASHING
 	//free all defines
 	while(source->defines)
@@ -3569,13 +3687,19 @@ void FreeSource(source_t *source)
 		indent = source->indentstack;
 		source->indentstack = source->indentstack->next;
 		FreeMemory(indent);
+		PC_ReleaseParserMemory(sizeof(indent_t));
 	} //end for
 #if DEFINEHASHING
 	//
-	if (source->definehash) FreeMemory(source->definehash);
+	if (source->definehash)
+	{
+		FreeMemory(source->definehash);
+		PC_ReleaseParserMemory(DEFINEHASHSIZE * sizeof(define_t *));
+	}
 #endif //DEFINEHASHING
 	//free the source itself
 	FreeMemory(source);
+	PC_ReleaseParserMemory(sizeof(source_t));
 } //end of the function FreeSource
 //============================================================================
 //

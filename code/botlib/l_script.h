@@ -184,6 +184,8 @@ typedef struct script_s
 	char *whitespace_p;				//begin of the white space
 	char *endwhitespace_p;			//end of the white space
 	int length;						//length of the script in bytes
+	unsigned long memorysize;		//private script buffer and punctuation-table bytes
+	int memoryreserved;				//owned by the aggregate preprocessor budget
 	int line;						//current line in script
 	int lastline;					//line before reading token
 	int tokenavailable;				//set by UnreadLastToken
@@ -246,4 +248,3 @@ void PS_SetBaseFolder(char *path);
 void QDECL ScriptError(script_t *script, char *str, ...);
 //print a script warning with filename and line number
 void QDECL ScriptWarning(script_t *script, char *str, ...);
-

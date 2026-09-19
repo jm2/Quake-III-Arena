@@ -80,6 +80,7 @@ typedef struct define_s
 	token_t *tokens;					//macro tokens (possibly containing parm tokens)
 	struct define_s *next;				//next defined macro in a list
 	struct define_s *hashnext;			//next define in the hash chain
+	unsigned long memorysize;			//private definition bytes in the parser budget
 } define_t;
 
 //indents
@@ -107,6 +108,7 @@ typedef struct source_s
 	unsigned int errorsequence;			//private diagnostic generation for lookahead
 	unsigned int tokenwork;					//work used by the current public token read
 	unsigned int tokenworkdepth;			//nested public token reads sharing that budget
+	unsigned int indentdepth;				//active conditional frames in this source
 	int skip;								// > 0 if skipping conditional code
 	token_t token;							//last read token
 } source_t;

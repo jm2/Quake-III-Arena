@@ -78,7 +78,7 @@ static void Globals(int memory,int onlyPosition) {
 static void LargestNullable(int memory) {
     source_t *source;int length=INT_MAX-(int)sizeof(script_t)-1;SourceReset("native");allowLarge=1;reportLength=length;
     source=memory?LoadSourceMemory((char *)fileText,length,"maximum"):LoadSourceFile("scripts/native.c");
-    Check(!source&&requests==1&&!liveOwners&&!numtokens&&!fileReads,"last signed buffer cost remains representable and propagates a nullable import");Check(memory?(!opens&&!closes):(opens==1&&closes==1),"large nullable file import closes the opened handle");
+    Check(!source&&!requests&&!liveOwners&&!numtokens&&!fileReads,"oversized parser buffer rejects before allocation");Check(memory?(!opens&&!closes):(opens==1&&closes==1),"oversized file import closes the opened handle");
 }
 static void PathOverflow(void) {SourceReset("");PC_SetBaseFolder("prefix");Check(!LoadSourceFile("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")&&!opens&&!requests&&!formatWarnings,"full native source path rejects before lookup/truncation");}
 static void Builtins(int fault) {

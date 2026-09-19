@@ -85,6 +85,10 @@ typedef enum {qfalse, qtrue}	qboolean;
 
 #define PUNCTABLE
 
+#ifndef MAX_SCRIPT_PARSER_MEMORY
+#define MAX_SCRIPT_PARSER_MEMORY (8UL * 1024UL * 1024UL)
+#endif
+
 //longer punctuations first
 punctuation_t default_punctuations[] =
 {
@@ -1371,9 +1375,15 @@ int FileLength(FILE *fp)
 /* Keep every script-buffer request representable by the signed native import. */
 static int PS_ScriptMemoryCost(int length, const char *name, unsigned long *size)
 {
+	unsigned long punctuationbytes = 0;
+#ifdef PUNCTABLE
+	punctuationbytes = 256UL * sizeof(punctuation_t *);
+#endif
 	if (!name || strlen(name) >= sizeof(((script_t *)0)->filename) || length < 0 ||
 		(size_t)length > (size_t)INT_MAX - sizeof(script_t) - 1) return 0;
 	*size = sizeof(script_t) + (size_t)length + 1;
+	if (*size > MAX_SCRIPT_PARSER_MEMORY ||
+		punctuationbytes > MAX_SCRIPT_PARSER_MEMORY - *size) return 0;
 	return 1;
 }
 
@@ -1502,6 +1512,7 @@ script_t *LoadScriptFile(const char *filename)
 		return NULL;
 	}
 #endif
+	script->memorysize = size + 256UL * sizeof(punctuation_t *);
 	//
 #ifdef BOTLIB
 	if (botimport.FS_Read(script->buffer, length, fp) != length)
@@ -1574,6 +1585,7 @@ script_t *LoadScriptMemory(char *ptr, int length, char *name)
 		return NULL;
 	}
 #endif
+	script->memorysize = size + 256UL * sizeof(punctuation_t *);
 	if (length) Com_Memcpy(script->buffer, ptr, length);
 	//
 	return script;
