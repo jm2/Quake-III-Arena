@@ -1,5 +1,8 @@
 /* Actual filesystem/mount/read functions and legacy unzip against real ZIPs. */
-#include "../code/qcommon/files.c"
+#ifndef Q3_ZIP_FILES_SOURCE
+#define Q3_ZIP_FILES_SOURCE "../code/qcommon/files.c"
+#endif
+#include Q3_ZIP_FILES_SOURCE
 #ifndef Q3_UNZIP_SOURCE
 #define Q3_UNZIP_SOURCE "../code/qcommon/unzip.c"
 #endif
@@ -76,6 +79,7 @@ void *Z_Malloc(int size) {
 
 void Z_Free(void *p) {
     int i;
+    Check(p != NULL, "native physical zone release requires an owned non-NULL pointer");
     for(i=0;i<Q3_ZIP_ZONE_CAPACITY;i++)if(zone[i]==p){
 #ifdef Q3_ZIP_FREE_HOOK
         FixtureFreeHook(p);
@@ -104,6 +108,7 @@ void *Hunk_AllocateTempMemory(int size) {
 
 void Hunk_FreeTempMemory(void *p) {
     int i;
+    Check(p != NULL, "native physical temporary release requires an owned non-NULL pointer");
     for(i=0;i<16;i++)if(temporary[i]==p){
         free(p);
         temporary[i]=NULL;

@@ -1296,11 +1296,16 @@ extern unzFile unzReOpen (const char* path, unzFile file)
 	unz_s *s;
 	FILE * fin;
 
+	if (!path || !file) return NULL;
     fin=fopen(path,"rb");
 	if (fin==NULL)
 		return NULL;
 
 	s=(unz_s*)ALLOC(sizeof(unz_s));
+	if (!s) {
+		fclose(fin);
+		return NULL;
+	}
 	Com_Memcpy(s, (unz_s*)file, sizeof(unz_s));
 
 	s->file = fin;
@@ -1334,6 +1339,8 @@ extern unzFile unzOpen (const char* path)
 
 	int err=UNZ_OK;
 
+	if (!path) return NULL;
+	Com_Memset(&us, 0, sizeof(us));
     fin=fopen(path,"rb");
 	if (fin==NULL)
 		return NULL;
@@ -1401,6 +1408,10 @@ extern unzFile unzOpen (const char* path)
 	
 
 	s=(unz_s*)ALLOC(sizeof(unz_s));
+	if (!s) {
+		fclose(fin);
+		return NULL;
+	}
 	*s=us;
 //	unzGoToFirstFile((unzFile)s);	
 	return (unzFile)s;	

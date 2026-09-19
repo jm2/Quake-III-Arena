@@ -260,6 +260,8 @@ implementation or check, without implying issue completion.
         propagation have [real-file checks](unzip-metadata-validation.md).
   - [x] Complete decoder initialization and failed-import private cleanup
         have actual [stored/deflated checks](unzip-open-validation.md).
+  - [x] Archive/clone/buffer factory input/import failures preserve prior
+        native owners with [physical-release checks](fs-zip-factory-validation.md).
   - [ ] Complete remaining handle/read/metadata and retail acceptance paths.
 - [ ] [#37 — connection/netchan lacks challenge binding](https://github.com/jm2/Quake-III-Arena/issues/37)
   - [x] User selected commercial 1.32c compatibility in the style of
