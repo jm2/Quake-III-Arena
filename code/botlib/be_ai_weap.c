@@ -227,6 +227,26 @@ static int WeaponConfigCount(char *name, int *count)
 	return qtrue;
 }
 
+static int WeaponConfigBytes(int max_weaponinfo, int max_projectileinfo, unsigned long *bytes)
+{
+	*bytes = sizeof(weaponconfig_t);
+	if ((unsigned long)max_weaponinfo >
+			((unsigned long)INT_MAX - *bytes) / sizeof(weaponinfo_t))
+	{
+		botimport.Print(PRT_ERROR, "weapon configuration allocation is too large\n");
+		return qfalse;
+	}
+	*bytes += (unsigned long)max_weaponinfo * sizeof(weaponinfo_t);
+	if ((unsigned long)max_projectileinfo >
+			((unsigned long)INT_MAX - *bytes) / sizeof(projectileinfo_t))
+	{
+		botimport.Print(PRT_ERROR, "projectile configuration allocation is too large\n");
+		return qfalse;
+	}
+	*bytes += (unsigned long)max_projectileinfo * sizeof(projectileinfo_t);
+	return qtrue;
+}
+
 weaponconfig_t *LoadWeaponConfig(char *filename)
 {
 	int max_weaponinfo, max_projectileinfo;
@@ -245,21 +265,7 @@ weaponconfig_t *LoadWeaponConfig(char *filename)
 	}
 	if (!WeaponConfigCount("max_weaponinfo", &max_weaponinfo) ||
 			!WeaponConfigCount("max_projectileinfo", &max_projectileinfo)) return NULL;
-	bytes = sizeof(weaponconfig_t);
-	if ((unsigned long)max_weaponinfo >
-			((unsigned long)INT_MAX - bytes) / sizeof(weaponinfo_t))
-	{
-		botimport.Print(PRT_ERROR, "weapon configuration allocation is too large\n");
-		return NULL;
-	}
-	bytes += (unsigned long)max_weaponinfo * sizeof(weaponinfo_t);
-	if ((unsigned long)max_projectileinfo >
-			((unsigned long)INT_MAX - bytes) / sizeof(projectileinfo_t))
-	{
-		botimport.Print(PRT_ERROR, "projectile configuration allocation is too large\n");
-		return NULL;
-	}
-	bytes += (unsigned long)max_projectileinfo * sizeof(projectileinfo_t);
+	if (!WeaponConfigBytes(max_weaponinfo, max_projectileinfo, &bytes)) return NULL;
 	strcpy(path, filename);
 	PC_SetBaseFolder(BOTFILESBASEFOLDER);
 	source = LoadSourceFile(path);
@@ -591,6 +597,9 @@ int BotSetupWeaponAI(void)
 {
 	libvar_t *file;
 	weaponconfig_t *candidate;
+	int *indices[MAX_CLIENTS + 1] = { NULL };
+	int max_weaponinfo, max_projectileinfo, i, j;
+	unsigned long bytes;
 
 	file = LibVar("weaponconfig", "weapons.c");
 	if (!file || !file->string)
@@ -598,20 +607,53 @@ int BotSetupWeaponAI(void)
 		botimport.Print(PRT_ERROR, "couldn't initialize weaponconfig\n");
 		return BLERR_CANNOTLOADWEAPONCONFIG;
 	}
+	if (!WeaponConfigCount("max_weaponinfo", &max_weaponinfo) ||
+			!WeaponConfigCount("max_projectileinfo", &max_projectileinfo) ||
+			!WeaponConfigBytes(max_weaponinfo, max_projectileinfo, &bytes))
+		return BLERR_CANNOTLOADWEAPONCONFIG;
+	// Allocate every replacement index before consuming persistent config storage.
+	for (i = 1; i <= MAX_CLIENTS; i++)
+	{
+		if (!botweaponstates[i] || !botweaponstates[i]->weaponweightconfig) continue;
+		indices[i] = (int *) GetClearedMemory((unsigned long)max_weaponinfo * sizeof(int));
+		if (!indices[i])
+		{
+			botimport.Print(PRT_ERROR, "couldn't stage weapon table indices\n");
+			goto failed;
+		}
+	}
 	candidate = LoadWeaponConfig(file->string);
 	if (!candidate)
 	{
 		botimport.Print(PRT_FATAL, "couldn't load the weapon config\n");
-		return BLERR_CANNOTLOADWEAPONCONFIG;
+		goto failed;
+	}
+	for (i = 1; i <= MAX_CLIENTS; i++)
+	{
+		if (!indices[i]) continue;
+		for (j = 0; j < candidate->numweapons; j++)
+			indices[i][j] = FindFuzzyWeight(botweaponstates[i]->weaponweightconfig,
+					candidate->weaponinfo[j].name);
 	}
 	if (weaponconfig) FreeMemory(weaponconfig);
 	weaponconfig = candidate;
+	for (i = 1; i <= MAX_CLIENTS; i++)
+	{
+		if (!botweaponstates[i]) continue;
+		if (botweaponstates[i]->weaponweightindex) FreeMemory(botweaponstates[i]->weaponweightindex);
+		botweaponstates[i]->weaponweightindex = indices[i];
+	}
 
 #ifdef DEBUG_AI_WEAP
 	DumpWeaponConfig(weaponconfig);
 #endif //DEBUG_AI_WEAP
 	//
 	return BLERR_NOERROR;
+
+failed:
+	for (i = 1; i <= MAX_CLIENTS; i++)
+		if (indices[i]) FreeMemory(indices[i]);
+	return BLERR_CANNOTLOADWEAPONCONFIG;
 } //end of the function BotSetupWeaponAI
 //===========================================================================
 //
