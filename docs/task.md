@@ -167,6 +167,10 @@ QVMs while any P0 item is open.
   - [x] Optional local metadata reads honor caller lengths and archive prefixes;
         global comment NULL requests reject before I/O;
         [real metadata checks](unzip-optional-metadata-validation.md) pass.
+  - [x] Shared ZIP seek supports independent logical cursors, complete
+        SET/CUR/END semantics, checked chunked skips and failure-propagating
+        single platform delegation;
+        [native compatibility checks](fs-zip-seek-validation.md) pass.
   - [ ] Complete remaining metadata/open/read/handle paths and retail PK3
         acceptance before closing the issue.
 - [ ] [#41 — bound RoQ chunks, dimensions, audio output, and cursors](https://github.com/jm2/Quake-III-Arena/issues/41)
