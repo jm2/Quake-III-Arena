@@ -268,8 +268,9 @@ void PC_SourceWarning(int handle, char *format, ...) {
 	static char string[4096];
 
 	va_start (argptr, format);
-	vsprintf (string, format, argptr);
+	Q_vsnprintf( string, sizeof(string), format, argptr );
 	va_end (argptr);
+	string[sizeof(string) - 1] = '\0';
 
 	filename[0] = '\0';
 	line = 0;
@@ -290,8 +291,9 @@ void PC_SourceError(int handle, char *format, ...) {
 	static char string[4096];
 
 	va_start (argptr, format);
-	vsprintf (string, format, argptr);
+	Q_vsnprintf( string, sizeof(string), format, argptr );
 	va_end (argptr);
+	string[sizeof(string) - 1] = '\0';
 
 	filename[0] = '\0';
 	line = 0;

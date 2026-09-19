@@ -94,15 +94,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #endif
 
-/*
- * Native modules use the bounded C99 formatter. The legacy QVM libc only
- * exposes vsprintf, so retain its historical fallback until that formatter
- * is upgraded as part of the QVM hardening work.
- */
-#ifndef Q_vsnprintf
-#ifdef Q3_VM
-#define Q_vsnprintf(buffer, length, format, argptr) vsprintf(buffer, format, argptr)
-#elif defined(_WIN32)
+/* Native modules use the platform formatter; QVMs declare their own above. */
+#if !defined(Q3_VM) && !defined(Q_vsnprintf)
+#ifdef _WIN32
 #define Q_vsnprintf _vsnprintf
 #else
 #define Q_vsnprintf vsnprintf

@@ -87,6 +87,10 @@ QVMs while any P0 item is open.
         syscall argument snapshots; see [memory evidence](qvm-memory-validation.md).
   - [x] Define wrapping integer arithmetic and reject division, shift, and
         float conversion traps; see [arithmetic evidence](qvm-arithmetic-validation.md).
+  - [x] The QVM libc and shipping static-module format sinks use a bounded
+        formatter with C99 length/termination behavior; actual-body GCC/Clang
+        sanitizer tests and all six retail QVM links pass; see
+        [formatter evidence](qvm-format-validation.md).
   - [x] Marshal counted VM call arguments and zero padding explicitly for
         all execution modes; see [call evidence](qvm-call-validation.md).
   - [x] Common MEMSET/MEMCPY/STRNCPY syscalls validate full buffers and
@@ -684,9 +688,10 @@ QVMs while any P0 item is open.
 - [ ] Host ASan/UBSan malformed-input corpora for messages/Huffman, downloads,
       ZIP, QVM, RoQ, images/JPEG, models, BSP, shader/skin/font, bot/AAS and UI
       allocation.
-- [x] Host ASan/UBSan corpus for the known native format-string call sites and
-      central error/network formatting boundaries; retain the QVM formatter
-      under the broader QVM audit.
+- [x] Host ASan/UBSan corpus for the known native format-string call sites,
+      central error/network boundaries, and shipping QVM/static-module
+      formatter capacities. The non-Mac platform and BSPC formatter audit
+      remains open.
 - [ ] PowerShell setup/build/package on native Windows.
 - [ ] Offline package from an explicit legal asset root.
 - [ ] Mounted package resource/Finder validation.

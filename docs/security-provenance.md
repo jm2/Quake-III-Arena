@@ -24,7 +24,7 @@ Every accepted family still needs a focused malformed-input regression.
 | Cgame item configstring overflow | [`fc244c97`](https://github.com/ioquake/ioq3/commit/fc244c97ef1a5f1c6e7c1f46a098c8f57f271153) | Missing | Locally ported |
 | Client connect-packet overflow | [`63e6c82f`](https://github.com/ioquake/ioq3/commit/63e6c82f4b91f7ae0ffb9de149a1d05eb5e28e9a) | Missing | Locally ported |
 | Client-command/callvote injection | [`f5aae784`](https://github.com/ioquake/ioq3/commit/f5aae78481d71307a0b874b1f17ecdead1469392), [`cf791d14`](https://github.com/ioquake/ioq3/commit/cf791d14c58f536eec8220d93fb9af443f8837e9) | Missing | Locally ported argument separator and length sanitization |
-| Remote/local format-string call sites | [`59c231c6`](https://github.com/ioquake/ioq3/commit/59c231c6c6ee9c460a252aea74a8aa1b84da4e1a), [`8ca8d845`](https://github.com/ioquake/ioq3/commit/8ca8d845911fb6545bf723cade39944d874d01ea) | Multiple missing call-site fixes | Known upstream call sites are ported and structurally checked; actual-body sanitizer tests cover the native AAS/script/error/network sinks, including a newly bounded `Com_Error`. The QVM formatter audit remains open |
+| Remote/local format-string call sites and shipping module formatter | [`59c231c6`](https://github.com/ioquake/ioq3/commit/59c231c6c6ee9c460a252aea74a8aa1b84da4e1a), [`8ca8d845`](https://github.com/ioquake/ioq3/commit/8ca8d845911fb6545bf723cade39944d874d01ea), [`bb47026b`](https://github.com/ioquake/ioq3/commit/bb47026b5f38a4f1478384ac92d07c07d1a4b83e), [`476e35f5`](https://github.com/ioquake/ioq3/commit/476e35f50ec42ee085e06459b04af2d7141adf39) | Multiple missing call-site fixes and an unbounded QVM formatter | Known upstream call sites are ported and structurally checked; actual-body sanitizer tests cover native AAS/script/error/network sinks and the bounded QVM formatter. Shipping game/cgame/UI sinks now pass capacities and terminate output. Non-Mac platform and BSPC tools remain to audit |
 | Rcon, token, info-string, and server-command bounds | [`33a48a03`](https://github.com/ioquake/ioq3/commit/33a48a0336865a9d21983e4836920cd9f3401101) | Missing | Locally ported |
 | Bot primitive/preprocessor/avoid-reach bounds | [`90f2f02c`](https://github.com/ioquake/ioq3/commit/90f2f02c55af937f83cacfdcd4188ea6359ddaa0), [`078d004d`](https://github.com/ioquake/ioq3/commit/078d004dc272759154caf83ca9549c3a4c0cb5ee), [`b97a7e25`](https://github.com/ioquake/ioq3/commit/b97a7e25836d15003c1e7fd0fc60c10f195f642a) | Missing | Locally ported; larger bot parser/AAS validation remains open |
 | Patch collision plane OOB | [`9d742275`](https://github.com/ioquake/ioq3/commit/9d74227559d46b85d0c43d395cd280d3de7ae8f4) | Missing | Locally changed from warning-and-index to `ERR_DROP` |
@@ -63,15 +63,16 @@ Every accepted family still needs a focused malformed-input regression.
   terminate the process.
 - [#48](https://github.com/jm2/Quake-III-Arena/issues/48): bot preprocessor
   token concatenation, paths, and cleanup remain unsafe.
-- The QVM libc still maps `Q_vsnprintf` to its historical unbounded
-  `vsprintf`; native static modules use the bounded formatter.
+- Win32/Unix platform entry points and the non-shipping BSPC tools still use
+  historical unbounded `vsprintf` sinks and need their own focused audit.
 
 ## Required validation
 
 - [ ] Add host ASan/UBSan harnesses for message, download, image, model, BSP,
       bot/AAS, cinematic, and QVM malformed-input corpora.
 - [x] Add a host ASan/UBSan corpus for every known native format-string fix,
-      central native formatting capacities and literal hostile percent text.
+      central native formatting capacities, literal hostile percent text and
+      shipping QVM/static-module formatter capacities.
 - [ ] Exercise accepted message patches at empty, one-bit-short, exact-capacity,
       and one-bit-over limits.
 - [ ] Exercise every download rejection spelling (`../`, `..\\`, `::`,

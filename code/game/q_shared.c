@@ -279,8 +279,9 @@ void COM_ParseError( char *format, ... )
 	static char string[4096];
 
 	va_start (argptr, format);
-	vsprintf (string, format, argptr);
+	Q_vsnprintf( string, sizeof(string), format, argptr );
 	va_end (argptr);
+	string[sizeof(string) - 1] = '\0';
 
 	Com_Printf("ERROR: %s, line %d: %s\n", com_parsename, com_lines, string);
 }
@@ -291,8 +292,9 @@ void COM_ParseWarning( char *format, ... )
 	static char string[4096];
 
 	va_start (argptr, format);
-	vsprintf (string, format, argptr);
+	Q_vsnprintf( string, sizeof(string), format, argptr );
 	va_end (argptr);
+	string[sizeof(string) - 1] = '\0';
 
 	Com_Printf("WARNING: %s, line %d: %s\n", com_parsename, com_lines, string);
 }
@@ -885,35 +887,15 @@ char *Q_CleanStr( char *string ) {
 void QDECL Com_sprintf( char *dest, int size, const char *fmt, ...) {
 	int		len;
 	va_list		argptr;
-#ifdef Q3_VM
-	char		bigbuffer[32000];
-#endif
 
 	if ( !dest || size < 1 ) {
 		return;
 	}
 
 	va_start( argptr, fmt );
-#ifdef Q3_VM
-	/*
-	 * The legacy QVM libc has no bounded formatter. Preserve the historical
-	 * intermediate buffer until bg_lib gains a real Q_vsnprintf; writing
-	 * directly into a small caller buffer would be an immediate regression.
-	 */
-	len = vsprintf( bigbuffer, fmt, argptr );
-#else
 	len = Q_vsnprintf( dest, size, fmt, argptr );
-#endif
 	va_end( argptr );
-
-#ifdef Q3_VM
-	if ( len >= sizeof(bigbuffer) ) {
-		Com_Error( ERR_FATAL, "Com_sprintf: overflowed bigbuffer" );
-	}
-	Q_strncpyz( dest, bigbuffer, size );
-#else
 	dest[size - 1] = '\0';
-#endif
 
 	if (len >= size) {
 		Com_Printf ("Com_sprintf: overflow of %i in %i\n", len, size);
@@ -945,8 +927,9 @@ char	* QDECL va( char *format, ... ) {
 	index++;
 
 	va_start (argptr, format);
-	vsprintf (buf, format,argptr);
+	Q_vsnprintf( buf, sizeof(string[0]), format, argptr );
 	va_end (argptr);
+	buf[sizeof(string[0]) - 1] = '\0';
 
 	return buf;
 }
