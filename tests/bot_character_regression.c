@@ -2,9 +2,15 @@
 #include Q3_CHARACTER_SOURCE
 botlib_import_t botimport;
 extern int numtokens;
-static void *owners[256];
-static unsigned long costs[256];
-static unsigned long requestCosts[256];
+#ifndef Q3_CHARACTER_MAX_REQUESTS
+#define Q3_CHARACTER_MAX_REQUESTS 256
+#endif
+#ifndef Q3_CHARACTER_MAX_OWNERS
+#define Q3_CHARACTER_MAX_OWNERS 256
+#endif
+static void *owners[Q3_CHARACTER_MAX_OWNERS];
+static unsigned long costs[Q3_CHARACTER_MAX_OWNERS];
+static unsigned long requestCosts[Q3_CHARACTER_MAX_REQUESTS];
 static int liveOwners, requests, failAt, characterRequest, opens, closes, fileReads, errors, warnings, formatWarnings;
 static const char *fileText;
 static char openedPath[MAX_QPATH];
@@ -14,14 +20,14 @@ void *GetMemory(unsigned long size) {
 #ifdef Q3_CHARACTER_HEAP_HOOK
     if(Q3_CHARACTER_HEAP_HOOK(size)){requests++;return NULL;}
 #endif
-    Check(size>0&&size<=65536&&requests<256,"bounded real native parser allocation");requestCosts[requests++]=size;
+    Check(size>0&&size<=65536&&requests<Q3_CHARACTER_MAX_REQUESTS,"bounded real native parser allocation");requestCosts[requests++]=size;
     if(size==sizeof(bot_character_t)+MAX_CHARACTERISTICS*sizeof(bot_characteristic_t))characterRequest=requests;
     if(requests==failAt)return NULL;
-    for(i=0;i<256;i++)if(!owners[i]){owners[i]=malloc(size);costs[i]=size;Check(owners[i]!=NULL,"fixture heap allocation");liveOwners++;return owners[i];}
+    for(i=0;i<Q3_CHARACTER_MAX_OWNERS;i++)if(!owners[i]){owners[i]=malloc(size);costs[i]=size;Check(owners[i]!=NULL,"fixture heap allocation");liveOwners++;return owners[i];}
     Check(0,"bounded native owners");return NULL;
 }
 void *GetClearedMemory(unsigned long size) {void *pointer=GetMemory(size);if(pointer)memset(pointer,0,size);return pointer;}
-void FreeMemory(void *pointer) {int i;Check(pointer!=NULL,"native cleanup never releases a missing owner");for(i=0;i<256;i++)if(owners[i]==pointer){free(pointer);owners[i]=NULL;costs[i]=0;liveOwners--;return;}Check(0,"native physical owner releases once");}
+void FreeMemory(void *pointer) {int i;Check(pointer!=NULL,"native cleanup never releases a missing owner");for(i=0;i<Q3_CHARACTER_MAX_OWNERS;i++)if(owners[i]==pointer){free(pointer);owners[i]=NULL;costs[i]=0;liveOwners--;return;}Check(0,"native physical owner releases once");}
 #ifndef Com_Memcpy
 void Com_Memcpy(void *out,const void *in,size_t size) {memcpy(out,in,size);}
 #endif

@@ -716,8 +716,13 @@ implementation or check, without implying issue completion.
         requiring a free slot, including all 64 slots and native skill tolerance;
         reload/missing keys retain exhaustion behavior;
         see [character cache evidence](bot-character-cache-validation.md).
-  - [ ] Finish expression work limits, remaining character/source allocation
-        consumers, and aggregate parser work/recursion limits.
+  - [x] Public token and expression reads share a bounded raw/copy work budget;
+        cyclic/wide macros release queued candidates, recursive macro-generated
+        string lookahead has a fixed depth, and ordinary large sources reset the
+        budget after every published token; see
+        [work-budget evidence](bot-preprocessor-budget-validation.md).
+  - [ ] Finish remaining character/source allocation consumers, include depth,
+        and aggregate parser memory budgets.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
   - [x] Local pool/type/item/string checks, reload-name initialization, and
         bounded player-model cvar copies cross-build in both products.

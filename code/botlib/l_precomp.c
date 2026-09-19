@@ -110,6 +110,8 @@ typedef struct directive_s
 #define DEFINEHASHSIZE		1024
 
 #define TOKEN_HEAP_SIZE		4096
+#define MAX_SOURCE_TOKEN_WORK	TOKEN_HEAP_SIZE
+#define MAX_SOURCE_TOKEN_DEPTH	128
 
 int numtokens;
 /*
@@ -308,6 +310,49 @@ void PC_FreeToken(token_t *token)
 //	freetokens = token;
 	numtokens--;
 } //end of the function PC_FreeToken
+
+static void PC_DiscardSourceTokens(source_t *source)
+{
+	token_t *token;
+	while (source && source->tokens)
+	{
+		token = source->tokens;
+		source->tokens = token->next;
+		PC_FreeToken(token);
+	}
+}
+
+static int PC_EnterTokenWork(source_t *source)
+{
+	if (!source) return qfalse;
+	if (!source->tokenworkdepth) source->tokenwork = 0;
+	if (source->tokenworkdepth >= MAX_SOURCE_TOKEN_DEPTH)
+	{
+		SourceError(source, "preprocessor token recursion limit exceeded");
+		PC_DiscardSourceTokens(source);
+		return qfalse;
+	}
+	source->tokenworkdepth++;
+	return qtrue;
+}
+
+static void PC_LeaveTokenWork(source_t *source)
+{
+	if (source && source->tokenworkdepth) source->tokenworkdepth--;
+}
+
+static int PC_ConsumeTokenWork(source_t *source)
+{
+	if (!source || !source->tokenworkdepth) return qtrue;
+	if (source->tokenwork >= MAX_SOURCE_TOKEN_WORK)
+	{
+		SourceError(source, "preprocessor token work limit exceeded");
+		PC_DiscardSourceTokens(source);
+		return qfalse;
+	}
+	source->tokenwork++;
+	return qtrue;
+}
 //============================================================================
 //
 // Parameter:				-
@@ -340,7 +385,11 @@ int PC_ReadSourceToken(source_t *source, token_t *token)
 	while(!source->tokens)
 	{
 		//if there's a token to read from the script
-		if (PS_ReadToken(source->scriptstack, token)) return qtrue;
+		if (PS_ReadToken(source->scriptstack, token))
+		{
+			if (!PC_ConsumeTokenWork(source)) return qfalse;
+			return qtrue;
+		}
 		if (PC_SourceErrorFlag(source, SCFL_LEXERROR)) return qfalse;
 		//if at the end of the script
 		if (EndOfScript(source->scriptstack))
@@ -367,6 +416,11 @@ int PC_ReadSourceToken(source_t *source, token_t *token)
 	t = source->tokens;
 	source->tokens = source->tokens->next;
 	PC_FreeToken(t);
+	if (!PC_ConsumeTokenWork(source))
+	{
+		PC_DiscardSourceTokens(source);
+		return qfalse;
+	}
 	return qtrue;
 } //end of the function PC_ReadSourceToken
 //============================================================================
@@ -900,6 +954,7 @@ int PC_ExpandDefine(source_t *source, token_t *deftoken, define_t *define,
 		{
 			for (pt = parms[parmnum]; pt; pt = pt->next)
 			{
+				if (!PC_ConsumeTokenWork(source)) goto cleanup;
 				t = PC_CopyToken(pt);
 				if (!t) goto cleanup;
 				//add the token to the list
@@ -939,6 +994,7 @@ int PC_ExpandDefine(source_t *source, token_t *deftoken, define_t *define,
 			} //end if
 			else
 			{
+				if (!PC_ConsumeTokenWork(source)) goto cleanup;
 				t = PC_CopyToken(dt);
 			} //end else
 			//add the token to the list
@@ -1492,7 +1548,16 @@ define_t *PC_DefineFromString(char *string)
 		return NULL;
 	} //end if
 #endif //DEFINEHASHING
+	if (!PC_EnterTokenWork(&src))
+	{
+#if DEFINEHASHING
+		FreeMemory(src.definehash);
+#endif
+		FreeScript(script);
+		return NULL;
+	}
 	res = PC_Directive_define(&src);
+	PC_LeaveTokenWork(&src);
 	for (t = src.tokens; t; t = src.tokens)
 	{
 		src.tokens = t->next;
@@ -2423,11 +2488,13 @@ int PC_Evaluate(source_t *source, signed long int *intvalue,
 	token_t *t, *nexttoken;
 	define_t *define;
 	int defined = qfalse, result = qfalse;
+	int workowner = source && !source->tokenworkdepth;
 	unsigned int errorsequence = source->errorsequence;
 
 	firsttoken = lasttoken = NULL;
 	if (intvalue) *intvalue = 0;
 	if (floatvalue) *floatvalue = 0;
+	if (workowner && !PC_EnterTokenWork(source)) return qfalse;
 	//
 	if (!PC_ReadLine(source, &token))
 	{
@@ -2527,6 +2594,7 @@ cleanup:
 	else Log_Write("eval result: %f", *floatvalue);
 #endif //DEBUG_EVAL
 	//
+	if (workowner) PC_LeaveTokenWork(source);
 	return result;
 } //end of the function PC_Evaluate
 //============================================================================
@@ -2539,6 +2607,7 @@ int PC_DollarEvaluate(source_t *source, signed long int *intvalue,
 												double *floatvalue, int integer)
 {
 	int indent = 0, defined = qfalse, result = qfalse;
+	int workowner = source && !source->tokenworkdepth;
 	unsigned int errorsequence = source->errorsequence;
 	token_t token, *firsttoken, *lasttoken;
 	token_t *t, *nexttoken;
@@ -2547,6 +2616,7 @@ int PC_DollarEvaluate(source_t *source, signed long int *intvalue,
 	firsttoken = lasttoken = NULL;
 	if (intvalue) *intvalue = 0;
 	if (floatvalue) *floatvalue = 0;
+	if (workowner && !PC_EnterTokenWork(source)) return qfalse;
 	//
 	if (!PC_ReadSourceToken(source, &token))
 	{
@@ -2665,6 +2735,7 @@ cleanup:
 	else Log_Write("$eval result: %f", *floatvalue);
 #endif //DEBUG_EVAL
 	//
+	if (workowner) PC_LeaveTokenWork(source);
 	return result;
 } //end of the function PC_DollarEvaluate
 //============================================================================
@@ -3066,7 +3137,7 @@ int QuakeCMacro(source_t *source)
 // Returns:					-
 // Changes Globals:		-
 //============================================================================
-int PC_ReadToken(source_t *source, token_t *token)
+static int PC_ReadTokenInternal(source_t *source, token_t *token)
 {
 	define_t *define;
 
@@ -3145,7 +3216,16 @@ int PC_ReadToken(source_t *source, token_t *token)
 		//found a token
 		return qtrue;
 	} //end while
-} //end of the function PC_ReadToken
+} //end of the function PC_ReadTokenInternal
+
+int PC_ReadToken(source_t *source, token_t *token)
+{
+	int result;
+	if (!PC_EnterTokenWork(source)) return qfalse;
+	result = PC_ReadTokenInternal(source, token);
+	PC_LeaveTokenWork(source);
+	return result;
+}
 //============================================================================
 //
 // Parameter:				-

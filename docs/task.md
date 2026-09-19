@@ -623,8 +623,13 @@ QVMs while any P0 item is open.
         requiring a free slot, including all 64 slots and native skill tolerance;
         reload/missing keys retain exhaustion behavior;
         see [character cache evidence](bot-character-cache-validation.md).
-  - [ ] Finish expression work limits, remaining character/source allocation
-        consumers, and aggregate parser work/recursion limits.
+  - [x] Public token and expression reads share a bounded raw/copy work budget;
+        cyclic/wide macros release queued candidates, recursive macro-generated
+        string lookahead has a fixed depth, and ordinary large sources reset the
+        budget after every published token; see
+        [work-budget evidence](bot-preprocessor-budget-validation.md).
+  - [ ] Finish remaining character/source allocation consumers, include depth,
+        and aggregate parser memory budgets.
 
 ## P1 — high-impact security, runtime, and release blockers
 
