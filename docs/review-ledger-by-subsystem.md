@@ -680,6 +680,10 @@ implementation or check, without implying issue completion.
         release partial records, keep their source borrowed and let both callers
         release it once; native alternatives/captures remain;
         see [match piece evidence](bot-match-piece-validation.md).
+  - [x] Complete match template containers use checked heap owners, require
+        closing context blocks, reject source errors and release failed
+        candidates before return; native order/context lookups remain;
+        see [template evidence](bot-match-template-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)

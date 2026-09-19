@@ -1508,93 +1508,76 @@ bot_matchtemplate_t *BotLoadMatchTemplates(char *matchfile)
 	token_t token;
 	bot_matchtemplate_t *matchtemplate, *matches, *lastmatch;
 	unsigned long int context;
+	int closedcontext;
 
+	if (!matchfile || !matchfile[0] || strlen(matchfile) >= MAX_PATH)
+	{
+		botimport.Print(PRT_ERROR, "invalid match template filename\n");
+		return NULL;
+	}
 	PC_SetBaseFolder(BOTFILESBASEFOLDER);
 	source = LoadSourceFile(matchfile);
 	if (!source)
 	{
-		botimport.Print(PRT_ERROR, "counldn't load %s\n", matchfile);
+		botimport.Print(PRT_ERROR, "couldn't load %s\n", matchfile);
 		return NULL;
-	} //end if
-	//
-	matches = NULL; //list with matches
-	lastmatch = NULL; //last match in the list
+	}
+	matches = NULL;
+	lastmatch = NULL;
 
-	while(PC_ReadToken(source, &token))
+	while(!PC_SourceHasError(source) && PC_ReadToken(source, &token))
 	{
+		if (PC_SourceHasError(source)) goto failed;
 		if (token.type != TT_NUMBER || !(token.subtype & TT_INTEGER))
 		{
 			SourceError(source, "expected integer, found %s\n", token.string);
-			BotFreeMatchTemplates(matches);
-			FreeSource(source);
-			return NULL;
-		} //end if
-		//the context
+			goto failed;
+		}
 		context = token.intvalue;
-		//
-		if (!PC_ExpectTokenString(source, "{"))
+		if (!PC_ExpectTokenString(source, "{")) goto failed;
+		closedcontext = qfalse;
+		while(!PC_SourceHasError(source) && PC_ReadToken(source, &token))
 		{
-			BotFreeMatchTemplates(matches);
-			FreeSource(source);
-			return NULL;
-		} //end if
-		//
-		while(PC_ReadToken(source, &token))
-		{
-			if (!strcmp(token.string, "}")) break;
-			//
+			if (PC_SourceHasError(source)) goto failed;
+			if (!strcmp(token.string, "}"))
+			{
+				closedcontext = qtrue;
+				break;
+			}
 			PC_UnreadLastToken(source);
-			//
-			matchtemplate = (bot_matchtemplate_t *) GetClearedHunkMemory(sizeof(bot_matchtemplate_t));
+			if (PC_SourceHasError(source)) goto failed;
+			matchtemplate = (bot_matchtemplate_t *) GetClearedMemory(sizeof(bot_matchtemplate_t));
+			if (!matchtemplate) goto failed;
 			matchtemplate->context = context;
-			matchtemplate->next = NULL;
-			//add the match template to the list
 			if (lastmatch) lastmatch->next = matchtemplate;
 			else matches = matchtemplate;
 			lastmatch = matchtemplate;
-			//load the match template
 			matchtemplate->first = BotLoadMatchPieces(source, "=");
-			if (!matchtemplate->first)
-			{
-				FreeSource(source);
-				BotFreeMatchTemplates(matches);
-				return NULL;
-			} //end if
-			//read the match type
+			if (!matchtemplate->first) goto failed;
 			if (!PC_ExpectTokenString(source, "(") ||
-				!PC_ExpectTokenType(source, TT_NUMBER, TT_INTEGER, &token))
-			{
-				BotFreeMatchTemplates(matches);
-				FreeSource(source);
-				return NULL;
-			} //end if
+				!PC_ExpectTokenType(source, TT_NUMBER, TT_INTEGER, &token)) goto failed;
 			matchtemplate->type = token.intvalue;
-			//read the match subtype
 			if (!PC_ExpectTokenString(source, ",") ||
-				!PC_ExpectTokenType(source, TT_NUMBER, TT_INTEGER, &token))
-			{
-				BotFreeMatchTemplates(matches);
-				FreeSource(source);
-				return NULL;
-			} //end if
+				!PC_ExpectTokenType(source, TT_NUMBER, TT_INTEGER, &token)) goto failed;
 			matchtemplate->subtype = token.intvalue;
-			//read trailing punctuations
 			if (!PC_ExpectTokenString(source, ")") ||
-				!PC_ExpectTokenString(source, ";"))
-			{
-				BotFreeMatchTemplates(matches);
-				FreeSource(source);
-				return NULL;
-			} //end if
-		} //end while
-	} //end while
-	//free the source
+				!PC_ExpectTokenString(source, ";")) goto failed;
+		}
+		if (!closedcontext)
+		{
+			if (!PC_SourceHasError(source)) SourceError(source, "missing match context delimiter }");
+			goto failed;
+		}
+	}
+	if (PC_SourceHasError(source)) goto failed;
 	FreeSource(source);
 	botimport.Print(PRT_MESSAGE, "loaded %s\n", matchfile);
-	//
-	//BotDumpMatchTemplates(matches);
-	//
 	return matches;
+failed:
+	if (!PC_SourceHasError(source)) SourceError(source, "could not load complete match templates");
+	BotFreeMatchTemplates(matches);
+	FreeSource(source);
+	return NULL;
 } //end of the function BotLoadMatchTemplates
 //===========================================================================
 //
