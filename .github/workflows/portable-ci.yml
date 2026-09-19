@@ -38,7 +38,10 @@ jobs:
       - name: Check format-string regression scripts
         run: |
           bash -n tests/run_format_string_tests.sh
-          python -m py_compile tests/check_format_call_sites.py
+          bash -n tests/run_qvm_format_tests.sh
+          python -m py_compile \
+            tests/check_format_call_sites.py \
+            tests/check_qvm_format_call_sites.py
 
       - name: Check PowerShell syntax and help
         shell: pwsh
@@ -103,6 +106,11 @@ jobs:
         run: |
           bash tests/run_format_string_tests.sh
           CC=clang bash tests/run_format_string_tests.sh
+
+      - name: Check QVM and static-module formatters
+        run: |
+          bash tests/run_qvm_format_tests.sh
+          CC=clang bash tests/run_qvm_format_tests.sh
 
       - name: Build and run host memory-safety checks
         run: |

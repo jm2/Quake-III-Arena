@@ -213,6 +213,9 @@ implementation or check, without implying issue completion.
   - [x] Data-image loads/stores, ARG, BLOCK_COPY, and syscall argument
         snapshots have [execution regressions](qvm-memory-validation.md).
   - [x] Arithmetic edge cases have [execution regressions](qvm-arithmetic-validation.md).
+  - [x] The QVM libc and shipping static-module format sinks have bounded,
+        terminating [formatter regressions](qvm-format-validation.md), and all
+        six retail QVM products link with the formatter.
   - [x] Native/compiled/interpreted calls use counted, zero-padded arguments;
         see [call evidence](qvm-call-validation.md).
   - [x] Shared memory/string syscall traps have [range regressions](qvm-memory-trap-validation.md).
@@ -692,7 +695,8 @@ Earlier milestone snapshots below remain historical.
 - [ ] Add focused host tests for local candidates #18, #24, #25, #36, #40,
       #49, message/Huffman exact bounds and download pairs.
 - [x] Add normal/optimized GCC/Clang sanitizer coverage for the known native
-      format-string fixes and the shared error/network formatting boundaries.
+      format-string fixes, shared error/network boundaries, and shipping
+      QVM/static-module formatter capacities.
 - [ ] Prioritize target runtime blockers: #11 after #48, then #15, #16, #17,
       #5, #20, #19.
 - [x] User authorized host checks and working cross-builds while legal retail
