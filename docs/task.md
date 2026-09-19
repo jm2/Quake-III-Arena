@@ -146,6 +146,9 @@ QVMs while any P0 item is open.
   - [x] Real complete ZIP payloads around the buffering cap, malicious signed/
         unsigned size declarations, bad opens and truncated compressed streams
         have [owner/retry evidence](fs-zip-entry-validation.md).
+  - [x] Actual read/seek paths bound requests, offsets and private accounting
+        before arithmetic or handle access; ordinary behavior and physical
+        teardown have [native evidence](fs-buffer-bounds-validation.md).
   - [ ] Complete remaining metadata/open/read/handle paths and retail PK3
         acceptance before closing the issue.
 - [ ] [#41 — bound RoQ chunks, dimensions, audio output, and cursors](https://github.com/jm2/Quake-III-Arena/issues/41)
