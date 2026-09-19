@@ -603,6 +603,10 @@ QVMs while any P0 item is open.
         cache aliases, frees private data by actual ownership across policy
         changes and preserves prior roots on failure; non-fitting keys remain
         private; see [cache evidence](bot-chat-cache-validation.md).
+  - [x] Chat setup stages all dictionaries privately, distinguishes valid
+        empty data from failed sources, commits after the checked pool succeeds
+        and releases failed candidates while preserving prior dictionary/queue
+        roots; see [setup evidence](bot-chat-setup-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 

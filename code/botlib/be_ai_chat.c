@@ -733,7 +733,7 @@ static int BotSynonymFloatFinite(const float *value)
 	return (representation & 0x7f800000u) != 0x7f800000u;
 }
 
-bot_synonymlist_t *BotLoadSynonyms(char *filename)
+static bot_synonymlist_t *BotLoadSynonymsChecked(char *filename, int heaponly, int *loaded)
 {
 	int pass, size, used, contextlevel, numsynonyms, stringsize;
 	float weight, totalweight;
@@ -744,6 +744,7 @@ bot_synonymlist_t *BotLoadSynonyms(char *filename)
 	bot_synonymlist_t *synlist, *lastsyn, *syn;
 	bot_synonym_t *synonym, *lastsynonym;
 
+	if (loaded) *loaded = qfalse;
 	if (!filename || !*filename)
 	{
 		botimport.Print(PRT_ERROR, "missing synonym filename\n");
@@ -929,7 +930,7 @@ bot_synonymlist_t *BotLoadSynonyms(char *filename)
 			goto failed;
 		} //end else if
 	} //end for
-	if (size)
+	if (size && !heaponly)
 	{
 		published = (char *) GetClearedHunkMemory(size);
 		if (!published)
@@ -953,6 +954,7 @@ bot_synonymlist_t *BotLoadSynonyms(char *filename)
 		synlist = (bot_synonymlist_t *)(published + ((char *)synlist - staged));
 		FreeMemory(staged);
 	} //end if
+	if (loaded) *loaded = qtrue;
 	botimport.Print(PRT_MESSAGE, "loaded %s\n", filename);
 	//
 	//BotDumpSynonymList(synlist);
@@ -963,6 +965,12 @@ failed:
 	if (staged) FreeMemory(staged);
 	return NULL;
 } //end of the function BotLoadSynonyms
+
+bot_synonymlist_t *BotLoadSynonyms(char *filename)
+{
+	return BotLoadSynonymsChecked(filename, qfalse, NULL);
+}
+
 //===========================================================================
 // replace all the synonyms in the string
 //
@@ -1169,7 +1177,7 @@ void BotDumpRandomStringList(bot_randomlist_t *randomlist)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
-bot_randomlist_t *BotLoadRandomStrings(char *filename)
+static bot_randomlist_t *BotLoadRandomStringsChecked(char *filename, int heaponly, int *loaded)
 {
 	int pass, size = 0, used, bytes;
 	char *ptr, *staged = NULL, *published, chatmessagestring[MAX_MESSAGE_SIZE];
@@ -1178,6 +1186,7 @@ bot_randomlist_t *BotLoadRandomStrings(char *filename)
 	bot_randomlist_t *randomlist = NULL, *lastrandom, *random = NULL, *out;
 	bot_randomstring_t *randomstring, *entry;
 
+	if (loaded) *loaded = qfalse;
 	if (!filename || !filename[0] || strlen(filename) >= MAX_PATH)
 	{
 		botimport.Print(PRT_ERROR, "invalid random dictionary filename\n");
@@ -1244,7 +1253,7 @@ bot_randomlist_t *BotLoadRandomStrings(char *filename)
 		if (!pass) size = used;
 		else if (used != size) goto excessive;
 	}
-	if (size)
+	if (size && !heaponly)
 	{
 		published = (char *)GetClearedHunkMemory(size);
 		if (!published) goto failed;
@@ -1267,6 +1276,7 @@ bot_randomlist_t *BotLoadRandomStrings(char *filename)
 		randomlist = (bot_randomlist_t *)(published + ((char *)randomlist - staged));
 		FreeMemory(staged);
 	}
+	if (loaded) *loaded = qtrue;
 	botimport.Print(PRT_MESSAGE, "loaded %s\n", filename);
 	return randomlist;
 excessive:
@@ -1277,6 +1287,12 @@ failed:
 	botimport.Print(PRT_ERROR, "could not load complete random dictionary\n");
 	return NULL;
 } //end of the function BotLoadRandomStrings
+
+bot_randomlist_t *BotLoadRandomStrings(char *filename)
+{
+	return BotLoadRandomStringsChecked(filename, qfalse, NULL);
+}
+
 //===========================================================================
 //
 // Parameter:				-
@@ -1502,7 +1518,7 @@ void BotFreeMatchTemplates(bot_matchtemplate_t *mt)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
-bot_matchtemplate_t *BotLoadMatchTemplates(char *matchfile)
+static bot_matchtemplate_t *BotLoadMatchTemplatesChecked(char *matchfile, int *loaded)
 {
 	source_t *source;
 	token_t token;
@@ -1510,6 +1526,7 @@ bot_matchtemplate_t *BotLoadMatchTemplates(char *matchfile)
 	unsigned long int context;
 	int closedcontext;
 
+	if (loaded) *loaded = qfalse;
 	if (!matchfile || !matchfile[0] || strlen(matchfile) >= MAX_PATH)
 	{
 		botimport.Print(PRT_ERROR, "invalid match template filename\n");
@@ -1571,6 +1588,7 @@ bot_matchtemplate_t *BotLoadMatchTemplates(char *matchfile)
 	}
 	if (PC_SourceHasError(source)) goto failed;
 	FreeSource(source);
+	if (loaded) *loaded = qtrue;
 	botimport.Print(PRT_MESSAGE, "loaded %s\n", matchfile);
 	return matches;
 failed:
@@ -1579,6 +1597,12 @@ failed:
 	FreeSource(source);
 	return NULL;
 } //end of the function BotLoadMatchTemplates
+
+bot_matchtemplate_t *BotLoadMatchTemplates(char *matchfile)
+{
+	return BotLoadMatchTemplatesChecked(matchfile, NULL);
+}
+
 //===========================================================================
 //
 // Parameter:				-
@@ -2055,7 +2079,7 @@ void BotCheckValidReplyChatKeySet(source_t *source, bot_replychatkey_t *keys)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-bot_replychat_t *BotLoadReplyChat(char *filename)
+static bot_replychat_t *BotLoadReplyChatChecked(char *filename, int *loaded)
 {
 	char chatmessagestring[MAX_MESSAGE_SIZE];
 	char namebuffer[MAX_MESSAGE_SIZE];
@@ -2066,6 +2090,7 @@ bot_replychat_t *BotLoadReplyChat(char *filename)
 	bot_replychatkey_t *key;
 	int nameused, namelen, separator;
 
+	if (loaded) *loaded = qfalse;
 	if (!filename || !filename[0] || strlen(filename) >= MAX_PATH)
 	{
 		botimport.Print(PRT_ERROR, "invalid reply chat filename\n");
@@ -2184,6 +2209,7 @@ bot_replychat_t *BotLoadReplyChat(char *filename)
 	}
 	if (PC_SourceHasError(source)) goto failed;
 	FreeSource(source);
+	if (loaded) *loaded = qtrue;
 	botimport.Print(PRT_MESSAGE, "loaded %s\n", filename);
 	if (bot_developer) BotCheckReplyChatIntegrety(replychatlist);
 	if (!replychatlist) botimport.Print(PRT_MESSAGE, "no rchats\n");
@@ -2194,6 +2220,12 @@ failed:
 	FreeSource(source);
 	return NULL;
 } //end of the function BotLoadReplyChat
+
+bot_replychat_t *BotLoadReplyChat(char *filename)
+{
+	return BotLoadReplyChatChecked(filename, NULL);
+}
+
 //===========================================================================
 //
 // Parameter:				-
@@ -3111,31 +3143,52 @@ void BotFreeChatState(int handle)
 int BotSetupChatAI(void)
 {
 	char *file;
-
+	int loaded;
+	libvar_t *nochat;
+	bot_synonymlist_t *newsynonyms = NULL;
+	bot_randomlist_t *newrandoms = NULL;
+	bot_matchtemplate_t *newmatches = NULL;
+	bot_replychat_t *newreplies = NULL;
 #ifdef DEBUG
 	int starttime = Sys_MilliSeconds();
-#endif //DEBUG
-
-	if (!InitConsoleMessageHeapChecked()) return BLERR_LIBRARYNOTSETUP;
-
+#endif
 	file = LibVarString("synfile", "syn.c");
-	synonyms = BotLoadSynonyms(file);
+	newsynonyms = BotLoadSynonymsChecked(file, qtrue, &loaded);
+	if (!loaded) goto failed;
 	file = LibVarString("rndfile", "rnd.c");
-	randomstrings = BotLoadRandomStrings(file);
+	newrandoms = BotLoadRandomStringsChecked(file, qtrue, &loaded);
+	if (!loaded) goto failed;
 	file = LibVarString("matchfile", "match.c");
-	matchtemplates = BotLoadMatchTemplates(file);
-	//
-	if (!LibVarValue("nochat", "0"))
+	newmatches = BotLoadMatchTemplatesChecked(file, &loaded);
+	if (!loaded) goto failed;
+	nochat = LibVar("nochat", "0");
+	if (!nochat) goto failed;
+	if (!nochat->value)
 	{
 		file = LibVarString("rchatfile", "rchat.c");
-		replychats = BotLoadReplyChat(file);
-	} //end if
-
-
+		newreplies = BotLoadReplyChatChecked(file, &loaded);
+		if (!loaded) goto failed;
+	}
+	if (!InitConsoleMessageHeapChecked()) goto failed;
+	if (synonyms) FreeMemory(synonyms);
+	if (randomstrings) FreeMemory(randomstrings);
+	if (matchtemplates) BotFreeMatchTemplates(matchtemplates);
+	if (replychats) BotFreeReplyChat(replychats);
+	synonyms = newsynonyms;
+	randomstrings = newrandoms;
+	matchtemplates = newmatches;
+	replychats = newreplies;
 #ifdef DEBUG
 	botimport.Print(PRT_MESSAGE, "setup chat AI %d msec\n", Sys_MilliSeconds() - starttime);
-#endif //DEBUG
+#endif
 	return BLERR_NOERROR;
+failed:
+	if (newsynonyms) FreeMemory(newsynonyms);
+	if (newrandoms) FreeMemory(newrandoms);
+	if (newmatches) BotFreeMatchTemplates(newmatches);
+	if (newreplies) BotFreeReplyChat(newreplies);
+	botimport.Print(PRT_ERROR, "could not setup complete chat library\n");
+	return BLERR_LIBRARYNOTSETUP;
 } //end of the function BotSetupChatAI
 //===========================================================================
 //
