@@ -34,12 +34,17 @@ ledger/manifest checks and diff checks pass. Physical host alignment follows
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,784,017 | `8fe0d27146bb1342813a9c18aadad8d601ffd67e49178a07aeaed337d5130a17` |
-| Quake3_TeamArena | 3,932,591 | `c50240ff0487ef71b18f7c72eb33ccd49bc3d27d09c90ed973188e3c66acde4d` |
+| Quake3 | 3,784,017 | `f733d4318f12d7877ff8eee0201700e45b54f48fd9fce7f4f0b2db8a986824b6` |
+| Quake3_TeamArena | 3,932,591 | `06a4271900a55cd25312d94b09e4e20aeee9e354dea3bd1f0836e72f6903f89f` |
 
 Both PPC products build with zero diagnostics and valid PEF headers. Temporary
 toolchain libraries: [loading evidence](qvm-loading-validation.md). Commercial
 1.32c public imports/syscalls, protocol defaults and native file format remain.
+
+These artifacts and both complete configuration/setup fixtures were rechecked
+after combining the prepared setup step with its loader. Both fixtures pass
+all six modes with both compilers. Setup-level failure preservation is part of
+the combined change; active weight-index replacement remains a later step.
 
 ## Remaining acceptance
 
