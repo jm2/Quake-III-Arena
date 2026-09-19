@@ -272,7 +272,12 @@ implementation or check, without implying issue completion.
         SET/CUR/END semantics, checked chunked skips and failure-propagating
         single platform delegation;
         [native compatibility checks](fs-zip-seek-validation.md) pass.
-  - [ ] Complete remaining handle/read/metadata and retail acceptance paths.
+  - [x] Public unzip output/read/name pointers reject before access; failed
+        lookup restores complete selection and FILE cursor, and exact metadata
+        lengths reject embedded-NUL aliases; [native API checks](unzip-public-api-validation.md)
+        pass.
+  - [ ] Complete remaining central-directory discovery/navigation/open
+        arithmetic and retail acceptance paths.
 - [ ] [#37 — connection/netchan lacks challenge binding](https://github.com/jm2/Quake-III-Arena/issues/37)
   - [x] User selected commercial 1.32c compatibility in the style of
         Quake3e/ioquake3 and preserving the legacy protocol by default.
