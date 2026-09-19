@@ -280,8 +280,11 @@ typedef struct {
 	int			baseOffset;
 	int			fileSize;
 	int			zipFilePos;
+	int			zipOffset;
 	qboolean	zipFile;
 	qboolean	streamed;
+	qboolean	streamSeekPending;
+	int			streamSeekResult;
 	char		name[MAX_ZPATH];
     
     // Antigravity: Buffered file support for Mac OS 9
@@ -1318,6 +1321,7 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 					}
 					fsh[*file].zipFilePos = pakFile->pos;
 					fsh[*file].fileSize = (int)zfi->cur_file_info.uncompressed_size;
+					fsh[*file].zipOffset = 0;
 
 					// Antigravity: Buffer check for non-optimized path (e.g. shared handle usage)
 					{
@@ -1431,6 +1435,46 @@ int FS_Read2( void *buffer, int len, fileHandle_t f ) {
 	}
 }
 
+/* Keep each logical handle positioned independently when a PK3 decoder is shared. */
+static int FS_ZipPosition( fileHandle_t f, int target ) {
+	/* Classic Mac OS PPC applications have too little stack for this buffer. */
+	static byte skip[65536];
+	unzFile zip = fsh[f].handleFiles.file.z;
+	unsigned long selected = 0;
+	long current;
+	qboolean haveSelection;
+
+	if ( target < 0 || target > fsh[f].fileSize || fsh[f].zipFilePos < 0 )
+		return -1;
+
+	haveSelection = unzGetCurrentFileInfoPosition( zip, &selected ) == UNZ_OK;
+	if ( haveSelection && selected == (unsigned long)fsh[f].zipFilePos )
+		current = unztell( zip );
+	else
+		current = -1;
+
+	if ( current < 0 || current > target ) {
+		if ( unzSetCurrentFileInfoPosition( zip, fsh[f].zipFilePos ) != UNZ_OK ||
+			unzOpenCurrentFile( zip ) != UNZ_OK ) {
+			if ( haveSelection )
+				(void)unzSetCurrentFileInfoPosition( zip, selected );
+			return -1;
+		}
+		current = 0;
+	}
+
+	while ( current < target ) {
+		int remaining = target - (int)current;
+		int chunk = remaining > (int)sizeof(skip) ? (int)sizeof(skip) : remaining;
+		int read = unzReadCurrentFile( zip, skip, chunk );
+
+		if ( read != chunk )
+			return -1;
+		current += read;
+	}
+	return 0;
+}
+
 int FS_Read( void *buffer, int len, fileHandle_t f ) {
 	int		block, remaining;
 	int		read;
@@ -1487,7 +1531,12 @@ int FS_Read( void *buffer, int len, fileHandle_t f ) {
 		}
 		return len;
 	} else {
-		return unzReadCurrentFile(fsh[f].handleFiles.file.z, buffer, len);
+		if ( FS_ZipPosition( f, fsh[f].zipOffset ) != 0 )
+			return -1;
+		read = unzReadCurrentFile(fsh[f].handleFiles.file.z, buffer, len);
+		if ( read > 0 )
+			fsh[f].zipOffset += read;
+		return read;
 	}
 }
 
@@ -1564,20 +1613,22 @@ FS_Seek
 
 =================
 */
+static int FS_RecordSeekResult( fileHandle_t f, int result ) {
+	if ( f > 0 && f < MAX_FILE_HANDLES && fsh[f].streamSeekPending )
+		fsh[f].streamSeekResult = result;
+	return result;
+}
+
 int FS_Seek( fileHandle_t f, long offset, int origin ) {
 	int		_origin;
-	// static, not stack: classic Mac OS PPC apps get a small default stack
-	// (tens of KB) and a 64 KB stack frame here silently overflows into the
-	// heap. The engine is single-threaded, so a static scratch is safe.
-	static char	foo[65536];
 
 	if ( !fs_searchpaths ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
-		return -1;
+		return FS_RecordSeekResult( f, -1 );
 	}
 	if (f <= 0 || f >= MAX_FILE_HANDLES ||
 		(!fsh[f].buffer && !fsh[f].handleFiles.file.o))
-		return -1;
+		return FS_RecordSeekResult( f, -1 );
 
     // Antigravity: Buffered seek
     if (fsh[f].buffer) {
@@ -1598,29 +1649,32 @@ int FS_Seek( fileHandle_t f, long offset, int origin ) {
             else if (offset < -fsh[f].bufferLen) newPos = 0;
             else newPos = fsh[f].bufferLen + (int)offset;
             break;
-        default: return -1;
-        }
-        fsh[f].bufferPos = newPos;
-        return 0;
-    }
+		default: return FS_RecordSeekResult( f, -1 );
+		}
+		fsh[f].bufferPos = newPos;
+		return FS_RecordSeekResult( f, 0 );
+	}
 
 	if (fsh[f].streamed) {
 		if (offset > INT_MAX || offset < INT_MIN)
 			return -1;
+		fsh[f].streamSeekResult = -1;
+		fsh[f].streamSeekPending = qtrue;
 		fsh[f].streamed = qfalse;
 		Sys_StreamSeek( f, (int)offset, origin );
 		fsh[f].streamed = qtrue;
-		return 0;
+		fsh[f].streamSeekPending = qfalse;
+		return fsh[f].streamSeekResult;
 	}
 
 	if (fsh[f].zipFile == qtrue) {
-		int current = unztell(fsh[f].handleFiles.file.z);
+		int current = fsh[f].zipOffset;
 		int length = fsh[f].fileSize;
 		int target;
-		int remaining;
 
-		if (current < 0 || current > length)
-			return -1;
+		if (offset > INT_MAX || offset < INT_MIN ||
+			current < 0 || current > length)
+			return FS_RecordSeekResult( f, -1 );
 		switch (origin) {
 		case FS_SEEK_SET:
 			if (offset <= 0) target = 0;
@@ -1638,24 +1692,13 @@ int FS_Seek( fileHandle_t f, long offset, int origin ) {
 			else target = length + (int)offset;
 			break;
 		default:
-			return -1;
+			return FS_RecordSeekResult( f, -1 );
 		}
 
-		if (target < current) {
-			if (unzSetCurrentFileInfoPosition(fsh[f].handleFiles.file.z,
-					fsh[f].zipFilePos) != UNZ_OK ||
-				unzOpenCurrentFile(fsh[f].handleFiles.file.z) != UNZ_OK)
-				return -1;
-			current = 0;
-		}
-		remaining = target - current;
-		while (remaining > 0) {
-			int chunk = remaining > (int)sizeof(foo) ? (int)sizeof(foo) : remaining;
-			if (FS_Read(foo, chunk, f) != chunk)
-				return -1;
-			remaining -= chunk;
-		}
-		return (int)offset;
+		if ( FS_ZipPosition( f, target ) != 0 )
+			return FS_RecordSeekResult( f, -1 );
+		fsh[f].zipOffset = target;
+		return FS_RecordSeekResult( f, (int)offset );
 	} else {
 		FILE *file = FS_FileForHandle(f);
 		switch( origin ) {
@@ -1664,9 +1707,9 @@ int FS_Seek( fileHandle_t f, long offset, int origin ) {
 		case FS_SEEK_SET: _origin = SEEK_SET; break;
 		default:
 			Com_Error( ERR_FATAL, "Bad origin in FS_Seek\n" );
-			return -1;
+			return FS_RecordSeekResult( f, -1 );
 		}
-		return fseek( file, offset, _origin );
+		return FS_RecordSeekResult( f, fseek( file, offset, _origin ) );
 	}
 }
 
@@ -3758,7 +3801,7 @@ int		FS_FTell( fileHandle_t f ) {
         return fsh[f].bufferPos;
     }
 	if (fsh[f].zipFile == qtrue) {
-		pos = unztell(fsh[f].handleFiles.file.z);
+		pos = fsh[f].zipOffset;
 	} else {
 		pos = ftell(fsh[f].handleFiles.file.o);
 	}
