@@ -1939,7 +1939,12 @@ extern int unzOpenCurrentFile (unzFile file)
          * size of both compressed and uncompressed data
          */
 	}
-	pfile_in_zip_read_info->rest_read_compressed = 
+	if (err != UNZ_OK) {
+		TRYFREE(pfile_in_zip_read_info->read_buffer);
+		TRYFREE(pfile_in_zip_read_info);
+		return err;
+	}
+	pfile_in_zip_read_info->rest_read_compressed =
             s->cur_file_info.compressed_size ;
 	pfile_in_zip_read_info->rest_read_uncompressed = 
             s->cur_file_info.uncompressed_size ;
@@ -4303,4 +4308,3 @@ void  zcfree (void *opaque, void *ptr)
     Z_Free(ptr);
     if (opaque) return; /* make compiler happy */
 }
-

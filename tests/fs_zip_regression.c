@@ -22,6 +22,9 @@ static void FixtureZoneHook(void *owner, int size);
 #ifdef Q3_ZIP_FREE_HOOK
 static void FixtureFreeHook(void *owner);
 #endif
+#ifdef Q3_ZIP_NULLABLE_IMPORT
+static qboolean FixtureRejectZoneImport(int size);
+#endif
 static void Check(int condition, const char *message) {
     if (!condition) {
         fprintf(stderr,"ZIP regression failed: %s\n", message);
@@ -54,6 +57,9 @@ void *Z_Malloc(int size) {
     int i;
     Check(size >= 0 && size <= 67108864,"bounded signed native zone request");
     zoneRequests++;
+#ifdef Q3_ZIP_NULLABLE_IMPORT
+    if (FixtureRejectZoneImport(size)) return NULL;
+#endif
     if ((unsigned long)size > largestZone) largestZone = size;
     for(i=0;i<Q3_ZIP_ZONE_CAPACITY;i++)if(!zone[i]){
         zone[i]=calloc(1,size?size:1);
