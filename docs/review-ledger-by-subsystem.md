@@ -635,6 +635,10 @@ implementation or check, without implying issue completion.
 - [x] Initial botlib/AAS pass completed; unresolved root causes are #47–#48.
 - [ ] Build and run the malformed-input corpora needed to turn all six initial
       audit passes into verified fixes.
+- [x] Run the focused download corpus across client pair consumption,
+      filesystem list construction, parser block lengths, and server
+      referenced-pak authorization; see
+      [download evidence](download-validation.md).
 - [ ] CD-key UI behavior and persistence without exposing a real key.
 - [ ] Decide whether unsupported legacy master/auth protocols should default
       off.
@@ -690,7 +694,7 @@ Earlier milestone snapshots below remain historical.
       then compatibility-sensitive #37; retain #29 and #36 validation gates.
 - [ ] P1 security: fix #38 and #39 with deterministic host regressions.
 - [ ] Add focused host tests for local candidates #18, #24, #25, #36, #40,
-      #49, message/Huffman exact bounds, download pairs, and format strings.
+      #49, message/Huffman exact bounds, and format strings.
 - [ ] Prioritize target runtime blockers: #11 after #48, then #15, #16, #17,
       #5, #20, #19.
 - [x] User authorized host checks and working cross-builds while legal retail

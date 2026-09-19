@@ -1,5 +1,8 @@
 /* Actual filesystem/mount/read functions and legacy unzip against real ZIPs. */
-#include "../code/qcommon/files.c"
+#ifndef Q3_FILES_SOURCE
+#define Q3_FILES_SOURCE "../code/qcommon/files.c"
+#endif
+#include Q3_FILES_SOURCE
 #ifndef Q3_UNZIP_SOURCE
 #define Q3_UNZIP_SOURCE "../code/qcommon/unzip.c"
 #endif

@@ -1438,18 +1438,20 @@ static qboolean CL_BeginDownload( const char *localName, const char *remoteName 
 
 /*
 =================
-CL_NextDownload
+CL_StartNextDownload
 
-A download completed or failed
+Consumes rejected pairs and starts the next complete, valid download.
 =================
 */
-void CL_NextDownload(void) {
+static qboolean CL_StartNextDownload( void ) {
 	char *s;
 	char *remoteName, *localName;
 	qboolean downloadStarted;
 
-	// We are looking to start a download here
-	if (*clc.downloadList) {
+	// We are looking to start a download here.  A server can fill the
+	// bounded list with invalid empty pairs, so consume them iteratively
+	// rather than recursing once per rejected pair.
+	while (*clc.downloadList) {
 		s = clc.downloadList;
 
 		// format is:
@@ -1460,8 +1462,8 @@ void CL_NextDownload(void) {
 		remoteName = s;
 		
 		if ( (s = strchr(s, '@')) == NULL ) {
-			CL_DownloadsComplete();
-			return;
+			*clc.downloadList = 0;
+			return qfalse;
 		}
 
 		*s++ = 0;
@@ -1477,16 +1479,27 @@ void CL_NextDownload(void) {
 		memmove( clc.downloadList, s, strlen(s) + 1);
 
 		if ( !downloadStarted ) {
-			CL_NextDownload();
-			return;
+			continue;
 		}
 
 		clc.downloadRestart = qtrue;
-
-		return;
+		return qtrue;
 	}
 
-	CL_DownloadsComplete();
+	return qfalse;
+}
+
+/*
+=================
+CL_NextDownload
+
+A download completed or failed
+=================
+*/
+void CL_NextDownload(void) {
+	if ( !CL_StartNextDownload() ) {
+		CL_DownloadsComplete();
+	}
 }
 
 /*

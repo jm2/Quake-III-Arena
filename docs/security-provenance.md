@@ -15,9 +15,9 @@ Every accepted family still needs a focused malformed-input regression.
 
 | Family | Upstream reference | Baseline status | Current local status |
 | --- | --- | --- | --- |
-| Arbitrary server file download (CVE-2006-2082) | [`60293f49`](https://github.com/ioquake/ioq3/commit/60293f49ee8c665673202e80ecd103f13a9fa6ab) | Missing: any requested server path could reach `FS_SV_FOpenFileRead` | Locally ported: only exact referenced `.pk3` names are opened; retail paks remain blocked |
+| Arbitrary server file download (CVE-2006-2082) | [`60293f49`](https://github.com/ioquake/ioq3/commit/60293f49ee8c665673202e80ecd103f13a9fa6ab) | Missing: any requested server path could reach `FS_SV_FOpenFileRead` | Locally ported and host-tested: only literal forward-slash spellings of referenced `.pk3` names are opened; retail paks remain blocked |
 | Shader-remap/extension overflow (CVE-2006-2236) | [`d2141145`](https://github.com/ioquake/ioq3/commit/d21411452ef32b86c0b79ddcaf49221701dcdb07) | Missing two-argument unbounded `COM_StripExtension` | Locally ported with destination sizes at every call site |
-| Malicious download and snapshot lengths | [`99abd01c`](https://github.com/ioquake/ioq3/commit/99abd01c2f5e1a181acb8623edceff10cd918751) | Missing | Locally ported |
+| Malicious download and snapshot lengths | [`99abd01c`](https://github.com/ioquake/ioq3/commit/99abd01c2f5e1a181acb8623edceff10cd918751) | Missing | Locally ported; download chunk boundaries are host-tested |
 | Truncated Huffman/message reads and exact-capacity writes | [`d2b1d124`](https://github.com/ioquake/ioq3/commit/d2b1d124d4055c2fcbe5126863487c52fd58cca1), [`1e309787`](https://github.com/ioquake/ioq3/commit/1e309787224326b66f04cd166fbd9e200f5fded5) | Missing | Locally ported, including unaligned OOB integer access fixes for PowerPC |
 | Reliable-acknowledgement server DoS | [`47c96419`](https://github.com/ioquake/ioq3/commit/47c9641939d84cfae249b38d2691d37ff84be817) | Missing | Locally ported |
 | Cgame shader-state/configstring overflows | [`797168fa`](https://github.com/ioquake/ioq3/commit/797168fa0898fd81491b093ee9c5f9c6f82fee36), [`604b63f0`](https://github.com/ioquake/ioq3/commit/604b63f00f3f38ab8be33d8e1e72c086d9148fbd) | Missing | Locally ported |
@@ -32,7 +32,7 @@ Every accepted family still needs a focused malformed-input regression.
 | Lightmap array overflow | [`769372e2`](https://github.com/ioquake/ioq3/commit/769372e2f9e384b73f4f1882ddb888857ed3c1e8) | Missing | Locally capped; general BSP lump validation remains open |
 | Long `tcMod` shader arguments | [`eeeaf3f1`](https://github.com/ioquake/ioq3/commit/eeeaf3f1252d95a6037f33d30fdf2e945e340f79) | Missing | Locally converted to bounded concatenation |
 | JPEG RGB/RGBA allocation overflow | [`62678a02`](https://github.com/ioquake/ioq3/commit/62678a021554ec4ef6e310dfc63ab2e4f58135f6) | Missing and deterministically wrote alpha beyond a three-byte allocation | Locally allocates four bytes/pixel, validates dimensions/components, and expands backwards; length-aware JPEG I/O remains open |
-| Download-list truncation and path overwrite | [`813a6ecd`](https://github.com/ioquake/ioq3/commit/813a6ecdc3b8572796a8a85b260b03e1c3d87ef4) | Partial traversal check, but non-atomic pair construction and mismatched pak-name counts remained | Locally validates complete relative `.pk3` pairs, appends atomically, and skips missing name entries |
+| Download-list truncation and path overwrite | [`813a6ecd`](https://github.com/ioquake/ioq3/commit/813a6ecdc3b8572796a8a85b260b03e1c3d87ef4) | Partial traversal check, but non-atomic pair construction and mismatched pak-name counts remained | Locally validates complete relative `.pk3` pairs, appends atomically, iteratively skips rejected pairs, and has sanitizer coverage |
 | Oversized/truncated PK3 entries | Local audit; [#36](https://github.com/jm2/Quake-III-Arena/issues/36) | ZIP-controlled unsigned size narrowed to `int`; unzip opens/reads were unchecked | Locally rejects sizes above `INT_MAX - 1`, validates open/exact read, and cleans failure state; malicious ZIP corpus remains required |
 | Server-controlled native cgame index | Local audit; [#40](https://github.com/jm2/Quake-III-Arena/issues/40) | Gamestate `clientNum` reached native `cgs.clientinfo[]` indexing unchecked | Locally rejected outside `[0, MAX_CLIENTS)`; malformed-gamestate regression remains required |
 
@@ -70,9 +70,12 @@ Every accepted family still needs a focused malformed-input regression.
 
 - [ ] Add host ASan/UBSan harnesses for message, download, format-string, image,
       model, BSP, bot/AAS, cinematic, and QVM malformed-input corpora.
+- [x] Validate download pair construction, client consumption, block lengths,
+      server authorization, and exact-capacity behavior with ASan/UBSan under
+      GCC and Clang; see [download evidence](download-validation.md).
 - [ ] Exercise accepted message patches at empty, one-bit-short, exact-capacity,
       and one-bit-over limits.
-- [ ] Exercise every download rejection spelling (`../`, `..\\`, `::`,
+- [x] Exercise every download rejection spelling (`../`, `..\\`, `::`,
       absolute, empty, non-pk3, unreferenced, and truncated pair).
 - [ ] Run valid baseq3 and missionpack assets/QVMs after hardening to detect
       compatibility regressions.
