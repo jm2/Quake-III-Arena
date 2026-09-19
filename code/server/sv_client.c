@@ -22,6 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // sv_client.c -- server code for dealing with clients
 
 #include "server.h"
+#include "sv_download.h"
 
 static void SV_CloseDownload( client_t *cl );
 
@@ -751,43 +752,20 @@ void SV_WriteDownloadToClient( client_t *cl , msg_t *msg )
 	int curindex;
 	int rate;
 	int blockspersnap;
-	int idPack, missionPack, unreferenced;
-	int numRefPaks;
+	qboolean idPack, missionPack, unreferenced;
 	char errorMessage[1024];
-	char pakbuf[MAX_QPATH];
-	char *pakptr;
-	const char *referencedPaks;
 
 	if (!*cl->downloadName)
 		return;	// Nothing being downloaded
 
 	if (!cl->download) {
-		idPack = qfalse;
-		missionPack = qfalse;
-		unreferenced = qtrue;
-
 		/*
-		 * Only loaded, referenced pk3 files may be downloaded.  Besides
-		 * preventing arbitrary server-side file reads, the exact reference
-		 * match rejects traversal and absolute path spellings.
+		 * Only loaded, referenced pk3 files may be downloaded.  Keep path
+		 * spelling exact so platform separator aliases cannot reach the
+		 * server filesystem.
 		 */
-		Q_strncpyz( pakbuf, cl->downloadName, sizeof(pakbuf) );
-		pakptr = Q_strrchr( pakbuf, '.' );
-		if ( pakptr && !Q_stricmp( pakptr + 1, "pk3" ) ) {
-			*pakptr = '\0';
-			referencedPaks = FS_ReferencedPakNames();
-			Cmd_TokenizeString( referencedPaks );
-			numRefPaks = Cmd_Argc();
-
-			for ( curindex = 0 ; curindex < numRefPaks ; curindex++ ) {
-				if ( !FS_FilenameCompare( Cmd_Argv(curindex), pakbuf ) ) {
-					unreferenced = qfalse;
-					missionPack = FS_idPak( pakbuf, "missionpack" );
-					idPack = missionPack || FS_idPak( pakbuf, BASEGAME );
-					break;
-				}
-			}
-		}
+		unreferenced = !SV_ReferencedDownload( cl->downloadName,
+			&idPack, &missionPack );
 
 		if ( !sv_allowDownload->integer || idPack || unreferenced ||
 			( cl->downloadSize = FS_SV_FOpenFileRead( cl->downloadName, &cl->download ) ) <= 0 ) {
