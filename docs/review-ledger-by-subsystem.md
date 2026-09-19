@@ -630,6 +630,10 @@ implementation or check, without implying issue completion.
         before replacing the shared root; failure keeps every prior array/fixup
         byte and success releases the prior logical record;
         see [setup evidence](bot-weapon-setup-validation.md).
+  - [x] Weapon weights stage complete config/index pairs, keep prior bytes
+        on source/allocation failure and safely reuse cached aliases; repeated
+        cleanup clears both roots and native evaluation stays;
+        see [weight evidence](bot-weapon-weight-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
