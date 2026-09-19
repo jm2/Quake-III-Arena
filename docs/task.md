@@ -619,6 +619,10 @@ QVMs while any P0 item is open.
         policy changes, preserves cached sibling roots and physically frees
         private data through both goal/weapon consumers;
         see [weight owner evidence](bot-weight-cache-validation.md).
+  - [x] Cached character lookup reuses existing native handles before
+        requiring a free slot, including all 64 slots and native skill tolerance;
+        reload/missing keys retain exhaustion behavior;
+        see [character cache evidence](bot-character-cache-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
