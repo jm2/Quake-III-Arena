@@ -16,6 +16,9 @@ cvar_t *com_journal;
 fileHandle_t com_journalDataFile;
 static cvar_t debugVar, restrictVar, copyVar;
 static searchpath_t search;
+#ifdef Q3_ZIP_ALLOCATION_HOOK
+static void FixtureZoneHook(void *owner, int size);
+#endif
 static void Check(int condition, const char *message) {
     if (!condition) {
         fprintf(stderr,"ZIP regression failed: %s\n", message);
@@ -46,6 +49,9 @@ void *Z_Malloc(int size) {
         zone[i]=calloc(1,size?size:1);
         Check(zone[i]!=NULL,"physical native zone owner");
         zoneLive++;
+#ifdef Q3_ZIP_ALLOCATION_HOOK
+        FixtureZoneHook(zone[i], size);
+#endif
         return zone[i];
     }
     Check(0,"bounded zone owners");

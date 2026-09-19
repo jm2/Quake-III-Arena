@@ -136,6 +136,9 @@ QVMs while any P0 item is open.
   - [x] Buffered PK3 owners retain their handle slots until close; actual
         simultaneous reads, full table and physical release have
         [handle evidence](fs-buffered-handle-validation.md).
+  - [x] ZIP mounts validate complete names, metadata, measured capacities and
+        shared counts before publication; malformed real archives and both-pass
+        physical cleanup have [mount evidence](fs-zip-mount-validation.md).
   - [ ] Add malicious ZIP fixtures around caps, `INT_MAX`, `UINT32_MAX`, and
         truncated streams.
 - [ ] [#41 — bound RoQ chunks, dimensions, audio output, and cursors](https://github.com/jm2/Quake-III-Arena/issues/41)
