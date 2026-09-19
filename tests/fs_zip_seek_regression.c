@@ -57,9 +57,11 @@ static void SeekCase(char *path, int kind) {
     Close(f);
 }
 static void SetterFailure(char *path) {
-    unsigned char bytes[32]; int saved; fileHandle_t f=Open(path);
+    unsigned char bytes[32]; unsigned long saved, high=(unsigned long)INT_MAX+1UL; fileHandle_t f=Open(path);
     Check(FS_Read(bytes,13,f)==13, "actual decoder before selection failure"); Payload(bytes,13,0);
-    saved=fsh[f].zipFilePos; fsh[f].zipFilePos=INT_MAX;
+    saved=fsh[f].zipFilePos; fsh[f].zipFilePos=high;
+    Check(fsh[f].zipFilePos>0 && fsh[f].zipFilePos==high,
+          "ZIP32 entry position retains its unsigned high bit");
     Check(FS_Seek(f,0,FS_SEEK_SET)==-1 && FS_FTell(f)==13,
           "invalid selected-entry position reports failure and retains decoder");
     fsh[f].zipFilePos=saved;
@@ -93,9 +95,9 @@ static void SharedHandles(char *path) {
     FS_FCloseFile(first); FS_FCloseFile(second); End();
 }
 static void StreamFailure(char *path) {
-    unsigned char bytes[16]; int saved; fileHandle_t f=Open(path);
+    unsigned char bytes[16]; unsigned long saved; fileHandle_t f=Open(path);
     Check(FS_Read(bytes,13,f)==13,"stream failure starts from a native cursor");
-    saved=fsh[f].zipFilePos; fsh[f].zipFilePos=INT_MAX;
+    saved=fsh[f].zipFilePos; fsh[f].zipFilePos=ULONG_MAX;
     streamCalls=streamResult=0; fsh[f].streamed=qtrue;
     Check(FS_Seek(f,0,FS_SEEK_SET)==-1 && streamCalls==1 && streamResult==-1 &&
           fsh[f].streamed && FS_FTell(f)==13,

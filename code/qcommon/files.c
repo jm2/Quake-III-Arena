@@ -279,7 +279,7 @@ typedef struct {
 	qboolean	handleSync;
 	int			baseOffset;
 	int			fileSize;
-	int			zipFilePos;
+	unsigned long	zipFilePos;
 	int			zipOffset;
 	qboolean	zipFile;
 	qboolean	streamed;
@@ -1444,11 +1444,11 @@ static int FS_ZipPosition( fileHandle_t f, int target ) {
 	long current;
 	qboolean haveSelection;
 
-	if ( target < 0 || target > fsh[f].fileSize || fsh[f].zipFilePos < 0 )
+	if ( target < 0 || target > fsh[f].fileSize )
 		return -1;
 
 	haveSelection = unzGetCurrentFileInfoPosition( zip, &selected ) == UNZ_OK;
-	if ( haveSelection && selected == (unsigned long)fsh[f].zipFilePos )
+	if ( haveSelection && selected == fsh[f].zipFilePos )
 		current = unztell( zip );
 	else
 		current = -1;
