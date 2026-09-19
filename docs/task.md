@@ -567,6 +567,10 @@ QVMs while any P0 item is open.
         counts/selectors handle missing files/state/type, and missing match spans
         return the native empty result while valid construction/timing stays;
         see [consumer evidence](bot-chat-consumer-validation.md).
+  - [x] Initial/reply optional variables reserve native match capacity/NUL
+        space through one private append helper; excess combined inputs retain
+        pending state and line timing while exact/eight-slot expansion stays;
+        see [variable evidence](bot-chat-variable-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 

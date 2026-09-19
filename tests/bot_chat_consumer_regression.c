@@ -87,6 +87,8 @@ static void GoldenConsumers(void)
     ReplyInput(7, 0); ReplyInput(255, 0); InitialCount(2); InitialCount(1); MatchSpan(0);
 }
 
+
+#ifndef Q3_CHAT_CONSUMER_NO_MAIN
 int main(int argc, char **argv)
 {
     int proof;
@@ -106,3 +108,5 @@ int main(int argc, char **argv)
     puts("Actual reply/initial/match consumers reject invalid inputs, retain prior bytes and preserve native construction/physical ownership (issue #48)");
     return 0;
 }
+
+#endif /* Q3_CHAT_CONSUMER_NO_MAIN */
