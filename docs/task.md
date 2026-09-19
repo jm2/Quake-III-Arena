@@ -143,8 +143,11 @@ QVMs while any P0 item is open.
         active shared metadata/cursors through refills and both close orders;
         native buffered/streamed paths have
         [stream evidence](fs-zip-reopen-validation.md).
-  - [ ] Add malicious ZIP fixtures around caps, `INT_MAX`, `UINT32_MAX`, and
-        truncated streams.
+  - [x] Real complete ZIP payloads around the buffering cap, malicious signed/
+        unsigned size declarations, bad opens and truncated compressed streams
+        have [owner/retry evidence](fs-zip-entry-validation.md).
+  - [ ] Complete remaining metadata/open/read/handle paths and retail PK3
+        acceptance before closing the issue.
 - [ ] [#41 — bound RoQ chunks, dimensions, audio output, and cursors](https://github.com/jm2/Quake-III-Arena/issues/41)
       — **high**, deterministic cinematic buffer corruption.
   - [x] Bound disk/packet payloads, exact reads, mono/stereo output and early
