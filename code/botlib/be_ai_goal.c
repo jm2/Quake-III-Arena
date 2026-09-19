@@ -1862,13 +1862,20 @@ void BotFreeItemWeights(int goalstate)
 int BotAllocGoalState(int client)
 {
 	int i;
+	bot_goalstate_t *state;
 
 	for (i = 1; i <= MAX_CLIENTS; i++)
 	{
 		if (!botgoalstates[i])
 		{
-			botgoalstates[i] = GetClearedMemory(sizeof(bot_goalstate_t));
-			botgoalstates[i]->client = client;
+			state = GetClearedMemory(sizeof(bot_goalstate_t));
+			if (!state)
+			{
+				botimport.Print(PRT_ERROR, "couldn't allocate goal state\n");
+				return 0;
+			}
+			state->client = client;
+			botgoalstates[i] = state;
 			return i;
 		} //end if
 	} //end for

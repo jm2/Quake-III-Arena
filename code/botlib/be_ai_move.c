@@ -127,12 +127,19 @@ bot_movestate_t *botmovestates[MAX_CLIENTS+1];
 int BotAllocMoveState(void)
 {
 	int i;
+	bot_movestate_t *state;
 
 	for (i = 1; i <= MAX_CLIENTS; i++)
 	{
 		if (!botmovestates[i])
 		{
-			botmovestates[i] = GetClearedMemory(sizeof(bot_movestate_t));
+			state = GetClearedMemory(sizeof(bot_movestate_t));
+			if (!state)
+			{
+				botimport.Print(PRT_ERROR, "couldn't allocate move state\n");
+				return 0;
+			}
+			botmovestates[i] = state;
 			return i;
 		} //end if
 	} //end for

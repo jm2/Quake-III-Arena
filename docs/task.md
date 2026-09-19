@@ -607,6 +607,10 @@ QVMs while any P0 item is open.
         empty data from failed sources, commits after the checked pool succeeds
         and releases failed candidates while preserving prior dictionary/queue
         roots; see [setup evidence](bot-chat-setup-validation.md).
+  - [x] Goal and movement factories stage complete cleared owners before
+        root publication, return native zero handles on nullable imports and
+        retain prior bytes, client values and all native slots;
+        see [state factory evidence](bot-state-factory-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
