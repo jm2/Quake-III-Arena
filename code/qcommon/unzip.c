@@ -1040,8 +1040,8 @@ typedef unsigned long  ulg;
 
 
 typedef uLong (*check_func) OF((uLong check, const Byte *buf, uInt len));
-static voidp zcalloc OF((voidp opaque, unsigned items, unsigned size));
-static void   zcfree  OF((voidp opaque, voidp ptr));
+static void *zcalloc OF((void *opaque, unsigned items, unsigned size));
+static void   zcfree  OF((void *opaque, void *ptr));
 
 #define ZALLOC(strm, items, size) \
            (*((strm)->zalloc))((strm)->opaque, (items), (size))
@@ -1108,9 +1108,12 @@ static int unzlocal_getShort (FILE* fin, uLong *pX)
 {
 	short	v;
 
-	fread( &v, sizeof(v), 1, fin );
+	if (fread( &v, sizeof(v), 1, fin ) != 1) {
+		*pX = 0;
+		return UNZ_ERRNO;
+	}
 
-	*pX = LittleShort( v);
+	*pX = (unsigned short)LittleShort( v);
 	return UNZ_OK;
 
 /*
@@ -1137,9 +1140,12 @@ static int unzlocal_getLong (FILE *fin, uLong *pX)
 {
 	int		v;
 
-	fread( &v, sizeof(v), 1, fin );
+	if (fread( &v, sizeof(v), 1, fin ) != 1) {
+		*pX = 0;
+		return UNZ_ERRNO;
+	}
 
-	*pX = LittleLong( v);
+	*pX = (unsigned int)LittleLong( v);
 	return UNZ_OK;
 
 /*
@@ -1290,15 +1296,21 @@ extern unzFile unzReOpen (const char* path, unzFile file)
 	unz_s *s;
 	FILE * fin;
 
+	if (!path || !file) return NULL;
     fin=fopen(path,"rb");
 	if (fin==NULL)
 		return NULL;
 
 	s=(unz_s*)ALLOC(sizeof(unz_s));
+	if (!s) {
+		fclose(fin);
+		return NULL;
+	}
 	Com_Memcpy(s, (unz_s*)file, sizeof(unz_s));
 
 	s->file = fin;
-	return (unzFile)s;	
+	s->pfile_in_zip_read = NULL;
+	return (unzFile)s;
 }
 
 /*
@@ -1327,6 +1339,8 @@ extern unzFile unzOpen (const char* path)
 
 	int err=UNZ_OK;
 
+	if (!path) return NULL;
+	Com_Memset(&us, 0, sizeof(us));
     fin=fopen(path,"rb");
 	if (fin==NULL)
 		return NULL;
@@ -1394,6 +1408,10 @@ extern unzFile unzOpen (const char* path)
 	
 
 	s=(unz_s*)ALLOC(sizeof(unz_s));
+	if (!s) {
+		fclose(fin);
+		return NULL;
+	}
 	*s=us;
 //	unzGoToFirstFile((unzFile)s);	
 	return (unzFile)s;	
@@ -1713,7 +1731,7 @@ extern int unzSetCurrentFileInfoPosition (unzFile file, unsigned long pos )
 											   &s->cur_file_info_internal,
 											   NULL,0,NULL,0,NULL,0);
 	s->current_file_ok = (err == UNZ_OK);
-	return UNZ_OK;
+	return err;
 }
 
 /*
@@ -1866,7 +1884,8 @@ extern int unzOpenCurrentFile (unzFile file)
 	int Store;
 	uInt iSizeVar;
 	unz_s* s;
-	file_in_zip_read_info_s* pfile_in_zip_read_info;
+	file_in_zip_read_info_s* pfile_in_zip_read_info = NULL;
+	long previous_file_pos = -1;
 	uLong offset_local_extrafield;  /* offset of the static extra field */
 	uInt  size_local_extrafield;    /* size of the static extra field */
 
@@ -1876,17 +1895,25 @@ extern int unzOpenCurrentFile (unzFile file)
 	if (!s->current_file_ok)
 		return UNZ_PARAMERROR;
 
-    if (s->pfile_in_zip_read != NULL)
-        unzCloseCurrentFile(file);
+	if (s->pfile_in_zip_read != NULL) {
+		previous_file_pos = ftell(s->file);
+		if (previous_file_pos < 0)
+			return UNZ_ERRNO;
+	}
 
 	if (unzlocal_CheckCurrentFileCoherencyHeader(s,&iSizeVar,
 				&offset_local_extrafield,&size_local_extrafield)!=UNZ_OK)
-		return UNZ_BADZIPFILE;
+	{
+		err = UNZ_BADZIPFILE;
+		goto failed;
+	}
 
 	pfile_in_zip_read_info = (file_in_zip_read_info_s*)
 									    ALLOC(sizeof(file_in_zip_read_info_s));
-	if (pfile_in_zip_read_info==NULL)
-		return UNZ_INTERNALERROR;
+	if (pfile_in_zip_read_info==NULL) {
+		err = UNZ_INTERNALERROR;
+		goto failed;
+	}
 
 	pfile_in_zip_read_info->read_buffer=(char*)ALLOC(UNZ_BUFSIZE);
 	pfile_in_zip_read_info->offset_local_extrafield = offset_local_extrafield;
@@ -1895,8 +1922,8 @@ extern int unzOpenCurrentFile (unzFile file)
 
 	if (pfile_in_zip_read_info->read_buffer==NULL)
 	{
-		TRYFREE(pfile_in_zip_read_info);
-		return UNZ_INTERNALERROR;
+		err = UNZ_INTERNALERROR;
+		goto failed;
 	}
 
 	pfile_in_zip_read_info->stream_initialised=0;
@@ -1932,7 +1959,9 @@ extern int unzOpenCurrentFile (unzFile file)
          * size of both compressed and uncompressed data
          */
 	}
-	pfile_in_zip_read_info->rest_read_compressed = 
+	if (err != UNZ_OK)
+		goto failed;
+	pfile_in_zip_read_info->rest_read_compressed =
             s->cur_file_info.compressed_size ;
 	pfile_in_zip_read_info->rest_read_uncompressed = 
             s->cur_file_info.uncompressed_size ;
@@ -1945,8 +1974,21 @@ extern int unzOpenCurrentFile (unzFile file)
 	pfile_in_zip_read_info->stream.avail_in = (uInt)0;
 
 
+	/* Replace the active decoder only after the candidate is complete. */
+	if (s->pfile_in_zip_read != NULL)
+		unzCloseCurrentFile(file);
 	s->pfile_in_zip_read = pfile_in_zip_read_info;
     return UNZ_OK;
+
+failed:
+	if (pfile_in_zip_read_info != NULL) {
+		TRYFREE(pfile_in_zip_read_info->read_buffer);
+		TRYFREE(pfile_in_zip_read_info);
+	}
+	if (previous_file_pos >= 0 &&
+		fseek(s->file, previous_file_pos, SEEK_SET) != 0)
+		err = UNZ_ERRNO;
+	return err;
 }
 
 
@@ -1975,7 +2017,7 @@ extern int unzReadCurrentFile  (unzFile file, void *buf, unsigned len)
 		return UNZ_PARAMERROR;
 
 
-	if ((pfile_in_zip_read_info->read_buffer == NULL))
+	if (pfile_in_zip_read_info->read_buffer == NULL)
 		return UNZ_END_OF_LIST_OF_FILE;
 	if (len==0)
 		return 0;
@@ -1998,11 +2040,11 @@ extern int unzReadCurrentFile  (unzFile file, void *buf, unsigned len)
 				uReadThis = (uInt)pfile_in_zip_read_info->rest_read_compressed;
 			if (uReadThis == 0)
 				return UNZ_EOF;
-			if (s->cur_file_info.compressed_size == pfile_in_zip_read_info->rest_read_compressed)
-				if (fseek(pfile_in_zip_read_info->file,
-						  pfile_in_zip_read_info->pos_in_zipfile + 
-							 pfile_in_zip_read_info->byte_before_the_zipfile,SEEK_SET)!=0)
-					return UNZ_ERRNO;
+			/* Metadata queries can move the FILE independently of this decoder. */
+			if (fseek(pfile_in_zip_read_info->file,
+					  pfile_in_zip_read_info->pos_in_zipfile +
+					  pfile_in_zip_read_info->byte_before_the_zipfile,SEEK_SET)!=0)
+				return UNZ_ERRNO;
 			if (fread(pfile_in_zip_read_info->read_buffer,uReadThis,1,
                          pfile_in_zip_read_info->file)!=1)
 				return UNZ_ERRNO;
@@ -2167,10 +2209,11 @@ extern int unzGetLocalExtrafield (unzFile file,void *buf,unsigned len)
 	
 	if (fseek(pfile_in_zip_read_info->file,
               pfile_in_zip_read_info->offset_local_extrafield + 
-			  pfile_in_zip_read_info->pos_local_extrafield,SEEK_SET)!=0)
+			  pfile_in_zip_read_info->pos_local_extrafield +
+			  pfile_in_zip_read_info->byte_before_the_zipfile,SEEK_SET)!=0)
 		return UNZ_ERRNO;
 
-	if (fread(buf,(uInt)size_to_read,1,pfile_in_zip_read_info->file)!=1)
+	if (fread(buf,read_now,1,pfile_in_zip_read_info->file)!=1)
 		return UNZ_ERRNO;
 
 	return (int)read_now;
@@ -2225,7 +2268,7 @@ extern int unzGetGlobalComment (unzFile file, char *szComment, uLong uSizeBuf)
 {
 	unz_s* s;
 	uLong uReadThis ;
-	if (file==NULL)
+	if (file==NULL || (szComment==NULL && uSizeBuf>0))
 		return UNZ_PARAMERROR;
 	s=(unz_s*)file;
 
@@ -4023,10 +4066,10 @@ int inflateInit2_(z_streamp z, int w, const char *version, int stream_size)
   z->msg = Z_NULL;
   if (z->zalloc == Z_NULL)
   {
-    z->zalloc = (void *(*)(void *, unsigned, unsigned))zcalloc;
+    z->zalloc = zcalloc;
     z->opaque = (voidp)0;
   }
-  if (z->zfree == Z_NULL) z->zfree = (void (*)(void *, void *))zcfree;
+  if (z->zfree == Z_NULL) z->zfree = zcfree;
   if ((z->state = (struct internal_state *)
        ZALLOC(z,1,sizeof(struct internal_state))) == Z_NULL)
     return Z_MEM_ERROR;
@@ -4284,16 +4327,15 @@ int inflateSyncPoint(z_streamp z)
 }
 #endif
 
-voidp zcalloc (voidp opaque, unsigned items, unsigned size)
+void *zcalloc (void *opaque, unsigned items, unsigned size)
 {
     if (opaque) items += size - size; /* make compiler happy */
-    return (voidp)Z_Malloc(items*size);
+    if (size && items > (unsigned)INT_MAX / size) return NULL;
+    return Z_Malloc((int)(items * size));
 }
 
-void  zcfree (voidp opaque, voidp ptr)
+void  zcfree (void *opaque, void *ptr)
 {
     Z_Free(ptr);
     if (opaque) return; /* make compiler happy */
 }
-
-

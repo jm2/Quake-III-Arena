@@ -200,6 +200,9 @@ implementation or check, without implying issue completion.
 - [ ] [#29 — modern CVE coverage lacks provenance/tests](https://github.com/jm2/Quake-III-Arena/issues/29)
   - [x] Treat the “all modern CVEs fixed” claim as unverified in review docs.
   - [x] Add the first authoritative upstream-commit/local-code status matrix.
+  - [x] Cover message/Huffman exact limits and the real out-of-band caller with
+        isolated GCC/Clang ASan/UBSan cases and a commercial stream golden; see
+        [validation evidence](message-huffman-validation.md).
   - [ ] Finish the advisory inventory and malformed-input regression matrix.
 - [ ] [#35 — interpreted QVM validation and sandbox bounds](https://github.com/jm2/Quake-III-Arena/issues/35)
   - [x] Create/restart header, file-range, allocation arithmetic, and restart
@@ -238,7 +241,38 @@ implementation or check, without implying issue completion.
   - [x] Local code rejects unrepresentable sizes before casts, checks unzip
         opens/reads, rejects short reads, and fixes short-name suffix checks.
   - [x] Base and Team Arena PPC cross-builds pass.
-  - [ ] Add malicious ZIP fixtures and prove every handle/buffer cleanup path.
+  - [x] Embedded inflate callback types and allocation products have actual
+        ZIP/read/physical-release [regressions](unzip-allocation-validation.md).
+  - [x] Buffered handles preserve independent owners, cursors and all native
+        slots with [physical-release checks](fs-buffered-handle-validation.md).
+  - [x] Complete ZIP mount names/metadata/counts and both-pass real-source
+        failure cleanup have [native regressions](fs-zip-mount-validation.md).
+  - [x] Unique targets preserve active shared decoder owners, metadata and
+        physical cursors across buffered/streamed reads and refills with
+        [stream checks](fs-zip-reopen-validation.md).
+  - [x] Real cap/signed/unsigned ZIP sizes, bad opens and truncated payloads
+        have [physical owner/stream checks](fs-zip-entry-validation.md).
+  - [x] Read/seek request, offset, handle and accounting bounds have actual
+        [native behavior checks](fs-buffer-bounds-validation.md).
+  - [x] Close/tell/length/write/flush ownership and exclusive handle bounds
+        have actual [FILE/ZIP checks](fs-handle-api-validation.md).
+  - [x] Exact unsigned metadata I/O and genuine selected-entry error
+        propagation have [real-file checks](unzip-metadata-validation.md).
+  - [x] Complete decoder initialization and failed-import private cleanup
+        have actual [stored/deflated checks](unzip-open-validation.md).
+  - [x] Archive/clone/buffer factory input/import failures preserve prior
+        native owners with [physical-release checks](fs-zip-factory-validation.md).
+  - [x] Active decoder replacement stages complete private candidates before
+        releasing prior owners and restores failed-header/import FILE cursors;
+        [native continuation/retry checks](unzip-replacement-validation.md) pass.
+  - [x] Optional local metadata reads honor caller lengths and archive prefixes;
+        global comment NULL requests reject before I/O;
+        [real metadata checks](unzip-optional-metadata-validation.md) pass.
+  - [x] Shared ZIP seek supports independent logical cursors, complete
+        SET/CUR/END semantics, checked chunked skips and failure-propagating
+        single platform delegation;
+        [native compatibility checks](fs-zip-seek-validation.md) pass.
+  - [ ] Complete remaining handle/read/metadata and retail acceptance paths.
 - [ ] [#37 — connection/netchan lacks challenge binding](https://github.com/jm2/Quake-III-Arena/issues/37)
   - [x] User selected commercial 1.32c compatibility in the style of
         Quake3e/ioquake3 and preserving the legacy protocol by default.
@@ -664,6 +698,11 @@ implementation or check, without implying issue completion.
 
 ## Exact continuation point
 
+Current master is `31a6554caa3c941d6657d664849511e27233089d` through #172
+and independent #180. The latest dated inventory, pending stack and exact-head
+gates are in [continuation evidence](review-continuation-2026-09-18.md).
+Earlier milestone snapshots below remain historical.
+
 - [x] Current progress reconciled at master `cdc8c38` on 2026-09-18: BSP
       steps #83–#91/#93–#101 and shader capacity #102 are merged after
       successful current-head CI, clean Codex and resolved CodeRabbit findings.
@@ -686,8 +725,10 @@ implementation or check, without implying issue completion.
 - [ ] P0 security: finish #35, #41, #42, #43, #44, #45, #46, #47, #48,
       then compatibility-sensitive #37; retain #29 and #36 validation gates.
 - [ ] P1 security: fix #38 and #39 with deterministic host regressions.
+- [x] Add focused host tests for message/Huffman exact bounds and the
+      out-of-band caller.
 - [ ] Add focused host tests for local candidates #18, #24, #25, #36, #40,
-      #49, message/Huffman exact bounds, download pairs, and format strings.
+      #49, download pairs, and format strings.
 - [ ] Prioritize target runtime blockers: #11 after #48, then #15, #16, #17,
       #5, #20, #19.
 - [x] User authorized host checks and working cross-builds while legal retail
