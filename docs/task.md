@@ -575,6 +575,10 @@ QVMs while any P0 item is open.
         input/output append, then publishes complete staged construction/timing;
         native flags, selection/fallback order and ten-pass cycle behavior stay;
         see [expansion evidence](bot-chat-expansion-validation.md).
+  - [x] Encoded-message parsing checks complete literal/variable/random
+        component costs and native slots before copying; complete publication
+        preserves prior output on lexical/syntax/size failures and native order;
+        see [component evidence](bot-chat-message-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
