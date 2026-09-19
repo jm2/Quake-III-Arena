@@ -611,6 +611,14 @@ QVMs while any P0 item is open.
         root publication, return native zero handles on nullable imports and
         retain prior bytes, client values and all native slots;
         see [state factory evidence](bot-state-factory-validation.md).
+  - [x] Goal weight replacement stages complete weight/index owners before
+        publishing both roots, preserves prior bytes on failure/cache aliases
+        and clears released pointers; native classname mapping stays;
+        see [goal weight evidence](bot-goal-weight-validation.md).
+  - [x] Weight cleanup follows actual shared cache ownership across reload
+        policy changes, preserves cached sibling roots and physically frees
+        private data through both goal/weapon consumers;
+        see [weight owner evidence](bot-weight-cache-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 

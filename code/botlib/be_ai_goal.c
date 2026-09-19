@@ -404,8 +404,20 @@ int *ItemWeightIndex(weightconfig_t *iwc, itemconfig_t *ic)
 {
 	int *index, i;
 
+	if (!iwc || !ic || ic->numiteminfo < 0 ||
+			(unsigned long)ic->numiteminfo > (unsigned long)INT_MAX / sizeof(int) ||
+			(ic->numiteminfo && !ic->iteminfo))
+	{
+		botimport.Print(PRT_ERROR, "invalid item weight index configuration\n");
+		return NULL;
+	}
 	//initialize item weight index
 	index = (int *) GetClearedMemory(sizeof(int) * ic->numiteminfo);
+	if (!index)
+	{
+		botimport.Print(PRT_ERROR, "couldn't allocate item weight index\n");
+		return NULL;
+	}
 
 	for (i = 0; i < ic->numiteminfo; i++)
 	{
@@ -1821,21 +1833,28 @@ void BotResetGoalState(int goalstate)
 int BotLoadItemWeights(int goalstate, char *filename)
 {
 	bot_goalstate_t *gs;
+	weightconfig_t *candidate;
+	int *index;
 
 	gs = BotGoalStateFromHandle(goalstate);
-	if (!gs) return BLERR_CANNOTLOADITEMWEIGHTS;
-	//load the weight configuration
-	gs->itemweightconfig = ReadWeightConfig(filename);
-	if (!gs->itemweightconfig)
+	if (!gs || !itemconfig) return BLERR_CANNOTLOADITEMWEIGHTS;
+	candidate = ReadWeightConfig(filename);
+	if (!candidate)
 	{
 		botimport.Print(PRT_FATAL, "couldn't load weights\n");
 		return BLERR_CANNOTLOADITEMWEIGHTS;
-	} //end if
-	//if there's no item configuration
-	if (!itemconfig) return BLERR_CANNOTLOADITEMWEIGHTS;
-	//create the item weight index
-	gs->itemweightindex = ItemWeightIndex(gs->itemweightconfig, itemconfig);
-	//everything went ok
+	}
+	index = ItemWeightIndex(candidate, itemconfig);
+	if (!index)
+	{
+		if (candidate != gs->itemweightconfig) FreeWeightConfig(candidate);
+		return BLERR_CANNOTLOADITEMWEIGHTS;
+	}
+	if (gs->itemweightconfig && gs->itemweightconfig != candidate)
+		FreeWeightConfig(gs->itemweightconfig);
+	if (gs->itemweightindex) FreeMemory(gs->itemweightindex);
+	gs->itemweightconfig = candidate;
+	gs->itemweightindex = index;
 	return BLERR_NOERROR;
 } //end of the function BotLoadItemWeights
 //===========================================================================
@@ -1852,6 +1871,8 @@ void BotFreeItemWeights(int goalstate)
 	if (!gs) return;
 	if (gs->itemweightconfig) FreeWeightConfig(gs->itemweightconfig);
 	if (gs->itemweightindex) FreeMemory(gs->itemweightindex);
+	gs->itemweightconfig = NULL;
+	gs->itemweightindex = NULL;
 } //end of the function BotFreeItemWeights
 //===========================================================================
 //
