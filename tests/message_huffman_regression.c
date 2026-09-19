@@ -78,14 +78,15 @@ static void Guards( const guarded_t *guarded ) {
 }
 
 static void OOBExact( int bits ) {
-	guarded_t guarded;
 	msg_t msg;
 	int bytes = bits >> 3;
 	int value = bits == 8 ? 0x5a : bits == 16 ? 0x3412 : 0x78563412;
-	byte *data;
+	byte *base, *data;
 
-	GuardInit( &guarded );
-	data = guarded.data + 1; /* Exercise unaligned 16/32-bit access. */
+	base = malloc( bytes + 1 );
+	Check( base != NULL, "allocate exact OOB window" );
+	data = base + 1; /* Unaligned, with the logical end against the ASan redzone. */
+	memset( data, 0xa5, bytes );
 	Com_Memset( &msg, 0, sizeof(msg) );
 	msg.data = data;
 	msg.maxsize = bytes;
@@ -100,19 +101,20 @@ static void OOBExact( int bits ) {
 	MSG_BeginReadingOOB( &msg );
 	Check( MSG_ReadBits( &msg, bits ) == value && msg.readcount == bytes && msg.bit == bits,
 		"exact OOB read" );
-	Guards( &guarded );
+	free( base );
 }
 
 static void OOBShort( int reading ) {
 	static const int widths[] = { 8, 16, 32 };
 	int i;
 	for ( i = 0; i < 3; i++ ) {
-		guarded_t guarded;
 		msg_t msg;
 		int bytes = widths[i] >> 3;
-		byte *data;
-		GuardInit( &guarded );
-		data = guarded.data + 1;
+		byte *base, *data;
+		base = malloc( bytes );
+		Check( base != NULL, "allocate short OOB window" );
+		data = base + 1;
+		memset( data, 0, bytes - 1 );
 		Com_Memset( &msg, 0, sizeof(msg) );
 		msg.data = data;
 		msg.maxsize = bytes;
@@ -128,16 +130,16 @@ static void OOBShort( int reading ) {
 			Check( msg.overflowed && msg.cursize == 0 && msg.bit == 0,
 				"one-byte-short OOB write rejects before access" );
 		}
-		Guards( &guarded );
+		free( base );
 	}
 }
 
 static void BitBoundary( int reading ) {
-	guarded_t guarded;
 	msg_t msg;
-	byte *data;
-	GuardInit( &guarded );
-	data = guarded.data + 1;
+	byte *base, *data;
+	base = malloc( 2 );
+	Check( base != NULL, "allocate exact bit window" );
+	data = base + 1;
 	Com_Memset( &msg, 0, sizeof(msg) );
 	msg.data = data;
 	msg.maxsize = 1;
@@ -155,10 +157,10 @@ static void BitBoundary( int reading ) {
 		Check( !msg.overflowed && msg.bit == 7 && msg.cursize == 1,
 			"one-bit-short message write" );
 		MSG_WriteBits( &msg, 1, 1 );
-		Check( msg.overflowed && msg.bit == 7 && msg.cursize == 1,
+		Check( msg.overflowed && msg.bit == 7 && msg.cursize == 1 && data[0] == 0x55,
 			"exact-capacity message write sets overflow" );
 	}
-	Guards( &guarded );
+	free( base );
 }
 
 static void SignedBits( void ) {

@@ -50,7 +50,7 @@ Clang and optimized GCC run normal and `-O2 -DNDEBUG -ffast-math` modes, for
 
 | Source state | Fixture failures | Fixture passes |
 | --- | ---: | ---: |
-| Original GPL release `dbe4ddb` | 84 | 20 |
+| Original GPL release `dbe4ddb` | 82 | 22 |
 | Exact PR parent `31a6554` | 56 | 48 |
 | This change | 0 | 104 |
 
@@ -66,8 +66,8 @@ headers:
 
 | Product | PEF bytes | SHA-256 |
 | --- | ---: | --- |
-| Quake3 | 3,783,967 | `36c73aa13d8636871a1369adc2dc909ce21cb114ab53a2abfa167ef5cb587da6` |
-| Quake3_TeamArena | 3,932,541 | `8569e45d743671d94072e6e4c4495ece3d60aa5ece36b68ca0f0bc7cbd374d23` |
+| Quake3 | 3,788,153 | `f39547b1e278f4d862ba73407887b6a47b34bc3cc055daa1bee7682dd01362bc` |
+| Quake3_TeamArena | 3,936,727 | `c8482ac970d43e7cf026be1d93b23c18158f87305d3db13b62a32a55ea6ee7cf` |
 
 Temporary toolchain libraries: [loading evidence](qvm-loading-validation.md).
 

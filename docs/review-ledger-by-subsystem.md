@@ -241,6 +241,8 @@ implementation or check, without implying issue completion.
   - [x] Local code rejects unrepresentable sizes before casts, checks unzip
         opens/reads, rejects short reads, and fixes short-name suffix checks.
   - [x] Base and Team Arena PPC cross-builds pass.
+  - [x] Embedded inflate callback types and allocation products have actual
+        ZIP/read/physical-release [regressions](unzip-allocation-validation.md).
   - [ ] Add malicious ZIP fixtures and prove every handle/buffer cleanup path.
 - [ ] [#37 — connection/netchan lacks challenge binding](https://github.com/jm2/Quake-III-Arena/issues/37)
   - [x] User selected commercial 1.32c compatibility in the style of
@@ -590,6 +592,15 @@ implementation or check, without implying issue completion.
   - [x] Projectile model descriptors use the projectile offset, preserve every
         scalar field across string order/boundaries and retain native layouts;
         see [projectile evidence](bot-projectile-model-validation.md).
+  - [x] Weapon configuration checks native counts/full filenames and complete
+        allocation cost, parses checked heap staging, rejects source errors and
+        fixes projectiles before publishing rebased hunk arrays; failed loads keep
+        prior payload and consume no additional physical hunk;
+        see [weapon evidence](bot-weapon-config-validation.md).
+  - [x] Weapon setup checks its filename variable and stages complete config
+        before replacing the shared root; failure keeps every prior array/fixup
+        byte and success releases the prior logical record;
+        see [setup evidence](bot-weapon-setup-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
@@ -653,6 +664,11 @@ implementation or check, without implying issue completion.
       restore the desktop.
 
 ## Exact continuation point
+
+Current master is `31a6554caa3c941d6657d664849511e27233089d` through #172
+and independent #180. The latest dated inventory, pending stack and exact-head
+gates are in [continuation evidence](review-continuation-2026-09-18.md).
+Earlier milestone snapshots below remain historical.
 
 - [x] Current progress reconciled at master `cdc8c38` on 2026-09-18: BSP
       steps #83–#91/#93–#101 and shader capacity #102 are merged after

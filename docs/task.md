@@ -129,6 +129,10 @@ QVMs while any P0 item is open.
       — **high**, ZIP-controlled allocation/decompression corruption.
   - [x] Local size/cast, exact-read, open-result, cleanup, and short-suffix
         checks cross-build.
+  - [x] Private embedded inflate callbacks match their declared types and
+        reject unrepresentable allocation products before engine imports;
+        actual native ZIP/read/free regressions have
+        [allocation evidence](unzip-allocation-validation.md).
   - [ ] Add malicious ZIP fixtures around caps, `INT_MAX`, `UINT32_MAX`, and
         truncated streams.
 - [ ] [#41 — bound RoQ chunks, dimensions, audio output, and cursors](https://github.com/jm2/Quake-III-Arena/issues/41)
@@ -486,6 +490,15 @@ QVMs while any P0 item is open.
   - [x] Projectile model descriptors use the projectile offset, preserve every
         scalar field across string order/boundaries and retain native layouts;
         see [projectile evidence](bot-projectile-model-validation.md).
+  - [x] Weapon configuration checks native counts/full filenames and complete
+        allocation cost, parses checked heap staging, rejects source errors and
+        fixes projectiles before publishing rebased hunk arrays; failed loads keep
+        prior payload and consume no additional physical hunk;
+        see [weapon evidence](bot-weapon-config-validation.md).
+  - [x] Weapon setup checks its filename variable and stages complete config
+        before replacing the shared root; failure keeps every prior array/fixup
+        byte and success releases the prior logical record;
+        see [setup evidence](bot-weapon-setup-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 
@@ -685,6 +698,32 @@ QVMs while any P0 item is open.
 
 ## Exact continuation point
 
+Current source is master `31a6554caa3c941d6657d664849511e27233089d`, through
+merged #172, with the independent host-timeout step #180. The [continuation evidence](review-continuation-2026-09-18.md)
+records the refreshed 52-issue inventory, pending stack and its current gates.
+All 52 issue-level entries remain open; nested implementation checks cover only
+the stated work. The milestones below retain their dated source evidence.
+
+- [x] AAS portal/travel/routing/workspace/cache/init steps #126–#130/#132 and
+      native variable/parser/character steps #131/#133–#148 merged
+      after exact-head CI, completed clean Codex and resolved bot findings.
+- [x] Source steps #149–#170 merged after four green exact-head CI checks,
+      completed clean Codex and resolved findings. #158's later CodeRabbit
+      documentation finding was fixed before renewed review and fresh CI.
+- [x] Host-timeout step #180 merged after all four CI checks, completed clean
+      Codex and resolved findings; every required check remains mandatory.
+- [x] Projectile model descriptor #172 merged after the same four-job
+      exact-head CI/clean Codex/resolved-finding gate.
+- [ ] Merge eligible independent steps and the pending dependency chain,
+      rechecking four successful Portable CI jobs, completed clean current-head
+      Codex and all resolved CodeRabbit findings immediately before each merge.
+- [ ] Require all fresh CI checks on the workflow-only timeout revisions;
+      product source/PPC evidence is unchanged and renewed Codex is clean.
+- [ ] Merge the validated weapon/chat/dictionary/cache/state steps and
+      filesystem/ZIP steps in dependency order. Continue remaining nullable
+      consumers, full library/world transactions and aggregate resource/work
+      limits; keep broad acceptance and deferred live testing open.
+
 - [x] Reconcile all 52 open issues against `204fe36`, existing test coverage,
       and July evidence; retain their current priorities and closure gates.
 - [x] Re-run the eight Python tests, q_shared ASan/UBSan harness, Bash syntax
@@ -724,8 +763,8 @@ QVMs while any P0 item is open.
       CodeRabbit findings resolved.
 - [x] Node/reachability #124–#125 merged at `86c1667` after exact-head
       CI, clean completed Codex and resolved review findings.
-- [ ] Gate portal/travel-cost/workspace steps and finish #47 runtime query, memory/
-      work budget and late-load transaction work.
+- [ ] Finish #47 runtime query, memory/work budgets and late-load
+      transactions after the merged portal/travel/workspace prerequisites.
 - [ ] Finish #45 renderer aggregate capacity and full transactional
       publication; retain remaining query/candidate costs and deferred target
       acceptance. Collision aggregate and derived geometry/facet checks are
