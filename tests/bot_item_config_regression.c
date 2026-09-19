@@ -5,16 +5,19 @@ botlib_import_t botimport;
 botlib_globals_t botlibglobals;
 #endif
 extern int numtokens;
-static void *heap[64],*hunk[16],*heapRaw[64],*hunkRaw[16];
+#ifndef Q3_ITEM_TEST_HEAP_CAPACITY
+#define Q3_ITEM_TEST_HEAP_CAPACITY 64
+#endif
+static void *heap[Q3_ITEM_TEST_HEAP_CAPACITY],*hunk[16],*heapRaw[Q3_ITEM_TEST_HEAP_CAPACITY],*hunkRaw[16];
 static unsigned long engineOffset;
 static int heapLive,hunkLive,requests,failAt,errors,warnings,messages,opens,closes;
 static int lengths[256];
 static const char *fileText;
 static void Check(int condition,const char *message){if(!condition){fprintf(stderr,"Item configuration regression failed: %s\n",message);exit(1);}}
-static void *Allocate(int size,int arena){void **slots=arena?hunk:heap;int cap=arena?16:64,i;Check(size>0&&requests<256,"signed complete native allocation request");lengths[requests++]=size;if(requests==failAt||size>1048576)return NULL;for(i=0;i<cap;i++)if(!slots[i]){void *raw=malloc((size_t)size+engineOffset);Check(raw!=NULL,"physical native storage");slots[i]=(char *)raw+engineOffset;if(arena)hunkRaw[i]=raw;else heapRaw[i]=raw;if(arena)hunkLive++;else heapLive++;return slots[i];}Check(0,"bounded physical native owners");return NULL;}
+static void *Allocate(int size,int arena){void **slots=arena?hunk:heap;int cap=arena?16:Q3_ITEM_TEST_HEAP_CAPACITY,i;Check(size>0&&requests<256,"signed complete native allocation request");lengths[requests++]=size;if(requests==failAt||size>1048576)return NULL;for(i=0;i<cap;i++)if(!slots[i]){void *raw=malloc((size_t)size+engineOffset);Check(raw!=NULL,"physical native storage");slots[i]=(char *)raw+engineOffset;if(arena)hunkRaw[i]=raw;else heapRaw[i]=raw;if(arena)hunkLive++;else heapLive++;return slots[i];}Check(0,"bounded physical native owners");return NULL;}
 static void *HeapAlloc(int size){return Allocate(size,0);}
 static void *HunkAlloc(int size){return Allocate(size,1);}
-static void HeapFree(void *pointer){int i;for(i=0;i<64;i++)if(heap[i]==pointer){free(heapRaw[i]);heapRaw[i]=NULL;heap[i]=NULL;heapLive--;return;}Check(0,"only native physical heap storage frees through callback");}
+static void HeapFree(void *pointer){int i;for(i=0;i<Q3_ITEM_TEST_HEAP_CAPACITY;i++)if(heap[i]==pointer){free(heapRaw[i]);heapRaw[i]=NULL;heap[i]=NULL;heapLive--;return;}Check(0,"only native physical heap storage frees through callback");}
 #ifndef Com_Memset
 void Com_Memset(void *out,int value,size_t size){memset(out,value,size);}
 #endif

@@ -2378,14 +2378,26 @@ failed:
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
+static int BotInitialChatCached(bot_chat_t *chat)
+{
+	int n;
+	for (n = 0; n < MAX_CLIENTS; n++)
+	{
+		if (ichatdata[n] && ichatdata[n]->chat == chat) return qtrue;
+	}
+	return qfalse;
+}
+
 void BotFreeChatFile(int chatstate)
 {
 	bot_chatstate_t *cs;
+	bot_chat_t *chat;
 
 	cs = BotChatStateFromHandle(chatstate);
 	if (!cs) return;
-	if (cs->chat) FreeMemory(cs->chat);
+	chat = cs->chat;
 	cs->chat = NULL;
+	if (chat && !BotInitialChatCached(chat)) FreeMemory(chat);
 } //end of the function BotFreeChatFile
 //===========================================================================
 //
@@ -2396,53 +2408,63 @@ void BotFreeChatFile(int chatstate)
 int BotLoadChatFile(int chatstate, char *chatfile, char *chatname)
 {
 	bot_chatstate_t *cs;
-	int n, avail = 0;
+	bot_chat_t *candidate;
+	bot_ichatdata_t *cacheentry = NULL;
+	int n, avail = -1, cache;
 
 	cs = BotChatStateFromHandle(chatstate);
 	if (!cs) return BLERR_CANNOTLOADICHAT;
-	BotFreeChatFile(chatstate);
-
-	if (!LibVarGetValue("bot_reloadcharacters"))
+	if (!chatfile || !chatfile[0] || strlen(chatfile) >= MAX_PATH || !chatname)
 	{
-		avail = -1;
-		for( n = 0; n < MAX_CLIENTS; n++ ) {
-			if( !ichatdata[n] ) {
-				if( avail == -1 ) {
-					avail = n;
-				}
+		botimport.Print(PRT_ERROR, "invalid initial chat filename/name\n");
+		return BLERR_CANNOTLOADICHAT;
+	}
+	cache = !LibVarGetValue("bot_reloadcharacters") &&
+		strlen(chatfile) < sizeof(ichatdata[0]->filename) &&
+		strlen(chatname) < sizeof(ichatdata[0]->chatname);
+	if (cache)
+	{
+		for (n = 0; n < MAX_CLIENTS; n++)
+		{
+			if (!ichatdata[n])
+			{
+				if (avail == -1) avail = n;
 				continue;
 			}
-			if( strcmp( chatfile, ichatdata[n]->filename ) != 0 ) { 
-				continue;
-			}
-			if( strcmp( chatname, ichatdata[n]->chatname ) != 0 ) { 
-				continue;
-			}
-			cs->chat = ichatdata[n]->chat;
-		//		botimport.Print( PRT_MESSAGE, "retained %s from %s\n", chatname, chatfile );
+			if (strcmp(chatfile, ichatdata[n]->filename) || strcmp(chatname, ichatdata[n]->chatname)) continue;
+			candidate = ichatdata[n]->chat;
+			BotFreeChatFile(chatstate);
+			cs->chat = candidate;
 			return BLERR_NOERROR;
 		}
-
-		if( avail == -1 ) {
-			botimport.Print(PRT_FATAL, "ichatdata table full; couldn't load chat %s from %s\n", chatname, chatfile);
+		if (avail == -1)
+		{
+			botimport.Print(PRT_ERROR, "ichatdata table full; couldn't load chat %s from %s\n", chatname, chatfile);
+			return BLERR_CANNOTLOADICHAT;
+		}
+		cacheentry = (bot_ichatdata_t *) GetClearedMemory(sizeof(bot_ichatdata_t));
+		if (!cacheentry)
+		{
+			botimport.Print(PRT_ERROR, "couldn't allocate initial chat cache entry\n");
 			return BLERR_CANNOTLOADICHAT;
 		}
 	}
-
-	cs->chat = BotLoadInitialChat(chatfile, chatname);
-	if (!cs->chat)
+	candidate = BotLoadInitialChat(chatfile, chatname);
+	if (!candidate)
 	{
-		botimport.Print(PRT_FATAL, "couldn't load chat %s from %s\n", chatname, chatfile);
+		if (cacheentry) FreeMemory(cacheentry);
+		botimport.Print(PRT_ERROR, "couldn't load chat %s from %s\n", chatname, chatfile);
 		return BLERR_CANNOTLOADICHAT;
-	} //end if
-	if (!LibVarGetValue("bot_reloadcharacters"))
+	}
+	if (cacheentry)
 	{
-		ichatdata[avail] = GetClearedMemory( sizeof(bot_ichatdata_t) );
-		ichatdata[avail]->chat = cs->chat;
-		Q_strncpyz( ichatdata[avail]->chatname, chatname, sizeof(ichatdata[avail]->chatname) );
-		Q_strncpyz( ichatdata[avail]->filename, chatfile, sizeof(ichatdata[avail]->filename) );
-	} //end if
-
+		cacheentry->chat = candidate;
+		Q_strncpyz(cacheentry->chatname, chatname, sizeof(cacheentry->chatname));
+		Q_strncpyz(cacheentry->filename, chatfile, sizeof(cacheentry->filename));
+		ichatdata[avail] = cacheentry;
+	}
+	BotFreeChatFile(chatstate);
+	cs->chat = candidate;
 	return BLERR_NOERROR;
 } //end of the function BotLoadChatFile
 //===========================================================================
@@ -3070,10 +3092,7 @@ void BotFreeChatState(int handle)
 		return;
 	} //end if
 	cs = botchatstates[handle];
-	if (LibVarGetValue("bot_reloadcharacters"))
-	{
-		BotFreeChatFile(handle);
-	} //end if
+	BotFreeChatFile(handle);
 	//free all the console messages left in the chat state
 	for (h = BotNextConsoleMessage(handle, &m); h; h = BotNextConsoleMessage(handle, &m))
 	{
