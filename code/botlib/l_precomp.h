@@ -105,6 +105,8 @@ typedef struct source_s
 	define_t **definehash;					//hash chain with defines
 	indent_t *indentstack;					//stack with indents
 	unsigned int errorsequence;			//private diagnostic generation for lookahead
+	unsigned int tokenwork;					//work used by the current public token read
+	unsigned int tokenworkdepth;			//nested public token reads sharing that budget
 	int skip;								// > 0 if skipping conditional code
 	token_t token;							//last read token
 } source_t;
