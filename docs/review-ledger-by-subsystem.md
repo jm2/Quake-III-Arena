@@ -676,6 +676,10 @@ implementation or check, without implying issue completion.
         stage both passes before persistent publication, reject source/capacity
         changes and rebase complete native group/message/string links;
         see [random dictionary evidence](bot-chat-random-validation.md).
+  - [x] Match pieces check nullable heap imports and the closing delimiter,
+        release partial records, keep their source borrowed and let both callers
+        release it once; native alternatives/captures remain;
+        see [match piece evidence](bot-match-piece-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
