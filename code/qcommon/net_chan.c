@@ -29,6 +29,7 @@ packet header
 -------------
 4	outgoing sequence.  high bit will be set if this is a fragmented message
 [2	qport (only for client to server)]
+[4	challenge checksum (protocol 69 only)]
 [2	fragment start byte]
 [2	fragment length. if < FRAGMENT_SIZE, this is the last fragment]
 
@@ -52,7 +53,7 @@ to the new value before sending out any replies.
 #define	FRAGMENT_SIZE			(MAX_PACKETLEN - 100)
 #define	PACKET_HEADER			10			// two ints and a short
 
-#define	FRAGMENT_BIT	(1<<31)
+#define	FRAGMENT_BIT	(1U<<31)
 
 cvar_t		*showpackets;
 cvar_t		*showdrop;
@@ -83,7 +84,8 @@ Netchan_Setup
 called to open a channel to a remote system
 ==============
 */
-void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport ) {
+void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport,
+	int challenge, qboolean compat ) {
 	Com_Memset (chan, 0, sizeof(*chan));
 	
 	chan->sock = sock;
@@ -91,6 +93,102 @@ void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport ) {
 	chan->qport = qport;
 	chan->incomingSequence = 0;
 	chan->outgoingSequence = 1;
+	chan->challenge = challenge;
+	chan->compat = compat;
+}
+
+/*
+========================
+Netchan_GenerateChecksum
+
+The q3noclient protocol-69 checksum.  Use unsigned arithmetic so the
+required modulo-2^32 multiply has defined C behavior.
+========================
+*/
+unsigned Netchan_GenerateChecksum( int challenge, int sequence ) {
+	unsigned challengeBits;
+	unsigned sequenceBits;
+
+	challengeBits = (unsigned)challenge;
+	sequenceBits = (unsigned)sequence;
+	return challengeBits ^ ( sequenceBits * challengeBits );
+}
+
+/*
+====================
+Netchan_ParseInteger
+
+Strict decimal parsing for connection challenges and protocol identifiers.
+====================
+*/
+qboolean Netchan_ParseInteger( const char *text, int *value ) {
+	const char *cursor;
+	unsigned magnitude;
+	unsigned limit;
+	unsigned digit;
+	qboolean negative;
+
+	if ( !text || !value || !text[0] ) {
+		return qfalse;
+	}
+
+	cursor = text;
+	negative = qfalse;
+	if ( *cursor == '-' || *cursor == '+' ) {
+		negative = *cursor == '-' ? qtrue : qfalse;
+		cursor++;
+	}
+	if ( !*cursor ) {
+		return qfalse;
+	}
+
+	limit = negative ? (unsigned)INT_MAX + 1U : (unsigned)INT_MAX;
+	magnitude = 0;
+	while ( *cursor ) {
+		if ( *cursor < '0' || *cursor > '9' ) {
+			return qfalse;
+		}
+		digit = (unsigned)( *cursor - '0' );
+		if ( magnitude > ( limit - digit ) / 10U ) {
+			return qfalse;
+		}
+		magnitude = magnitude * 10U + digit;
+		cursor++;
+	}
+
+	if ( negative ) {
+		if ( magnitude == (unsigned)INT_MAX + 1U ) {
+			*value = -INT_MAX - 1;
+		} else {
+			*value = -(int)magnitude;
+		}
+	} else {
+		*value = (int)magnitude;
+	}
+	return qtrue;
+}
+
+qboolean Netchan_ChallengeResponseValid( qboolean compat,
+	qboolean fromExpectedAddress, qboolean hasEcho,
+	int expectedChallenge, int echoedChallenge ) {
+	qboolean echoMatches;
+
+	echoMatches = hasEcho && echoedChallenge == expectedChallenge;
+	if ( hasEcho && !echoMatches ) {
+		return qfalse;
+	}
+	if ( compat ) {
+		return fromExpectedAddress || echoMatches;
+	}
+	return echoMatches;
+}
+
+qboolean Netchan_ConnectResponseValid( qboolean compat,
+	qboolean hasChallenge, int expectedChallenge, int responseChallenge ) {
+	if ( !hasChallenge ) {
+		return compat;
+	}
+	return responseChallenge == expectedChallenge;
 }
 
 // TTimo: unused, commenting out to make gcc happy
@@ -200,6 +298,10 @@ void Netchan_TransmitNextFragment( netchan_t *chan ) {
 	if ( chan->sock == NS_CLIENT ) {
 		MSG_WriteShort( &send, qport->integer );
 	}
+	if ( !chan->compat ) {
+		MSG_WriteLong( &send, (int)Netchan_GenerateChecksum(
+			chan->challenge, chan->outgoingSequence ) );
+	}
 
 	// copy the reliable message to the packet first
 	fragmentLength = FRAGMENT_SIZE;
@@ -268,12 +370,17 @@ void Netchan_Transmit( netchan_t *chan, int length, const byte *data ) {
 	MSG_InitOOB (&send, send_buf, sizeof(send_buf));
 
 	MSG_WriteLong( &send, chan->outgoingSequence );
-	chan->outgoingSequence++;
 
 	// send the qport if we are a client
 	if ( chan->sock == NS_CLIENT ) {
 		MSG_WriteShort( &send, qport->integer );
 	}
+	if ( !chan->compat ) {
+		MSG_WriteLong( &send, (int)Netchan_GenerateChecksum(
+			chan->challenge, chan->outgoingSequence ) );
+	}
+
+	chan->outgoingSequence++;
 
 	MSG_WriteData( &send, data, length );
 
@@ -303,34 +410,54 @@ copied out.
 */
 qboolean Netchan_Process( netchan_t *chan, msg_t *msg ) {
 	int			sequence;
-	int			qport;
 	int			fragmentStart, fragmentLength;
 	qboolean	fragmented;
+	unsigned	sequenceBits;
 
 	// XOR unscramble all data in the packet after the header
 //	Netchan_UnScramblePacket( msg );
 
 	// get sequence numbers		
 	MSG_BeginReadingOOB( msg );
-	sequence = MSG_ReadLong( msg );
+	sequenceBits = (unsigned)MSG_ReadLong( msg );
+	if ( msg->readcount > msg->cursize ) {
+		return qfalse;
+	}
 
 	// check for fragment information
-	if ( sequence & FRAGMENT_BIT ) {
-		sequence &= ~FRAGMENT_BIT;
+	if ( sequenceBits & FRAGMENT_BIT ) {
+		sequence = (int)( sequenceBits & ~FRAGMENT_BIT );
 		fragmented = qtrue;
 	} else {
+		sequence = (int)sequenceBits;
 		fragmented = qfalse;
 	}
 
 	// read the qport if we are a server
 	if ( chan->sock == NS_SERVER ) {
-		qport = MSG_ReadShort( msg );
+		MSG_ReadShort( msg );
+		if ( msg->readcount > msg->cursize ) {
+			return qfalse;
+		}
+	}
+
+	if ( !chan->compat ) {
+		unsigned checksum;
+
+		checksum = (unsigned)MSG_ReadLong( msg );
+		if ( msg->readcount > msg->cursize ||
+			checksum != Netchan_GenerateChecksum( chan->challenge, sequence ) ) {
+			return qfalse;
+		}
 	}
 
 	// read the fragment information
 	if ( fragmented ) {
 		fragmentStart = MSG_ReadShort( msg );
 		fragmentLength = MSG_ReadShort( msg );
+		if ( msg->readcount > msg->cursize ) {
+			return qfalse;
+		}
 	} else {
 		fragmentStart = 0;		// stop warning message
 		fragmentLength = 0;

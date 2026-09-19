@@ -181,6 +181,8 @@ typedef struct client_s {
 typedef struct {
 	netadr_t	adr;
 	int			challenge;
+	int			clientChallenge;
+	qboolean	clientChallengePresent;
 	int			time;				// time the last packet was sent to the autherize server
 	int			pingTime;			// time the challenge response was sent to client
 	int			firstTime;			// time the adr was first used, for authorize timeout checks
@@ -283,6 +285,7 @@ void SV_SpawnServer( char *server, qboolean killBots );
 // sv_client.c
 //
 void SV_GetChallenge( netadr_t from );
+void SV_SendChallengeResponse( const challenge_t *challenge );
 
 void SV_DirectConnect( netadr_t from );
 
@@ -404,4 +407,3 @@ void SV_ClipToEntity( trace_t *trace, const vec3_t start, const vec3_t mins, con
 void SV_Netchan_Transmit( client_t *client, msg_t *msg);
 void SV_Netchan_TransmitNextFragment( client_t *client );
 qboolean SV_Netchan_Process( client_t *client, msg_t *msg );
-

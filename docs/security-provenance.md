@@ -1,7 +1,7 @@
 # Security provenance review
 
 Review date: 2026-07-28
-Last validation update: 2026-09-18
+Last validation update: 2026-09-19
 Local baseline: `abe5028afda280240d48d012a62c09e713689fd2`
 ioquake3 comparison point:
 [`588393618dbc82e7207c21c6ddecca229944a03a`](https://github.com/ioquake/ioq3/commit/588393618dbc82e7207c21c6ddecca229944a03a)
@@ -34,6 +34,7 @@ Every accepted family still needs a focused malformed-input regression.
 | Long `tcMod` shader arguments | [`eeeaf3f1`](https://github.com/ioquake/ioq3/commit/eeeaf3f1252d95a6037f33d30fdf2e945e340f79) | Missing | Locally converted to bounded concatenation |
 | JPEG RGB/RGBA allocation overflow | [`62678a02`](https://github.com/ioquake/ioq3/commit/62678a021554ec4ef6e310dfc63ab2e4f58135f6) | Missing and deterministically wrote alpha beyond a three-byte allocation | Locally allocates four bytes/pixel, validates dimensions/components, and expands backwards; length-aware JPEG I/O remains open |
 | Download-list truncation and path overwrite | [`813a6ecd`](https://github.com/ioquake/ioq3/commit/813a6ecdc3b8572796a8a85b260b03e1c3d87ef4) | Partial traversal check, but non-atomic pair construction and mismatched pak-name counts remained | Locally validates complete relative `.pk3` pairs, appends atomically, and skips missing name entries |
+| Connection and sequenced-packet challenge binding | [`a5580d89`](https://github.com/ioquake/ioq3/commit/a5580d8974008b077edf5ddaf7347d3b6006351d), [`e06c117e`](https://github.com/ioquake/ioq3/commit/e06c117e9e4361d5c0e4124682a23fd9872bd41f) | Missing: challenge responses could replace the destination without a client nonce; connect acknowledgments and netchan packets were unbound | Locally ports explicit protocol-68 compatibility and negotiated protocol-69 setup/netchan binding with [host evidence](network-challenge-validation.md); live peer/NAT acceptance remains deferred |
 | Oversized/truncated PK3 entries | Local audit; [#36](https://github.com/jm2/Quake-III-Arena/issues/36) | ZIP-controlled unsigned size narrowed to `int`; unzip opens/reads were unchecked | Locally rejects sizes above `INT_MAX - 1`, validates open/exact read, and cleans failure state; malicious ZIP corpus remains required |
 | Server-controlled native cgame index | Local audit; [#40](https://github.com/jm2/Quake-III-Arena/issues/40) | Gamestate `clientNum` reached native `cgs.clientinfo[]` indexing unchecked | Locally rejected outside `[0, MAX_CLIENTS)`; malformed-gamestate regression remains required |
 
@@ -46,8 +47,6 @@ Every accepted family still needs a focused malformed-input regression.
   [`469c9866`](https://github.com/ioquake/ioq3/commit/469c986640a8f237e4b1776c4e7cb1aa99d7f7f8)
   and
   [`83522282`](https://github.com/ioquake/ioq3/commit/83522282f1cc4919e2866104030364839fd482de).
-- [#37](https://github.com/jm2/Quake-III-Arena/issues/37): connection setup and
-  sequenced packets are not bound to negotiated challenges.
 - [#38](https://github.com/jm2/Quake-III-Arena/issues/38): connectionless
   `getinfo`, `getstatus`, `getchallenge`, and rcon limiting is incomplete and
   globally unfair.

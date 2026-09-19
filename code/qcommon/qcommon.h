@@ -203,15 +203,28 @@ typedef struct {
 	int			unsentFragmentStart;
 	int			unsentLength;
 	byte		unsentBuffer[MAX_MSGLEN];
+
+	// Protocol 69 binds every sequenced packet to the connection challenge.
+	// Protocol 68 leaves the original commercial header unchanged.
+	int			challenge;
+	qboolean	compat;
 } netchan_t;
 
 void Netchan_Init( int qport );
-void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport );
+void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport,
+	int challenge, qboolean compat );
 
 void Netchan_Transmit( netchan_t *chan, int length, const byte *data );
 void Netchan_TransmitNextFragment( netchan_t *chan );
 
 qboolean Netchan_Process( netchan_t *chan, msg_t *msg );
+unsigned Netchan_GenerateChecksum( int challenge, int sequence );
+qboolean Netchan_ParseInteger( const char *text, int *value );
+qboolean Netchan_ChallengeResponseValid( qboolean compat,
+	qboolean fromExpectedAddress, qboolean hasEcho,
+	int expectedChallenge, int echoedChallenge );
+qboolean Netchan_ConnectResponseValid( qboolean compat,
+	qboolean hasChallenge, int expectedChallenge, int responseChallenge );
 
 
 /*
@@ -222,7 +235,9 @@ PROTOCOL
 ==============================================================
 */
 
-#define	PROTOCOL_VERSION	68
+#define	PROTOCOL_LEGACY_VERSION	68
+#define	PROTOCOL_SECURE_VERSION	69
+#define	PROTOCOL_VERSION	PROTOCOL_LEGACY_VERSION
 // 1.31 - 67
 
 // maintain a list of compatible protocols for demo playing

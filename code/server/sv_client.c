@@ -25,6 +25,17 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 static void SV_CloseDownload( client_t *cl );
 
+void SV_SendChallengeResponse( const challenge_t *challenge ) {
+	if ( challenge->clientChallengePresent ) {
+		NET_OutOfBandPrint( NS_SERVER, challenge->adr,
+			"challengeResponse %i %i %i", challenge->challenge,
+			challenge->clientChallenge, PROTOCOL_SECURE_VERSION );
+	} else {
+		NET_OutOfBandPrint( NS_SERVER, challenge->adr,
+			"challengeResponse %i", challenge->challenge );
+	}
+}
+
 /*
 =================
 SV_GetChallenge
@@ -47,6 +58,8 @@ void SV_GetChallenge( netadr_t from ) {
 	int		i;
 	int		oldest;
 	int		oldestTime;
+	int		clientChallenge;
+	qboolean	clientChallengePresent;
 	challenge_t	*challenge;
 
 	// ignore if we are in single player
@@ -56,6 +69,14 @@ void SV_GetChallenge( netadr_t from ) {
 
 	oldest = 0;
 	oldestTime = 0x7fffffff;
+	clientChallengePresent = Cmd_Argc() > 1;
+	clientChallenge = 0;
+	if ( clientChallengePresent &&
+		!Netchan_ParseInteger( Cmd_Argv( 1 ), &clientChallenge ) ) {
+		Com_DPrintf( "Malformed getchallenge nonce from %s. Ignored.\n",
+			NET_AdrToString( from ) );
+		return;
+	}
 
 	// see if we already have a challenge for this ip
 	challenge = &svs.challenges[0];
@@ -73,7 +94,11 @@ void SV_GetChallenge( netadr_t from ) {
 		// this is the first time this client has asked for a challenge
 		challenge = &svs.challenges[oldest];
 
-		challenge->challenge = ( (rand() << 16) ^ rand() ) ^ svs.time;
+		challenge->challenge = (int)( ( (unsigned)rand() << 16 ) ^
+			(unsigned)rand() ^ (unsigned)svs.time );
+		if ( !challenge->challenge ) {
+			challenge->challenge = 1;
+		}
 		challenge->adr = from;
 		challenge->firstTime = svs.time;
 		challenge->time = svs.time;
@@ -81,10 +106,13 @@ void SV_GetChallenge( netadr_t from ) {
 		i = oldest;
 	}
 
+	challenge->clientChallengePresent = clientChallengePresent;
+	challenge->clientChallenge = clientChallengePresent ? clientChallenge : 0;
+
 	// if they are on a lan address, send the challengeResponse immediately
 	if ( Sys_IsLANAddress( from ) ) {
 		challenge->pingTime = svs.time;
-		NET_OutOfBandPrint( NS_SERVER, from, "challengeResponse %i", challenge->challenge );
+		SV_SendChallengeResponse( challenge );
 		return;
 	}
 
@@ -109,8 +137,7 @@ void SV_GetChallenge( netadr_t from ) {
 		Com_DPrintf( "authorize server timed out\n" );
 
 		challenge->pingTime = svs.time;
-		NET_OutOfBandPrint( NS_SERVER, challenge->adr, 
-			"challengeResponse %i", challenge->challenge );
+		SV_SendChallengeResponse( challenge );
 		return;
 	}
 
@@ -175,8 +202,7 @@ void SV_AuthorizeIpPacket( netadr_t from ) {
 	if ( !Q_stricmp( s, "demo" ) ) {
 		if ( Cvar_VariableValue( "fs_restrict" ) ) {
 			// a demo client connecting to a demo server
-			NET_OutOfBandPrint( NS_SERVER, svs.challenges[i].adr, 
-				"challengeResponse %i", svs.challenges[i].challenge );
+			SV_SendChallengeResponse( &svs.challenges[i] );
 			return;
 		}
 		// they are a demo client trying to connect to a real server
@@ -186,8 +212,7 @@ void SV_AuthorizeIpPacket( netadr_t from ) {
 		return;
 	}
 	if ( !Q_stricmp( s, "accept" ) ) {
-		NET_OutOfBandPrint( NS_SERVER, svs.challenges[i].adr, 
-			"challengeResponse %i", svs.challenges[i].challenge );
+		SV_SendChallengeResponse( &svs.challenges[i] );
 		return;
 	}
 	if ( !Q_stricmp( s, "unknown" ) ) {
@@ -234,6 +259,7 @@ void SV_DirectConnect( netadr_t from ) {
 	int			version;
 	int			qport;
 	int			challenge;
+	qboolean	compat;
 	char		*password;
 	int			startIndex;
 	char		*denied;
@@ -243,15 +269,28 @@ void SV_DirectConnect( netadr_t from ) {
 
 	Q_strncpyz( userinfo, Cmd_Argv(1), sizeof(userinfo) );
 
-	version = atoi( Info_ValueForKey( userinfo, "protocol" ) );
-	if ( version != PROTOCOL_VERSION ) {
+	if ( !Netchan_ParseInteger( Info_ValueForKey( userinfo, "protocol" ),
+		&version ) ) {
+		version = -1;
+	}
+	if ( version == PROTOCOL_LEGACY_VERSION ) {
+		compat = qtrue;
+	} else if ( version == PROTOCOL_SECURE_VERSION ) {
+		compat = qfalse;
+	} else {
 		NET_OutOfBandPrint( NS_SERVER, from, "print\nServer uses protocol version %i.\n", PROTOCOL_VERSION );
 		Com_DPrintf ("    rejected connect from version %i\n", version);
 		return;
 	}
 
-	challenge = atoi( Info_ValueForKey( userinfo, "challenge" ) );
-	qport = atoi( Info_ValueForKey( userinfo, "qport" ) );
+	if ( !Netchan_ParseInteger( Info_ValueForKey( userinfo, "challenge" ),
+			&challenge ) ||
+		!Netchan_ParseInteger( Info_ValueForKey( userinfo, "qport" ),
+			&qport ) || qport < 0 || qport > 0xffff ) {
+		NET_OutOfBandPrint( NS_SERVER, from,
+			"print\nMalformed connection challenge or qport.\n" );
+		return;
+	}
 
 	// quick reject
 	for (i=0,cl=svs.clients ; i < sv_maxclients->integer ; i++,cl++) {
@@ -409,7 +448,7 @@ gotnewcl:
 	newcl->challenge = challenge;
 
 	// save the address
-	Netchan_Setup (NS_SERVER, &newcl->netchan , from, qport);
+	Netchan_Setup( NS_SERVER, &newcl->netchan, from, qport, challenge, compat );
 	// init the netchan queue
 	newcl->netchan_end_queue = &newcl->netchan_start_queue;
 
@@ -428,7 +467,7 @@ gotnewcl:
 	SV_UserinfoChanged( newcl );
 
 	// send the connect packet to the client
-	NET_OutOfBandPrint( NS_SERVER, from, "connectResponse" );
+	NET_OutOfBandPrint( NS_SERVER, from, "connectResponse %i", challenge );
 
 	Com_DPrintf( "Going from CS_FREE to CS_CONNECTED for %s\n", newcl->name );
 
