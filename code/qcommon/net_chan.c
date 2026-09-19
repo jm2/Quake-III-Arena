@@ -686,6 +686,10 @@ void QDECL NET_OutOfBandData( netsrc_t sock, netadr_t adr, byte *format, int len
 	int			i;
 	msg_t		mbuf;
 
+	if ( !format || len < 0 || len > (int)sizeof(string) - 4 ) {
+		return;
+	}
+
 	// set the header
 	string[0] = 0xff;
 	string[1] = 0xff;
@@ -696,9 +700,14 @@ void QDECL NET_OutOfBandData( netsrc_t sock, netadr_t adr, byte *format, int len
 		string[i+4] = format[i];
 	}
 
+	Com_Memset( &mbuf, 0, sizeof(mbuf) );
 	mbuf.data = string;
+	mbuf.maxsize = sizeof(string);
 	mbuf.cursize = len+4;
 	Huff_Compress( &mbuf, 12);
+	if ( mbuf.overflowed ) {
+		return;
+	}
 	// send the datagram
 	NET_SendPacket( sock, mbuf.cursize, mbuf.data, adr );
 }
