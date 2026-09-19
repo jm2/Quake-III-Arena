@@ -279,9 +279,12 @@ typedef struct {
 	qboolean	handleSync;
 	int			baseOffset;
 	int			fileSize;
-	int			zipFilePos;
+	unsigned long	zipFilePos;
+	int			zipOffset;
 	qboolean	zipFile;
 	qboolean	streamed;
+	qboolean	streamSeekPending;
+	int			streamSeekResult;
 	char		name[MAX_ZPATH];
     
     // Antigravity: Buffered file support for Mac OS 9
@@ -393,7 +396,7 @@ static fileHandle_t	FS_HandleForFile(void) {
 	int		i;
 
 	for ( i = 1 ; i < MAX_FILE_HANDLES ; i++ ) {
-		if ( fsh[i].handleFiles.file.o == NULL ) {
+		if ( fsh[i].handleFiles.file.o == NULL && fsh[i].buffer == NULL ) {
 			return i;
 		}
 	}
@@ -402,14 +405,17 @@ static fileHandle_t	FS_HandleForFile(void) {
 }
 
 static FILE	*FS_FileForHandle( fileHandle_t f ) {
-	if ( f < 0 || f > MAX_FILE_HANDLES ) {
-		Com_Error( ERR_DROP, "FS_FileForHandle: out of reange" );
+	if ( f <= 0 || f >= MAX_FILE_HANDLES ) {
+		Com_Error( ERR_DROP, "FS_FileForHandle: out of range" );
+		return NULL;
 	}
 	if (fsh[f].zipFile == qtrue) {
 		Com_Error( ERR_DROP, "FS_FileForHandle: can't get FILE on zip file" );
+		return NULL;
 	}
 	if ( ! fsh[f].handleFiles.file.o ) {
 		Com_Error( ERR_DROP, "FS_FileForHandle: NULL" );
+		return NULL;
 	}
 	
 	return fsh[f].handleFiles.file.o;
@@ -418,6 +424,9 @@ static FILE	*FS_FileForHandle( fileHandle_t f ) {
 void	FS_ForceFlush( fileHandle_t f ) {
 	FILE *file;
 
+	if (f <= 0 || f >= MAX_FILE_HANDLES || fsh[f].buffer ||
+		fsh[f].zipFile || !fsh[f].handleFiles.file.o)
+		return;
 	file = FS_FileForHandle(f);
 	setvbuf( file, NULL, _IONBF, 0 );
 }
@@ -432,13 +441,16 @@ size of the file.
 ================
 */
 int FS_filelength( fileHandle_t f ) {
-    if (fsh[f].buffer) {
-        return fsh[f].bufferLen;
-    }
 	int		pos;
 	int		end;
 	FILE*	h;
 
+	if (f <= 0 || f >= MAX_FILE_HANDLES ||
+		(!fsh[f].buffer && !fsh[f].handleFiles.file.o))
+		return -1;
+    if (fsh[f].buffer) {
+        return fsh[f].bufferLen;
+    }
 	h = FS_FileForHandle(f);
 	pos = ftell (h);
 	fseek (h, 0, SEEK_END);
@@ -866,6 +878,9 @@ void FS_FCloseFile( fileHandle_t f ) {
 	if ( !fs_searchpaths ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
 	}
+	if (f <= 0 || f >= MAX_FILE_HANDLES ||
+		(!fsh[f].buffer && !fsh[f].handleFiles.file.o))
+		return;
 
 	if (fsh[f].streamed) {
 		Sys_EndStreamedFile(f);
@@ -1154,6 +1169,8 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 				// case and separator insensitive comparisons
 				if ( !FS_FilenameCompare( pakFile->name, filename ) ) {
 					// found it!
+					unzFile readZip = pak->handle;
+					qboolean ownZip = qfalse;
 
 					// mark the pak as having been referenced and mark specifics on cgame and ui
 					// shaders, txt, arena files  by themselves do not count as a reference as 
@@ -1193,8 +1210,19 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 					// Determine if we can buffer this file using the shared handle
 					// to avoid opening a new file handle (limit 40 on Mac OS 9).
 					
-					// 1. Setup shared handle to look at this file
-					if ( unzSetCurrentFileInfoPosition(pak->handle, pakFile->pos) != UNZ_OK ) {
+					// Keep an active shared reader's decoder and physical cursor intact.
+					if (uniqueFILE && ((unz_s *)readZip)->pfile_in_zip_read) {
+						readZip = unzReOpen(pak->pakFilename, pak->handle);
+						if (!readZip) {
+							Com_Printf(S_COLOR_YELLOW "WARNING: couldn't reopen PK3 entry %s\n", filename);
+							Com_Memset(&fsh[*file], 0, sizeof(fsh[*file]));
+							*file = 0;
+							return -1;
+						}
+						ownZip = qtrue;
+					}
+					if ( unzSetCurrentFileInfoPosition(readZip, pakFile->pos) != UNZ_OK ) {
+						if (ownZip) unzClose(readZip);
 						Com_Printf( S_COLOR_YELLOW "WARNING: invalid PK3 entry metadata for %s\n", filename );
 						Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
 						*file = 0;
@@ -1203,12 +1231,13 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 					
 					// 2. Peek at size
 					{
-						unz_s *sharedZ = (unz_s *)pak->handle;
+						unz_s *sharedZ = (unz_s *)readZip;
 						unsigned long unsignedSize = sharedZ->cur_file_info.uncompressed_size;
 						int size;
 						qboolean doBuffer = qfalse;
 
 						if ( unsignedSize > (unsigned long)(INT_MAX - 1) ) {
+							if (ownZip) unzClose(readZip);
 							Com_Printf( S_COLOR_YELLOW "WARNING: oversized PK3 entry rejected: %s\n", filename );
 							Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
 							*file = 0;
@@ -1225,13 +1254,13 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 						if (uniqueFILE && doBuffer) {
 							int readResult;
 
-							// OPTIMIZATION: Use shared handle, buffer, then forget handle.
-							// No unzReOpen needed!
-							fsh[*file].handleFiles.file.z = pak->handle;
+							// Buffer through the idle shared archive or our private clone.
+							fsh[*file].handleFiles.file.z = readZip;
 							fsh[*file].zipFile = qtrue;
 
 							// Open inside zip
-							if ( unzOpenCurrentFile( pak->handle ) != UNZ_OK ) {
+							if ( unzOpenCurrentFile( readZip ) != UNZ_OK ) {
+								if (ownZip) unzClose(readZip);
 								Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
 								*file = 0;
 								return -1;
@@ -1239,11 +1268,19 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 							
 							// Buffer
 							fsh[*file].buffer = Z_Malloc(size);
+							if (!fsh[*file].buffer) {
+								unzCloseCurrentFile(readZip);
+								if (ownZip) unzClose(readZip);
+								Com_Memset(&fsh[*file], 0, sizeof(fsh[*file]));
+								*file = 0;
+								return -1;
+							}
 							fsh[*file].bufferLen = size;
-							readResult = unzReadCurrentFile( pak->handle, fsh[*file].buffer, size );
+							readResult = unzReadCurrentFile( readZip, fsh[*file].buffer, size );
 							fsh[*file].bufferPos = 0;
 							
-							unzCloseCurrentFile( pak->handle );
+							unzCloseCurrentFile( readZip );
+							if (ownZip) unzClose(readZip);
 							if ( readResult != size ) {
 								Z_Free( fsh[*file].buffer );
 								Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
@@ -1261,32 +1298,18 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 
 					// Standard Path (Network streams or large files)
 					if ( uniqueFILE ) {
-						// open a new file on the pakfile
-						fsh[*file].handleFiles.file.z = unzReOpen (pak->pakFilename, pak->handle);
-						if (fsh[*file].handleFiles.file.z == NULL) {
-							Com_Error (ERR_FATAL, "Couldn't reopen %s", pak->pakFilename);
+						if (!ownZip) readZip = unzReOpen(pak->pakFilename, readZip);
+						if (!readZip) {
+							Com_Printf(S_COLOR_YELLOW "WARNING: couldn't reopen PK3 entry %s\n", filename);
+							Com_Memset(&fsh[*file], 0, sizeof(fsh[*file]));
+							*file = 0;
+							return -1;
 						}
-					} else {
-						fsh[*file].handleFiles.file.z = pak->handle;
 					}
+					fsh[*file].handleFiles.file.z = readZip;
 					Q_strncpyz( fsh[*file].name, filename, sizeof( fsh[*file].name ) );
 					fsh[*file].zipFile = qtrue;
 					zfi = (unz_s *)fsh[*file].handleFiles.file.z;
-					// in case the file was new
-					temp = zfi->file;
-					// set the file position in the zip file (also sets the current file info)
-					if ( unzSetCurrentFileInfoPosition(pak->handle, pakFile->pos) != UNZ_OK ) {
-						if ( uniqueFILE ) {
-							unzClose( fsh[*file].handleFiles.file.z );
-						}
-						Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
-						*file = 0;
-						return -1;
-					}
-					// copy the file info into the unzip structure
-					Com_Memcpy( zfi, pak->handle, sizeof(unz_s) );
-					// we copy this back into the structure
-					zfi->file = temp;
 					// open the file in the zip
 					if ( unzOpenCurrentFile( fsh[*file].handleFiles.file.z ) != UNZ_OK ) {
 						if ( uniqueFILE ) {
@@ -1297,6 +1320,8 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 						return -1;
 					}
 					fsh[*file].zipFilePos = pakFile->pos;
+					fsh[*file].fileSize = (int)zfi->cur_file_info.uncompressed_size;
+					fsh[*file].zipOffset = 0;
 
 					// Antigravity: Buffer check for non-optimized path (e.g. shared handle usage)
 					{
@@ -1410,6 +1435,46 @@ int FS_Read2( void *buffer, int len, fileHandle_t f ) {
 	}
 }
 
+/* Keep each logical handle positioned independently when a PK3 decoder is shared. */
+static int FS_ZipPosition( fileHandle_t f, int target ) {
+	/* Classic Mac OS PPC applications have too little stack for this buffer. */
+	static byte skip[65536];
+	unzFile zip = fsh[f].handleFiles.file.z;
+	unsigned long selected = 0;
+	long current;
+	qboolean haveSelection;
+
+	if ( target < 0 || target > fsh[f].fileSize )
+		return -1;
+
+	haveSelection = unzGetCurrentFileInfoPosition( zip, &selected ) == UNZ_OK;
+	if ( haveSelection && selected == fsh[f].zipFilePos )
+		current = unztell( zip );
+	else
+		current = -1;
+
+	if ( current < 0 || current > target ) {
+		if ( unzSetCurrentFileInfoPosition( zip, fsh[f].zipFilePos ) != UNZ_OK ||
+			unzOpenCurrentFile( zip ) != UNZ_OK ) {
+			if ( haveSelection )
+				(void)unzSetCurrentFileInfoPosition( zip, selected );
+			return -1;
+		}
+		current = 0;
+	}
+
+	while ( current < target ) {
+		int remaining = target - (int)current;
+		int chunk = remaining > (int)sizeof(skip) ? (int)sizeof(skip) : remaining;
+		int read = unzReadCurrentFile( zip, skip, chunk );
+
+		if ( read != chunk )
+			return -1;
+		current += read;
+	}
+	return 0;
+}
+
 int FS_Read( void *buffer, int len, fileHandle_t f ) {
 	int		block, remaining;
 	int		read;
@@ -1420,19 +1485,20 @@ int FS_Read( void *buffer, int len, fileHandle_t f ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
 	}
 
-	if ( !f ) {
+	if ( f <= 0 || f >= MAX_FILE_HANDLES || len <= 0 || !buffer ) {
 		return 0;
 	}
+	if (!fsh[f].buffer && !fsh[f].handleFiles.file.o)
+		return 0;
 
 	buf = (byte *)buffer;
-	fs_readCount += len;
+	if (fs_readCount > INT_MAX - len) fs_readCount = INT_MAX;
+	else fs_readCount += len;
 
     // Antigravity: Buffered read override
     if (fsh[f].buffer) {
-        int copyLen = len;
-        if (fsh[f].bufferPos + copyLen > fsh[f].bufferLen) {
-            copyLen = fsh[f].bufferLen - fsh[f].bufferPos;
-        }
+        int remainingBytes = fsh[f].bufferLen - fsh[f].bufferPos;
+        int copyLen = len < remainingBytes ? len : remainingBytes;
         if (copyLen > 0) {
             memcpy(buffer, fsh[f].buffer + fsh[f].bufferPos, copyLen);
             fsh[f].bufferPos += copyLen;
@@ -1465,7 +1531,12 @@ int FS_Read( void *buffer, int len, fileHandle_t f ) {
 		}
 		return len;
 	} else {
-		return unzReadCurrentFile(fsh[f].handleFiles.file.z, buffer, len);
+		if ( FS_ZipPosition( f, fsh[f].zipOffset ) != 0 )
+			return -1;
+		read = unzReadCurrentFile(fsh[f].handleFiles.file.z, buffer, len);
+		if ( read > 0 )
+			fsh[f].zipOffset += read;
+		return read;
 	}
 }
 
@@ -1487,7 +1558,10 @@ int FS_Write( const void *buffer, int len, fileHandle_t h ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
 	}
 
-	if ( !h ) {
+	if (h <= 0 || h >= MAX_FILE_HANDLES || len <= 0 || !buffer) {
+		return 0;
+	}
+	if (fsh[h].buffer || fsh[h].zipFile || !fsh[h].handleFiles.file.o) {
 		return 0;
 	}
 
@@ -1539,73 +1613,103 @@ FS_Seek
 
 =================
 */
+static int FS_RecordSeekResult( fileHandle_t f, int result ) {
+	if ( f > 0 && f < MAX_FILE_HANDLES && fsh[f].streamSeekPending )
+		fsh[f].streamSeekResult = result;
+	return result;
+}
+
 int FS_Seek( fileHandle_t f, long offset, int origin ) {
 	int		_origin;
-	// static, not stack: classic Mac OS PPC apps get a small default stack
-	// (tens of KB) and a 64 KB stack frame here silently overflows into the
-	// heap. The engine is single-threaded, so a static scratch is safe.
-	static char	foo[65536];
 
 	if ( !fs_searchpaths ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
-		return -1;
+		return FS_RecordSeekResult( f, -1 );
 	}
+	if (f <= 0 || f >= MAX_FILE_HANDLES ||
+		(!fsh[f].buffer && !fsh[f].handleFiles.file.o))
+		return FS_RecordSeekResult( f, -1 );
 
     // Antigravity: Buffered seek
     if (fsh[f].buffer) {
         int newPos = 0;
         switch( origin ) {
-        case FS_SEEK_SET: newPos = offset; break;
-        case FS_SEEK_CUR: newPos = fsh[f].bufferPos + offset; break;
-        case FS_SEEK_END: newPos = fsh[f].bufferLen + offset; break;
-        default: return -1;
-        }
-        if (newPos < 0) newPos = 0;
-        if (newPos > fsh[f].bufferLen) newPos = fsh[f].bufferLen;
-        fsh[f].bufferPos = newPos;
-        return 0;
-    }
+        case FS_SEEK_SET:
+            if (offset <= 0) newPos = 0;
+            else if (offset >= fsh[f].bufferLen) newPos = fsh[f].bufferLen;
+            else newPos = (int)offset;
+            break;
+        case FS_SEEK_CUR:
+            if (offset > fsh[f].bufferLen - fsh[f].bufferPos) newPos = fsh[f].bufferLen;
+            else if (offset < -fsh[f].bufferPos) newPos = 0;
+            else newPos = fsh[f].bufferPos + (int)offset;
+            break;
+        case FS_SEEK_END:
+            if (offset >= 0) newPos = fsh[f].bufferLen;
+            else if (offset < -fsh[f].bufferLen) newPos = 0;
+            else newPos = fsh[f].bufferLen + (int)offset;
+            break;
+		default: return FS_RecordSeekResult( f, -1 );
+		}
+		fsh[f].bufferPos = newPos;
+		return FS_RecordSeekResult( f, 0 );
+	}
 
 	if (fsh[f].streamed) {
+		if (offset > INT_MAX || offset < INT_MIN)
+			return -1;
+		fsh[f].streamSeekResult = -1;
+		fsh[f].streamSeekPending = qtrue;
 		fsh[f].streamed = qfalse;
-		Sys_StreamSeek( f, offset, origin );
+		Sys_StreamSeek( f, (int)offset, origin );
 		fsh[f].streamed = qtrue;
+		fsh[f].streamSeekPending = qfalse;
+		return fsh[f].streamSeekResult;
 	}
 
 	if (fsh[f].zipFile == qtrue) {
-		if (offset == 0 && origin == FS_SEEK_SET) {
-			// set the file position in the zip file (also sets the current file info)
-			unzSetCurrentFileInfoPosition(fsh[f].handleFiles.file.z, fsh[f].zipFilePos);
-			return unzOpenCurrentFile(fsh[f].handleFiles.file.z);
-		} else if (offset<65536) {
-			// set the file position in the zip file (also sets the current file info)
-			unzSetCurrentFileInfoPosition(fsh[f].handleFiles.file.z, fsh[f].zipFilePos);
-			unzOpenCurrentFile(fsh[f].handleFiles.file.z);
-			return FS_Read(foo, offset, f);
-		} else {
-			Com_Error( ERR_FATAL, "ZIP FILE FSEEK NOT YET IMPLEMENTED\n" );
-			return -1;
-		}
-	} else {
-		FILE *file;
-		file = FS_FileForHandle(f);
-		switch( origin ) {
+		int current = fsh[f].zipOffset;
+		int length = fsh[f].fileSize;
+		int target;
+
+		if (offset > INT_MAX || offset < INT_MIN ||
+			current < 0 || current > length)
+			return FS_RecordSeekResult( f, -1 );
+		switch (origin) {
+		case FS_SEEK_SET:
+			if (offset <= 0) target = 0;
+			else if (offset >= length) target = length;
+			else target = (int)offset;
+			break;
 		case FS_SEEK_CUR:
-			_origin = SEEK_CUR;
+			if (offset > length - current) target = length;
+			else if (offset < -current) target = 0;
+			else target = current + (int)offset;
 			break;
 		case FS_SEEK_END:
-			_origin = SEEK_END;
-			break;
-		case FS_SEEK_SET:
-			_origin = SEEK_SET;
+			if (offset >= 0) target = length;
+			else if (offset < -length) target = 0;
+			else target = length + (int)offset;
 			break;
 		default:
-			_origin = SEEK_CUR;
-			Com_Error( ERR_FATAL, "Bad origin in FS_Seek\n" );
-			break;
+			return FS_RecordSeekResult( f, -1 );
 		}
 
-		return fseek( file, offset, _origin );
+		if ( FS_ZipPosition( f, target ) != 0 )
+			return FS_RecordSeekResult( f, -1 );
+		fsh[f].zipOffset = target;
+		return FS_RecordSeekResult( f, (int)offset );
+	} else {
+		FILE *file = FS_FileForHandle(f);
+		switch( origin ) {
+		case FS_SEEK_CUR: _origin = SEEK_CUR; break;
+		case FS_SEEK_END: _origin = SEEK_END; break;
+		case FS_SEEK_SET: _origin = SEEK_SET; break;
+		default:
+			Com_Error( ERR_FATAL, "Bad origin in FS_Seek\n" );
+			return FS_RecordSeekResult( f, -1 );
+		}
+		return FS_RecordSeekResult( f, fseek( file, offset, _origin ) );
 	}
 }
 
@@ -1885,8 +1989,8 @@ of a zip file.
 */
 static pack_t *FS_LoadZipFile( char *zipfile, const char *basename )
 {
-	fileInPack_t	*buildBuffer;
-	pack_t			*pack;
+	fileInPack_t	*buildBuffer = NULL;
+	pack_t			*pack = NULL;
 	unzFile			uf;
 	int				err;
 	unz_global_info gi;
@@ -1895,30 +1999,41 @@ static pack_t *FS_LoadZipFile( char *zipfile, const char *basename )
 	int				i, len;
 	long			hash;
 	int				fs_numHeaderLongs;
-	int				*fs_headerLongs;
+	int				*fs_headerLongs = NULL;
 	char			*namePtr;
+	int				nameBytes;
 
 	fs_numHeaderLongs = 0;
 
 	uf = unzOpen(zipfile);
+	if (!uf)
+		return NULL;
 	err = unzGetGlobalInfo (uf,&gi);
 
 	if (err != UNZ_OK)
-		return NULL;
-
-	fs_packFiles += gi.number_entry;
+		goto invalid;
+	if (gi.number_entry > (unsigned long)(INT_MAX / sizeof(fileInPack_t)) ||
+		gi.number_entry > (unsigned long)(INT_MAX / sizeof(int)) ||
+		fs_packFiles < 0 || gi.number_entry > (unsigned long)(INT_MAX - fs_packFiles))
+		goto invalid;
 
 	len = 0;
-	unzGoToFirstFile(uf);
+	if (gi.number_entry && unzGoToFirstFile(uf) != UNZ_OK)
+		goto invalid;
 	for (i = 0; i < gi.number_entry; i++)
 	{
 		err = unzGetCurrentFileInfo(uf, &file_info, filename_inzip, sizeof(filename_inzip), NULL, 0, NULL, 0);
-		if (err != UNZ_OK) {
-			break;
-		}
-		len += strlen(filename_inzip) + 1;
-		unzGoToNextFile(uf);
+		if (err != UNZ_OK || file_info.size_filename >= sizeof(filename_inzip))
+			goto invalid;
+		nameBytes = (int)strlen(filename_inzip) + 1;
+		if (nameBytes != (int)file_info.size_filename + 1 || len > INT_MAX - nameBytes)
+			goto invalid;
+		len += nameBytes;
+		if (i + 1 < gi.number_entry && unzGoToNextFile(uf) != UNZ_OK)
+			goto invalid;
 	}
+	if (gi.number_entry > (unsigned long)((INT_MAX - len) / sizeof(fileInPack_t)))
+		goto invalid;
 
 	buildBuffer = Z_Malloc( (gi.number_entry * sizeof( fileInPack_t )) + len );
 	namePtr = ((char *) buildBuffer) + gi.number_entry * sizeof( fileInPack_t );
@@ -1949,14 +2064,17 @@ static pack_t *FS_LoadZipFile( char *zipfile, const char *basename )
 
 	pack->handle = uf;
 	pack->numfiles = gi.number_entry;
-	unzGoToFirstFile(uf);
+	if (gi.number_entry && unzGoToFirstFile(uf) != UNZ_OK)
+		goto invalid;
 
 	for (i = 0; i < gi.number_entry; i++)
 	{
 		err = unzGetCurrentFileInfo(uf, &file_info, filename_inzip, sizeof(filename_inzip), NULL, 0, NULL, 0);
-		if (err != UNZ_OK) {
-			break;
-		}
+		if (err != UNZ_OK || file_info.size_filename >= sizeof(filename_inzip))
+			goto invalid;
+		nameBytes = (int)strlen(filename_inzip) + 1;
+		if (nameBytes != (int)file_info.size_filename + 1 || nameBytes > len)
+			goto invalid;
 		if (file_info.uncompressed_size > 0) {
 			fs_headerLongs[fs_numHeaderLongs++] = LittleLong(file_info.crc);
 		}
@@ -1964,14 +2082,19 @@ static pack_t *FS_LoadZipFile( char *zipfile, const char *basename )
 		hash = FS_HashFileName(filename_inzip, pack->hashSize);
 		buildBuffer[i].name = namePtr;
 		strcpy( buildBuffer[i].name, filename_inzip );
-		namePtr += strlen(filename_inzip) + 1;
+		namePtr += nameBytes;
+		len -= nameBytes;
 		// store the file position in the zip
-		unzGetCurrentFileInfoPosition(uf, &buildBuffer[i].pos);
+		if (unzGetCurrentFileInfoPosition(uf, &buildBuffer[i].pos) != UNZ_OK)
+			goto invalid;
 		//
 		buildBuffer[i].next = pack->hashTable[hash];
 		pack->hashTable[hash] = &buildBuffer[i];
-		unzGoToNextFile(uf);
+		if (i + 1 < gi.number_entry && unzGoToNextFile(uf) != UNZ_OK)
+			goto invalid;
 	}
+	if (len)
+		goto invalid;
 
 	pack->checksum = Com_BlockChecksum( fs_headerLongs, 4 * fs_numHeaderLongs );
 	pack->pure_checksum = Com_BlockChecksumKey( fs_headerLongs, 4 * fs_numHeaderLongs, LittleLong(fs_checksumFeed) );
@@ -1981,7 +2104,15 @@ static pack_t *FS_LoadZipFile( char *zipfile, const char *basename )
 	Z_Free(fs_headerLongs);
 
 	pack->buildBuffer = buildBuffer;
+	fs_packFiles += (int)gi.number_entry;
 	return pack;
+
+invalid:
+	if (fs_headerLongs) Z_Free(fs_headerLongs);
+	if (buildBuffer) Z_Free(buildBuffer);
+	if (pack) Z_Free(pack);
+	unzClose(uf);
+	return NULL;
 }
 
 /*
@@ -3662,12 +3793,15 @@ int		FS_FOpenFileByMode( const char *qpath, fileHandle_t *f, fsMode_t mode ) {
 
 int		FS_FTell( fileHandle_t f ) {
 	int pos;
+	if (f <= 0 || f >= MAX_FILE_HANDLES ||
+		(!fsh[f].buffer && !fsh[f].handleFiles.file.o))
+		return -1;
     // Antigravity: Buffered tell
     if (fsh[f].buffer) {
         return fsh[f].bufferPos;
     }
 	if (fsh[f].zipFile == qtrue) {
-		pos = unztell(fsh[f].handleFiles.file.z);
+		pos = fsh[f].zipOffset;
 	} else {
 		pos = ftell(fsh[f].handleFiles.file.o);
 	}
@@ -3675,5 +3809,8 @@ int		FS_FTell( fileHandle_t f ) {
 }
 
 void	FS_Flush( fileHandle_t f ) {
+	if (f <= 0 || f >= MAX_FILE_HANDLES || fsh[f].buffer ||
+		fsh[f].zipFile || !fsh[f].handleFiles.file.o)
+		return;
 	fflush(fsh[f].handleFiles.file.o);
 }
