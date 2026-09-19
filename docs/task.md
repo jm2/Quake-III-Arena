@@ -69,6 +69,9 @@ QVMs while any P0 item is open.
       — **assurance gate**.
   - [x] First upstream/local status matrix and GitHub provenance comment added;
         the matrix is committed in `204fe36`, not an uncommitted draft.
+  - [x] Message/Huffman exact limits and the real out-of-band caller have
+        isolated GCC/Clang ASan/UBSan coverage while preserving the commercial
+        compressed stream; see [validation evidence](message-huffman-validation.md).
   - [ ] Complete the advisory inventory and add a malformed-input regression
         for every accepted security family.
 - [ ] [#35 — harden interpreted QVM validation and sandbox bounds](https://github.com/jm2/Quake-III-Arena/issues/35)
@@ -126,8 +129,50 @@ QVMs while any P0 item is open.
       — **high**, ZIP-controlled allocation/decompression corruption.
   - [x] Local size/cast, exact-read, open-result, cleanup, and short-suffix
         checks cross-build.
-  - [ ] Add malicious ZIP fixtures around caps, `INT_MAX`, `UINT32_MAX`, and
-        truncated streams.
+  - [x] Private embedded inflate callbacks match their declared types and
+        reject unrepresentable allocation products before engine imports;
+        actual native ZIP/read/free regressions have
+        [allocation evidence](unzip-allocation-validation.md).
+  - [x] Buffered PK3 owners retain their handle slots until close; actual
+        simultaneous reads, full table and physical release have
+        [handle evidence](fs-buffered-handle-validation.md).
+  - [x] ZIP mounts validate complete names, metadata, measured capacities and
+        shared counts before publication; malformed real archives and both-pass
+        physical cleanup have [mount evidence](fs-zip-mount-validation.md).
+  - [x] Unique ZIP targets retain independent decoder ownership and preserve
+        active shared metadata/cursors through refills and both close orders;
+        native buffered/streamed paths have
+        [stream evidence](fs-zip-reopen-validation.md).
+  - [x] Real complete ZIP payloads around the buffering cap, malicious signed/
+        unsigned size declarations, bad opens and truncated compressed streams
+        have [owner/retry evidence](fs-zip-entry-validation.md).
+  - [x] Actual read/seek paths bound requests, offsets and private accounting
+        before arithmetic or handle access; ordinary behavior and physical
+        teardown have [native evidence](fs-buffer-bounds-validation.md).
+  - [x] Remaining close/tell/length/write/flush paths validate live exclusive
+        handles and ordinary FILE ownership; payloads, errors and final-slot
+        release have [native evidence](fs-handle-api-validation.md).
+  - [x] Actual unsigned metadata readers require complete scalar I/O and
+        selected-entry setters propagate real decoder errors; hostile files,
+        prior owners and native retry have [evidence](unzip-metadata-validation.md).
+  - [x] Actual decoder initialization rejects every failed native import
+        before root publication and releases private owners; stored/deflated
+        success and retry have [evidence](unzip-open-validation.md).
+  - [x] Archive/clone/buffer factories validate complete inputs/imports and
+        release failed candidate streams/decoders while preserving prior
+        owners and retries; see [factory evidence](fs-zip-factory-validation.md).
+  - [x] Active decoder replacement stages complete private candidates before
+        releasing prior owners and restores failed-header/import FILE cursors;
+        [native continuation/retry checks](unzip-replacement-validation.md) pass.
+  - [x] Optional local metadata reads honor caller lengths and archive prefixes;
+        global comment NULL requests reject before I/O;
+        [real metadata checks](unzip-optional-metadata-validation.md) pass.
+  - [x] Shared ZIP seek supports independent logical cursors, complete
+        SET/CUR/END semantics, checked chunked skips and failure-propagating
+        single platform delegation;
+        [native compatibility checks](fs-zip-seek-validation.md) pass.
+  - [ ] Complete remaining metadata/open/read/handle paths and retail PK3
+        acceptance before closing the issue.
 - [ ] [#41 — bound RoQ chunks, dimensions, audio output, and cursors](https://github.com/jm2/Quake-III-Arena/issues/41)
       — **high**, deterministic cinematic buffer corruption.
   - [x] Bound disk/packet payloads, exact reads, mono/stereo output and early
@@ -699,9 +744,11 @@ QVMs while any P0 item is open.
 - [x] Base and Team Arena PPC cross-build and strong PEF checks pass.
 - [x] Deterministic MacBinary fixture is recognized with valid dates, CRC,
       type, creator, name, and fork length.
-- [ ] Host ASan/UBSan malformed-input corpora for messages/Huffman, downloads,
-      ZIP, QVM, RoQ, images/JPEG, models, BSP, shader/skin/font, bot/AAS, UI
-      allocation, and format strings.
+- [x] Host ASan/UBSan malformed-input corpus for message/Huffman and the
+      out-of-band caller, including commercial stream goldens.
+- [ ] Host ASan/UBSan malformed-input corpora for downloads, ZIP, QVM, RoQ,
+      images/JPEG, models, BSP, shader/skin/font, bot/AAS, UI allocation, and
+      format strings that are not already covered by focused runners.
 - [ ] PowerShell setup/build/package on native Windows.
 - [ ] Offline package from an explicit legal asset root.
 - [ ] Mounted package resource/Finder validation.
@@ -710,6 +757,32 @@ QVMs while any P0 item is open.
       fatal exit, and normal quit target tests.
 
 ## Exact continuation point
+
+Current source is master `31a6554caa3c941d6657d664849511e27233089d`, through
+merged #172, with the independent host-timeout step #180. The [continuation evidence](review-continuation-2026-09-18.md)
+records the refreshed 52-issue inventory, pending stack and its current gates.
+All 52 issue-level entries remain open; nested implementation checks cover only
+the stated work. The milestones below retain their dated source evidence.
+
+- [x] AAS portal/travel/routing/workspace/cache/init steps #126–#130/#132 and
+      native variable/parser/character steps #131/#133–#148 merged
+      after exact-head CI, completed clean Codex and resolved bot findings.
+- [x] Source steps #149–#170 merged after four green exact-head CI checks,
+      completed clean Codex and resolved findings. #158's later CodeRabbit
+      documentation finding was fixed before renewed review and fresh CI.
+- [x] Host-timeout step #180 merged after all four CI checks, completed clean
+      Codex and resolved findings; every required check remains mandatory.
+- [x] Projectile model descriptor #172 merged after the same four-job
+      exact-head CI/clean Codex/resolved-finding gate.
+- [ ] Merge eligible independent steps and the pending dependency chain,
+      rechecking four successful Portable CI jobs, completed clean current-head
+      Codex and all resolved CodeRabbit findings immediately before each merge.
+- [ ] Require all fresh CI checks on the workflow-only timeout revisions;
+      product source/PPC evidence is unchanged and renewed Codex is clean.
+- [ ] Merge the validated weapon/chat/dictionary/cache/state steps and
+      filesystem/ZIP steps in dependency order. Continue remaining nullable
+      consumers, full library/world transactions and aggregate resource/work
+      limits; keep broad acceptance and deferred live testing open.
 
 - [x] Reconcile all 52 open issues against `204fe36`, existing test coverage,
       and July evidence; retain their current priorities and closure gates.
@@ -750,8 +823,8 @@ QVMs while any P0 item is open.
       CodeRabbit findings resolved.
 - [x] Node/reachability #124–#125 merged at `86c1667` after exact-head
       CI, clean completed Codex and resolved review findings.
-- [ ] Gate portal/travel-cost/workspace steps and finish #47 runtime query, memory/
-      work budget and late-load transaction work.
+- [ ] Finish #47 runtime query, memory/work budgets and late-load
+      transactions after the merged portal/travel/workspace prerequisites.
 - [ ] Finish #45 renderer aggregate capacity and full transactional
       publication; retain remaining query/candidate costs and deferred target
       acceptance. Collision aggregate and derived geometry/facet checks are
@@ -765,8 +838,8 @@ QVMs while any P0 item is open.
 - [x] Remove only the review-generated `__pycache__/`; preserve `q3-logs/`.
 - [ ] P0 implementation order: #35, #41, #42, #43, #44, #45, #46, #47,
       #48, then the compatibility-sensitive #37.
-- [ ] P0 validation order for local candidates: #36, message/Huffman exact
-      bounds, downloads, and known format-string fixes.
+- [ ] P0 validation order for local candidates: #36, downloads, and known
+      format-string fixes. Message/Huffman exact bounds are complete.
 - [ ] P1 target/runtime order: #11 after #48; #15, #16, #17, #5, #20, #19.
       Re-enable #12 after #47/#48, #13 after #35/#39, and #14 after #41.
       Validate fullscreen/gamma behavior after #15/#16.
