@@ -1317,6 +1317,7 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 						return -1;
 					}
 					fsh[*file].zipFilePos = pakFile->pos;
+					fsh[*file].fileSize = (int)zfi->cur_file_info.uncompressed_size;
 
 					// Antigravity: Buffer check for non-optimized path (e.g. shared handle usage)
 					{
@@ -1604,44 +1605,67 @@ int FS_Seek( fileHandle_t f, long offset, int origin ) {
     }
 
 	if (fsh[f].streamed) {
+		if (offset > INT_MAX || offset < INT_MIN)
+			return -1;
 		fsh[f].streamed = qfalse;
-		Sys_StreamSeek( f, offset, origin );
+		Sys_StreamSeek( f, (int)offset, origin );
 		fsh[f].streamed = qtrue;
+		return 0;
 	}
 
 	if (fsh[f].zipFile == qtrue) {
-		if (offset == 0 && origin == FS_SEEK_SET) {
-			// set the file position in the zip file (also sets the current file info)
-			unzSetCurrentFileInfoPosition(fsh[f].handleFiles.file.z, fsh[f].zipFilePos);
-			return unzOpenCurrentFile(fsh[f].handleFiles.file.z);
-		} else if (offset<65536) {
-			// set the file position in the zip file (also sets the current file info)
-			unzSetCurrentFileInfoPosition(fsh[f].handleFiles.file.z, fsh[f].zipFilePos);
-			unzOpenCurrentFile(fsh[f].handleFiles.file.z);
-			return FS_Read(foo, offset, f);
-		} else {
-			Com_Error( ERR_FATAL, "ZIP FILE FSEEK NOT YET IMPLEMENTED\n" );
+		int current = unztell(fsh[f].handleFiles.file.z);
+		int length = fsh[f].fileSize;
+		int target;
+		int remaining;
+
+		if (current < 0 || current > length)
 			return -1;
-		}
-	} else {
-		FILE *file;
-		file = FS_FileForHandle(f);
-		switch( origin ) {
+		switch (origin) {
+		case FS_SEEK_SET:
+			if (offset <= 0) target = 0;
+			else if (offset >= length) target = length;
+			else target = (int)offset;
+			break;
 		case FS_SEEK_CUR:
-			_origin = SEEK_CUR;
+			if (offset > length - current) target = length;
+			else if (offset < -current) target = 0;
+			else target = current + (int)offset;
 			break;
 		case FS_SEEK_END:
-			_origin = SEEK_END;
-			break;
-		case FS_SEEK_SET:
-			_origin = SEEK_SET;
+			if (offset >= 0) target = length;
+			else if (offset < -length) target = 0;
+			else target = length + (int)offset;
 			break;
 		default:
-			_origin = SEEK_CUR;
-			Com_Error( ERR_FATAL, "Bad origin in FS_Seek\n" );
-			break;
+			return -1;
 		}
 
+		if (target < current) {
+			if (unzSetCurrentFileInfoPosition(fsh[f].handleFiles.file.z,
+					fsh[f].zipFilePos) != UNZ_OK ||
+				unzOpenCurrentFile(fsh[f].handleFiles.file.z) != UNZ_OK)
+				return -1;
+			current = 0;
+		}
+		remaining = target - current;
+		while (remaining > 0) {
+			int chunk = remaining > (int)sizeof(foo) ? (int)sizeof(foo) : remaining;
+			if (FS_Read(foo, chunk, f) != chunk)
+				return -1;
+			remaining -= chunk;
+		}
+		return (int)offset;
+	} else {
+		FILE *file = FS_FileForHandle(f);
+		switch( origin ) {
+		case FS_SEEK_CUR: _origin = SEEK_CUR; break;
+		case FS_SEEK_END: _origin = SEEK_END; break;
+		case FS_SEEK_SET: _origin = SEEK_SET; break;
+		default:
+			Com_Error( ERR_FATAL, "Bad origin in FS_Seek\n" );
+			return -1;
+		}
 		return fseek( file, offset, _origin );
 	}
 }

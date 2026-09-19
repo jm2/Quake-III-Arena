@@ -265,6 +265,9 @@ implementation or check, without implying issue completion.
   - [x] Optional local metadata reads honor caller lengths and archive prefixes;
         global comment NULL requests reject before I/O;
         [real metadata checks](unzip-optional-metadata-validation.md) pass.
+  - [x] Shared ZIP seek supports complete SET/CUR/END semantics, checked chunked
+        skips and single platform delegation;
+        [native compatibility checks](fs-zip-seek-validation.md) pass.
   - [ ] Complete remaining handle/read/metadata and retail acceptance paths.
 - [ ] [#37 — connection/netchan lacks challenge binding](https://github.com/jm2/Quake-III-Arena/issues/37)
   - [x] User selected commercial 1.32c compatibility in the style of
