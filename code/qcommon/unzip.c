@@ -1040,8 +1040,8 @@ typedef unsigned long  ulg;
 
 
 typedef uLong (*check_func) OF((uLong check, const Byte *buf, uInt len));
-static voidp zcalloc OF((voidp opaque, unsigned items, unsigned size));
-static void   zcfree  OF((voidp opaque, voidp ptr));
+static void *zcalloc OF((void *opaque, unsigned items, unsigned size));
+static void   zcfree  OF((void *opaque, void *ptr));
 
 #define ZALLOC(strm, items, size) \
            (*((strm)->zalloc))((strm)->opaque, (items), (size))
@@ -1975,7 +1975,7 @@ extern int unzReadCurrentFile  (unzFile file, void *buf, unsigned len)
 		return UNZ_PARAMERROR;
 
 
-	if ((pfile_in_zip_read_info->read_buffer == NULL))
+	if (pfile_in_zip_read_info->read_buffer == NULL)
 		return UNZ_END_OF_LIST_OF_FILE;
 	if (len==0)
 		return 0;
@@ -4023,10 +4023,10 @@ int inflateInit2_(z_streamp z, int w, const char *version, int stream_size)
   z->msg = Z_NULL;
   if (z->zalloc == Z_NULL)
   {
-    z->zalloc = (void *(*)(void *, unsigned, unsigned))zcalloc;
+    z->zalloc = zcalloc;
     z->opaque = (voidp)0;
   }
-  if (z->zfree == Z_NULL) z->zfree = (void (*)(void *, void *))zcfree;
+  if (z->zfree == Z_NULL) z->zfree = zcfree;
   if ((z->state = (struct internal_state *)
        ZALLOC(z,1,sizeof(struct internal_state))) == Z_NULL)
     return Z_MEM_ERROR;
@@ -4284,13 +4284,14 @@ int inflateSyncPoint(z_streamp z)
 }
 #endif
 
-voidp zcalloc (voidp opaque, unsigned items, unsigned size)
+void *zcalloc (void *opaque, unsigned items, unsigned size)
 {
     if (opaque) items += size - size; /* make compiler happy */
-    return (voidp)Z_Malloc(items*size);
+    if (size && items > (unsigned)INT_MAX / size) return NULL;
+    return Z_Malloc((int)(items * size));
 }
 
-void  zcfree (voidp opaque, voidp ptr)
+void  zcfree (void *opaque, void *ptr)
 {
     Z_Free(ptr);
     if (opaque) return; /* make compiler happy */

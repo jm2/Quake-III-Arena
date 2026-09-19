@@ -238,6 +238,8 @@ implementation or check, without implying issue completion.
   - [x] Local code rejects unrepresentable sizes before casts, checks unzip
         opens/reads, rejects short reads, and fixes short-name suffix checks.
   - [x] Base and Team Arena PPC cross-builds pass.
+  - [x] Embedded inflate callback types and allocation products have actual
+        ZIP/read/physical-release [regressions](unzip-allocation-validation.md).
   - [ ] Add malicious ZIP fixtures and prove every handle/buffer cleanup path.
 - [ ] [#37 — connection/netchan lacks challenge binding](https://github.com/jm2/Quake-III-Arena/issues/37)
   - [x] User selected commercial 1.32c compatibility in the style of

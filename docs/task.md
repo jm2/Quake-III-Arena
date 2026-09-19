@@ -126,6 +126,10 @@ QVMs while any P0 item is open.
       — **high**, ZIP-controlled allocation/decompression corruption.
   - [x] Local size/cast, exact-read, open-result, cleanup, and short-suffix
         checks cross-build.
+  - [x] Private embedded inflate callbacks match their declared types and
+        reject unrepresentable allocation products before engine imports;
+        actual native ZIP/read/free regressions have
+        [allocation evidence](unzip-allocation-validation.md).
   - [ ] Add malicious ZIP fixtures around caps, `INT_MAX`, `UINT32_MAX`, and
         truncated streams.
 - [ ] [#41 — bound RoQ chunks, dimensions, audio output, and cursors](https://github.com/jm2/Quake-III-Arena/issues/41)
