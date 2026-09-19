@@ -664,6 +664,10 @@ implementation or check, without implying issue completion.
         space through one private append helper; excess combined inputs retain
         pending state and line timing while exact/eight-slot expansion stays;
         see [variable evidence](bot-chat-variable-validation.md).
+  - [x] Encoded chat checks exclusive indexes, complete spans and every
+        input/output append, then publishes complete staged construction/timing;
+        native flags, selection/fallback order and ten-pass cycle behavior stay;
+        see [expansion evidence](bot-chat-expansion-validation.md).
   - [ ] Finish expression work limits, remaining character/source allocation
         consumers, and aggregate parser work/recursion limits.
 - [ ] [#49 — Team Arena UI allocation/reload safety](https://github.com/jm2/Quake-III-Arena/issues/49)
