@@ -1154,6 +1154,8 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 				// case and separator insensitive comparisons
 				if ( !FS_FilenameCompare( pakFile->name, filename ) ) {
 					// found it!
+					unzFile readZip = pak->handle;
+					qboolean ownZip = qfalse;
 
 					// mark the pak as having been referenced and mark specifics on cgame and ui
 					// shaders, txt, arena files  by themselves do not count as a reference as 
@@ -1193,8 +1195,19 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 					// Determine if we can buffer this file using the shared handle
 					// to avoid opening a new file handle (limit 40 on Mac OS 9).
 					
-					// 1. Setup shared handle to look at this file
-					if ( unzSetCurrentFileInfoPosition(pak->handle, pakFile->pos) != UNZ_OK ) {
+					// Keep an active shared reader's decoder and physical cursor intact.
+					if (uniqueFILE && ((unz_s *)readZip)->pfile_in_zip_read) {
+						readZip = unzReOpen(pak->pakFilename, pak->handle);
+						if (!readZip) {
+							Com_Printf(S_COLOR_YELLOW "WARNING: couldn't reopen PK3 entry %s\n", filename);
+							Com_Memset(&fsh[*file], 0, sizeof(fsh[*file]));
+							*file = 0;
+							return -1;
+						}
+						ownZip = qtrue;
+					}
+					if ( unzSetCurrentFileInfoPosition(readZip, pakFile->pos) != UNZ_OK ) {
+						if (ownZip) unzClose(readZip);
 						Com_Printf( S_COLOR_YELLOW "WARNING: invalid PK3 entry metadata for %s\n", filename );
 						Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
 						*file = 0;
@@ -1203,12 +1216,13 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 					
 					// 2. Peek at size
 					{
-						unz_s *sharedZ = (unz_s *)pak->handle;
+						unz_s *sharedZ = (unz_s *)readZip;
 						unsigned long unsignedSize = sharedZ->cur_file_info.uncompressed_size;
 						int size;
 						qboolean doBuffer = qfalse;
 
 						if ( unsignedSize > (unsigned long)(INT_MAX - 1) ) {
+							if (ownZip) unzClose(readZip);
 							Com_Printf( S_COLOR_YELLOW "WARNING: oversized PK3 entry rejected: %s\n", filename );
 							Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
 							*file = 0;
@@ -1225,13 +1239,13 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 						if (uniqueFILE && doBuffer) {
 							int readResult;
 
-							// OPTIMIZATION: Use shared handle, buffer, then forget handle.
-							// No unzReOpen needed!
-							fsh[*file].handleFiles.file.z = pak->handle;
+							// Buffer through the idle shared archive or our private clone.
+							fsh[*file].handleFiles.file.z = readZip;
 							fsh[*file].zipFile = qtrue;
 
 							// Open inside zip
-							if ( unzOpenCurrentFile( pak->handle ) != UNZ_OK ) {
+							if ( unzOpenCurrentFile( readZip ) != UNZ_OK ) {
+								if (ownZip) unzClose(readZip);
 								Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
 								*file = 0;
 								return -1;
@@ -1240,10 +1254,11 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 							// Buffer
 							fsh[*file].buffer = Z_Malloc(size);
 							fsh[*file].bufferLen = size;
-							readResult = unzReadCurrentFile( pak->handle, fsh[*file].buffer, size );
+							readResult = unzReadCurrentFile( readZip, fsh[*file].buffer, size );
 							fsh[*file].bufferPos = 0;
 							
-							unzCloseCurrentFile( pak->handle );
+							unzCloseCurrentFile( readZip );
+							if (ownZip) unzClose(readZip);
 							if ( readResult != size ) {
 								Z_Free( fsh[*file].buffer );
 								Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
@@ -1261,32 +1276,18 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 
 					// Standard Path (Network streams or large files)
 					if ( uniqueFILE ) {
-						// open a new file on the pakfile
-						fsh[*file].handleFiles.file.z = unzReOpen (pak->pakFilename, pak->handle);
-						if (fsh[*file].handleFiles.file.z == NULL) {
-							Com_Error (ERR_FATAL, "Couldn't reopen %s", pak->pakFilename);
+						if (!ownZip) readZip = unzReOpen(pak->pakFilename, readZip);
+						if (!readZip) {
+							Com_Printf(S_COLOR_YELLOW "WARNING: couldn't reopen PK3 entry %s\n", filename);
+							Com_Memset(&fsh[*file], 0, sizeof(fsh[*file]));
+							*file = 0;
+							return -1;
 						}
-					} else {
-						fsh[*file].handleFiles.file.z = pak->handle;
 					}
+					fsh[*file].handleFiles.file.z = readZip;
 					Q_strncpyz( fsh[*file].name, filename, sizeof( fsh[*file].name ) );
 					fsh[*file].zipFile = qtrue;
 					zfi = (unz_s *)fsh[*file].handleFiles.file.z;
-					// in case the file was new
-					temp = zfi->file;
-					// set the file position in the zip file (also sets the current file info)
-					if ( unzSetCurrentFileInfoPosition(pak->handle, pakFile->pos) != UNZ_OK ) {
-						if ( uniqueFILE ) {
-							unzClose( fsh[*file].handleFiles.file.z );
-						}
-						Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
-						*file = 0;
-						return -1;
-					}
-					// copy the file info into the unzip structure
-					Com_Memcpy( zfi, pak->handle, sizeof(unz_s) );
-					// we copy this back into the structure
-					zfi->file = temp;
 					// open the file in the zip
 					if ( unzOpenCurrentFile( fsh[*file].handleFiles.file.z ) != UNZ_OK ) {
 						if ( uniqueFILE ) {

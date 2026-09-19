@@ -247,6 +247,9 @@ implementation or check, without implying issue completion.
         slots with [physical-release checks](fs-buffered-handle-validation.md).
   - [x] Complete ZIP mount names/metadata/counts and both-pass real-source
         failure cleanup have [native regressions](fs-zip-mount-validation.md).
+  - [x] Unique targets preserve active shared decoder owners, metadata and
+        physical cursors across buffered/streamed reads and refills with
+        [stream checks](fs-zip-reopen-validation.md).
   - [ ] Add malicious ZIP fixtures and prove every handle/buffer cleanup path.
 - [ ] [#37 — connection/netchan lacks challenge binding](https://github.com/jm2/Quake-III-Arena/issues/37)
   - [x] User selected commercial 1.32c compatibility in the style of

@@ -19,6 +19,9 @@ static searchpath_t search;
 #ifdef Q3_ZIP_ALLOCATION_HOOK
 static void FixtureZoneHook(void *owner, int size);
 #endif
+#ifdef Q3_ZIP_FREE_HOOK
+static void FixtureFreeHook(void *owner);
+#endif
 static void Check(int condition, const char *message) {
     if (!condition) {
         fprintf(stderr,"ZIP regression failed: %s\n", message);
@@ -61,6 +64,9 @@ void *Z_Malloc(int size) {
 void Z_Free(void *p) {
     int i;
     for(i=0;i<Q3_ZIP_ZONE_CAPACITY;i++)if(zone[i]==p){
+#ifdef Q3_ZIP_FREE_HOOK
+        FixtureFreeHook(p);
+#endif
         free(p);
         zone[i]=NULL;
         zoneLive--;
