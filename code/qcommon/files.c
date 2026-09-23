@@ -184,8 +184,8 @@ Read / write config to floppy option.
 
 Different version coexistance?
 
-When building a pak file, make sure a q3config.cfg isn't present in it,
-or configs will never get loaded from disk!
+q3config.cfg and autoexec.cfg are never loaded from a pak file, so a pak
+(downloaded or not) cannot shadow the configs on disk.
 
   todo:
 
@@ -580,12 +580,48 @@ static void FS_CopyFile( char *fromOSPath, char *toOSPath ) {
 }
 
 /*
+===================
+FS_CheckFilenameIsMutable
+
+Return qtrue unless the name ends in a native library/executable, .qvm
+or .pk3 extension.  Those files are loaded as code or searched ahead of
+loose files, so VM- and command-reachable writes, renames and removals
+must never create, replace or delete them (CVE-2017-6903).
+===================
+*/
+static qboolean FS_CheckFilenameIsMutable( const char *filename, const char *function ) {
+	const char *ext;
+
+	// dangerous extensions
+	ext = strrchr( filename, '.' );
+	if ( !ext ) {
+		return qtrue;
+	}
+
+	if ( !Q_stricmp( ext, ".dll" ) ||
+		 !Q_stricmp( ext, ".exe" ) ||
+		 !Q_stricmp( ext, ".so" ) ||
+		 !Q_stricmp( ext, ".dylib" ) ||
+		 !Q_stricmp( ext, ".app" ) || 
+		 !Q_stricmp( ext, ".sh" ) ||
+		 !Q_stricmp( ext, ".qvm" ) ||
+		 !Q_stricmp( ext, ".pk3" ) ) {
+		Com_Printf( "WARNING: %s: Not allowed to manipulate %s due to %s extension\n", function, filename, ext );
+		return qfalse;
+	}
+	return qtrue;
+}
+
+/*
 ===========
 FS_Remove
 
 ===========
 */
 static void FS_Remove( const char *osPath ) {
+	if ( !FS_CheckFilenameIsMutable( osPath, "FS_Remove" ) ) {
+		return;
+	}
 	remove( osPath );
 }
 
@@ -646,30 +682,13 @@ Return qtrue if the filename is deemed safe for creation
 ===================
 */
 static qboolean FS_CheckFilenameIsNotExecutable( const char *filename, const char *function ) {
-	const char *ext;
-	
 	// absolute paths check
 	if ( *filename == '/' || *filename == '\\' ) {
 		Com_Printf( "WARNING: %s: Not allowing absolute path: %s\n", function, filename );
 		return qfalse;
 	}
 
-	// dangerous extensions
-	ext = strrchr( filename, '.' );
-	if ( !ext ) {
-		return qtrue;
-	}
-
-	if ( !Q_stricmp( ext, ".dll" ) ||
-		 !Q_stricmp( ext, ".exe" ) ||
-		 !Q_stricmp( ext, ".so" ) ||
-		 !Q_stricmp( ext, ".dylib" ) ||
-		 !Q_stricmp( ext, ".app" ) || 
-		 !Q_stricmp( ext, ".sh" ) ) {
-		Com_Printf( "WARNING: %s: Not allowing write to unsafe file %s\n", function, filename );
-		return qfalse;
-	}
-	return qtrue;
+	return FS_CheckFilenameIsMutable( filename, function );
 }
 
 /*
@@ -804,13 +823,20 @@ int FS_SV_FOpenFileRead( const char *filename, fileHandle_t *fp ) {
 ===========
 FS_SV_Rename
 
+Only the client's download finalisation (.tmp -> .pk3) may pass
+safe == qfalse; every other caller must pass qtrue
 ===========
 */
-void FS_SV_Rename( const char *from, const char *to ) {
+void FS_SV_Rename( const char *from, const char *to, qboolean safe ) {
 	char			*from_ospath, *to_ospath;
 
 	if ( !fs_searchpaths ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
+	}
+
+	if ( safe && ( !FS_CheckFilenameIsMutable( from, "FS_SV_Rename" ) ||
+		!FS_CheckFilenameIsMutable( to, "FS_SV_Rename" ) ) ) {
+		return;
 	}
 
 	// don't let sound stutter
@@ -845,6 +871,11 @@ void FS_Rename( const char *from, const char *to ) {
 
 	if ( !fs_searchpaths ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
+	}
+
+	if ( !FS_CheckFilenameIsMutable( from, "FS_Rename" ) ||
+		!FS_CheckFilenameIsMutable( to, "FS_Rename" ) ) {
+		return;
 	}
 
 	// don't let sound stutter
@@ -923,6 +954,10 @@ fileHandle_t FS_FOpenFileWrite( const char *filename ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
 	}
 
+	if ( !FS_CheckFilenameIsMutable( filename, "FS_FOpenFileWrite" ) ) {
+		return 0;
+	}
+
 	f = FS_HandleForFile();
 	fsh[f].zipFile = qfalse;
 
@@ -962,6 +997,10 @@ fileHandle_t FS_FOpenFileAppend( const char *filename ) {
 
 	if ( !fs_searchpaths ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
+	}
+
+	if ( !FS_CheckFilenameIsMutable( filename, "FS_FOpenFileAppend" ) ) {
+		return 0;
 	}
 
 	f = FS_HandleForFile();
@@ -1065,6 +1104,22 @@ static qboolean FS_HasExtension( const char *filename, const char *extension ) {
 	return Q_stricmp( filename + filenameLen - extensionLen, extension ) == 0;
 }
 
+/*
+===========
+FS_IsLocalConfig
+
+q3config.cfg and autoexec.cfg hold the user's own settings.  They are
+only ever read from a directory, never from a (possibly downloaded) pk3
+that would otherwise shadow them at every start (CVE-2017-6903).
+===========
+*/
+static qboolean FS_IsLocalConfig( const char *filename ) {
+	if ( filename[0] == '/' || filename[0] == '\\' ) {
+		filename++;
+	}
+	return !Q_stricmp( filename, "q3config.cfg" ) || !Q_stricmp( filename, "autoexec.cfg" );
+}
+
 int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueFILE ) {
 	searchpath_t	*search;
 	char			*netpath;
@@ -1076,6 +1131,7 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 	FILE			*temp;
 	int				l;
 	char demoExt[16];
+	qboolean		isLocalConfig;
 
 	hash = 0;
 
@@ -1083,9 +1139,19 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
 	}
 
+	if ( !filename ) {
+		Com_Error( ERR_FATAL, "FS_FOpenFileRead: NULL 'filename' parameter passed\n" );
+	}
+
+	isLocalConfig = FS_IsLocalConfig( filename );
+
 	if ( file == NULL ) {
 		// just wants to see if file is there
 		for ( search = fs_searchpaths ; search ; search = search->next ) {
+			// autoexec.cfg and q3config.cfg can only be loaded outside of pk3 files
+			if ( isLocalConfig && search->pack ) {
+				continue;
+			}
 			//
 			if ( search->pack ) {
 				hash = FS_HashFileName(filename, search->pack->hashSize);
@@ -1118,10 +1184,6 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 		return qfalse;
 	}
 
-	if ( !filename ) {
-		Com_Error( ERR_FATAL, "FS_FOpenFileRead: NULL 'filename' parameter passed\n" );
-	}
-
 	Com_sprintf (demoExt, sizeof(demoExt), ".dm_%d",PROTOCOL_VERSION );
 	// qpaths are not supposed to have a leading slash
 	if ( filename[0] == '/' || filename[0] == '\\' ) {
@@ -1151,6 +1213,10 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 	fsh[*file].handleFiles.unique = uniqueFILE;
 
 	for ( search = fs_searchpaths ; search ; search = search->next ) {
+		// autoexec.cfg and q3config.cfg can only be loaded outside of pk3 files
+		if ( isLocalConfig && search->pack ) {
+			continue;
+		}
 		//
 		if ( search->pack ) {
 			hash = FS_HashFileName(filename, search->pack->hashSize);
