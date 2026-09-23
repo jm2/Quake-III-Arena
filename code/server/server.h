@@ -150,6 +150,8 @@ typedef struct client_s {
 	int				nextReliableTime;	// svs.time when another reliable command will be allowed
 	int				userinfoRateTime;	// svs.time the userinfo rate limit was last drained
 	int				userinfoRateBurst;	// recent userinfo changes counted against the burst
+	qboolean		userinfoPending;	// pendingUserinfo waits for the rate limit
+	char			pendingUserinfo[MAX_INFO_STRING];	// newest userinfo held back by the rate limit
 	int				lastPacketTime;		// svs.time when packet was last received
 	int				lastConnectTime;	// svs.time when connection started
 	int				nextSnapshotTime;	// send another snapshot when svs.time >= nextSnapshotTime
@@ -292,6 +294,7 @@ void SV_AuthorizeIpPacket( netadr_t from );
 
 void SV_ExecuteClientMessage( client_t *cl, msg_t *msg );
 void SV_UserinfoChanged( client_t *cl );
+void SV_ApplyPendingUserinfo( void );
 
 void SV_ClientEnterWorld( client_t *client, usercmd_t *cmd );
 void SV_DropClient( client_t *drop, const char *reason );
