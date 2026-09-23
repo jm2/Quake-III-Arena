@@ -6,7 +6,7 @@
 
 #include "../code/game/g_syscalls.c"
 
-static int lastArgs[4];
+static int lastArgs[3];
 
 static int QDECL RecordSyscall( int arg, ... ) {
 	va_list ap;
@@ -14,7 +14,7 @@ static int QDECL RecordSyscall( int arg, ... ) {
 
 	lastArgs[0] = arg;
 	va_start( ap, arg );
-	for ( i = 1; i < 4; i++ ) {
+	for ( i = 1; i < 3; i++ ) {	/* the mutate trap passes exactly two arguments */
 		lastArgs[i] = va_arg( ap, int );
 	}
 	va_end( ap );
