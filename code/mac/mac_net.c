@@ -14,6 +14,7 @@
 static qboolean	gOTInited;
 static EndpointRef endpoint = kOTInvalidEndpointRef;
 static EndpointRef resolverEndpoint = kOTInvalidEndpointRef;
+static OTDataSize	endpointTSDU;	// largest datagram OTSndUData takes, <= 0 if unbounded
 
 #define	MAX_IPS		16
 static	int		numIP;
@@ -221,6 +222,7 @@ typedef struct InetAddress InetAddress;
 void Sys_InitNetworking( void ) {
 	OSStatus		err;
 	OTConfigurationRef config;
+	TEndpointInfo	info;
 	TBind			bind, bindOut;
 	InetAddress		in, out;
 	int				i;
@@ -242,7 +244,7 @@ void Sys_InitNetworking( void ) {
 	config = OTCreateConfiguration( kUDPName );
 
 #if 1
-	endpoint = OTOpenEndpoint( config, 0, nil, &err); 
+	endpoint = OTOpenEndpoint( config, 0, &info, &err); 
 #else
 	err = OTAsyncOpenEndpoint( config, 0, 0, NotifyProc, 0 );
 	if ( !endpoint ) {
@@ -256,6 +258,10 @@ void Sys_InitNetworking( void ) {
 		Com_Printf( "------------------------------\n" );
 		return;
 	}
+
+	// remember the largest datagram the endpoint accepts for Sys_SendPacket;
+	// T_INFINITE or T_INVALID (<= 0) leave the check to OTSndUData itself
+	endpointTSDU = info.tsdu;
 
 	// set non-blocking	
 	err = OTSetNonBlocking( endpoint );
@@ -404,18 +410,31 @@ qboolean	Sys_StringToAdr( const char *s, netadr_t *a ) {
 Sys_SendPacket
 ==================
 */
-#define	MAX_PACKETLEN	1400
 void Sys_SendPacket( int length, const void *data, netadr_t to ) {
 	TUnitData	d;
 	InetAddress	inAddr;
 	OSStatus	err;
+	int			now;
+	static int	lastDropTime;
+	static qboolean	dropped;
 
 	if ( !endpoint ) {
 		return;
 	}
 
-	if ( length > MAX_PACKETLEN ) {
-		Com_Error( ERR_DROP, "Sys_SendPacket: length > MAX_PACKETLEN" );
+	// Out-of-band replies such as statusResponse can legitimately exceed
+	// the netchan's 1400 byte fragment size; send them whole like the other
+	// platforms do.  Only a datagram the endpoint cannot carry is dropped,
+	// never Com_Error'd: that let one spoofed getstatus stop the server.
+	if ( endpointTSDU > 0 && length > endpointTSDU ) {
+		now = Sys_Milliseconds();
+		if ( !dropped || now - lastDropTime >= 1000 ) {
+			Com_Printf( "Sys_SendPacket: dropped %i byte datagram to %s (limit %i)\n",
+				length, NET_AdrToString( to ), (int)endpointTSDU );
+			lastDropTime = now;
+			dropped = qtrue;
+		}
+		return;
 	}
 
 	inAddr.fAddressType = AF_INET;
