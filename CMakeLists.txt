@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.12) # FindPython3
 project(Quake3 C CXX ASM)
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -26,6 +26,16 @@ option(BUILD_TEAM_ARENA "Build the Quake3_TeamArena (mission pack) executable" O
 # -fgnu89-inline: ID_INLINE is plain 'inline'; C99 inline semantics emit no
 # external definition (undefined refs to AAS_*_inline at -O0), GNU89 does.
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -fgnu89-inline -O0 -g -fno-strict-aliasing")
+
+# -fsigned-char: Retro68's PowerPC GCC defaults to unsigned 'char'
+# (__CHAR_UNSIGNED__), but retail 1.32c was built with signed 'char' (x86,
+# Darwin/CodeWarrior PPC; code/unix/Makefile passes -fsigned-char) and so are
+# all host tests. Tokenizers such as SkipWhitespace and Cmd_TokenizeString
+# (*text <= ' ') and bot match offsets (-1 = unset) depend on it: with unsigned
+# 'char', bytes >= 0x80 tokenize differently from retail peers. mac_local.h
+# fails the build if this flag goes missing.
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsigned-char")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsigned-char")
 
 # CMake appends CMAKE_C_FLAGS_<CONFIG> *after* CMAKE_C_FLAGS on the compile
 # line, and the Release defaults are "-O3 -DNDEBUG" — which silently overrode
@@ -263,15 +273,83 @@ if(BUILD_TEAM_ARENA)
 endif()
 
 
-# Output name
-set_target_properties(Quake3 PROPERTIES OUTPUT_NAME "Quake3")
-if(BUILD_TEAM_ARENA)
-    set_target_properties(Quake3_TeamArena PROPERTIES OUTPUT_NAME "Quake3_TeamArena")
+# Classic application (issues #225/#226). Like Retro68's add_application,
+# every build links an XCOFF image, converts it with MakePEF, and lets Rez
+# combine that PEF (the data fork) with code/mac's resources into an APPL/IDQ3
+# application. Rez writes host-independent containers, so neither retail data
+# nor host resource-fork support is needed:
+#   <name>.bin              MacBinary
+#   <name>.dsk              HFS disk image
+#   <name>.ad + %<name>.ad  AppleDouble pair (what package mode stages)
+# mac_app.py then sets the kHasBundle Finder flag Rez cannot express and checks
+# type/creator, the data fork and the cfrg/SIZE/BNDL/FREF/icon resources.
+get_filename_component(RETRO68_BIN_DIR "${CMAKE_C_COMPILER}" DIRECTORY)
+find_program(RETRO68_MAKEPEF MakePEF
+    HINTS "${RETRO68_BIN_DIR}" "${CMAKE_SOURCE_DIR}/tools/Retro68-build/bin")
+find_program(RETRO68_REZ Rez
+    HINTS "${RETRO68_BIN_DIR}" "${CMAKE_SOURCE_DIR}/tools/Retro68-build/bin")
+if(NOT RETRO68_MAKEPEF OR NOT RETRO68_REZ)
+    message(FATAL_ERROR "Retro68 MakePEF and Rez are required to build a Classic application.")
+endif()
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+
+# Rez needs Types.r and CodeFragments.r (issue #50): prefer Retro68's prepared
+# Universal Interfaces, then the source SDK's (CR line endings are accepted).
+get_filename_component(RETRO68_INSTALL_ROOT "${RETRO68_REZ}" DIRECTORY)
+get_filename_component(RETRO68_INSTALL_ROOT "${RETRO68_INSTALL_ROOT}" DIRECTORY)
+set(QUAKE3_REZ_INCLUDE_DIR "")
+foreach(candidate
+        "${RETRO68_INSTALL_ROOT}/universal/RIncludes"
+        "${CMAKE_SOURCE_DIR}/tools/Retro68-build/universal/RIncludes"
+        "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Interfaces/RIncludes")
+    if(NOT QUAKE3_REZ_INCLUDE_DIR AND EXISTS "${candidate}/Types.r"
+       AND EXISTS "${candidate}/CodeFragments.r")
+        set(QUAKE3_REZ_INCLUDE_DIR "${candidate}")
+    endif()
+endforeach()
+if(NOT QUAKE3_REZ_INCLUDE_DIR)
+    message(FATAL_ERROR "Retro68 Rez includes are incomplete. Expected Types.r and "
+        "CodeFragments.r under the prepared universal/RIncludes or the source "
+        "InterfacesAndLibraries/Interfaces/RIncludes directory.")
 endif()
 
+# quake3_icons.r carries the BNDL/FREF/icons; an application without them is
+# not a complete Classic release.
+set(QUAKE3_RESOURCE_SOURCES
+    "${CMAKE_SOURCE_DIR}/code/mac/mac_resources.r"
+    "${CMAKE_SOURCE_DIR}/code/mac/quake3_icons.r")
+foreach(resource_source ${QUAKE3_RESOURCE_SOURCES})
+    if(NOT EXISTS "${resource_source}")
+        message(FATAL_ERROR "${resource_source} is missing.")
+    endif()
+endforeach()
 
-# Bundle creation (Retro68 specific helpers if available, or just the bin)
-# We might wan explicitly set the CREATOR and TYPE
-# set_target_properties(Quake3 PROPERTIES 
-#     LINK_FLAGS "-Wl,--creator,Q3A0 -Wl,--type,APPL"
-# )
+function(quake3_add_classic_application target)
+    set_target_properties(${target} PROPERTIES OUTPUT_NAME "${target}.xcoff")
+    add_custom_command(
+        OUTPUT "${target}.pef"
+        COMMAND "${RETRO68_MAKEPEF}" "$<TARGET_FILE:${target}>" -o "${target}.pef"
+        DEPENDS ${target}
+        COMMENT "Converting ${target} to PEF"
+        VERBATIM)
+    add_custom_command(
+        OUTPUT "${target}.bin" "${target}.dsk" "${target}.ad" "%${target}.ad"
+        COMMAND "${RETRO68_REZ}" "${CMAKE_SOURCE_DIR}/code/mac/mac_resources.r"
+                -I "${QUAKE3_REZ_INCLUDE_DIR}" -I "${CMAKE_SOURCE_DIR}/code/mac"
+                -t APPL -c IDQ3 --data "${target}.pef"
+                -o "${target}.bin" --cc "${target}.dsk" --cc "%${target}.ad"
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/mac_app.py" finalize
+                --pef "${target}.pef"
+                "${target}.bin" "${target}.dsk" "%${target}.ad"
+        DEPENDS "${target}.pef" ${QUAKE3_RESOURCE_SOURCES}
+                "${CMAKE_SOURCE_DIR}/mac_app.py"
+        COMMENT "Building Classic application ${target} (APPL/IDQ3)"
+        VERBATIM)
+    add_custom_target(${target}_APPL ALL
+        DEPENDS "${target}.bin" "${target}.dsk" "${target}.ad" "%${target}.ad")
+endfunction()
+
+quake3_add_classic_application(Quake3)
+if(BUILD_TEAM_ARENA)
+    quake3_add_classic_application(Quake3_TeamArena)
+endif()

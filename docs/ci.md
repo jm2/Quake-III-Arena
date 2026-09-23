@@ -5,8 +5,10 @@ workers. It runs on master pushes, pull requests, and manual dispatch without a
 Retro68 installation, proprietary retail data, or a Mac OS 9 emulator.
 
 Feature branch updates run through the pull-request trigger. Filtering the
-push trigger to master avoids duplicate copies of the same four jobs for each
-PR head while retaining checks on the merged default branch.
+push trigger to master avoids duplicate copies of the same jobs for each PR
+head while retaining checks on the merged default branch. A newer PR head
+cancels the older run. Push runs use one concurrency group per commit, so
+merging several PRs in a row never cancels or drops a master run.
 
 ## Required checks
 
@@ -24,8 +26,21 @@ PR head while retaining checks on the merged default branch.
     and bundle flag;
   - validate MacBinary name bytes, fork lengths/padding, deterministic Mac
     dates, version fields, and CRC;
-  - reject filenames that cannot be represented in MacRoman.
+  - reject filenames that cannot be represented in MacRoman;
+  - check `mac_app.py` against Rez-shaped MacBinary, AppleDouble and HFS
+    containers: kHasBundle updates (with MacBinary CRC), resource-map parsing,
+    each launch-blocking defect (type/creator, data fork, missing or empty
+    resources, `cfrg`, `SIZE`, `BNDL` signature, bundle flag), removal of
+    incomplete outputs, and resource-fork/Finder-info export (issues #225/#226).
 - `Host C regressions (ASan/UBSan)`
+  - summarizes eight parallel jobs, `Host C regressions (gcc|clang K/4)`. Each
+    runs one quarter of the sorted `tests/run_*_tests.sh` runners through
+    `tests/run_host_regressions.sh`, which discovers runners with
+    `git ls-files`, runs them in parallel, prints each result as it finishes,
+    bounds each runner at 10 minutes and the shard at 20 minutes (naming any
+    runner that did not finish), and prints the full log of any runner that
+    fails. Every runner runs under
+    both GCC and Clang. A new runner needs no workflow edit;
   - exercises actual world traversal with stock visibility/frustum/draw goldens,
     deep pending-state cleanup and all 32 dynamic-light mask bits;
   - exercises actual swept BSP traces with stock point/box/capsule clipping
@@ -47,8 +62,8 @@ PR head while retaining checks on the merged default branch.
     syscalls, faulted shutdown re-entry, and valid execution;
   - checks full-width loads, legacy masked stores, ARG boundaries, block-copy
     bounds/overlap, and bounded syscall argument snapshots;
-  - checks wrapping integer arithmetic, division/modulo traps, shift counts,
-    and float conversion limits;
+  - checks wrapping integer arithmetic and the defined division/modulo by
+    zero, oversized shift count, and float conversion results;
   - checks native/compiled/interpreted VM dispatch with empty, partial, and
     twelve-parameter calls, zero padding, single argument evaluation, and
     invalid counts, and faulted VM re-entry;
@@ -201,61 +216,10 @@ checks real registration pass counts and cache reuse.
 export TMPDIR="${TMPDIR:-/var/tmp}"
 bash tests/check_shell_syntax.sh
 ./build_mac.sh --help
-python3 -m py_compile create_appledouble.py generate_icon_r.py macbinary_encode.py
+python3 -m py_compile create_appledouble.py generate_icon_r.py macbinary_encode.py mac_app.py
 python3 -m unittest discover -s tests -p 'test_*.py' -v
-bash tests/run_host_c_tests.sh
-bash tests/run_vm_loading_tests.sh
-bash tests/run_vm_bytecode_tests.sh
-bash tests/run_vm_runtime_tests.sh
-bash tests/run_vm_call_tests.sh
-bash tests/run_vm_memory_trap_tests.sh
-bash tests/run_ui_syscall_tests.sh
-bash tests/run_cgame_syscall_tests.sh
-bash tests/run_server_core_syscall_tests.sh
-bash tests/run_vm_returned_string_tests.sh
-bash tests/run_botlib_navigation_tests.sh
-bash tests/run_botlib_chat_tests.sh
-bash tests/run_botlib_actions_tests.sh
-bash tests/run_botlib_ai_tests.sh
-bash tests/run_roq_stream_tests.sh
-bash tests/run_roq_frame_tests.sh
-bash tests/run_roq_vq_tests.sh
-bash tests/run_bmp_cursor_tests.sh
-bash tests/run_pcx_cursor_tests.sh
-bash tests/run_tga_cursor_tests.sh
-bash tests/run_jpeg_io_tests.sh
-bash tests/run_md3_layout_tests.sh
-bash tests/run_md4_layout_tests.sh
-bash tests/run_bsp_header_tests.sh
-bash tests/run_bsp_reference_tests.sh
-bash tests/run_bsp_lightmap_tests.sh
-bash tests/run_bsp_geometry_tests.sh
-bash tests/run_bsp_entity_grid_tests.sh
-bash tests/run_bsp_tree_tests.sh
-bash tests/run_bsp_model_capacity_tests.sh
-bash tests/run_bsp_trace_tests.sh
-bash tests/run_bsp_world_tests.sh
-bash tests/run_bsp_patch_grid_tests.sh
-bash tests/run_bsp_winding_tests.sh
-bash tests/run_hunk_allocation_tests.sh
-bash tests/run_bsp_lod_tests.sh
-bash tests/run_shader_stage_tests.sh
-bash tests/run_skin_capacity_tests.sh
-bash tests/run_font_layout_tests.sh
-bash tests/run_font_freetype_tests.sh
-bash tests/run_shader_archive_tests.sh
-bash tests/run_shader_runtime_tests.sh
-bash tests/run_sky_bounds_tests.sh
-bash tests/run_aas_layout_tests.sh
-bash tests/run_aas_endian_tests.sh
-bash tests/run_aas_writer_tests.sh
-bash tests/run_aas_geometry_tests.sh
-bash tests/run_bot_memory_tests.sh
-bash tests/run_aas_node_tests.sh
-bash tests/run_aas_reachability_tests.sh
-bash tests/run_aas_portal_tests.sh
-bash tests/run_aas_travel_time_tests.sh
-bash tests/run_bot_zone_tests.sh
+bash tests/run_host_regressions.sh            # every runner, $CC (default cc)
+CC=clang bash tests/run_host_regressions.sh   # the same runners with Clang
 pwsh -NoProfile -File ./build_mac.ps1 --help
 ```
 

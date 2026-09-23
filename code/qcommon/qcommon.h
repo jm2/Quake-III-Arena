@@ -172,6 +172,9 @@ void		NET_Sleep(int msec);
 #define	MAX_MSGLEN				16384		// max length of a message, which may
 											// be fragmented into multiple packets
 
+#define	MAX_MSGLEN_BUF			(MAX_MSGLEN+8)	// netchan receive buffer: a reassembled
+											// MAX_MSGLEN message plus its 4 byte sequence
+
 #define MAX_DOWNLOAD_WINDOW			8		// max of eight download frames
 #define MAX_DOWNLOAD_BLKSIZE		2048	// 2048 byte block chunks
  

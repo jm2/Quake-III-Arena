@@ -807,7 +807,7 @@ char *Q_strlwr( char *s1 ) {
 
     s = s1;
 	while ( *s ) {
-		*s = tolower(*s);
+		*s = tolower((unsigned char)*s);
 		s++;
 	}
     return s1;
@@ -818,7 +818,7 @@ char *Q_strupr( char *s1 ) {
 
     s = s1;
 	while ( *s ) {
-		*s = toupper(*s);
+		*s = toupper((unsigned char)*s);
 		s++;
 	}
     return s1;
@@ -1105,7 +1105,7 @@ void Info_RemoveKey( char *s, const char *key ) {
 
 		if (!strcmp (key, pkey) )
 		{
-			strcpy (start, s);	// remove this part
+			memmove (start, s, strlen(s) + 1);	// remove this part (overlaps)
 			return;
 		}
 
@@ -1160,7 +1160,7 @@ void Info_RemoveKey_Big( char *s, const char *key ) {
 
 		if (!strcmp (key, pkey) )
 		{
-			strcpy (start, s);	// remove this part
+			memmove (start, s, strlen(s) + 1);	// remove this part (overlaps)
 			return;
 		}
 

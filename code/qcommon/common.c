@@ -538,8 +538,10 @@ qboolean Com_AddStartupCommands( void ) {
 //============================================================================
 
 void Info_Print( const char *s ) {
-	char	key[512];
-	char	value[512];
+	// raw client userinfo (dumpuser) and big info strings (systeminfo)
+	// carry fields longer than 512; truncate rather than overrun the stack
+	char	key[BIG_INFO_KEY];
+	char	value[BIG_INFO_VALUE];
 	char	*o;
 	int		l;
 
@@ -549,7 +551,11 @@ void Info_Print( const char *s ) {
 	{
 		o = key;
 		while (*s && *s != '\\')
-			*o++ = *s++;
+		{
+			if (o < key + sizeof(key) - 1)
+				*o++ = *s;
+			s++;
+		}
 
 		l = o - key;
 		if (l < 20)
@@ -570,7 +576,11 @@ void Info_Print( const char *s ) {
 		o = value;
 		s++;
 		while (*s && *s != '\\')
-			*o++ = *s++;
+		{
+			if (o < value + sizeof(value) - 1)
+				*o++ = *s;
+			s++;
+		}
 		*o = 0;
 
 		if (*s)
@@ -596,7 +606,7 @@ char *Com_StringContains(char *str1, char *str2, int casesensitive) {
 				}
 			}
 			else {
-				if (toupper(str1[j]) != toupper(str2[j])) {
+				if (toupper((unsigned char)str1[j]) != toupper((unsigned char)str2[j])) {
 					break;
 				}
 			}
@@ -651,8 +661,8 @@ int Com_Filter(char *filter, char *name, int casesensitive)
 						if (*name >= *filter && *name <= *(filter+2)) found = qtrue;
 					}
 					else {
-						if (toupper(*name) >= toupper(*filter) &&
-							toupper(*name) <= toupper(*(filter+2))) found = qtrue;
+						if (toupper((unsigned char)*name) >= toupper((unsigned char)*filter) &&
+							toupper((unsigned char)*name) <= toupper((unsigned char)*(filter+2))) found = qtrue;
 					}
 					filter += 3;
 				}
@@ -661,7 +671,7 @@ int Com_Filter(char *filter, char *name, int casesensitive)
 						if (*filter == *name) found = qtrue;
 					}
 					else {
-						if (toupper(*filter) == toupper(*name)) found = qtrue;
+						if (toupper((unsigned char)*filter) == toupper((unsigned char)*name)) found = qtrue;
 					}
 					filter++;
 				}
@@ -679,7 +689,7 @@ int Com_Filter(char *filter, char *name, int casesensitive)
 				if (*filter != *name) return qfalse;
 			}
 			else {
-				if (toupper(*filter) != toupper(*name)) return qfalse;
+				if (toupper((unsigned char)*filter) != toupper((unsigned char)*name)) return qfalse;
 			}
 			filter++;
 			name++;
@@ -2153,10 +2163,13 @@ Returns last event time
 int Com_EventLoop( void ) {
 	sysEvent_t	ev;
 	netadr_t	evFrom;
-	byte		bufData[MAX_MSGLEN];
+	byte		bufData[MAX_MSGLEN_BUF];
 	msg_t		buf;
 	int eventLoopIter = 0;
 	static int firstCall = 1;
+
+	// compile-time check: Netchan_Process copies a MAX_MSGLEN message after its 4 byte sequence
+	(void)sizeof( char[( sizeof( bufData ) >= MAX_MSGLEN + 4 ) ? 1 : -1] );
 
 	MSG_Init( &buf, bufData, sizeof( bufData ) );
 
@@ -3386,7 +3399,7 @@ static void FindMatches( const char *s ) {
 
 	// cut shortestMatch to the amount common with s
 	for ( i = 0 ; s[i] ; i++ ) {
-		if ( tolower(shortestMatch[i]) != tolower(s[i]) ) {
+		if ( tolower((unsigned char)shortestMatch[i]) != tolower((unsigned char)s[i]) ) {
 			shortestMatch[i] = 0;
 		}
 	}

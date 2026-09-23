@@ -9,7 +9,7 @@ Nodes reference existing planes and nodes/leaves; complemented unsigned leaf
 indices handle INT_MIN without signed negation.
 
 Leaf surface/brush indices and spans, model surface/brush spans, fog brushes
-and visible sides, and surface shader/fog/type references validate by
+and visible sides, and surface shader/type and non-flare fog references validate by
 subtraction before products or pointer construction. Consumed vertex/index
 spans and surface-local indices fit their arrays. A block range-max tree
 scans index words once and bounds each shared-span query by at most 62 edge
@@ -21,7 +21,9 @@ native novis allocation arithmetic and declared PVS rows. Collision rejects
 more than its existing MAX_SUBMODELS limit before allocation.
 
 Native patches ignore their index-array fields and flares ignore both geometry
-array fields. Those unused fields remain ignored. The four retail negative
+array fields. Those unused fields remain ignored. Flare fogNum is also not
+bounded: q3map leaves it 0 even in maps without fogs (retail q3dm17), and the
+renderer treats an out-of-range flare fog as no fog. The four retail negative
 lightmap selectors remain supported; positive unavailable lightmaps retain
 R_FindShader's existing vertex-light fallback. Adjustable compiler utility
 budgets are not introduced as format caps.

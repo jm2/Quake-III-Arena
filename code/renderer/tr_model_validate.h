@@ -62,17 +62,17 @@ static qboolean R_ModelFloats( const byte *data, unsigned int count ) {
 	return qtrue;
 }
 
-/** Decode an already bounded finite float for frame radius/bounds comparisons. */
+/** Decode an already bounded finite float for frame radius comparisons. */
 static float R_ModelFloat( const byte *data ) {
 	unsigned int word = R_ModelWord(data); float value;
 	memcpy(&value, &word, sizeof(value)); return value;
 }
 
-/** Validate a model's culling metadata before converting any frame in place. */
+/** Validate a model's culling metadata before converting any frame in place.
+ * Bounds stay unordered as in 1.32: q3data writes cleared bounds (mins 99999,
+ * maxs -99999) for tag-only models such as the stock weapon hands. */
 static qboolean R_ModelFrame( const byte *data ) {
-	unsigned int axis;
 	if ( !R_ModelFloats(data, 10) || R_ModelFloat(data + 36) < 0 ) return qfalse;
-	for ( axis = 0; axis < 3; axis++ ) if ( R_ModelFloat(data + axis * 4) > R_ModelFloat(data + 12 + axis * 4) ) return qfalse;
 	return qtrue;
 }
 

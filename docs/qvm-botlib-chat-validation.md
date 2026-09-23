@@ -16,18 +16,19 @@ module before native dispatch. Native substring output now uses bounded
 Native match-string copying always terminates at the fixed buffer boundary.
 
 The user selected a safe in-place limit for the size-less retail synonym
-syscall. Its exported replacement routine now caps the result at the original
-terminated string length, including for native callers; longer replacements
-may be skipped. The VM wrapper checks that original string span rather than
-assuming an additional 256 writable bytes. Interior pointers and short objects
-at the VM boundary retain their surrounding bytes. Syscall opcodes, argument
-count and the botlib export table remain unchanged.
+syscall. For QVMs the VM wrapper passes the original terminated string length
+to the exported replacement routine, so longer replacements may be skipped; it
+checks that original span rather than assuming an additional 256 writable
+bytes. Interior pointers and short objects at the VM boundary retain their
+surrounding bytes. Syscall opcodes and retail QVM arguments remain unchanged;
+native game modules pass their remaining message capacity as a size (#245).
 
 Private helpers receive the capacity of internal chat buffers explicitly, so
 initial/reply variable expansion and weighted generated text may still grow
-within their known 256-byte buffers. The word search finds later words without
-stepping past the terminator; skipping a synonym inside an existing replacement
-advances within the source. These native fixes also cover part of #48.
+within their known 256-byte buffers. The word search keeps the 1.32 word
+boundaries and stops at the terminator; skipping a synonym inside an existing
+replacement stops where 1.32 would resume past the terminator. These native
+fixes also cover part of #48.
 
 ## Validation
 

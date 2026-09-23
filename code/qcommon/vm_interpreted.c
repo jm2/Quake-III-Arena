@@ -790,6 +790,14 @@ nextInstruction2:
 
 		//===================================================================
 
+		// Arithmetic edge cases never fault: retail QVMs depend on native
+		// results (cg_scoreboard.c evaluates 1 << score->client for every
+		// client, including 32-63). Reproduce what retail PowerPC clients
+		// computed without host undefined behavior: vm_ppc.c/vm_ppc_new.c
+		// emit divw/divwu, mullw+subf for remainders, slw/sraw/srw and
+		// fctiwz. divw leaves x / 0 and INT_MIN / -1 undefined (x86 idiv
+		// faults), so define them as 0 and the wrapped quotient INT_MIN.
+
 		case OP_NEGI:
 			*opStack = (int)(0u - (unsigned int)r0);
 			goto nextInstruction;
@@ -802,31 +810,34 @@ nextInstruction2:
 			opStack--;
 			goto nextInstruction;
 		case OP_DIVI:
-			if ( r0 == 0 || (r1 == INT_MIN && r0 == -1) ) {
-				VM_INTERPRETER_ERROR( "VM signed division out of range" );
+			// x / 0 is 0; INT_MIN / -1 wraps to INT_MIN.
+			if ( r0 == 0 ) {
+				opStack[-1] = 0;
+			} else if ( r0 == -1 ) {
+				opStack[-1] = (int)(0u - (unsigned int)r1);
+			} else {
+				opStack[-1] = r1 / r0;
 			}
-			opStack[-1] = r1 / r0;
 			opStack--;
 			goto nextInstruction;
 		case OP_DIVU:
-			if ( r0 == 0 ) {
-				VM_INTERPRETER_ERROR( "VM unsigned division by zero" );
-			}
-			opStack[-1] = ((unsigned)r1) / ((unsigned)r0);
+			opStack[-1] = r0 == 0 ? 0 : ((unsigned)r1) / ((unsigned)r0);
 			opStack--;
 			goto nextInstruction;
 		case OP_MODI:
-			if ( r0 == 0 || (r1 == INT_MIN && r0 == -1) ) {
-				VM_INTERPRETER_ERROR( "VM signed division out of range" );
+			// Remainders are x - (x / y) * y, so x % 0 keeps x whatever
+			// divw/divwu returned, as on PowerPC; INT_MIN % -1 is 0.
+			if ( r0 == -1 ) {
+				opStack[-1] = 0;
+			} else if ( r0 != 0 ) {
+				opStack[-1] = r1 % r0;
 			}
-			opStack[-1] = r1 % r0;
 			opStack--;
 			goto nextInstruction;
 		case OP_MODU:
-			if ( r0 == 0 ) {
-				VM_INTERPRETER_ERROR( "VM unsigned division by zero" );
+			if ( r0 != 0 ) {
+				opStack[-1] = ((unsigned)r1) % (unsigned)r0;
 			}
-			opStack[-1] = ((unsigned)r1) % (unsigned)r0;
 			opStack--;
 			goto nextInstruction;
 		case OP_MULI:
@@ -854,17 +865,15 @@ nextInstruction2:
 			*opStack = ~ ((unsigned)r0);
 			goto nextInstruction;
 
+		// slw/srw/sraw use the low six count bits: counts 32-63 (and -1)
+		// shift every bit out, so 1 << 32 is 0 and sraw fills with the sign,
+		// while 64 shifts by 0. x86 would mask to five bits (1 << 32 == 1).
 		case OP_LSH:
-			if ( (unsigned int)r0 >= 32 ) {
-				VM_INTERPRETER_ERROR( "VM shift out of range" );
-			}
-			opStack[-1] = (int)((unsigned int)r1 << r0);
+			opStack[-1] = (r0 & 32) ? 0 : (int)((unsigned int)r1 << (r0 & 31));
 			opStack--;
 			goto nextInstruction;
 		case OP_RSHI:
-			if ( (unsigned int)r0 >= 32 ) {
-				VM_INTERPRETER_ERROR( "VM shift out of range" );
-			}
+			r0 = (r0 & 32) ? 31 : (r0 & 31);	// sign fill equals a 31-bit shift
 			// Spell out sign extension without implementation-defined shifts.
 			opStack[-1] = (int)((unsigned int)r1 >> r0);
 			if ( r1 < 0 && r0 != 0 ) {
@@ -873,10 +882,7 @@ nextInstruction2:
 			opStack--;
 			goto nextInstruction;
 		case OP_RSHU:
-			if ( (unsigned int)r0 >= 32 ) {
-				VM_INTERPRETER_ERROR( "VM shift out of range" );
-			}
-			opStack[-1] = ((unsigned)r1) >> r0;
+			opStack[-1] = (r0 & 32) ? 0 : ((unsigned)r1) >> (r0 & 31);
 			opStack--;
 			goto nextInstruction;
 
@@ -906,13 +912,17 @@ nextInstruction2:
 		case OP_CVFI:
 			{
 				float value = *(float *)opStack;
-				// INT_MAX rounds up when converted to float. Use the exact
-				// exclusive upper bound and reject NaN before the C cast.
-				if ( value != value || value >= 2147483648.0f ||
-				     value < -2147483648.0f ) {
-					VM_INTERPRETER_ERROR( "VM float conversion out of range" );
+				// Truncate like fctiwz: saturate out-of-range values and give
+				// INT_MIN for NaN (x86 conversions also give INT_MIN for NaN).
+				// INT_MAX rounds up when converted to float, so compare with
+				// the exact exclusive bound before the C cast.
+				if ( value >= 2147483648.0f ) {
+					*opStack = INT_MAX;
+				} else if ( value >= -2147483648.0f ) {
+					*opStack = (int)value;
+				} else {
+					*opStack = INT_MIN;	// below range or NaN
 				}
-				*opStack = (int)value;
 			}
 			goto nextInstruction;
 		case OP_SEX8:

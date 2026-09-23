@@ -15,8 +15,8 @@ surface's negative header back reference points to the actual model header.
 Consumed surface/shader names terminate; triangle and bone indexes fit their
 arrays. Every variable vertex header and weight span is checked, including
 late surfaces and LODs. Frame bounds/radii, bone matrices, normals, texture
-coordinates, weights and offsets are finite. Ordered bounds and nonnegative
-radii retain the earlier MD3 metadata checks.
+coordinates, weights and offsets are finite. Nonnegative radii and unordered
+bounds retain the earlier MD3 metadata checks.
 
 An absent optional bone-name table and zero-weight vertices remain accepted.
 Present bone-name spans are bounded, but unused names are not interpreted as
@@ -46,7 +46,7 @@ INT_MIN/INT_MAX frames exercise both interpolated and final-frame output.
 
 Malformed inputs cover signed/huge counts and offsets, zero progress in early
 and late LODs/surfaces, overlap/alignment, invalid indexes and back references,
-unterminated names, nonfinite data, invalid bounds/radii, weight spans,
+unterminated names, nonfinite data/bounds/radii, negative radii, weight spans,
 aggregate allocation overflow and failed registration/cache cleanup. Maxima
 include 128 bones, 128 weights, 999 vertices and 1999 triangles. Valid cases
 also cover 2048 frames, four LODs and 40 surfaces, absent unused names,

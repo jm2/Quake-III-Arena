@@ -57,7 +57,8 @@ static const char *BSP_ValidateSurfaceReferences(const byte *base,const dheader_
 	for(i=0;i<surfaces;i++) {
 		record=base+h->lumps[LUMP_SURFACES].fileofs+i*sizeof(dsurface_t);
 		value=BSP_FileWord(record+offsetof(dsurface_t,fogNum));type=BSP_FileWord(record+offsetof(dsurface_t,surfaceType));
-		if(BSP_FileWord(record+offsetof(dsurface_t,shaderNum))>=shaders || (value!=0xffffffffu && value>=fogs) ||
+		/* q3map leaves flare fogNum 0 even without fogs; the renderer treats that as no fog. */
+		if(BSP_FileWord(record+offsetof(dsurface_t,shaderNum))>=shaders || (type!=MST_FLARE && value!=0xffffffffu && value>=fogs) ||
 		   type<MST_PLANAR || type>MST_FLARE) return "invalid BSP surface material/type";
 		/* Flare geometry is held in the surface record; its unused array fields stay ignored. */
 		if(type!=MST_FLARE && !BSP_ReferenceSpan(BSP_FileWord(record+offsetof(dsurface_t,firstVert)),BSP_FileWord(record+offsetof(dsurface_t,numVerts)),vertices)) return "invalid BSP surface vertex span";

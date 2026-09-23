@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "client.h"
 #include <limits.h>
+#include <stddef.h>
 
 #include "../game/botlib.h"
 
@@ -40,6 +41,20 @@ CL_GetGameState
 void CL_GetGameState( gameState_t *gs ) {
 	*gs = cl.gameState;
 }
+
+/*
+glconfig_t is copied by value into cgame and UI QVMs, so it must keep the
+retail 1.32c layout: four strings (11264 bytes), then 4-byte ints, enums,
+qbooleans and a float. Renderer-only capabilities belong in glConfigExt.
+*/
+typedef char glconfigSizeCheck[(sizeof(glconfig_t) == 11332) ? 1 : -1];
+typedef char glconfigVidWidthCheck[(offsetof(glconfig_t, vidWidth) == 11304) ? 1 : -1];
+typedef char glconfigVidHeightCheck[(offsetof(glconfig_t, vidHeight) == 11308) ? 1 : -1];
+typedef char glconfigWindowAspectCheck[(offsetof(glconfig_t, windowAspect) == 11312) ? 1 : -1];
+typedef char glconfigDisplayFrequencyCheck[(offsetof(glconfig_t, displayFrequency) == 11316) ? 1 : -1];
+typedef char glconfigIsFullscreenCheck[(offsetof(glconfig_t, isFullscreen) == 11320) ? 1 : -1];
+typedef char glconfigStereoEnabledCheck[(offsetof(glconfig_t, stereoEnabled) == 11324) ? 1 : -1];
+typedef char glconfigSmpActiveCheck[(offsetof(glconfig_t, smpActive) == 11328) ? 1 : -1];
 
 /*
 ====================
@@ -439,6 +454,24 @@ static int CL_CgameMarkFragments( int *args ) {
 	        args[6], VM_CheckedArgArray( args[7], args[6], sizeof(markFragment_t) ) );
 }
 
+/** Fault the cgame before a key number indexes the native key table; -1 stays the unbound no-op. */
+static qboolean CL_CgameKeynumInRange( int keynum ) {
+	if ( keynum >= -1 && keynum < MAX_KEYS ) {
+		return qtrue;
+	}
+	VM_Error( "Cgame key number out of range" );
+	return qfalse;
+}
+
+/** Fault the cgame before an entity number indexes native sound state or becomes the listener. */
+static qboolean CL_CgameSoundEntityInRange( int entityNum ) {
+	if ( entityNum >= 0 && entityNum < MAX_GENTITIES ) {
+		return qtrue;
+	}
+	VM_Error( "Cgame sound entity number out of range" );
+	return qfalse;
+}
+
 #define VMAS(x) VM_CheckedArgString( args[x], qfalse )
 #define VMASN(x) VM_CheckedArgString( args[x], qtrue )
 #define VMAP(x, type) VM_CheckedArgPtr( args[x], sizeof(type), 4, qfalse )
@@ -543,6 +576,8 @@ int CL_CgameSystemCalls( int *args ) {
 	case CG_CM_MARKFRAGMENTS:
 		return CL_CgameMarkFragments( args );
 	case CG_S_STARTSOUND:
+		// a positioned sound only tags its channel; retail jump pads pass -1
+		if ( !args[1] && !CL_CgameSoundEntityInRange( args[2] ) ) return 0;
 		S_StartSound( VMAPN(1, vec3_t), args[2], args[3], args[4] );
 		return 0;
 	case CG_S_STARTLOCALSOUND:
@@ -552,18 +587,23 @@ int CL_CgameSystemCalls( int *args ) {
 		S_ClearLoopingSounds(args[1]);
 		return 0;
 	case CG_S_ADDLOOPINGSOUND:
+		if ( !CL_CgameSoundEntityInRange( args[1] ) ) return 0;
 		S_AddLoopingSound( args[1], VMAP(2, vec3_t), VMAP(3, vec3_t), args[4] );
 		return 0;
 	case CG_S_ADDREALLOOPINGSOUND:
+		if ( !CL_CgameSoundEntityInRange( args[1] ) ) return 0;
 		S_AddRealLoopingSound( args[1], VMAP(2, vec3_t), VMAP(3, vec3_t), args[4] );
 		return 0;
 	case CG_S_STOPLOOPINGSOUND:
+		if ( !CL_CgameSoundEntityInRange( args[1] ) ) return 0;
 		S_StopLoopingSound( args[1] );
 		return 0;
 	case CG_S_UPDATEENTITYPOSITION:
+		if ( !CL_CgameSoundEntityInRange( args[1] ) ) return 0;
 		S_UpdateEntityPosition( args[1], VMAP(2, vec3_t) );
 		return 0;
 	case CG_S_RESPATIALIZE:
+		if ( !CL_CgameSoundEntityInRange( args[1] ) ) return 0;
 		S_Respatialize( args[1], VMAP(2, vec3_t), VMAP(3, vec3_t[3]), args[4] );
 		return 0;
 	case CG_S_REGISTERSOUND:
@@ -642,6 +682,7 @@ int CL_CgameSystemCalls( int *args ) {
 	case CG_MEMORY_REMAINING:
 		return Hunk_MemoryRemaining();
   case CG_KEY_ISDOWN:
+		if ( !CL_CgameKeynumInRange( args[1] ) ) return 0;
 		return Key_IsDown( args[1] );
   case CG_KEY_GETCATCHER:
 		return Key_GetCatcher();
