@@ -4,13 +4,14 @@
 #include <setjmp.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 
 #define IMAGE_SIZE 4096
 static vm_t vm;
 vm_t *gvm = &vm;
 static botlib_export_t api;
 static byte before[IMAGE_SIZE];
-static int expectError, callbacks, emptyConsole;
+static int expectError, callbacks, emptyConsole, synonymSize;
 static jmp_buf errorJump;
 
 /** Stop on unexpected output or native dispatch. */
@@ -49,10 +50,13 @@ static int Reply( int state, char *message, int mc, int vc, char *v0, char *v1, 
 }
 /** Touch the entire caller-supplied chat output. */
 static void GetMessage( int state, char *out, int size ) { Callback(); Check(state==1,"message state"); memset(out,'m',size); }
-/** Reproduce the exported synonym API's original-string span limit. */
-static void Synonyms( char *text, unsigned long context ) {
+/** Record the granted synonym size while writing only the original string span. */
+static void Synonyms( char *text, unsigned long context, int size ) {
 	size_t length=strlen(text); Callback(); Check(context==1,"synonym context"); memset(text,'s',length); text[length]=0;
+	synonymSize=size;
 }
+/** Mark the game VM as a native module. */
+static int QDECL NativeEntry( int command, ... ) { (void)command; return 0; }
 /** Read the full match span and fill the requested output capacity. */
 static void MatchVariable( bot_match_t *match, int variable, char *out, int size ) {
 	int offset=match->variables[variable].offset, length=match->variables[variable].length;
@@ -60,6 +64,17 @@ static void MatchVariable( bot_match_t *match, int variable, char *out, int size
 }
 /** Preserve native nullable substring queries. */
 static int Contains( char *a, char *b, int sensitive ) { Callback(); Check(!a && !b && sensitive==1,"nullable contains"); return -1; }
+/** Map a page below 4 GiB so the dispatcher's 32-bit native pointer ABI can address it. */
+static char *LowPage( void ) {
+	char *page;
+#ifdef MAP_32BIT
+	page=mmap(NULL,4096,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_32BIT,-1,0);
+#else
+	page=mmap((void *)0x10000000,4096,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+#endif
+	Check(page!=MAP_FAILED && (unsigned long)page==(unsigned int)(unsigned long)page,"low native page");
+	return page;
+}
 /** Require malformed requests to leave the image and callback count unchanged. */
 static void Reject( int *args ) {
 	int calls=callbacks; vm.interpretFaulted=qfalse; vm.currentlyInterpreting=qtrue;
@@ -70,7 +85,7 @@ static void Reject( int *args ) {
 /** Cover complete outputs, optional variables, combined sizes, embedded metadata, and API availability. */
 int main( void ) {
 	int args[16]={0}, i;
-	bot_match_t *match; qvmBotConsoleMessage_t *console;
+	bot_match_t *match; qvmBotConsoleMessage_t *console; char *native;
 	vm.dataBase=malloc(IMAGE_SIZE); Check(vm.dataBase!=NULL,"allocation");
 	vm.dataMask=IMAGE_SIZE-1; currentVM=&vm; botlib_export=&api;
 	api.ai.BotNextConsoleMessage=Console; api.ai.BotInitialChat=Initial; api.ai.BotReplyChat=Reply;
@@ -100,19 +115,22 @@ int main( void ) {
 	args[12]=0; vm.dataBase[767]='a'; vm.dataBase[768]=0; Reject(args); vm.dataBase[767]=0;
 	args[0]=BOTLIB_AI_GET_CHAT_MESSAGE; args[2]=IMAGE_SIZE-8; args[3]=8;
 	Check(SV_BotLibChatCalls(args)==0,"whole message output"); args[3]=0; Reject(args); args[3]=9; Reject(args);
-	args[0]=BOTLIB_AI_REPLACE_SYNONYMS; args[1]=IMAGE_SIZE-MAX_MESSAGE_SIZE; args[2]=1;
+	args[0]=BOTLIB_AI_REPLACE_SYNONYMS; args[1]=IMAGE_SIZE-MAX_MESSAGE_SIZE; args[2]=1; args[3]=MAX_MESSAGE_SIZE;
 	memset(vm.dataBase+args[1],'a',MAX_MESSAGE_SIZE); vm.dataBase[IMAGE_SIZE-1]=0;
-	Check(SV_BotLibChatCalls(args)==0,"maximum original span"); args[1]++;
-	Check(SV_BotLibChatCalls(args)==0,"interior string near image end");
+	Check(SV_BotLibChatCalls(args)==0 && synonymSize==MAX_MESSAGE_SIZE,"maximum original span"); args[1]++;
+	Check(SV_BotLibChatCalls(args)==0 && synonymSize==MAX_MESSAGE_SIZE-1,"interior string near image end");
 	args[1]=IMAGE_SIZE-2; memcpy(vm.dataBase+args[1],"a",2);
-	Check(SV_BotLibChatCalls(args)==0 && vm.dataBase[IMAGE_SIZE-2]=='s' && !vm.dataBase[IMAGE_SIZE-1],"two-byte object at image end");
-	args[1]=IMAGE_SIZE-1; Check(SV_BotLibChatCalls(args)==0 && !vm.dataBase[IMAGE_SIZE-1],"empty string at image end");
+	Check(SV_BotLibChatCalls(args)==0 && synonymSize==2 && vm.dataBase[IMAGE_SIZE-2]=='s' && !vm.dataBase[IMAGE_SIZE-1],"two-byte object at image end");
+	args[1]=IMAGE_SIZE-1; Check(SV_BotLibChatCalls(args)==0 && synonymSize==1 && !vm.dataBase[IMAGE_SIZE-1],"empty string at image end");
 	args[1]=2064; memset(vm.dataBase+2048,0x5a,32); memcpy(vm.dataBase+args[1],"hi hi",6); memcpy(before,vm.dataBase,IMAGE_SIZE);
 	Check(SV_BotLibChatCalls(args)==0 && !memcmp(before,vm.dataBase,args[1]) &&
 	      !memcmp(before+args[1]+6,vm.dataBase+args[1]+6,IMAGE_SIZE-args[1]-6) && !vm.dataBase[args[1]+5],"interior object canaries");
 	args[1]=IMAGE_SIZE-2; vm.dataBase[IMAGE_SIZE-2]=vm.dataBase[IMAGE_SIZE-1]='a'; Reject(args);
 	args[1]=3072; memset(vm.dataBase+args[1],'a',256); vm.dataBase[args[1]+256]=0; Reject(args);
 	args[1]=0; Reject(args);
+	native=LowPage(); strcpy(native+100,"hi hi"); args[1]=(int)(unsigned long)(native+100); args[3]=MAX_MESSAGE_SIZE-100;
+	vm.entryPoint=NativeEntry; Check(SV_BotLibChatCalls(args)==0 && synonymSize==MAX_MESSAGE_SIZE-100 && !strcmp(native+100,"sssss"),"native message size");
+	vm.entryPoint=NULL; munmap(native,4096); args[3]=0;
 	args[0]=BOTLIB_AI_MATCH_VARIABLE; args[1]=64; args[2]=0; args[3]=IMAGE_SIZE-8; args[4]=8;
 	match=(bot_match_t *)(vm.dataBase+64); memset(match,0,sizeof(*match)); strcpy(match->string,"test");
 	match->variables[0].offset=0; match->variables[0].length=4;

@@ -4632,7 +4632,8 @@ void BotCheckConsoleMessages(bot_state_t *bs) {
 		trap_UnifyWhiteSpaces(ptr);
 		//replace synonyms in the right context
 		context = BotSynonymContext(bs);
-		trap_BotReplaceSynonyms(ptr, context);
+		//the chat text may start after the sender name inside the message buffer
+		trap_BotReplaceSynonyms(ptr, context, m.message + sizeof(m.message) - ptr);
 		//if there's no match
 		if (!BotMatchMessage(bs, m.message)) {
 			//if it is a chat message

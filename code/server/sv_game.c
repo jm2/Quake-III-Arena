@@ -603,9 +603,12 @@ static int SV_BotLibChatCalls( int *args ) {
 	case BOTLIB_AI_UNIFY_WHITE_SPACES:
 		botlib_export->ai.UnifyWhiteSpaces( VMAS(1) );
 		return 0;
-	case BOTLIB_AI_REPLACE_SYNONYMS:
-		botlib_export->ai.BotReplaceSynonyms( SV_GameBotChatMessage( args[1] ), args[2] );
+	case BOTLIB_AI_REPLACE_SYNONYMS: {
+		char *message = SV_GameBotChatMessage( args[1] );
+		// only native modules pass a size; retail QVMs keep the original string span
+		botlib_export->ai.BotReplaceSynonyms( message, args[2], VM_IsNative( gvm ) ? args[3] : (int)strlen( message ) + 1 );
 		return 0;
+	}
 	case BOTLIB_AI_LOAD_CHAT_FILE:
 		return botlib_export->ai.BotLoadChatFile( args[1], VMAS(2), VMAS(3) );
 	case BOTLIB_AI_SET_CHAT_GENDER:
