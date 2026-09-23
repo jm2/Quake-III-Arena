@@ -127,7 +127,10 @@ static void EmptyDump(void) {
     FileWorld();AAS_WriteRouteCache();OriginalInput();
     Check(dumpLength==(int)sizeof(routecacheheader_t)&&AAS_ReadRouteCache()&&opens==2&&closes==2&&!Outstanding()&&!routingcachesize,"native writer's empty cache dump remains valid");Cleanup();
 }
-int main(int argc,char **argv) {
+#ifndef Q3_AAS_CACHE_FILE_ENTRY
+#define Q3_AAS_CACHE_FILE_ENTRY main
+#endif
+int Q3_AAS_CACHE_FILE_ENTRY(int argc,char **argv) {
     if(argc==1)EmptyDump();Generate();if(argc>1){if(atoi(argv[1]))OriginalAccountingProof();else RoundTrip(0);}
     else {RoundTrip(0);RoundTrip(1);Malformed();puts("Native AAS cache writer/reader grammar, loaded accounting, links and rollback passed (issue #47)");}
     return 0;

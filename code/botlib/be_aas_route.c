@@ -1100,7 +1100,8 @@ static qboolean AAS_RouteCacheGoal(int cluster, int area, int *slot)
 		if (aasworld.portals[portal].frontcluster != cluster && aasworld.portals[portal].backcluster != cluster) return qfalse;
 		*slot = aasworld.portals[portal].clusterareanum[aasworld.portals[portal].frontcluster != cluster];
 	}
-	return *slot >= 0 && *slot < aasworld.clusters[cluster].numreachabilityareas;
+	// Goals may be any cluster slot; unreachable goals keep empty native caches.
+	return *slot >= 0 && *slot < aasworld.clusters[cluster].numareas;
 }
 
 static qboolean AAS_ValidateRouteCachePayload(aas_routingcache_t *cache)
@@ -1113,6 +1114,8 @@ static qboolean AAS_ValidateRouteCachePayload(aas_routingcache_t *cache)
 		{
 			area = aasworld.portals[i].areanum;
 			if (area <= 0 || area >= aasworld.numareas) return qfalse;
+			// A goal portal's own start entry is never used as a reachability.
+			if (area == cache->areanum) continue;
 			if (cache->traveltimes[i] && cache->reachabilities[i] >= aasworld.areasettings[area].numreachableareas) return qfalse;
 		}
 	}
@@ -1120,7 +1123,8 @@ static qboolean AAS_ValidateRouteCachePayload(aas_routingcache_t *cache)
 	{
 		for (area = 1; area < aasworld.numareas; area++)
 		{
-			if (!AAS_RouteCacheGoal(cache->cluster, area, &slot)) continue;
+			if (!AAS_RouteCacheGoal(cache->cluster, area, &slot) ||
+				slot >= aasworld.clusters[cache->cluster].numreachabilityareas) continue;
 			if (cache->traveltimes[slot] && cache->reachabilities[slot] >= aasworld.areasettings[area].numreachableareas) return qfalse;
 		}
 	}
@@ -1413,7 +1417,9 @@ qboolean AAS_UpdateAreaRoutingCache(aas_routingcache_t *areacache)
 	badtravelflags = ~areacache->travelflags;
 	//
 	clusterareanum = AAS_ClusterAreaNum(areacache->cluster, areacache->areanum);
-	if (clusterareanum < 0 || clusterareanum >= numreachabilityareas) return qfalse;
+	if (clusterareanum < 0) return qfalse;
+	//like the original, a goal area without reachabilities keeps an empty cache
+	if (clusterareanum >= numreachabilityareas) return qtrue;
 	//
 	startclusterareanum = clusterareanum;
 	numstartlinks = aasworld.reversedreachability[areacache->areanum].numlinks;

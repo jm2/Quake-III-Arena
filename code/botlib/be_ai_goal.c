@@ -186,6 +186,8 @@ levelitem_t *levelitemheap = NULL; // bk001206 - init
 levelitem_t *freelevelitems = NULL; // bk001206 - init
 levelitem_t *levelitems = NULL; // bk001206 - init
 int numlevelitems = 0;
+//set after the first "out of level items" report for the current pool
+static qboolean levelitemsexhausted = qfalse;
 //map locations
 maplocation_t *maplocations = NULL; // bk001206 - init
 //camp spots
@@ -470,6 +472,7 @@ static void CommitLevelItemHeap(levelitem_t *heap)
 	freelevelitems = heap;
 	levelitems = NULL;
 	numlevelitems = 0;
+	levelitemsexhausted = qfalse;
 }
 
 int InitLevelItemHeap(void)
@@ -492,7 +495,9 @@ levelitem_t *AllocLevelItem(void)
 	li = freelevelitems;
 	if (!li)
 	{
-		botimport.Print(PRT_FATAL, "out of level items\n");
+		//report once per pool instead of for every item update
+		if (!levelitemsexhausted) botimport.Print(PRT_FATAL, "out of level items\n");
+		levelitemsexhausted = qtrue;
 		return NULL;
 	} //end if
 	//
@@ -740,7 +745,8 @@ int BotInitLevelItemsChecked(void)
 		} //end if
 
 		li = AllocLevelItem();
-		if (!li) return BLERR_LIBRARYNOTSETUP;
+		//like 1.32c, keep the items that fit when the pool runs out
+		if (!li) return BLERR_NOERROR;
 		//
 		li->number = ++numlevelitems;
 		li->timeout = 0;
