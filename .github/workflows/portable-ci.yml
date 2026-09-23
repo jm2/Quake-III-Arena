@@ -10,8 +10,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: portable-ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # PR runs share a group per branch, so a newer head cancels the older run.
+  # Push runs get a group per commit: GitHub keeps only one pending run per
+  # group, so a shared master group would still drop queued merge commits.
+  group: portable-ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   scripts-and-ledger:
@@ -29,11 +32,8 @@ jobs:
 
       - name: Check Bash syntax and help
         run: |
-          bash -n build_mac.sh setup_retro68.sh tests/run_host_c_tests.sh tests/run_vm_loading_tests.sh tests/run_vm_bytecode_tests.sh tests/run_vm_runtime_tests.sh tests/run_vm_call_tests.sh tests/run_vm_memory_trap_tests.sh tests/run_ui_syscall_tests.sh tests/run_cgame_syscall_tests.sh tests/run_server_core_syscall_tests.sh tests/run_vm_returned_string_tests.sh tests/run_botlib_navigation_tests.sh tests/run_botlib_chat_tests.sh tests/run_botlib_actions_tests.sh tests/run_botlib_ai_tests.sh tests/run_roq_stream_tests.sh tests/run_roq_frame_tests.sh tests/run_roq_vq_tests.sh tests/run_bmp_cursor_tests.sh tests/run_pcx_cursor_tests.sh tests/run_tga_cursor_tests.sh tests/run_jpeg_io_tests.sh tests/run_md3_layout_tests.sh tests/run_md4_layout_tests.sh tests/run_bsp_header_tests.sh tests/run_bsp_reference_tests.sh tests/run_bsp_lightmap_tests.sh tests/run_bsp_geometry_tests.sh tests/run_bsp_entity_grid_tests.sh tests/run_bsp_tree_tests.sh tests/run_bsp_model_capacity_tests.sh tests/run_bsp_trace_tests.sh tests/run_bsp_world_tests.sh tests/run_bsp_patch_grid_tests.sh tests/run_bsp_winding_tests.sh tests/run_hunk_allocation_tests.sh tests/run_bsp_lod_tests.sh tests/run_shader_stage_tests.sh tests/run_skin_capacity_tests.sh tests/run_font_layout_tests.sh tests/run_font_freetype_tests.sh tests/run_shader_archive_tests.sh tests/run_shader_runtime_tests.sh tests/run_sky_bounds_tests.sh tests/run_aas_layout_tests.sh tests/run_aas_endian_tests.sh tests/run_aas_writer_tests.sh tests/run_aas_geometry_tests.sh tests/run_bot_memory_tests.sh tests/run_aas_node_tests.sh tests/run_aas_reachability_tests.sh tests/run_aas_portal_tests.sh tests/run_bot_zone_tests.sh tests/run_aas_travel_time_tests.sh tests/run_aas_routing_time_tests.sh tests/run_aas_unclustered_routing_tests.sh tests/run_aas_routing_workspace_tests.sh tests/run_aas_routing_failure_tests.sh tests/run_aas_cache_allocation_tests.sh tests/run_aas_cache_file_tests.sh tests/run_aas_routing_init_tests.sh tests/run_bot_libvar_tests.sh tests/run_bot_builtin_tests.sh tests/run_bot_include_tests.sh tests/run_bot_macro_tests.sh tests/run_bot_character_tests.sh tests/run_bot_source_tests.sh tests/run_bot_global_tests.sh tests/run_bot_interpolation_tests.sh tests/run_bot_default_tests.sh tests/run_bot_number_tests.sh tests/run_bot_escape_tests.sh tests/run_bot_source_error_tests.sh tests/run_bot_weight_tests.sh tests/run_bot_character_integer_tests.sh tests/run_bot_character_string_tests.sh tests/run_bot_character_numeric_tests.sh tests/run_bot_character_skill_tests.sh tests/run_bot_interpolation_numeric_tests.sh tests/run_bot_character_float_getter_tests.sh tests/run_bot_synonym_tests.sh tests/run_bot_eval_tests.sh tests/run_bot_eval_collection_tests.sh tests/run_bot_eval_arithmetic_tests.sh tests/run_bot_source_factory_tests.sh tests/run_bot_define_tests.sh tests/run_bot_empty_expansion_tests.sh tests/run_bot_move_setup_tests.sh tests/run_bot_file_comment_tests.sh tests/run_bot_file_eof_tests.sh tests/run_aas_setup_tests.sh tests/run_bot_action_setup_tests.sh tests/run_bot_item_config_tests.sh tests/run_bot_structure_number_tests.sh tests/run_bot_goal_setup_tests.sh tests/run_bot_level_pool_tests.sh tests/run_bot_level_map_api_tests.sh tests/run_bot_game_map_tests.sh tests/run_bot_map_info_tests.sh tests/run_bot_projectile_model_tests.sh tests/run_bot_weapon_config_tests.sh tests/run_bot_weapon_setup_tests.sh tests/run_bot_weapon_weight_tests.sh tests/run_bot_weapon_table_tests.sh tests/run_bot_weapon_api_tests.sh tests/run_bot_chat_state_tests.sh tests/run_bot_chat_pool_tests.sh tests/run_bot_chat_api_tests.sh tests/run_bot_chat_consumer_tests.sh tests/run_message_huffman_tests.sh
+          bash tests/check_shell_syntax.sh
           ./build_mac.sh --help
-
-      - name: Check ZIP fixture script syntax
-        run: bash -n tests/run_fs_zip_tests.sh tests/run_fs_buffer_slot_tests.sh tests/run_fs_zip_mount_tests.sh tests/run_fs_zip_reopen_tests.sh tests/run_fs_zip_entry_tests.sh tests/run_fs_buffer_bounds_tests.sh tests/run_fs_handle_api_tests.sh tests/run_unzip_position_tests.sh tests/run_unzip_open_tests.sh tests/run_fs_zip_factory_tests.sh tests/run_unzip_replacement_tests.sh tests/run_unzip_optional_metadata_tests.sh tests/run_fs_zip_seek_tests.sh
 
       - name: Check PowerShell syntax and help
         shell: pwsh
@@ -81,239 +81,34 @@ jobs:
       - name: Run packaging utility regressions
         run: python -m unittest tests.test_packaging_tools -v
 
-  host-c-regressions:
-    name: Host C regressions (ASan/UBSan)
+  host-c-regressions-shard:
+    name: Host C regressions (${{ matrix.cc }} ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+        shard: [0, 1, 2, 3]
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Check native ZIP inflate callbacks and allocation costs
-        run: |
-          bash tests/run_fs_zip_tests.sh
-          CC=clang bash tests/run_fs_zip_tests.sh
+      - name: Run host memory-safety regressions
+        env:
+          CC: ${{ matrix.cc }}
+        run: bash tests/run_host_regressions.sh --shard ${{ matrix.shard }}/4 --deadline 1200
 
-      - name: Check buffered file-handle ownership
+  host-c-regressions:
+    name: Host C regressions (ASan/UBSan)
+    if: always()
+    needs: host-c-regressions-shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every shard to pass
+        env:
+          SHARD_RESULT: ${{ needs.host-c-regressions-shard.result }}
         run: |
-          bash tests/run_fs_buffer_slot_tests.sh
-          CC=clang bash tests/run_fs_buffer_slot_tests.sh
-
-      - name: Check complete native ZIP mount metadata
-        run: |
-          bash tests/run_fs_zip_mount_tests.sh
-          CC=clang bash tests/run_fs_zip_mount_tests.sh
-
-      - name: Check native ZIP clone decoder ownership
-        run: |
-          bash tests/run_fs_zip_reopen_tests.sh
-          CC=clang bash tests/run_fs_zip_reopen_tests.sh
-
-      - name: Check real ZIP entry sizes and truncated payloads
-        run: |
-          bash tests/run_fs_zip_entry_tests.sh
-          CC=clang bash tests/run_fs_zip_entry_tests.sh
-
-      - name: Check native buffered read and seek bounds
-        run: |
-          bash tests/run_fs_buffer_bounds_tests.sh
-          CC=clang bash tests/run_fs_buffer_bounds_tests.sh
-
-      - name: Check native file handle operation bounds
-        run: |
-          bash tests/run_fs_handle_api_tests.sh
-          CC=clang bash tests/run_fs_handle_api_tests.sh
-
-      - name: Check actual ZIP metadata I/O and errors
-        run: |
-          bash tests/run_unzip_position_tests.sh
-          CC=clang bash tests/run_unzip_position_tests.sh
-
-      - name: Check complete native ZIP decoder initialization
-        run: |
-          bash tests/run_unzip_open_tests.sh
-          CC=clang bash tests/run_unzip_open_tests.sh
-
-      - name: Check native ZIP archive clone and buffer factories
-        run: |
-          bash tests/run_fs_zip_factory_tests.sh
-          CC=clang bash tests/run_fs_zip_factory_tests.sh
-
-      - name: Check active native ZIP decoder replacement
-        run: |
-          bash tests/run_unzip_replacement_tests.sh
-          CC=clang bash tests/run_unzip_replacement_tests.sh
-
-      - name: Check bounded optional ZIP metadata reads
-        run: |
-          bash tests/run_unzip_optional_metadata_tests.sh
-          CC=clang bash tests/run_unzip_optional_metadata_tests.sh
-
-      - name: Check complete native ZIP seek semantics
-        run: |
-          bash tests/run_fs_zip_seek_tests.sh
-          CC=clang bash tests/run_fs_zip_seek_tests.sh
-
-      - name: Build and run host memory-safety checks
-        run: |
-          bash tests/run_message_huffman_tests.sh
-          CC=clang bash tests/run_message_huffman_tests.sh
-          bash tests/run_host_c_tests.sh
-          bash tests/run_vm_loading_tests.sh
-          bash tests/run_vm_bytecode_tests.sh
-          bash tests/run_vm_runtime_tests.sh
-          bash tests/run_vm_call_tests.sh
-          bash tests/run_vm_memory_trap_tests.sh
-          bash tests/run_ui_syscall_tests.sh
-          bash tests/run_cgame_syscall_tests.sh
-          bash tests/run_server_core_syscall_tests.sh
-          bash tests/run_vm_returned_string_tests.sh
-          bash tests/run_botlib_navigation_tests.sh
-          bash tests/run_botlib_chat_tests.sh
-          bash tests/run_botlib_actions_tests.sh
-          bash tests/run_botlib_ai_tests.sh
-          bash tests/run_roq_stream_tests.sh
-          bash tests/run_roq_frame_tests.sh
-          bash tests/run_roq_vq_tests.sh
-          bash tests/run_bmp_cursor_tests.sh
-          bash tests/run_pcx_cursor_tests.sh
-          bash tests/run_tga_cursor_tests.sh
-          bash tests/run_jpeg_io_tests.sh
-          bash tests/run_md3_layout_tests.sh
-          bash tests/run_md4_layout_tests.sh
-          bash tests/run_bsp_header_tests.sh
-          bash tests/run_bsp_reference_tests.sh
-          bash tests/run_bsp_lightmap_tests.sh
-          bash tests/run_bsp_geometry_tests.sh
-          bash tests/run_bsp_entity_grid_tests.sh
-          bash tests/run_bsp_tree_tests.sh
-          bash tests/run_bsp_model_capacity_tests.sh
-          bash tests/run_bsp_trace_tests.sh
-          bash tests/run_bsp_world_tests.sh
-          bash tests/run_bsp_patch_grid_tests.sh
-          bash tests/run_bsp_winding_tests.sh
-          bash tests/run_hunk_allocation_tests.sh
-          bash tests/run_bsp_lod_tests.sh
-          bash tests/run_shader_stage_tests.sh
-          bash tests/run_skin_capacity_tests.sh
-          bash tests/run_font_layout_tests.sh
-          bash tests/run_font_freetype_tests.sh
-          bash tests/run_shader_archive_tests.sh
-          bash tests/run_shader_runtime_tests.sh
-          bash tests/run_sky_bounds_tests.sh
-          bash tests/run_aas_layout_tests.sh
-          bash tests/run_aas_endian_tests.sh
-          bash tests/run_aas_writer_tests.sh
-          bash tests/run_aas_geometry_tests.sh
-          bash tests/run_bot_memory_tests.sh
-          CC=clang bash tests/run_bot_memory_tests.sh
-          bash tests/run_aas_node_tests.sh
-          bash tests/run_aas_reachability_tests.sh
-          bash tests/run_aas_portal_tests.sh
-          bash tests/run_aas_unclustered_routing_tests.sh
-          bash tests/run_aas_travel_time_tests.sh
-          bash tests/run_aas_routing_time_tests.sh
-          bash tests/run_aas_routing_workspace_tests.sh
-          bash tests/run_aas_routing_failure_tests.sh
-          bash tests/run_aas_cache_allocation_tests.sh
-          bash tests/run_aas_cache_file_tests.sh
-          CC=clang bash tests/run_aas_cache_file_tests.sh
-          bash tests/run_aas_routing_init_tests.sh
-          bash tests/run_bot_libvar_tests.sh
-          CC=clang bash tests/run_bot_libvar_tests.sh
-          bash tests/run_bot_builtin_tests.sh
-          CC=clang bash tests/run_bot_builtin_tests.sh
-          bash tests/run_bot_include_tests.sh
-          CC=clang bash tests/run_bot_include_tests.sh
-          bash tests/run_bot_macro_tests.sh
-          CC=clang bash tests/run_bot_macro_tests.sh
-          bash tests/run_bot_character_tests.sh
-          CC=clang bash tests/run_bot_character_tests.sh
-          bash tests/run_bot_source_tests.sh
-          CC=clang bash tests/run_bot_source_tests.sh
-          bash tests/run_bot_global_tests.sh
-          CC=clang bash tests/run_bot_global_tests.sh
-          bash tests/run_bot_interpolation_tests.sh
-          CC=clang bash tests/run_bot_interpolation_tests.sh
-          bash tests/run_bot_default_tests.sh
-          CC=clang bash tests/run_bot_default_tests.sh
-          bash tests/run_bot_number_tests.sh
-          CC=clang bash tests/run_bot_number_tests.sh
-          bash tests/run_bot_escape_tests.sh
-          CC=clang bash tests/run_bot_escape_tests.sh
-          bash tests/run_bot_source_error_tests.sh
-          CC=clang bash tests/run_bot_source_error_tests.sh
-          bash tests/run_bot_weight_tests.sh
-          CC=clang bash tests/run_bot_weight_tests.sh
-          bash tests/run_bot_character_integer_tests.sh
-          CC=clang bash tests/run_bot_character_integer_tests.sh
-          bash tests/run_bot_character_string_tests.sh
-          CC=clang bash tests/run_bot_character_string_tests.sh
-          bash tests/run_bot_character_numeric_tests.sh
-          CC=clang bash tests/run_bot_character_numeric_tests.sh
-          bash tests/run_bot_character_skill_tests.sh
-          CC=clang bash tests/run_bot_character_skill_tests.sh
-          bash tests/run_bot_interpolation_numeric_tests.sh
-          CC=clang bash tests/run_bot_interpolation_numeric_tests.sh
-          bash tests/run_bot_character_float_getter_tests.sh
-          CC=clang bash tests/run_bot_character_float_getter_tests.sh
-          bash tests/run_bot_synonym_tests.sh
-          CC=clang bash tests/run_bot_synonym_tests.sh
-          bash tests/run_bot_eval_tests.sh
-          CC=clang bash tests/run_bot_eval_tests.sh
-          bash tests/run_bot_eval_collection_tests.sh
-          CC=clang bash tests/run_bot_eval_collection_tests.sh
-          bash tests/run_bot_eval_arithmetic_tests.sh
-          CC=clang bash tests/run_bot_eval_arithmetic_tests.sh
-          bash tests/run_bot_source_factory_tests.sh
-          CC=clang bash tests/run_bot_source_factory_tests.sh
-          bash tests/run_bot_define_tests.sh
-          CC=clang bash tests/run_bot_define_tests.sh
-          bash tests/run_bot_empty_expansion_tests.sh
-          CC=clang bash tests/run_bot_empty_expansion_tests.sh
-          bash tests/run_bot_move_setup_tests.sh
-          CC=clang bash tests/run_bot_move_setup_tests.sh
-          bash tests/run_bot_file_comment_tests.sh
-          CC=clang bash tests/run_bot_file_comment_tests.sh
-          bash tests/run_bot_file_eof_tests.sh
-          CC=clang bash tests/run_bot_file_eof_tests.sh
-          bash tests/run_aas_setup_tests.sh
-          CC=clang bash tests/run_aas_setup_tests.sh
-          bash tests/run_bot_action_setup_tests.sh
-          CC=clang bash tests/run_bot_action_setup_tests.sh
-          bash tests/run_bot_item_config_tests.sh
-          CC=clang bash tests/run_bot_item_config_tests.sh
-          bash tests/run_bot_structure_number_tests.sh
-          CC=clang bash tests/run_bot_structure_number_tests.sh
-          bash tests/run_bot_goal_setup_tests.sh
-          CC=clang bash tests/run_bot_goal_setup_tests.sh
-          bash tests/run_bot_level_pool_tests.sh
-          CC=clang bash tests/run_bot_level_pool_tests.sh
-          bash tests/run_bot_level_map_api_tests.sh
-          CC=clang bash tests/run_bot_level_map_api_tests.sh
-          bash tests/run_bot_game_map_tests.sh
-          CC=clang bash tests/run_bot_game_map_tests.sh
-          bash tests/run_bot_map_info_tests.sh
-          CC=clang bash tests/run_bot_map_info_tests.sh
-          bash tests/run_bot_projectile_model_tests.sh
-          CC=clang bash tests/run_bot_projectile_model_tests.sh
-          bash tests/run_bot_weapon_config_tests.sh
-          CC=clang bash tests/run_bot_weapon_config_tests.sh
-          bash tests/run_bot_weapon_setup_tests.sh
-          CC=clang bash tests/run_bot_weapon_setup_tests.sh
-          bash tests/run_bot_weapon_weight_tests.sh
-          CC=clang bash tests/run_bot_weapon_weight_tests.sh
-          bash tests/run_bot_weapon_table_tests.sh
-          CC=clang bash tests/run_bot_weapon_table_tests.sh
-          bash tests/run_bot_weapon_api_tests.sh
-          CC=clang bash tests/run_bot_weapon_api_tests.sh
-          bash tests/run_bot_chat_state_tests.sh
-          CC=clang bash tests/run_bot_chat_state_tests.sh
-          bash tests/run_bot_chat_pool_tests.sh
-          CC=clang bash tests/run_bot_chat_pool_tests.sh
-          bash tests/run_bot_chat_api_tests.sh
-          CC=clang bash tests/run_bot_chat_api_tests.sh
-          bash tests/run_bot_chat_consumer_tests.sh
-          CC=clang bash tests/run_bot_chat_consumer_tests.sh
-          bash tests/run_bot_zone_tests.sh
-          CC=clang bash tests/run_bot_zone_tests.sh
+          echo "Shard matrix result: $SHARD_RESULT"
+          test "$SHARD_RESULT" = success
