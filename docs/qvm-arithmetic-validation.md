@@ -2,19 +2,16 @@
 
 The fifth step for issue #35 defines 32-bit wrapping integer NEG/ADD/SUB/MUL
 using unsigned C arithmetic, so normal QVM overflow does not become native
-undefined behavior. Signed right shift explicitly sign-extends. Issue #248
-replaced the former arithmetic faults with the results retail PowerPC clients
-computed, because retail QVMs rely on them (`1 << score->client` for clients
-32–63): shifts use the low six count bits, so counts 32–63 give 0 (sign fill
-for RSHI) and 64 shifts by 0; division by zero gives 0, modulo by zero keeps
-the dividend, INT_MIN/-1 gives INT_MIN, and INT_MIN%-1 gives 0. Float-to-int
-conversion truncates toward zero, saturates out-of-range values and infinities
-to INT_MIN/INT_MAX, and converts NaN to INT_MIN.
+undefined behavior. Signed right shift explicitly sign-extends. Shift counts
+outside 0–31, integer division/modulo by zero, and signed INT_MIN/-1 division
+or modulo raise a controlled interpreter fault before executing a native trap.
+Float-to-int conversion rejects NaN, infinity, and values outside the signed
+32-bit range; valid values still truncate toward zero.
 
 ## Validation
 
 The actual-interpreter ASan/UBSan harness covers wrapping integer limits,
-signed/unsigned quotient/remainder, zero divisors, negative/extreme shift
+signed/unsigned quotient/remainder, division traps, negative/extreme shift
 counts, both shift boundaries, negative arithmetic shifts, valid positive and
 negative float truncation, the largest convertible positive float, INT_MIN,
 NaNs, infinities, and values just outside the conversion range. The existing
@@ -34,5 +31,20 @@ pass PEF validation with the temporary libraries described in the
 
 The [next step](qvm-call-validation.md) covers VM call arguments.
 Keep #35 open: syscall-specific pointer/range checks remain. Retail baseq3/Team Arena and Mac OS 9 acceptance remains
-deferred. Arithmetic edge cases have defined results; no complete sandbox or
-target runtime compatibility claim is made.
+deferred. The controlled errors cover invalid arithmetic; no complete sandbox
+or target runtime compatibility claim is made.
+
+## #248 update — 2026-09-23
+
+This supersedes the arithmetic faults described above. Retail QVMs rely on
+native results (`cg_scoreboard.c` evaluates `1 << score->client` for clients
+32–63), so these operations now return defined values instead of faulting.
+Shifts, modulo by zero, and float-to-int conversion reproduce the retail
+PowerPC JIT (`vm_ppc.c`/`vm_ppc_new.c`): shifts use the low six count bits,
+so counts 32–63 give 0 (sign fill for RSHI) and 64 shifts by 0; `x % 0` keeps
+`x`; CVFI truncates toward zero, saturates out-of-range values and infinities
+to INT_MIN/INT_MAX, and converts NaN to INT_MIN. `divw` leaves `x / 0` and
+`INT_MIN / -1` undefined (x86 `idiv` faults), so they are defined as 0 and
+INT_MIN, and `INT_MIN % -1` as 0. The runtime regression asserts these values,
+including `1 << client` for every client below MAX_CLIENTS. A retail 1.32
+cgame scoreboard with clients 32 or higher on Mac OS 9 remains untested.

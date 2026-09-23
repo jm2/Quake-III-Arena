@@ -330,7 +330,9 @@ static void BinaryArithmetic( int op, int left, int right, int result ) {
 	Run( qfalse, result, NULL );
 }
 
-// Issue #248: edge cases return the retail PowerPC result instead of faulting.
+// Issue #248: edge cases return defined values instead of faulting. Shifts,
+// x % 0 and CVFI match the retail PowerPC JIT; x / 0 and INT_MIN / -1, which
+// divw leaves undefined, are chosen as 0 and INT_MIN (INT_MIN % -1 as 0).
 static void TestArithmetic( void ) {
 	const struct { int op, left, right, result; } binary[] = {
 		{OP_ADD, INT_MAX, 1, INT_MIN}, {OP_SUB, INT_MIN, 1, INT_MAX},
