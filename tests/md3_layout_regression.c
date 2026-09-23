@@ -150,6 +150,33 @@ static void Golden( int frames, int tags, int surfaces, int vertices, int triang
 	}
 }
 
+/** Issue #244: q3data hand models are tag-only, with cleared bounds (mins 99999, maxs -99999). */
+static void TagOnly( void ) {
+	static const char *names[]={"tag_flash","tag_weapon","tag_barrel"};
+	orientation_t orientation; vec3_t mins,maxs; md3Frame_t *frame; int i,j,frames,tag;
+	Build(16,3,0,0,0,0); frames=R_MODEL_FIELD(source,md3Header_t,ofsFrames); tag=R_MODEL_FIELD(source,md3Header_t,ofsTags);
+	for(i=0;i<16;i++) {
+		for(j=0;j<3;j++) { Float(frames+i*56+j*4,99999); Float(frames+i*56+12+j*4,-99999); Float(frames+i*56+24+j*4,0); }
+		Float(frames+i*56+36,173203.34375f);
+		for(j=0;j<3;j++) { memset(source+tag,0,64); memcpy(source+tag,names[j],strlen(names[j])+1); Float(tag+64,(float)(i*10+j)); tag+=112; }
+	}
+	memcpy(saved,source,sourceSize);
+	for(alignment=0;alignment<4;alignment++) {
+		Reset(); present[0]=1; Check(RE_RegisterModel("shotgun_hand.md3")==1 && allocations==2 && frees==1 && !warnings && !shaderCalls && tr.models[1]->type==MOD_MESH && tr.models[1]->numLods==1 && !tr.models[1]->md3[0]->numSurfaces,"tag-only cleared-bounds registration");
+		frame=(md3Frame_t *)((byte *)tr.models[1]->md3[0]+tr.models[1]->md3[0]->ofsFrames); Check(frame[15].bounds[0][0]==99999 && frame[15].bounds[1][2]==-99999 && frame[15].radius==173203.34375f,"native cleared bounds");
+		R_ModelBounds(1,mins,maxs); Check(mins[1]==99999 && maxs[1]==-99999,"retail cleared model bounds");
+		for(j=0;j<3;j++) Check(R_LerpTag(&orientation,1,15,15,0,names[j]) && orientation.origin[0]==150+j && orientation.axis[0][0]==1 && orientation.axis[1][1]==1 && orientation.axis[2][2]==1,"tag-only named tag");
+		Check(R_LerpTag(&orientation,1,2,4,0.5f,"tag_weapon") && orientation.origin[0]==31 && !orientation.origin[1],"tag-only interpolated tag");
+		Check(!R_LerpTag(&orientation,1,0,0,0,"tag_test") && !orientation.origin[0] && orientation.axis[0][0]==1,"tag-only missing tag");
+	}
+	alignment=0; tag=R_MODEL_FIELD(source,md3Header_t,ofsTags);
+	memcpy(source,saved,sourceSize); Word(frames+15*56+12,0xff800000u); Reject();
+	memcpy(source,saved,sourceSize); Word(frames+15*56,0x7f800000u); Reject();
+	memcpy(source,saved,sourceSize); Word(frames+15*56+36,0x7fc00000u); Reject();
+	memcpy(source,saved,sourceSize); Float(frames+15*56+36,-1); Reject();
+	memcpy(source,saved,sourceSize); Word(tag+47*112+64,0x7f800000u); Reject();
+}
+
 /** Mutate signed offsets/counts and consumed serialized data after saving a canonical model. */
 int main( void ) {
 	int i,j,offset,surface,triangle,shader,st,tag,normal,baseline;
@@ -185,7 +212,7 @@ int main( void ) {
 	memcpy(source,saved,baseline); normal=R_MODEL_FIELD(source+surface,md3Surface_t,ofsXyzNormals); Put(surface,md3Surface_t,ofsXyzNormals,normal+1); Reject();
 	memcpy(source,saved,baseline); offset=R_MODEL_FIELD(source,md3Header_t,ofsFrames); Word(offset,0x7fc00000u); Reject();
 	memcpy(source,saved,baseline); Float(offset+36,-1); Reject();
-	memcpy(source,saved,baseline); Float(offset,2); Reject();
+	memcpy(source,saved,baseline); Float(offset,2); Reset(); memset(&model,0,sizeof(model)); Check(Direct(baseline,0,&model) && allocations==1,"unordered frame bounds");
 	memcpy(source,saved,baseline); Word(surface+st,0x7f800000u); Reject();
 	memcpy(source,saved,baseline); Word(tag+64,0xff800000u); Reject();
 	memcpy(source,saved,baseline); Reset(); memset(&model,0,sizeof(model)); model.dataSize=INT_MAX-baseline+1; Check(!Direct(baseline,0,&model) && !allocations,"aggregate size overflow");
@@ -195,6 +222,7 @@ int main( void ) {
 	Build(1024,0,1,999,1999,0); Golden(1024,0,1,999,1999,0);
 	Build(1024,16,0,0,0,0); Golden(1024,16,0,0,0,0);
 	Build(1,0,32,0,0,0); Golden(1,0,32,0,0,0);
+	TagOnly();
 	Build(2,1,1,3,1,1);
 	Reset(); present[0]=present[2]=1; Check(RE_RegisterModel("test.md3")==1 && allocations==3 && tr.models[1]->numLods==3 && tr.models[1]->md3[0] && tr.models[1]->md3[1]==tr.models[1]->md3[2] && frees==2,"staged LOD registration/fallback");
 	Reset(); present[2]=1; Check(RE_RegisterModel("test.md3")==1 && allocations==2 && tr.models[1]->numLods==3 && tr.models[1]->md3[0]==tr.models[1]->md3[2] && frees==1,"coarse-only fallback");

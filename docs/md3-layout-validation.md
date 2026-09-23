@@ -13,7 +13,8 @@ the format's frame/tag/surface/shader limits and the renderer's strict tess
 limits (at most 999 vertices and 1999 triangles per surface). Surface frame
 counts match the header. Consumed surface/tag/shader names terminate in
 bounds; triangle indexes fit vertices. Culling metadata, tags and texture
-coordinates are finite, with nonnegative radii and ordered frame bounds.
+coordinates are finite, with nonnegative radii; frame bounds may be inverted,
+as q3data's cleared bounds on tag-only hand models are (#244).
 Unused fixed-width frame labels and reserved flags are not interpreted as
 strings or array references. Native copying/conversion retains packed vertex
 normals, surface naming and shader registration behavior. Tag lookup also
@@ -43,11 +44,12 @@ alignments test every prefix of a small two-frame/two-surface model. Golden
 copies check header/frame/tag values, lowercase names, shader indexes,
 triangle indexes, ST values and packed vertex/normal words. The input remains
 unchanged. Cases exercise maximum frame/tag/surface/shader and native tess
-counts without oversized output allocation.
+counts without oversized output allocation. A tag-only 16-frame model with
+q3data's cleared (inverted) bounds registers at all four alignments.
 
 Malformed cases include negative/huge offsets and counts, zero surface
 progress, mismatched frames, overlapping/misaligned sections, unterminated
-names, triangle indexes, NaN/infinity, reversed bounds, negative radius,
+names, triangle indexes, NaN/infinity, negative radius,
 invalid identification/version and aggregate allocation overflow. Rejection
 asserts no payload allocation, shader registration or changed model state.
 Actual registration checks missing and malformed optional LODs, incompatible
