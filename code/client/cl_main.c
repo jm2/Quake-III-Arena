@@ -33,6 +33,9 @@ cvar_t	*cl_motd;
 cvar_t	*rcon_client_password;
 cvar_t	*rconAddress;
 
+// where the last rcon command went; its "print" replies are accepted
+static netadr_t	rcon_address;
+
 cvar_t	*cl_timeout;
 cvar_t	*cl_maxpackets;
 cvar_t	*cl_packetdup;
@@ -1112,7 +1115,6 @@ CL_Rcon_f
 */
 void CL_Rcon_f( void ) {
 	char	message[MAX_RCON_MESSAGE];
-	netadr_t	to;
 
 	if ( !rcon_client_password->string ) {
 		Com_Printf ("You must set 'rconpassword' before\n"
@@ -1135,7 +1137,7 @@ void CL_Rcon_f( void ) {
 	Q_strcat (message, MAX_RCON_MESSAGE, Cmd_Cmd()+5);
 
 	if ( cls.state >= CA_CONNECTED ) {
-		to = clc.netchan.remoteAddress;
+		rcon_address = clc.netchan.remoteAddress;
 	} else {
 		if (!strlen(rconAddress->string)) {
 			Com_Printf ("You must either be connected,\n"
@@ -1144,13 +1146,13 @@ void CL_Rcon_f( void ) {
 
 			return;
 		}
-		NET_StringToAdr (rconAddress->string, &to);
-		if (to.port == 0) {
-			to.port = BigShort (PORT_SERVER);
+		NET_StringToAdr (rconAddress->string, &rcon_address);
+		if (rcon_address.port == 0) {
+			rcon_address.port = BigShort (PORT_SERVER);
 		}
 	}
 	
-	NET_SendPacket (NS_CLIENT, strlen(message)+1, message, to);
+	NET_SendPacket (NS_CLIENT, strlen(message)+1, message, rcon_address);
 }
 
 /*
@@ -1881,7 +1883,12 @@ void CL_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 
 	// echo request from server
 	if ( !Q_stricmp(c, "echo") ) {
-		NET_OutOfBandPrint( NS_CLIENT, from, "%s", Cmd_Argv(1) );
+		// only answer the server or rcon target, so the client can't be
+		// used to bounce packets at an address the sender picks
+		if ( ( cls.state >= CA_CONNECTING && NET_CompareAdr( from, clc.serverAddress ) )
+			|| NET_CompareAdr( from, rcon_address ) ) {
+			NET_OutOfBandPrint( NS_CLIENT, from, "%s", Cmd_Argv(1) );
+		}
 		return;
 	}
 
@@ -1899,9 +1906,14 @@ void CL_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 
 	// echo request from server
 	if ( !Q_stricmp(c, "print") ) {
-		s = MSG_ReadString( msg );
-		Q_strncpyz( clc.serverMessage, s, sizeof( clc.serverMessage ) );
-		Com_Printf( "%s", s );
+		// connection refusals come from the server, rcon output from the
+		// rcon target; text from anyone else is not shown
+		if ( ( cls.state >= CA_CONNECTING && NET_CompareAdr( from, clc.serverAddress ) )
+			|| NET_CompareAdr( from, rcon_address ) ) {
+			s = MSG_ReadString( msg );
+			Q_strncpyz( clc.serverMessage, s, sizeof( clc.serverMessage ) );
+			Com_Printf( "%s", s );
+		}
 		return;
 	}
 
