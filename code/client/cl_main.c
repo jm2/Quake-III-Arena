@@ -1690,6 +1690,12 @@ void CL_ServersResponsePacket( netadr_t from, msg_t *msg ) {
 	byte*			buffptr;
 	byte*			buffend;
 	
+	// server lists are only accepted from the master we queried
+	if ( !NET_CompareAdr( from, cls.masterServer ) ) {
+		Com_DPrintf( "getserversResponse from unexpected address %s\n", NET_AdrToString( from ) );
+		return;
+	}
+
 	Com_Printf("CL_ServersResponsePacket\n");
 
 	if (cls.numglobalservers == -1) {
@@ -1714,7 +1720,7 @@ void CL_ServersResponsePacket( netadr_t from, msg_t *msg ) {
 		}
 		while (buffptr < buffend);
 
-		if ( buffptr >= buffend - 6 ) {
+		if ( buffend - buffptr <= 6 ) {
 			break;
 		}
 
@@ -1747,7 +1753,7 @@ void CL_ServersResponsePacket( netadr_t from, msg_t *msg ) {
 		}
 
 		// parse out EOT
-		if (buffptr[1] == 'E' && buffptr[2] == 'O' && buffptr[3] == 'T') {
+		if (buffend - buffptr > 3 && buffptr[1] == 'E' && buffptr[2] == 'O' && buffptr[3] == 'T') {
 			break;
 		}
 	}
@@ -1773,7 +1779,7 @@ void CL_ServersResponsePacket( netadr_t from, msg_t *msg ) {
 	if (cls.masterNum == 0) {
 		if ( cls.numGlobalServerAddresses < MAX_GLOBAL_SERVERS ) {
 			// if we couldn't store the servers in the main list anymore
-			for (; i < numservers && count >= max; i++) {
+			for (; i < numservers && count >= max && cls.numGlobalServerAddresses < MAX_GLOBAL_SERVERS; i++) {
 				serverAddress_t *addr;
 				// just store the addresses in an additional list
 				addr = &cls.globalServerAddresses[cls.numGlobalServerAddresses++];
@@ -2942,6 +2948,7 @@ void CL_GlobalServers_f( void ) {
 	int			i;
 	int			count;
 	char		command[1024];
+	qboolean	resolved;
 	
 	if ( Cmd_Argc() < 3) {
 		Com_Printf( "usage: globalservers <master# 0-1> <protocol> [keywords]\n");
@@ -2956,17 +2963,23 @@ void CL_GlobalServers_f( void ) {
 	// -1 is used to distinguish a "no response"
 
 	if( cls.masterNum == 1 ) {
-		NET_StringToAdr( MASTER_SERVER_NAME, &to );
+		resolved = NET_StringToAdr( MASTER_SERVER_NAME, &to );
 		cls.nummplayerservers = -1;
 		cls.pingUpdateSource = AS_MPLAYER;
 	}
 	else {
-		NET_StringToAdr( MASTER_SERVER_NAME, &to );
+		resolved = NET_StringToAdr( MASTER_SERVER_NAME, &to );
 		cls.numglobalservers = -1;
 		cls.pingUpdateSource = AS_GLOBAL;
 	}
 	to.type = NA_IP;
 	to.port = BigShort(PORT_MASTER);
+
+	// only this master may answer with a server list
+	cls.masterServer = to;
+	if ( !resolved ) {
+		cls.masterServer.type = NA_BAD;
+	}
 
 	Com_sprintf( command, sizeof(command), "getservers %s", Cmd_Argv(2) );
 
