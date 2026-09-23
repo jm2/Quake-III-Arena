@@ -1,10 +1,10 @@
-/* Issue #41: checked native codebooks and VQ preflight, using exact payload allocations. */
+/* Issues #41/#247: checked native codebooks and VQ decoding, using exact payload allocations. */
 #define main RoQStreamRegressions
 #include "roq_stream_regression.c"
 #undef main
 
 static byte book[2560], stream[4096], beforeTwo[sizeof(vq2)], beforeFour[sizeof(vq4)], beforeEight[sizeof(vq8)];
-static byte beforeFrame[sizeof(cin.linbuf)];
+static byte beforeFrame[sizeof(cin.linbuf)], *expectedHalf;
 static int streamSize, codes, wordPosition;
 static unsigned int controlWord;
 
@@ -32,31 +32,46 @@ static void Codebooks( void ) {
 	Book(); memset(vq2,0xa5,sizeof(vq2)); memset(vq4,0xa5,sizeof(vq4)); memset(vq8,0xa5,sizeof(vq8)); SaveBook();
 	for(length=0;length<sizeof(book);length++) {
 		exact=malloc(length ? length : 1); Check(exact!=NULL,"exact codebook allocation"); memcpy(exact,book,length);
-		Check(!decodeCodeBook(exact,exact+length,0),"truncated full codebook accepted"); SameBook(); free(exact);
+		if(length<1536) {
+			Check(!decodeCodeBook(exact,exact+length,0),"truncated 2x2 codebook accepted"); SameBook();
+		} else {
+			/* Issue #247: argument 0 has 256 4x4 entries only when all their bytes are present (retail idlogo.RoQ). */
+			Check(decodeCodeBook(exact,exact+length,0),"argument-0 2x2-only codebook rejected");
+			for(i=0;i<256;i++) for(q=0;q<4;q++) Pixel((byte *)vq2[i]+q*4,(i%8)*16+q*4);
+			Check(!memcmp(beforeFour,vq4,sizeof(vq4)) && !memcmp(beforeEight,vq8,sizeof(vq8)),"short argument-0 codebook changed 4x4/8x8 entries");
+		}
+		free(exact);
 	}
 	Check(decodeCodeBook(book,book+sizeof(book),0),"full codebook rejected");
 	Check(sizeof(vq2)==4096 && sizeof(vq4)==16384 && sizeof(vq8)==65536,"fixed RGBA table capacity");
 	for(i=0;i<256;i++) {
-		for(q=0;q<4;q++) Pixel(vq2[i]+q*4,(i%8)*16+q*4);
+		for(q=0;q<4;q++) Pixel((byte *)vq2[i]+q*4,(i%8)*16+q*4);
 		for(y=0;y<4;y++) for(x=0;x<4;x++) {
 			index=(i*4+(y/2)*2+x/2)%256; luminance=(index%8)*16+((y%2)*2+x%2)*4;
-			Pixel(vq4[i]+(y*4+x)*4,luminance);
+			Pixel((byte *)vq4[i]+(y*4+x)*4,luminance);
 		}
 		for(y=0;y<8;y++) for(x=0;x<8;x++) {
 			index=(i*4+(y/4)*2+x/4)%256; luminance=(index%8)*16+(((y/2)%2)*2+(x/2)%2)*4;
-			Pixel(vq8[i]+(y*8+x)*4,luminance);
+			Pixel((byte *)vq8[i]+(y*8+x)*4,luminance);
 		}
 	}
 	SaveBook();
 	Check(decodeCodeBook(partial,partial+6,0x0100),"2x2-only update rejected");
-	for(q=0;q<4;q++) Pixel(vq2[0]+q*4,16);
+	for(q=0;q<4;q++) Pixel((byte *)vq2[0]+q*4,16);
 	Check(!memcmp((byte *)vq2+16,beforeTwo+16,sizeof(vq2)-16) && !memcmp(beforeFour,vq4,sizeof(vq4)) && !memcmp(beforeEight,vq8,sizeof(vq8)),"partial update changed unrelated entries");
 	Check(decodeCodeBook(book,book+sizeof(book),0),"restore full codebook");
 	SaveBook(); exact=malloc(1540); Check(exact!=NULL,"partial codebook allocation"); memcpy(exact,book,1536); memset(exact+1536,255,4);
 	Check(decodeCodeBook(exact,exact+1540,1),"default 256 2x2/one 4x4 update rejected");
 	Check(!memcmp((byte *)vq4+64,beforeFour+64,sizeof(vq4)-64) && !memcmp((byte *)vq8+256,beforeEight+256,sizeof(vq8)-256),"one-entry update changed other 4x4/8x8 entries");
-	for(q=0;q<4;q++) for(i=0;i<4;i++) Pixel(vq4[0]+((q/2)*2+i/2)*16+((q%2)*2+i%2)*4,112+i*4);
+	for(q=0;q<4;q++) for(i=0;i<4;i++) Pixel((byte *)vq4[0]+((q/2)*2+i/2)*16+((q%2)*2+i%2)*4,112+i*4);
 	free(exact); Check(decodeCodeBook(book,book+sizeof(book),0),"restore full codebook after one-entry update");
+	/* A low byte of 0 after an explicit 2x2 count also means 256 4x4 entries only when all 1,024 bytes follow. */
+	exact=malloc(1030); Check(exact!=NULL,"explicit 2x2 codebook allocation"); memcpy(exact,partial,6); memcpy(exact+6,book+1536,1024);
+	SaveBook(); Check(decodeCodeBook(exact,exact+1029,0x0100),"one 2x2 entry with a short 4x4 table rejected");
+	Check(!memcmp(beforeFour,vq4,sizeof(vq4)) && !memcmp(beforeEight,vq8,sizeof(vq8)),"short 4x4 table after one 2x2 entry changed 4x4/8x8 entries");
+	Check(decodeCodeBook(exact,exact+1030,0x0100),"one 2x2 entry with 256 4x4 entries rejected");
+	for(i=0;i<256;i++) Check(vq4[i][0]==vq2[book[1536+i*4]][0] && vq8[i][63]==vq2[book[1536+i*4+3]][3],"256 4x4 entries after one 2x2 entry");
+	free(exact); Check(decodeCodeBook(book,book+sizeof(book),0),"restore full codebook after explicit 2x2 count");
 }
 
 /** Pack control words where the decoder refills them, interleaved with operand bytes. */
@@ -79,15 +94,21 @@ static void Prepare( unsigned int width, unsigned int height, int half ) {
 	memset(cin.linbuf+(1-half)*movie->screenDelta,0x34,movie->screenDelta);
 	RoQPrepMcomp(0,0);
 }
-/** Reject exact payload prefixes atomically, even when an early block would have been valid. */
+/** Reject exact payload prefixes, even when an early block was valid; a rejected frame can only have written
+    earlier blocks of the half being decoded, and with expectedHalf, only their values from the complete frame. */
 static void Reject( byte **status, int length ) {
+	cin_cache *movie=&cinTable[0];
+	long i,current=(movie->numQuads&1)*movie->screenDelta,opposite=movie->screenDelta-current;
 	byte *exact=malloc(length ? length : 1); Check(exact!=NULL,"exact VQ allocation"); memcpy(exact,stream,length);
 	memcpy(beforeFrame,cin.linbuf,sizeof(cin.linbuf)); SaveBook();
 	if(blitVQQuad32fs(status,exact,exact+length)) {
 		fprintf(stderr,"Accepted VQ rejection fixture: %ux%u, half %ld, length %d/%d, first %02x %02x %02x\n",cinTable[0].xsize,cinTable[0].ysize,cinTable[0].numQuads,length,streamSize,stream[0],stream[1],stream[2]);
 		Check(0,"invalid VQ accepted");
 	}
-	Check(!memcmp(beforeFrame,cin.linbuf,sizeof(cin.linbuf)),"rejected VQ partially wrote a frame"); SameBook(); free(exact);
+	Check(!memcmp(beforeFrame+opposite,cin.linbuf+opposite,movie->screenDelta) &&
+	      !memcmp(beforeFrame+2*movie->screenDelta,cin.linbuf+2*movie->screenDelta,sizeof(cin.linbuf)-2*movie->screenDelta),"rejected VQ wrote outside its frame half");
+	if(expectedHalf) for(i=0;i<movie->screenDelta;i++) Check(cin.linbuf[current+i]==beforeFrame[current+i] || cin.linbuf[current+i]==expectedHalf[i],"rejected VQ wrote a value outside the complete frame");
+	SameBook(); free(exact);
 }
 /** Mix every root/sub-block opcode, including four 2x2 references and signed motion offsets. */
 static void Mixed( void ) {
@@ -120,8 +141,12 @@ int main( void ) {
 	roqChunk_t chunk;
 	timescale.value=1; video.integer=1; ROQ_GenYUVTables(); Codebooks();
 	for(half=0;half<2;half++) {
-		Prepare(16,16,half); Mixed();
-		for(length=0;length<streamSize;length++) Reject(cin.qStatus[half],length);
+		Prepare(16,16,half); Mixed(); memcpy(beforeFrame,cin.linbuf,sizeof(cin.linbuf));
+		Check(blitVQQuad32fs(cin.qStatus[half],stream,stream+streamSize),"mixed VQ rejected"); MixedPixels(half);
+		expectedHalf=malloc(cinTable[0].screenDelta); Check(expectedHalf!=NULL,"complete frame allocation");
+		memcpy(expectedHalf,cin.linbuf+half*cinTable[0].screenDelta,cinTable[0].screenDelta); memcpy(cin.linbuf,beforeFrame,sizeof(cin.linbuf));
+		for(length=0;length<streamSize;length++) { Reject(cin.qStatus[half],length); memcpy(cin.linbuf,beforeFrame,sizeof(cin.linbuf)); }
+		free(expectedHalf); expectedHalf=NULL;
 		Check(blitVQQuad32fs(cin.qStatus[half],stream,stream+streamSize),"mixed VQ rejected"); MixedPixels(half);
 		stream[streamSize]=0xff; stream[streamSize+1]=0xff;
 		Check(blitVQQuad32fs(cin.qStatus[half],stream,stream+streamSize+2),"legacy trailing VQ padding rejected"); MixedPixels(half);
@@ -134,7 +159,7 @@ int main( void ) {
 	Check(blitVQQuad32fs(cin.qStatus[0],stream,stream+streamSize),"maximum frame skip rejected"); CIN_StopCinematic(0);
 	Prepare(8,8,0); Stream(); Code(2); Index(255);
 	Check(blitVQQuad32fs(cin.qStatus[0],stream,stream+streamSize),"last codebook index rejected");
-	for(y=0;y<8;y++) Check(!memcmp(cin.linbuf+y*32,vq8[255]+y*32,32),"last codebook copied incorrectly"); CIN_StopCinematic(0);
+	for(y=0;y<8;y++) Check(!memcmp(cin.linbuf+y*32,(byte *)vq8[255]+y*32,32),"last codebook copied incorrectly"); CIN_StopCinematic(0);
 	/* The second block would cross a row while its address still fits the combined allocation. */
 	Prepare(16,16,0); Stream(); Code(2); Index(0); Code(1); Index(120); Code(0); Code(0); Reject(cin.qStatus[0],streamSize); CIN_StopCinematic(0);
 	/* All motion indices at the top-left of an 8x8 frame: only a zero linear offset fits. */
@@ -153,6 +178,12 @@ int main( void ) {
 		for(y=0;y<8;y++) for(x=0;x<8;x++) { byte *p=cin.linbuf+(y*width+x)*4; Check(p[0]==x+shift && p[1]==y && p[2]==64 && p[3]==255,"unaligned/aspect motion pixels"); }
 		CIN_StopCinematic(0);
 	}
+	/* Frames use only their own half of a quad table built for their geometry; a failed rebuild owns no table. */
+	Prepare(16,16,0); Mixed();
+	cin.oldxsize=8; Reject(cin.qStatus[0],streamSize); cin.oldxsize=16; Reject(cin.qStatus[1],streamSize);
+	cinTable[0].onQuad=0; cinTable[0].screenDelta/=2;
+	Check(!setupQuad() && !cin.oldxsize && !cin.oldysize,"failed quad rebuild kept table ownership");
+	cinTable[0].screenDelta*=2; cinTable[0].onQuad=20; Reject(cin.qStatus[0],streamSize); CIN_StopCinematic(0);
 	/* Successful outer dispatch invalidates cached scaled pixels; rejected dispatch preserves frames/counters. */
 	Prepare(16,16,0); Mixed(); memset(&chunk,0,sizeof(chunk)); chunk.id=ROQ_QUAD_VQ; chunk.size=streamSize;
 	cin.scaledValid=qtrue;
@@ -160,5 +191,5 @@ int main( void ) {
 	Check(!memcmp(cin.linbuf,cin.linbuf+cinTable[0].screenDelta,cinTable[0].screenDelta),"first frame initialization"); CIN_StopCinematic(0);
 	Prepare(16,16,0); Mixed(); memcpy(beforeFrame,cin.linbuf,sizeof(cin.linbuf));
 	Check(!RoQDecodeChunk(&chunk,stream,stream+1,0) && !cinTable[0].numQuads && !memcmp(beforeFrame,cin.linbuf,sizeof(cin.linbuf)),"rejected VQ dispatch changed state"); CIN_StopCinematic(0);
-	free(source); puts("RoQ codebook and VQ cursor/motion regressions passed (issue #41)"); return 0;
+	free(source); puts("RoQ codebook and VQ cursor/motion regressions passed (issues #41/#247)"); return 0;
 }

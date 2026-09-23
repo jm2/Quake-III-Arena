@@ -1,25 +1,32 @@
 # RoQ codebook and VQ validation — 2026-09-17
 
 The third step for issue #41 gives codebook and VQ decoders complete checked
-payload spans. A codebook checks its entire fixed-size update before touching
-tables; byte-oriented RGBA tables preserve all 256 entries, four 2x2 references
-per 4x4 block, 2x expansion to 8x8, and native partial updates. The tables use
-86,016 bytes instead of 688,128 bytes of overprovisioned ushort storage.
-RGBA channel packing and copy operations avoid pointer aliasing/double casts.
+payload spans. A codebook checks its entire update before touching tables;
+RGBA word tables preserve all 256 entries, four 2x2 references per 4x4 block,
+2x expansion to 8x8, and native partial updates. A low argument byte of 0
+means 256 4x4 entries only when their 1,024 bytes are present, otherwise none,
+so retail `idlogo.RoQ`'s 1,536-byte 2x2-only codebook decodes without reading
+past its chunk (#247). The tables use 86,016 bytes instead of 688,128 bytes of
+overprovisioned ushort storage. RGBA channel packing uses no pointer casts,
+and blocks are copied as aligned 32-bit words rather than doubles.
 
 The VQ cursor checks both bytes of every control-word refill and every
 codebook/motion index. Complete 8x8 groups and 4x4/2x2 subdivisions are checked
-against the destination frame. A first pass validates the full frame before
-a second pass writes pixels, so a later bad block cannot leave earlier frame
-writes behind. Every motion source row/column must fit the opposite frame half.
+against the destination frame when the quad table is built, and a frame must
+use its own half of a table built for its own geometry. Each block is checked
+before it is written (#247): a later bad block can leave earlier blocks in the
+half being decoded, but that half is never shown and rejection stops playback.
+Every motion source row/column must fit the opposite frame half.
 Signed offsets preserve native linear-stride and 4:1 aspect-ratio motion
-behavior. Byte copies also support sources at an odd pixel offset. Legacy
+behavior. Word copies also support sources at an odd pixel offset. Legacy
 unused trailing VQ bytes remain accepted.
 
 ## Validation
 
 The ASan/UBSan fixture covers every truncation of a 2,560-byte full codebook
-with exact payload allocations and unchanged table snapshots on rejection.
+with exact payload allocations: prefixes under 1,536 bytes are rejected with
+unchanged table snapshots, and longer argument-0 prefixes update only 2x2
+entries.
 It checks every RGBA pixel in all 256 2x2/4x4/8x8 entries, default 256 counts,
 2x2-only updates, one 4x4/8x8 update, and preservation of untouched entries.
 
@@ -30,8 +37,11 @@ refill, a maximum-size 512x512 skipped frame, index 255, native trailing
 padding, all 256 motion indices at a frame edge, row/bottom/flag failures,
 a valid block followed by an invalid one, odd-pixel sources, 4:1 motion,
 first-frame initialization, counter preservation on rejection, and texture
-cache invalidation after successful dispatch. Rejected frames compare the
-entire 2 MiB allocation and all codebooks before/after.
+cache invalidation after successful dispatch. Rejected frames must leave the
+opposite half, the unused buffer and all codebooks unchanged, and rejected
+mixed-frame prefixes may write only complete-frame values into their own half.
+Frames using another geometry's table, the wrong half, or a table left by a
+failed rebuild are rejected.
 
 All three RoQ sanitizer fixtures, eight Python checks and Bash syntax pass.
 One pre-existing unsigned shader-timing host warning remains. Both Retro68
