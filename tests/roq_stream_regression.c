@@ -146,6 +146,11 @@ int main( void ) {
 	for(i=0;i<10;i++) { Fixture(ROQ_CODEBOOK,i,0x0101,16+i); RunToClose(CIN_loop,0,0); }
 	Fixture(ROQ_CODEBOOK,10,0x0101,26); memset(source+16,0,10); source[20]=source[21]=128; RunToClose(0,0,0);
 	Check(((byte *)vq2)[0]==1 && ((byte *)vq2)[1]==0 && ((byte *)vq2)[2]==1 && ((byte *)vq2)[3]==255,"neutral codebook pixel");
+	/* Issue #247: retail idlogo.RoQ's 1,536-byte argument-0 codebook holds only 2x2 entries and must keep playing. */
+	Fixture(ROQ_CODEBOOK,1536,0,16+1536); handle=CIN_PlayCinematic("test.roq",0,0,32,32,CIN_loop);
+	Check(handle==0 && CIN_RunCinematic(handle)==FMV_PLAY && opens==2 && closes==1 && starts==2 && ends==1,"argument-0 2x2-only codebook stopped playback");
+	Check(CIN_StopCinematic(handle)==FMV_EOF && closes==2 && ends==2,"argument-0 codebook stop");
+	Fixture(ROQ_CODEBOOK,1535,0,16+1535); RunToClose(CIN_loop,0,0);
 	for(i=0;i<8;i++) { Fixture(ROQ_QUAD_INFO,i,0,16+i); RunToClose(CIN_loop,0,0); }
 	/* Hold and explicit stop also release a movie that produced no image. */
 	Fixture(ROQ_QUAD_HANG,0,0,16); handle=CIN_PlayCinematic("test.roq",0,0,32,32,CIN_hold);
