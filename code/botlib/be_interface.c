@@ -57,8 +57,9 @@ botlib_globals_t botlibglobals;
 
 botlib_export_t be_botlib_export;
 botlib_import_t botimport;
-//
-int bot_developer;
+//not bot_developer: the monolithic build links the game module's
+//vmCvar_t bot_developer into the same image (#233)
+int botDeveloper;
 //qtrue if the library is setup
 int botlibsetup = qfalse;
 
@@ -137,7 +138,7 @@ int Export_BotLibSetup(void)
 {
 	int		errnum;
 	
-	bot_developer = LibVarGetValue("bot_developer");
+	botDeveloper = LibVarGetValue("bot_developer");
   memset( &botlibglobals, 0, sizeof(botlibglobals) ); // bk001207 - init
 	//initialize byte swapping (litte endian etc.)
 //	Swap_Init();

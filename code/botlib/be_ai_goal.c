@@ -190,8 +190,9 @@ int numlevelitems = 0;
 maplocation_t *maplocations = NULL; // bk001206 - init
 //camp spots
 campspot_t *campspots = NULL; // bk001206 - init
-//the game type
-int g_gametype = 0; // bk001206 - init
+//the game type; static because the monolithic build links the game
+//module's vmCvar_t g_gametype into the same image (#233)
+static int g_gametype = 0; // bk001206 - init
 //additional dropped item weight
 libvar_t *droppedweight = NULL; // bk001206 - init
 
@@ -621,7 +622,7 @@ static int StageInfoEntities(maplocation_t **locations, campspot_t **spots)
 			numcampspots++;
 		} //end else if
 	} //end for
-	if (bot_developer)
+	if (botDeveloper)
 	{
 		botimport.Print(PRT_MESSAGE, "%d map locations\n", numlocations);
 		botimport.Print(PRT_MESSAGE, "%d camp spots\n", numcampspots);

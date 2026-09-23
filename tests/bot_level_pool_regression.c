@@ -7,7 +7,7 @@ static int infoCalls;
 extern int numblocks,allocatedmemory,totalmemorysize;
 #endif
 #ifndef Q3_ITEM_NATIVE_INTERFACE
-int bot_developer;
+int botDeveloper;
 #endif
 #ifndef Q3_POOL_BSP_HOOKS
 int AAS_NextBSPEntity(int ent){Check(ent==0,"native empty BSP iteration");infoCalls++;return 0;}

@@ -5,7 +5,7 @@ libvar_t *saveroutingcache;
 #include Q3_AAS_INIT_CONTINUATION
 botlib_import_t botimport;
 aas_t aasworld;
-int bot_developer;
+int botDeveloper;
 static aas_areasettings_t settings[3];
 static aas_area_t areas[3];
 static aas_cluster_t clusters[2];
@@ -73,7 +73,7 @@ static void Reset(int empty) {
     memset(&aasworld,0,sizeof(aasworld));memset(settings,0,sizeof(settings));memset(areas,0,sizeof(areas));memset(clusters,0,sizeof(clusters));memset(portals,0,sizeof(portals));memset(reaches,0,sizeof(reaches));memset(owners,0,sizeof(owners));
     requests=releases=failAt=cacheReads=initializedMessages=errors=0;lastRequest=0;
     memset(&saveVariable,0,sizeof(saveVariable));saveroutingcache=&saveVariable;
-    pendingReachability=cacheWrites=cacheCloses=saveResets=unlinks=invalidations=0;bot_developer=0;routingLimit=4096;
+    pendingReachability=cacheWrites=cacheCloses=saveResets=unlinks=invalidations=0;botDeveloper=0;routingLimit=4096;
     aasworld.numareas=aasworld.numareasettings=3;aasworld.numclusters=empty?1:2;aasworld.numportals=empty?0:1;aasworld.reachabilitysize=empty?0:3;
     aasworld.areasettings=settings;aasworld.areas=areas;aasworld.clusters=clusters;aasworld.portals=portals;aasworld.reachability=empty?NULL:reaches;
     strcpy(aasworld.mapname,"synthetic");aasworld.loaded=qtrue;
