@@ -195,6 +195,21 @@ static void NativeNodraw(void) {
 	ParseMesh((void *)(source+h.lumps[LUMP_SURFACES].fileofs),(void *)(source+h.lumps[LUMP_DRAWVERTS].fileofs),&surf);
 	Check(surf.data && *surf.data==SF_SKIP && !heapCount && !patchWorkspace,"actual native nodraw skip before control access/allocation");
 }
+/* Issue #243: q3map flares keep fogNum 0 without fogs; an out-of-range flare fog is no fog.
+ * numfogs counts the unused fogs[0] slot, so fogNum -1..numfogs-2 is in range. */
+static void NativeFlares(void) {
+	const int fogs[]={1,1,1,1,1,2,2,2,3,3,3},fogNums[]={-1,0,1,INT_MIN,INT_MAX,-1,0,1,1,2,-2},expected[]={0,0,0,0,0,0,1,0,2,0,0};
+	dheader_t h;msurface_t surf;int i;
+	Build(MST_FLARE,0,0,0,0);Header(&h);s_worldData.numShaders=2;s_worldData.shaders=(void *)(source+h.lumps[LUMP_SHADERS].fileofs);
+	for(i=0;i<11;i++) {
+		Word(h.lumps[LUMP_SURFACES].fileofs+offsetof(dsurface_t,fogNum),fogNums[i]);s_worldData.numfogs=fogs[i];memset(&surf,0,sizeof(surf));
+		ParseFlare((void *)(source+h.lumps[LUMP_SURFACES].fileofs),NULL,&surf,NULL);
+		Check(surf.data && *surf.data==SF_FLARE && surf.fogIndex==expected[i],"native flare fog index stays within loaded fogs");
+	}
+	FreeHunks();Word(h.lumps[LUMP_SURFACES].fileofs+offsetof(dsurface_t,fogNum),0);readable=advertised=sourceSize;alignment=missing=0;
+	tr.worldMapLoaded=qfalse;RE_LoadWorldMap("flare-fog0-nofogs.bsp");
+	Check(tr.world==&s_worldData && s_worldData.numfogs==1 && s_worldData.numsurfaces==1 && *s_worldData.surfaces[0].data==SF_FLARE && !s_worldData.surfaces[0].fogIndex && !fileAllocation,"actual renderer load of a retail flare without fogs");
+}
 int main(void) {
 	unsigned int nonfinite[]={0x7f800000u,0xff800000u,0x7fc00001u},offset;int i,j,k,checksum;dheader_t h;
 	ri.Error=Com_Error;ri.Printf=Print;ri.FS_ReadFile=FS_ReadFile;ri.FS_FreeFile=FS_FreeFile;ri.Hunk_Alloc=RendererHunk;ri.Malloc=RendererMalloc;ri.Free=RendererFree;subdivisions.value=4;
@@ -216,5 +231,5 @@ int main(void) {
 	NativeSurface(MST_PLANAR,999,5999,0,0);NativeSurface(MST_PLANAR,1,0,0,0);NativeSurface(MST_TRIANGLE_SOUP,999,5999,0,0);NativeSurface(MST_TRIANGLE_SOUP,0,0,0,0);
 	NativeSurface(MST_PATCH,31*31,0,31,31);NativeSurface(MST_PATCH,65*15,0,65,15);
 	Build(MST_PATCH,129*3,0,129,3);Header(&h);Check(!BSP_ValidateGeometry(source,&h,CM_MAX_PATCH_GRID_SIZE,MAX_PATCH_VERTS),"collision native 129-column boundary");
-	CurveGoldens();NumericCurves();NumericFaces();NativeFacePlanes();NativeNodraw();NativeLighting();Check(!heapCount && !fileAllocation && !patchWorkspace && patchAllocations==patchFrees,"all fixture ownership released");FreeHunks();puts("BSP finite geometry, native storage, renderer rejection and surface/curve regressions passed (issue #45)");return 0;
+	CurveGoldens();NumericCurves();NumericFaces();NativeFacePlanes();NativeNodraw();NativeLighting();NativeFlares();Check(!heapCount && !fileAllocation && !patchWorkspace && patchAllocations==patchFrees,"all fixture ownership released");FreeHunks();puts("BSP finite geometry, native storage, renderer rejection and surface/curve regressions passed (issue #45)");return 0;
 }
