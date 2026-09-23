@@ -328,6 +328,9 @@ void SV_DirectConnect( netadr_t from ) {
 			Com_Printf ("%s:reconnect\n", NET_AdrToString (from));
 			newcl = cl;
 
+			// the slot is rebuilt below, don't leak its queued messages
+			SV_Netchan_FreeQueue( newcl );
+
 			// this doesn't work because it nukes the players userinfo
 
 //			// disconnect the client from the game first so any flags the
@@ -487,6 +490,9 @@ void SV_DropClient( client_t *drop, const char *reason ) {
 
 	// Kill any download
 	SV_CloseDownload( drop );
+
+	// release queued messages, the zombie only needs its disconnect command
+	SV_Netchan_FreeQueue( drop );
 
 	// tell everyone why they got dropped
 	SV_SendServerCommand( NULL, "print \"%s" S_COLOR_WHITE " %s\n\"", drop->name, reason );
@@ -686,6 +692,13 @@ Downloads are finished
 ==================
 */
 void SV_DoneDownload_f( client_t *cl ) {
+	// like ioq3 and Quake3e, ignore it from a client that is already in the
+	// game.  A client that has not acknowledged the last gamestate has one
+	// in flight already, so a repeated donedl must not queue another copy.
+	if ( cl->state == CS_ACTIVE || cl->messageAcknowledge < cl->gamestateMessageNum ) {
+		return;
+	}
+
 	Com_DPrintf( "clientDownload: %s Done\n", cl->name);
 	// resend the game state to update any clients that entered during the download
 	SV_SendClientGameState(cl);

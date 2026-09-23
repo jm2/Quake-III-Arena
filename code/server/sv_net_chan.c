@@ -24,6 +24,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../qcommon/qcommon.h"
 #include "server.h"
 
+// normal play queues at most a resent gamestate and the two final
+// messages sent on shutdown behind a fragmented message
+#define MAX_QUEUED_MESSAGES	8
+
 /*
 ==============
 SV_Netchan_Encode
@@ -128,6 +132,24 @@ static void SV_Netchan_Decode( client_t *client, msg_t *msg ) {
 
 /*
 =================
+SV_Netchan_FreeQueue
+
+Release the queued messages of a client that is leaving or reconnecting
+=================
+*/
+void SV_Netchan_FreeQueue( client_t *client ) {
+	netchan_buffer_t *netbuf, *next;
+
+	for ( netbuf = client->netchan_start_queue ; netbuf ; netbuf = next ) {
+		next = netbuf->next;
+		Z_Free( netbuf );
+	}
+	client->netchan_start_queue = NULL;
+	client->netchan_end_queue = &client->netchan_start_queue;
+}
+
+/*
+=================
 SV_Netchan_TransmitNextFragment
 =================
 */
@@ -175,6 +197,19 @@ void SV_Netchan_Transmit( client_t *client, msg_t *msg) {	//int length, const by
 	MSG_WriteByte( msg, svc_EOF );
 	if (client->netchan.unsentFragments) {
 		netchan_buffer_t *netbuf;
+		int queued;
+
+		// the queue only drains one message per completed fragment train, so
+		// a client that keeps provoking large messages (gamestate resends)
+		// must not be able to grow it until Z_Malloc fails fatally
+		queued = 0;
+		for ( netbuf = client->netchan_start_queue ; netbuf ; netbuf = netbuf->next ) {
+			queued++;
+		}
+		if ( queued >= MAX_QUEUED_MESSAGES ) {
+			SV_DropClient( client, "Netchan queue overflow" );
+			return;
+		}
 		Com_DPrintf("#462 SV_Netchan_Transmit: unsent fragments, stacked\n");
 		netbuf = (netchan_buffer_t *)Z_Malloc(sizeof(netchan_buffer_t));
 		// store the msg, we can't store it encoded, as the encoding depends on stuff we still have to finish sending
