@@ -53,6 +53,8 @@ qboolean Sys_IsLANAddress( netadr_t adr ) { (void)adr; return qfalse; }
 void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport ) {
 	memset( chan, 0, sizeof( *chan ) ); chan->sock = sock; chan->remoteAddress = adr; chan->qport = qport; chan->outgoingSequence = 1;
 }
+/* With PR #312, SV_DropClient and reconnects free the client's netchan queue; nothing is queued here. */
+void SV_Netchan_FreeQueue( client_t *client ) { (void)client; }
 /** Capture the connectionless reply text. */
 void QDECL NET_OutOfBandPrint( netsrc_t sock, netadr_t adr, const char *format, ... ) {
 	va_list argptr;
@@ -200,6 +202,12 @@ int main( void ) {
 	Update( Userinfo( "\\IP\\203.0.113.5:27960", MAX_INFO_STRING - 1 ) );
 	Check( clients[0].state == CS_ZOMBIE && disconnects == 1 && !userinfoChanges, "near-limit forged update not dropped" );
 	Check( !strcmp( dropCommand, "disconnect \"userinfo string length exceeded\"" ), "drop reason" );
+	/* A forged "IP" longer than the real address: ioquake3's strlen arithmetic sees room, but "ip" cannot be added. */
+	Q_strncpyz( real, NET_AdrToString( other ), sizeof( real ) );
+	Connect( other, Userinfo( "", 0 ) );
+	Check( clients[0].state == CS_CONNECTED && !strcmp( StoredIP(), real ), "second unbanned connect" );
+	Update( Userinfo( "\\IP\\255.255.255.255:65535", MAX_INFO_STRING - 1 ) );
+	Check( clients[0].state == CS_ZOMBIE && disconnects == 1 && !userinfoChanges, "near-limit forged IP longer than the address not dropped" );
 
 	/* Local clients are always "localhost". */
 	Connect( local, Userinfo( "", 0 ) );
@@ -210,7 +218,8 @@ int main( void ) {
 	/* A game that leaves no room for "ip" in ClientConnect must not leave a connected client without one. */
 	gameFillsUserinfo = 1;
 	Connect( other, Userinfo( "", 0 ) );
-	Check( strcmp( reply, "connectResponse" ) && clients[0].state == CS_ZOMBIE && disconnects == 1, "connected without an ip key" );
+	Check( clients[0].state == CS_ZOMBIE && disconnects == 1, "connected without an ip key" );
+	Check( !strcmp( reply, "print\nUserinfo string length exceeded.\n" ), "client dropped at connect not told why" );
 	gameFillsUserinfo = 0;
 
 	puts( "Server userinfo ip regressions passed (issue #273)" );
