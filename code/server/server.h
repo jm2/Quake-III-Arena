@@ -148,6 +148,8 @@ typedef struct client_s {
 
 	int				deltaMessage;		// frame last client usercmd message
 	int				nextReliableTime;	// svs.time when another reliable command will be allowed
+	int				userinfoRateTime;	// svs.time the userinfo rate limit was last drained
+	int				userinfoRateBurst;	// recent userinfo changes counted against the burst
 	int				lastPacketTime;		// svs.time when packet was last received
 	int				lastConnectTime;	// svs.time when connection started
 	int				nextSnapshotTime;	// send another snapshot when svs.time >= nextSnapshotTime

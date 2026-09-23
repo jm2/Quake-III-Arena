@@ -1279,6 +1279,41 @@ void SV_ExecuteClientCommand( client_t *cl, const char *s, qboolean clientOK ) {
 }
 
 /*
+==================
+SV_UserinfoRateLimited
+
+Every accepted userinfo change is relayed to all the other clients as a
+configstring update, and the game usually adds a "renamed" print, so a
+burst of changes from one client can overflow everyone else's reliable
+command window.  Allow USERINFO_RATE_BURST changes at once and one more
+every USERINFO_RATE_PERIOD msec, like Quake3e's
+SVC_RateLimit( &cl->info_rate, 5, 1000 ).
+==================
+*/
+#define	USERINFO_RATE_BURST		5
+#define	USERINFO_RATE_PERIOD	1000
+
+static qboolean SV_UserinfoRateLimited( client_t *cl ) {
+	int		interval, expired;
+
+	interval = svs.time - cl->userinfoRateTime;
+	expired = interval / USERINFO_RATE_PERIOD;
+	if ( interval < 0 || expired > cl->userinfoRateBurst ) {
+		cl->userinfoRateBurst = 0;
+		cl->userinfoRateTime = svs.time;
+	} else {
+		cl->userinfoRateBurst -= expired;
+		cl->userinfoRateTime = svs.time - interval % USERINFO_RATE_PERIOD;
+	}
+
+	if ( cl->userinfoRateBurst >= USERINFO_RATE_BURST ) {
+		return qtrue;
+	}
+	cl->userinfoRateBurst++;
+	return qfalse;
+}
+
+/*
 ===============
 SV_ClientCommand
 ===============
@@ -1303,6 +1338,18 @@ static qboolean SV_ClientCommand( client_t *cl, msg_t *msg ) {
 		Com_Printf( "Client %s lost %i clientCommands\n", cl->name, 
 			seq - cl->lastClientCommand + 1 );
 		SV_DropClient( cl, "Lost reliable commands" );
+		return qfalse;
+	}
+
+	// a userinfo change over the rate limit is left unacknowledged and the
+	// rest of the packet, including the usercmd, is skipped.  The client
+	// resends it with every packet until it is accepted, so no change is
+	// lost, its latest userinfo still reaches everyone, and only the
+	// flooder lags.  This is not limited to CS_ACTIVE: a client that
+	// withholds usercmds stays CS_PRIMED, and its changes are still
+	// relayed to everyone else
+	Cmd_TokenizeString( s );
+	if ( !strcmp( Cmd_Argv(0), "userinfo" ) && SV_UserinfoRateLimited( cl ) ) {
 		return qfalse;
 	}
 
