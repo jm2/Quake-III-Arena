@@ -238,6 +238,7 @@ void SV_DirectConnect( netadr_t from ) {
 	int			startIndex;
 	char		*denied;
 	int			count;
+	const char	*ip;
 
 	Com_DPrintf ("SVC_DirectConnect ()\n");
 
@@ -270,6 +271,20 @@ void SV_DirectConnect( netadr_t from ) {
 		}
 	}
 
+	// don't let "ip" overflow userinfo string
+	if ( NET_IsLocalAddress (from) )
+		ip = "localhost";
+	else
+		ip = NET_AdrToString( from );
+	if( ( strlen( ip ) + strlen( userinfo ) + 4 ) >= MAX_INFO_STRING ) {
+		NET_OutOfBandPrint( NS_SERVER, from,
+			"print\nUserinfo string length exceeded.  "
+			"Try removing setu cvars from your config.\n" );
+		return;
+	}
+	// force the IP key/value pair so the game can filter based on ip
+	Info_SetValueForKey( userinfo, "ip", ip );
+
 	// see if the challenge is valid (LAN clients don't need to challenge)
 	if ( !NET_IsLocalAddress (from) ) {
 		int		ping;
@@ -285,8 +300,6 @@ void SV_DirectConnect( netadr_t from ) {
 			NET_OutOfBandPrint( NS_SERVER, from, "print\nNo or bad challenge for address.\n" );
 			return;
 		}
-		// force the IP key/value pair so the game can filter based on ip
-		Info_SetValueForKey( userinfo, "ip", NET_AdrToString( from ) );
 
 		ping = svs.time - svs.challenges[i].pingTime;
 		Com_Printf( "Client %i connecting with %i challenge ping\n", i, ping );
@@ -309,9 +322,6 @@ void SV_DirectConnect( netadr_t from ) {
 				return;
 			}
 		}
-	} else {
-		// force the "ip" info key to "localhost"
-		Info_SetValueForKey( userinfo, "ip", "localhost" );
 	}
 
 	newcl = &temp;
@@ -429,6 +439,9 @@ gotnewcl:
 	}
 
 	SV_UserinfoChanged( newcl );
+	if ( newcl->state == CS_ZOMBIE ) {
+		return;		// the game left no room for the "ip" key
+	}
 
 	// send the connect packet to the client
 	NET_OutOfBandPrint( NS_SERVER, from, "connectResponse" );
@@ -1154,6 +1167,7 @@ into a more C friendly form.
 */
 void SV_UserinfoChanged( client_t *cl ) {
 	char	*val;
+	const char	*ip;
 	int		i;
 
 	// name for C code
@@ -1203,17 +1217,18 @@ void SV_UserinfoChanged( client_t *cl ) {
 	
 	// TTimo
 	// maintain the IP information
-	// this is set in SV_DirectConnect (directly on the server, not transmitted), may be lost when client updates it's userinfo
 	// the banning code relies on this being consistently present
-	val = Info_ValueForKey (cl->userinfo, "ip");
-	if (!val[0])
-	{
-		//Com_DPrintf("Maintain IP in userinfo for '%s'\n", cl->name);
-		if ( !NET_IsLocalAddress(cl->netchan.remoteAddress) )
-			Info_SetValueForKey( cl->userinfo, "ip", NET_AdrToString( cl->netchan.remoteAddress ) );
-		else
-			// force the "ip" info key to "localhost" for local clients
-			Info_SetValueForKey( cl->userinfo, "ip", "localhost" );
+	if ( NET_IsLocalAddress(cl->netchan.remoteAddress) )
+		ip = "localhost";
+	else
+		ip = NET_AdrToString( cl->netchan.remoteAddress );
+
+	// always replace a client-supplied value.  Info_ValueForKey returns the
+	// first case-insensitive match and Info_SetValueForKey prepends the pair or
+	// refuses it when it cannot fit, so check what the game will actually read
+	Info_SetValueForKey( cl->userinfo, "ip", ip );
+	if ( strcmp( Info_ValueForKey( cl->userinfo, "ip" ), ip ) ) {
+		SV_DropClient( cl, "userinfo string length exceeded" );
 	}
 }
 
@@ -1237,6 +1252,9 @@ static void SV_UpdateUserinfo_f( client_t *cl ) {
 	Q_strncpyz( cl->userinfo, userinfo, sizeof(cl->userinfo) );
 
 	SV_UserinfoChanged( cl );
+	if ( cl->state == CS_ZOMBIE ) {
+		return;		// dropped: the real "ip" did not fit
+	}
 	// call prog code to allow overrides
 	VM_Call( gvm, GAME_CLIENT_USERINFO_CHANGED, cl - svs.clients );
 }
