@@ -884,6 +884,24 @@ static int FloatAsInt( float f ) {
 	return temp;
 }
 
+/** Fault the UI before a key number indexes the native key table; -1 stays the unbound no-op. */
+static qboolean CLUI_KeynumInRange( int keynum ) {
+	if ( keynum >= -1 && keynum < MAX_KEYS ) {
+		return qtrue;
+	}
+	VM_Error( "UI key number out of range" );
+	return qfalse;
+}
+
+/** Fault the UI before a ping slot indexes the native ping list. */
+static qboolean CLUI_PingSlotInRange( int n ) {
+	if ( n >= 0 && n < MAX_PINGREQUESTS ) {
+		return qtrue;
+	}
+	VM_Error( "UI ping slot out of range" );
+	return qfalse;
+}
+
 #define VMAS(x) VM_CheckedArgString( args[x], qfalse )
 #define VMASN(x) VM_CheckedArgString( args[x], qtrue )
 #define VMAP(x, type) VM_CheckedArgPtr( args[x], sizeof(type), 4, qfalse )
@@ -1046,14 +1064,17 @@ int CL_UISystemCalls( int *args ) {
 		return 0;
 
 	case UI_KEY_GETBINDINGBUF:
+		if ( !CLUI_KeynumInRange( args[1] ) ) return 0;
 		Key_GetBindingBuf( args[1], VMAB(2, args[3]), args[3] );
 		return 0;
 
 	case UI_KEY_SETBINDING:
+		if ( !CLUI_KeynumInRange( args[1] ) ) return 0;
 		Key_SetBinding( args[1], VMAS(2) );
 		return 0;
 
 	case UI_KEY_ISDOWN:
+		if ( !CLUI_KeynumInRange( args[1] ) ) return 0;
 		return Key_IsDown( args[1] );
 
 	case UI_KEY_GETOVERSTRIKEMODE:
@@ -1112,10 +1133,12 @@ int CL_UISystemCalls( int *args ) {
 		return 0;
 
 	case UI_LAN_GETPING:
+		if ( !CLUI_PingSlotInRange( args[1] ) ) return 0;
 		LAN_GetPing( args[1], VMAB(2, args[3]), args[3], VMAP(4, int) );
 		return 0;
 
 	case UI_LAN_GETPINGINFO:
+		if ( !CLUI_PingSlotInRange( args[1] ) ) return 0;
 		LAN_GetPingInfo( args[1], VMAB(2, args[3]), args[3] );
 		return 0;
 
