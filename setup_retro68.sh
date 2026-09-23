@@ -258,7 +258,7 @@ for required in "$PPC_INC/gl.h" "$PPC_INC/agl.h" "$STUB_LIB"; do
         echo "Error: Retro68 setup is incomplete; missing $required"
         exit 1
     fi
-fi
+done
 
 echo "=========================================="
 echo "Retro68 Re-Build Complete!"
