@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "client.h"
 #include <limits.h>
+#include <stddef.h>
 
 #include "../game/botlib.h"
 
@@ -40,6 +41,20 @@ CL_GetGameState
 void CL_GetGameState( gameState_t *gs ) {
 	*gs = cl.gameState;
 }
+
+/*
+glconfig_t is copied by value into cgame and UI QVMs, so it must keep the
+retail 1.32c layout: four strings (11264 bytes), then 4-byte ints, enums,
+qbooleans and a float. Renderer-only capabilities belong in glConfigExt.
+*/
+typedef char glconfigSizeCheck[(sizeof(glconfig_t) == 11332) ? 1 : -1];
+typedef char glconfigVidWidthCheck[(offsetof(glconfig_t, vidWidth) == 11304) ? 1 : -1];
+typedef char glconfigVidHeightCheck[(offsetof(glconfig_t, vidHeight) == 11308) ? 1 : -1];
+typedef char glconfigWindowAspectCheck[(offsetof(glconfig_t, windowAspect) == 11312) ? 1 : -1];
+typedef char glconfigDisplayFrequencyCheck[(offsetof(glconfig_t, displayFrequency) == 11316) ? 1 : -1];
+typedef char glconfigIsFullscreenCheck[(offsetof(glconfig_t, isFullscreen) == 11320) ? 1 : -1];
+typedef char glconfigStereoEnabledCheck[(offsetof(glconfig_t, stereoEnabled) == 11324) ? 1 : -1];
+typedef char glconfigSmpActiveCheck[(offsetof(glconfig_t, smpActive) == 11328) ? 1 : -1];
 
 /*
 ====================
