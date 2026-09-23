@@ -195,12 +195,13 @@ static void NativeNodraw(void) {
 	ParseMesh((void *)(source+h.lumps[LUMP_SURFACES].fileofs),(void *)(source+h.lumps[LUMP_DRAWVERTS].fileofs),&surf);
 	Check(surf.data && *surf.data==SF_SKIP && !heapCount && !patchWorkspace,"actual native nodraw skip before control access/allocation");
 }
-/* Issue #243: q3map flares keep fogNum 0 without fogs; an out-of-range flare fog is no fog. */
+/* Issue #243: q3map flares keep fogNum 0 without fogs; an out-of-range flare fog is no fog.
+ * numfogs counts the unused fogs[0] slot, so fogNum -1..numfogs-2 is in range. */
 static void NativeFlares(void) {
-	const int fogs[]={1,1,1,1,1,2,2,2,3},fogNums[]={-1,0,1,INT_MIN,INT_MAX,-1,0,1,1},expected[]={0,0,0,0,0,0,1,0,2};
+	const int fogs[]={1,1,1,1,1,2,2,2,3,3,3},fogNums[]={-1,0,1,INT_MIN,INT_MAX,-1,0,1,1,2,-2},expected[]={0,0,0,0,0,0,1,0,2,0,0};
 	dheader_t h;msurface_t surf;int i;
 	Build(MST_FLARE,0,0,0,0);Header(&h);s_worldData.numShaders=2;s_worldData.shaders=(void *)(source+h.lumps[LUMP_SHADERS].fileofs);
-	for(i=0;i<9;i++) {
+	for(i=0;i<11;i++) {
 		Word(h.lumps[LUMP_SURFACES].fileofs+offsetof(dsurface_t,fogNum),fogNums[i]);s_worldData.numfogs=fogs[i];memset(&surf,0,sizeof(surf));
 		ParseFlare((void *)(source+h.lumps[LUMP_SURFACES].fileofs),NULL,&surf,NULL);
 		Check(surf.data && *surf.data==SF_FLARE && surf.fogIndex==expected[i],"native flare fog index stays within loaded fogs");
