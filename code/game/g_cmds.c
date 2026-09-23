@@ -168,7 +168,7 @@ void SanitizeString( char *in, char *out ) {
 			in++;
 			continue;
 		}
-		*out++ = tolower( *in++ );
+		*out++ = tolower( (unsigned char)*in++ );
 	}
 
 	*out = 0;

@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "tr_local.h"
 
 glconfig_t	glConfig;
+glconfigExt_t	glConfigExt;
 glstate_t	glState;
 
 static void GfxInfo_f( void );

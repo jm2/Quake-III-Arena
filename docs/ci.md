@@ -16,9 +16,10 @@ merging several PRs in a row never cancels or drops a master run.
   - parses every tracked Bash script individually (`tests/check_shell_syntax.sh`) and the PowerShell entry points;
   - runs both build-script help paths;
   - compiles the Python utilities;
-  - requires `docs/task.md` to remain in P0-to-P3 order with exactly one direct
-    link for every confirmed issue #1 through #52, allowing both open and
-    completed checkboxes as the queue is worked down;
+  - checks the `docs/task.md` burndown ledger's structure: B sections in
+    order, one well-formed checkbox entry with a severity per issue, and no
+    links to issues without an entry. The issue set comes from the ledger
+    itself, so new issues only need an entry;
   - checks portable image decoders are included in Unix Make/Cons, Visual
     Studio, Xcode source phases and lint manifests, including the sole standard JPEG compressor APIs.
 - `Packaging tools (Python 3.11)` and `(Python 3.14)`
@@ -26,7 +27,12 @@ merging several PRs in a row never cancels or drops a master run.
     and bundle flag;
   - validate MacBinary name bytes, fork lengths/padding, deterministic Mac
     dates, version fields, and CRC;
-  - reject filenames that cannot be represented in MacRoman.
+  - reject filenames that cannot be represented in MacRoman;
+  - check `mac_app.py` against Rez-shaped MacBinary, AppleDouble and HFS
+    containers: kHasBundle updates (with MacBinary CRC), resource-map parsing,
+    each launch-blocking defect (type/creator, data fork, missing or empty
+    resources, `cfrg`, `SIZE`, `BNDL` signature, bundle flag), removal of
+    incomplete outputs, and resource-fork/Finder-info export (issues #225/#226).
 - `Host C regressions (ASan/UBSan)`
   - summarizes eight parallel jobs, `Host C regressions (gcc|clang K/4)`. Each
     runs one quarter of the sorted `tests/run_*_tests.sh` runners through
@@ -57,8 +63,8 @@ merging several PRs in a row never cancels or drops a master run.
     syscalls, faulted shutdown re-entry, and valid execution;
   - checks full-width loads, legacy masked stores, ARG boundaries, block-copy
     bounds/overlap, and bounded syscall argument snapshots;
-  - checks wrapping integer arithmetic, division/modulo traps, shift counts,
-    and float conversion limits;
+  - checks wrapping integer arithmetic and the defined division/modulo by
+    zero, oversized shift count, and float conversion results;
   - checks native/compiled/interpreted VM dispatch with empty, partial, and
     twelve-parameter calls, zero padding, single argument evaluation, and
     invalid counts, and faulted VM re-entry;
@@ -211,7 +217,7 @@ checks real registration pass counts and cache reuse.
 export TMPDIR="${TMPDIR:-/var/tmp}"
 bash tests/check_shell_syntax.sh
 ./build_mac.sh --help
-python3 -m py_compile create_appledouble.py generate_icon_r.py macbinary_encode.py
+python3 -m py_compile create_appledouble.py generate_icon_r.py macbinary_encode.py mac_app.py
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 bash tests/run_host_regressions.sh            # every runner, $CC (default cc)
 CC=clang bash tests/run_host_regressions.sh   # the same runners with Clang
@@ -330,11 +336,13 @@ Mac OS 9 runtime behavior. Passing these starter checks alone does not close
 security or target-runtime issues; each issue needs its specified regressions
 and applicable target evidence.
 
-For every new PR, require successful CI and a clean Codex review on the current
-head, plus resolution of every CodeRabbit finding. The user confirmed that
-CodeRabbit rate limits need not block a merge once this gate is satisfied.
-Resolve findings, push fixes, and obtain successful checks and renewed Codex
-review. Absent, pending, or failed Codex review is not a clean review.
+For every PR, require successful CI on the current head and an approving
+review of that exact head by an independent adversarial reviewer agent that
+did not write the change (posted as a PR comment). Resolve blocking findings,
+push fixes, and obtain successful checks and a renewed approval on the new
+head. CodeRabbit findings are addressed when it reviews a PR but do not block
+merging. Absent, pending, or failed CI or review is not approval. (Changed on
+2026-09-23: Codex review credits are exhausted and CodeRabbit is throttled.)
 
 The user has deferred retail-content and Mac OS 9 live testing to a follow-up
 session. Host-tested fixes may merge with those limitations recorded; do not
@@ -346,13 +354,14 @@ The next CI layers should be:
 
 1. a legally provisioned/self-hosted Retro68 runner that builds base and Team
    Arena and validates `Joy!peff` / `pwpc`;
-2. hostile-input ASan/UBSan harnesses for the P0 parser/protocol issues;
+2. hostile-input ASan/UBSan harnesses for the parser/protocol security issues;
 3. mounted HFS resource/Finder inspection;
 4. emulator smoke tests using externally provisioned legal game data.
 
 When adding a regression for a GitHub issue, name the issue in the test and
-update its nested checkbox in [task.md](task.md); leave the issue-level
-checkbox open until all required target evidence exists.
+put the evidence in the PR description. The issue's entry in
+[task.md](task.md) is ticked when the issue closes; issues whose acceptance
+needs Mac OS 9 stay open with the `needs target test` label.
 
 The bot-zone runner exercises the actual native zone allocator, engine bot
 imports and bot adapters under release/debug metadata and normal/optimized

@@ -1,856 +1,223 @@
-# Quake III Arena Mac OS 9 prioritized review queue
+# Quake III Arena Mac OS 9 burndown ledger
 
-Last updated: 2026-09-18
+Last updated: 2026-09-23
 
-This is the authoritative continuation ledger. Work is sorted first by
-priority (`P0` through `P3`), then by severity and exploit/runtime impact
-within each priority. Every confirmed GitHub issue from #1 through #52 appears
-exactly once below. The subsystem evidence appendix is
-[review-ledger-by-subsystem.md](review-ledger-by-subsystem.md).
+This is the authoritative continuation ledger. It lists every tracked GitHub
+issue exactly once as a checkbox entry, grouped into burndown sections that
+are worked roughly in order: what blocks a clean, bootable base game comes
+first, then remote security, then target bring-up and the remaining hardening.
+The [2026-09-23 review](review-2026-09-23.md) explains why the order changed.
+The previous security-first queue for #1–#52, with every September sub-step
+and its evidence links, is archived unchanged in
+[task-2026-09-19.md](task-2026-09-19.md).
 
-An issue-level checkbox stays open until its fix is merged, its acceptance
-criteria and applicable checks pass, and the linked GitHub issue is closed.
-Engine changes require both Retro68 product builds and any Mac OS 9 tests
-specified by the issue. Host-tool changes require the relevant host/format
-checks; they do not automatically require an unrelated engine rebuild.
-A checked nested item records only the stated implementation or check.
+## Process
 
-Every new step goes through a pull request. Before merging, require successful
-CI for its current head and a completed clean Codex review, with every
-CodeRabbit finding resolved. After fixes, re-run affected checks and obtain
-a renewed clean current-head Codex review. Do not interpret absent, pending,
-failed or unavailable CI/Codex review as clean. CodeRabbit rate limits or
-skipped reviews do not replace the required Codex review; the user does not
-require waiting for a follow-up CodeRabbit review during rate-limit backoff
-once every finding is resolved and the CI/Codex gate passes.
-Keep issues open when a merged step covers only part of their acceptance
-criteria, and link the PR and remaining evidence in the issue.
+- One focused PR per fix. Merge only after CI passes on the current head
+  and an independent adversarial reviewer (a fresh Claude reviewer agent that
+  did not write the change) has approved that exact head in a PR comment,
+  with every blocking finding fixed and re-reviewed. Absent, pending or
+  failed results are not approval. CodeRabbit findings are addressed when it
+  reviews a PR but are not a merge blocker. (From 2026-09-23; Codex review
+  credits are exhausted and CodeRabbit is throttled to one review per hour.)
+- Engine changes cross-build both products (base and `BUILD_TEAM_ARENA=ON`)
+  with the local Retro68 toolchain and add no compiler warnings. Host changes
+  run the relevant host checks.
+- Evidence (commands, results, PEF size) goes in the PR description. Do not
+  add per-PR `docs/*-validation.md` files; update an existing one only when it
+  would otherwise state something false.
+- Use `Closes #N` only when the issue's acceptance criteria can be met without
+  Mac OS 9. Otherwise reference the issue and add the `needs target test`
+  label after merge; the entry below stays unchecked until the target run.
+- Behavior changes to retail-content handling must be checked against real
+  data where it is available locally (never committed), or against the
+  original `dbe4ddb` code in a differential host test.
+- The paused hardening PRs (#171, #184–#196, #211–#219) are not merged until
+  they are re-scoped against this order. Their issues keep their entries
+  below.
+- A checkbox is ticked when its issue closes. Entry titles omit bracketed
+  prefixes such as `[security]`; the severity carries that information.
 
-The [2026-09-17 reassessment](review-2026-09-17.md) records the disposition of
-all 52 issues, implementation dependencies, accepted decisions, and deferred
-acceptance checks.
-The July evidence below is historical unless explicitly dated otherwise;
-“local” candidate fixes from that pass are committed in `204fe36`.
+## Current evidence
 
-## Baseline and current evidence
+- Last Mac OS 9 run: 2026-04-27, which stopped at `Couldn't load default.cfg`
+  after demo data was packaged as `baseq3` (#8). No target run since.
+- `master` at `46dcc75` cross-builds with Retro68 (GCC 12.2.0, Retro68 `83b9c8d2c5`):
+  base `Quake3.pef` 3,796,539 bytes, `Joy!peff`/`pwpc`, 0 compiler warnings
+  (2026-09-23). The maintainer's toolchain needs a host-library shim or a
+  rebuild after the Fedora 44 upgrade (#269).
+- All 122 host regression runners pass with GCC 16.2.1 and Clang 22.1.8
+  (2026-09-23).
+- Emulators cannot pass the accelerated-renderer check (#268); rendering,
+  gamma, fullscreen and performance acceptance need real hardware.
 
-- [x] Repository: `jm2/Quake-III-Arena`, branch `master`.
-- [x] Original July review baseline:
-      `abe5028afda280240d48d012a62c09e713689fd2`.
-- [x] September source/issue baseline: `204fe36deccfde8ead94f6bba0422dd8c1ba396e`;
-      all 52 issues remain open and there were no existing PRs.
-- [x] Preserve the pre-existing untracked `q3-logs/`; its latest captured
-      startup ends at `Couldn't load default.cfg`.
-- [x] First-pass security comparison anchored to ioquake3
-      `588393618dbc82e7207c21c6ddecca229944a03a` (2026-07-16).
-- [x] Security mapping recorded in
-      [security-provenance.md](security-provenance.md).
-- [x] 52 confirmed root causes opened in the
-      [GitHub issue tracker](https://github.com/jm2/Quake-III-Arena/issues).
-- [x] July locally tested base PEF: `Joy!peff` / `pwpc`, 3,669,561 bytes,
-      SHA-256
-      `8a23e2225ce5e21f253f7f155a0d601ae5d659685e558150061eba677305115c`.
-- [x] July locally tested Team Arena PEF: `Joy!peff` / `pwpc`,
-      3,818,135 bytes, SHA-256
-      `b7fcfbc21c63c360b0b9afc3f1d5e34e5589317fd1c4526f90706e150713e480`.
-- [x] Re-record the two PEF sizes/hashes after the final source changes in
-      this review pass; the build cache is left with `BUILD_TEAM_ARENA=OFF`.
-- [ ] Boot current artifacts on Mac OS 9 hardware/emulator with legal retail
-      baseq3 and missionpack data.
-- [ ] Capture menu, local-map, spawn, input, audio, networking, disconnect,
-      normal quit, and fatal-exit evidence.
+## B0 — Process and CI unblock
 
-## P0 — security release gates
+Land these first: every later PR depends on a CI run that finishes and a ledger that can take new issues.
 
-Do not describe the port as safe for untrusted servers, mods, PK3s, maps, or
-QVMs while any P0 item is open.
+- [ ] [#220 — setup_retro68.sh syntax error aborts every fresh setup after the toolchain build](https://github.com/jm2/Quake-III-Arena/issues/220) — **high**; fresh setup exits 2 after the toolchain build; PR #278.
+- [ ] [#221 — CI Bash syntax check parses only the first script on each line](https://github.com/jm2/Quake-III-Arena/issues/221) — **medium**; CI syntax step only parsed the first script; PR #278.
+- [ ] [#222 — Host C regression job serializes ~190 runners and now exceeds its 30-minute timeout](https://github.com/jm2/Quake-III-Arena/issues/222) — **medium**; host job serial and at its 30-minute limit; PR #279.
+- [ ] [#228 — CI cancels in-progress master runs, leaving most merged commits untested](https://github.com/jm2/Quake-III-Arena/issues/228) — **low**; master runs cancelled by later merges; PR #279.
+- [ ] [#229 — Review ledger test freezes the issue set at #1-#52 and blocks triage of new issues](https://github.com/jm2/Quake-III-Arena/issues/229) — **low**; ledger test frozen at #1–#52; this ledger rewrite.
 
-- [ ] [#29 — complete security provenance and regression coverage](https://github.com/jm2/Quake-III-Arena/issues/29)
-      — **assurance gate**.
-  - [x] First upstream/local status matrix and GitHub provenance comment added;
-        the matrix is committed in `204fe36`, not an uncommitted draft.
-  - [x] Message/Huffman exact limits and the real out-of-band caller have
-        isolated GCC/Clang ASan/UBSan coverage while preserving the commercial
-        compressed stream; see [validation evidence](message-huffman-validation.md).
-  - [ ] Complete the advisory inventory and add a malformed-input regression
-        for every accepted security family.
-- [ ] [#35 — harden interpreted QVM validation and sandbox bounds](https://github.com/jm2/Quake-III-Arena/issues/35)
-      — **high**, native memory corruption from malformed QVMs.
-  - [x] Shared create/restart header validation checks file ranges, signed
-        allocation arithmetic, initialized-word alignment, and unchanged
-        restart allocation size/image. Host ASan/UBSan loader regressions and both
-        Retro68 product builds pass; see [loader evidence](qvm-loading-validation.md).
-  - [x] Validate bytecode decoding and branch targets before interpreter setup,
-        with unaligned little-endian reads and host ASan/UBSan regressions;
-        see [bytecode evidence](qvm-bytecode-validation.md).
-  - [x] Enforce operand/program stack bounds and CALL/JUMP/return targets
-        during normal execution, including safe faulted shutdown re-entry;
-        see [runtime evidence](qvm-runtime-validation.md).
-  - [x] Bound full-width data accesses, stack arguments, block copies, and
-        syscall argument snapshots; see [memory evidence](qvm-memory-validation.md).
-  - [x] Define wrapping integer arithmetic and reject division, shift, and
-        float conversion traps; see [arithmetic evidence](qvm-arithmetic-validation.md).
-  - [x] Marshal counted VM call arguments and zero padding explicitly for
-        all execution modes; see [call evidence](qvm-call-validation.md).
-  - [x] Common MEMSET/MEMCPY/STRNCPY syscalls validate full buffers and
-        string boundaries; see [trap evidence](qvm-memory-trap-validation.md).
-  - [x] UI syscall strings, buffers, structs, and arrays validate full ranges
-        and alignment; CD-key and parser filename output honor their bounds;
-        see [UI evidence](qvm-ui-syscall-validation.md).
-  - [x] Cgame syscall structures, strings, vectors, and arrays validate full
-        ranges, including polygon batches and fragment output capacities;
-        see [cgame evidence](qvm-cgame-syscall-validation.md).
-  - [x] Core server syscall ranges, persistent game-array registration and
-        indices, and native debug-polygon capacities have sanitizer coverage;
-        see [server evidence](qvm-server-core-validation.md).
-  - [x] Connection-denial strings validate termination in their owning VM
-        after calls return; see [return evidence](qvm-returned-string-validation.md).
-  - [x] User approved the original string length as the safe in-place limit
-        for the size-less legacy synonym syscall; preserve the 1.32c ABI and
-        skip growing replacements when they cannot fit. This merged in PR #66.
-  - [x] Botlib common/navigation trap ranges, empty output capacities, and
-        allocated client indices have [sanitizer regressions](qvm-botlib-navigation-validation.md).
-  - [x] Bot chat buffers, cumulative variables, bounded in-place synonyms,
-        and embedded match spans have [sanitizer regressions](qvm-botlib-chat-validation.md).
-  - [x] Elementary-action VM arguments and native allocated client bounds
-        have [sanitizer regressions](qvm-botlib-actions-validation.md).
-  - [x] Remaining bot AI structures, inventory/rank arrays, optional goals,
-        and native genetic endpoints have [sanitizer regressions](qvm-botlib-ai-validation.md).
-  - [ ] Complete remaining syscall pointer/range checks and retain valid PPC
-        QVM compatibility during deferred live acceptance.
-- [ ] [#37 — bind connection and netchan packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37)
-      — **high**, connection redirection/injection/hijack.
-  - [x] User selected commercial 1.32c compatibility (Quake3e/ioquake3 style).
-        Preserve legacy protocol compatibility by default; harden compatible
-        paths without requiring a different wire protocol.
-  - [ ] Document protection limits for legacy peers and test compatible setup,
-        rejection of spoofed responses, and any explicitly negotiated extension.
-- [ ] [#36 — reject oversized and truncated PK3 entries](https://github.com/jm2/Quake-III-Arena/issues/36)
-      — **high**, ZIP-controlled allocation/decompression corruption.
-  - [x] Local size/cast, exact-read, open-result, cleanup, and short-suffix
-        checks cross-build.
-  - [x] Private embedded inflate callbacks match their declared types and
-        reject unrepresentable allocation products before engine imports;
-        actual native ZIP/read/free regressions have
-        [allocation evidence](unzip-allocation-validation.md).
-  - [x] Buffered PK3 owners retain their handle slots until close; actual
-        simultaneous reads, full table and physical release have
-        [handle evidence](fs-buffered-handle-validation.md).
-  - [x] ZIP mounts validate complete names, metadata, measured capacities and
-        shared counts before publication; malformed real archives and both-pass
-        physical cleanup have [mount evidence](fs-zip-mount-validation.md).
-  - [x] Unique ZIP targets retain independent decoder ownership and preserve
-        active shared metadata/cursors through refills and both close orders;
-        native buffered/streamed paths have
-        [stream evidence](fs-zip-reopen-validation.md).
-  - [x] Real complete ZIP payloads around the buffering cap, malicious signed/
-        unsigned size declarations, bad opens and truncated compressed streams
-        have [owner/retry evidence](fs-zip-entry-validation.md).
-  - [x] Actual read/seek paths bound requests, offsets and private accounting
-        before arithmetic or handle access; ordinary behavior and physical
-        teardown have [native evidence](fs-buffer-bounds-validation.md).
-  - [x] Remaining close/tell/length/write/flush paths validate live exclusive
-        handles and ordinary FILE ownership; payloads, errors and final-slot
-        release have [native evidence](fs-handle-api-validation.md).
-  - [x] Actual unsigned metadata readers require complete scalar I/O and
-        selected-entry setters propagate real decoder errors; hostile files,
-        prior owners and native retry have [evidence](unzip-metadata-validation.md).
-  - [x] Actual decoder initialization rejects every failed native import
-        before root publication and releases private owners; stored/deflated
-        success and retry have [evidence](unzip-open-validation.md).
-  - [x] Archive/clone/buffer factories validate complete inputs/imports and
-        release failed candidate streams/decoders while preserving prior
-        owners and retries; see [factory evidence](fs-zip-factory-validation.md).
-  - [x] Active decoder replacement stages complete private candidates before
-        releasing prior owners and restores failed-header/import FILE cursors;
-        [native continuation/retry checks](unzip-replacement-validation.md) pass.
-  - [x] Optional local metadata reads honor caller lengths and archive prefixes;
-        global comment NULL requests reject before I/O;
-        [real metadata checks](unzip-optional-metadata-validation.md) pass.
-  - [x] Shared ZIP seek supports independent logical cursors, complete
-        SET/CUR/END semantics, checked chunked skips and failure-propagating
-        single platform delegation;
-        [native compatibility checks](fs-zip-seek-validation.md) pass.
-  - [ ] Complete remaining metadata/open/read/handle paths and retail PK3
-        acceptance before closing the issue.
-- [ ] [#41 — bound RoQ chunks, dimensions, audio output, and cursors](https://github.com/jm2/Quake-III-Arena/issues/41)
-      — **high**, deterministic cinematic buffer corruption.
-  - [x] Bound disk/packet payloads, exact reads, mono/stereo output and early
-        failure cleanup; see [chunk/audio evidence](roq-stream-validation.md).
-  - [x] Validate frame geometry, both halves, complete quad groups and
-        bounded preview/videoMap resizing; see [frame evidence](roq-frame-validation.md).
-  - [x] Check codebook/VQ ranges and all motion-source rows/columns before
-        any frame write; see [VQ evidence](roq-vq-validation.md).
-  - [ ] Complete deferred retail 1.32c and Mac OS 9 cinematic acceptance.
-- [ ] [#42 — replace BMP/PCX/TGA loaders with bounded cursors](https://github.com/jm2/Quake-III-Arena/issues/42)
-      — **high**, deterministic image heap/OOB corruption.
-  - [x] BMP headers/palettes/rows use checked byte spans and allocation
-        arithmetic, with [host regressions](bmp-cursor-validation.md).
-  - [x] PCX header/palette/RLE bounds and complete padded rows have
-        [host regressions](pcx-cursor-validation.md).
-  - [x] TGA header/ID/raw/RLE bounds and rejection before allocation have
-        [host regressions](tga-cursor-validation.md).
-  - [ ] Complete deferred retail 1.32c and strict-alignment PPC acceptance.
-- [ ] [#43 — make JPEG I/O length-aware and remove duplicate APIs](https://github.com/jm2/Quake-III-Arena/issues/43)
-      — **high**, OOB decode and link-order ambiguity.
-  - [x] Local RGBA output sizing/dimension checks fix one overwrite.
-  - [x] Explicit input lengths, checked growing output, recoverable cleanup
-        and sole standard compression APIs have [host regressions](jpeg-io-validation.md).
-  - [ ] Complete deferred retail 1.32c JPEG and screenshot acceptance.
-- [ ] [#44 — validate MD3/MD4 layouts before allocation or swapping](https://github.com/jm2/Quake-III-Arena/issues/44)
-      — **high**, malformed model memory corruption/hangs.
-  - [x] MD3 step [#77](https://github.com/jm2/Quake-III-Arena/pull/77) and
-        MD4 step [#79](https://github.com/jm2/Quake-III-Arena/pull/79) merged
-        after their current-head CI/review gates. Host fixtures cover full
-        layouts, native conversion, cleanup, tag/frame bounds and MD4 skinning.
-  - [x] Complete MD3 layout validation before copying/swapping and staged
-        LOD registration have [host regressions](md3-layout-validation.md).
-  - [x] Complete MD4 layout/weight/index validation before allocation and native
-        conversion has [host and build evidence](md4-layout-validation.md).
-  - [ ] Complete deferred commercial 1.32c model/mod and PPC live acceptance.
-- [ ] [#45 — validate BSP lumps and cross-references transactionally](https://github.com/jm2/Quake-III-Arena/issues/45)
-      — **high**, malformed map corruption, graph hangs, and partial state.
-  - [x] Shared collision/renderer header and full lump-layout preflight precedes
-        checksum, allocation or world reset; [header evidence](bsp-header-validation.md)
-        covers exact inputs and collision ownership/state.
-  - [x] Shared collision/material references validate before checksum or reset;
-        [reference evidence](bsp-reference-validation.md) covers exact FS mutations.
-  - [x] BSP lightmap upload reads complete RGB records and retains the legacy
-        single-source duplicate texture; [lightmap evidence](bsp-lightmap-validation.md).
-  - [x] Finite geometry inputs, patch controls and native surface capacities
-        have [actual collision/renderer evidence](bsp-geometry-validation.md).
-  - [x] Bounded entity parsing, checked light-grid calculations and boundary
-        sampling have [actual renderer evidence](bsp-entity-grid-validation.md).
-  - [x] Acyclic native tree/forest topology and linear parent initialization
-        have [actual loader evidence](bsp-tree-validation.md).
-  - [x] Submodel loads fit remaining native renderer model slots, with
-        [real allocator evidence](bsp-model-capacity-validation.md).
-  - [ ] Complete all payload cross-reference, graph and geometry validation
-        before publishing a map; retain deferred retail/PPC map acceptance.
-  - [x] Lighting bytes use defined overbright arithmetic across all signed cvar
-        values, preserving valid legacy RGB and geometry alpha; see
-        [lighting evidence](bsp-lighting-arithmetic-validation.md).
-  - [x] Collision leaf/brush box queries traverse validated decision parents
-        with constant C stack space; see [box-query evidence](bsp-box-query-validation.md).
-  - [x] Projected-mark queries use validated renderer decision parents with
-        native filtering/order and constant stack; see [mark evidence](bsp-mark-query-validation.md).
-  - [x] Swept collision traversal uses bounded pending segments, preserving
-        stock clipping/pruning and cleaning OOM; see [trace evidence](bsp-trace-validation.md).
-  - [x] World traversal preserves inherited culling/light masks with bounded
-        frames and OOM cleanup; all 32 light bits use defined shifts; see
-        [world evidence](bsp-world-validation.md).
-  - [x] Collision patch refinement fits the native grid before map reset, with
-        [native goldens and ownership evidence](bsp-patch-grid-validation.md).
-  - [x] Missing facet borders release native winding storage; copies use the
-        actual header/point size; see [ownership evidence](bsp-winding-validation.md).
-  - [x] Native collision plane/facet/border budgets validate before checksum,
-        reset or hunk publication; see [build evidence](bsp-patch-budget-validation.md).
-  - [x] Finite collision controls cannot publish nonfinite refinement, planes
-        or winding vertices; see [numeric evidence](bsp-patch-numeric-validation.md).
-  - [x] Renderer curve refinement, attributes and derived bounds validate
-        before publication; see [native curve evidence](bsp-curve-numeric-validation.md).
-  - [x] Permanent hunk allocations expose checked native alignment/debug costs
-        and reject before bank changes; see [allocator evidence](hunk-allocation-validation.md).
-  - [x] Aggregate collision allocations fit actual remaining hunk capacity,
-        including derived indexes/visibility and real patch geometry; see
-        [memory evidence](bsp-memory-budget-validation.md).
-  - [x] Native planar face distances reject nonfinite derived results before
-        world/shader/model changes; see [face evidence](bsp-face-numeric-validation.md).
-  - [x] Native patch LOD propagation retains stock depth-first results with
-        constant stack and no traversal allocation; see [LOD evidence](bsp-lod-validation.md).
-- [ ] [#46 — enforce shader/skin/font limits and ownership](https://github.com/jm2/Quake-III-Arena/issues/46)
-      — **high**, fixed-array writes and unsafe serialized resources.
-  - [x] Shader stage capacity checks precede native array access and rejected
-        definitions preserve following parse/index/cache behavior; see
-        [stage evidence](shader-stage-validation.md).
-  - [x] Default/single-shader skins allocate complete native surfaces; safe
-        names, 32-surface/token limits and balanced file ownership have
-        [native skin evidence](skin-capacity-validation.md).
-  - [x] Retail legacy font records decode bytewise from the actual FS length,
-        validate fixed names/floats before imports and release input; see
-        [layout/ownership evidence](font-legacy-layout-validation.md).
-  - [x] Identity alpha and multitexture alpha-wave checks use their native
-        alpha enums; [semantic evidence](shader-alpha-validation.md) retains
-        distinct waveform passes and removes the two host enum warnings.
-  - [x] Enabled native FreeType flow releases faces before backing input and
-        balances temporary bitmap/page ownership on controlled failures; see
-        [ownership evidence](font-freetype-ownership-validation.md).
-  - [x] Optional font glyph/atlas arithmetic, complete page/final-glyph output,
-        generated cache names and legacy LE serialization have
-        [generation evidence](font-atlas-legacy-output-validation.md).
-  - [x] Shader archives check native allocation sizes, balance list/file input,
-        and clear stale state on empty restarts; see
-        [archive ownership evidence](shader-archive-ownership-validation.md).
-  - [x] Constant shader colors validate before byte conversion, preserve native
-        valid rounding and propagate vector failures; see
-        [constant/vector evidence](shader-constant-vector-validation.md).
-  - [x] Archive definitions/index walks stay within their own file and preserve
-        native duplicate priority across empty/multiple files; see
-        [index isolation evidence](shader-file-index-validation.md).
-  - [x] Waveforms, texture modifiers and deformations propagate missing/non-finite
-        fields, check line/count/reciprocal limits and publish complete modifiers;
-        see [numeric staging evidence](shader-wave-texmod-validation.md).
-  - [x] Sky/sun/fog/sort metadata checks propagate numeric/path failures;
-        rejected definitions retain previous sun state and valid fields/import
-        order remain native; see [metadata evidence](shader-metadata-validation.md).
-  - [x] Shader names/lightmap modes and image/remap inputs validate before
-        lookup/index/publication while retaining native valid cache behavior;
-        see [registration evidence](shader-registration-input-validation.md).
-  - [x] Derived waveform/animation/color conversions check native int range and
-        finite bits; noise reduces extreme finite cells before indexing while
-        retaining its 256-cell period; see
-        [runtime conversion evidence](shader-runtime-conversion-validation.md).
-  - [x] Sky bounds clamp before subdivision conversion; cloud assembly validates
-        capacities before writes and shares the first indexed mesh across all
-        eight stages; see [sky evidence](sky-subdivision-validation.md).
-  - [x] Cloud tables stage completely, preserve stable native results and use
-        wide geometry for finite overflow; rejected definitions retain prior
-        cloud state; see [cloud evidence](cloud-coordinate-validation.md).
-  - [x] Rejected definitions and missing textures cache a complete native
-        default material with discarded prefix metadata; see
-        [fallback evidence](shader-fallback-validation.md).
-  - [ ] Complete derived rendering conversions.
-- [ ] [#47 — validate AAS lumps and graph indexes before enabling bots](https://github.com/jm2/Quake-III-Arena/issues/47)
-      — **high**, server OOB access/infinite traversal.
-  - [x] Local mover model boundary/look-up fixes cross-build.
-  - [x] AAS v4/v5 header/lump preflight precedes world reset; exact reads,
-        seeks and allocation failures close once and clear partial logical
-        owners; see [AAS layout evidence](aas-layout-validation.md).
-  - [x] Bbox coordinates use float endian conversion; independent native/swapped
-        models retain fractions, signed zero, finite extremes and existing
-        uint16 travel-time conversion; see [endian evidence](aas-endian-validation.md).
-  - [x] AAS writer preserves native world bytes on every return, checks all
-        writes/seeks and rejects invalid/overflowing output roots before opening;
-        see [writer evidence](aas-writer-validation.md).
-  - [x] Finite geometric fields, ordered bounds and edge/face/area ranges
-        validate before loaded publication; signed orientations and six legacy
-        plane types retain native bytes; see [geometry evidence](aas-geometry-validation.md).
-  - [x] Root/node/paired-plane/area-leaf references and every component
-        terminate before loaded publication; temporary heap workspace releases
-        and native point queries retain results; see [node evidence](aas-node-validation.md).
-  - [x] Reachability destinations/endpoints, area spans and aggregate reference
-        ownership validate before loaded; ordinary references stay signed and
-        special travel fields retain packed bits; see [reachability evidence](aas-reachability-validation.md).
-  - [x] Portal/cluster indices, local area slots, spans and inverse ownership
-        validate before loaded; native side ordering and unclustered roots
-        retain bytes, while isolated-area routes preserve cache ownership;
-        see [portal evidence](aas-portal-validation.md).
-  - [x] Derived area travel times and cache sums saturate before overflowing
-        native uint16 capacity; representable speed/minimum and route costs
-        retain native results; see [travel-time evidence](aas-travel-time-validation.md).
-  - [x] Routing start scratch follows incoming degree with checked heap costs
-        and physical release; failed cache creation/update stays unpublished
-        and can retry; see [workspace evidence](aas-routing-workspace-validation.md).
-  - [x] Native routing cache counts, allocation costs and signed byte accounting
-        reject before overflow/import; loaded caches are accounted and optional
-        native dumps validate before publication with rebuilt runtime links;
-        see [cache evidence](aas-cache-allocation-validation.md).
-  - [x] Derived routing arrays check full signed costs and nullable imports;
-        travel-matrix pointer rows stay aligned, partial owners release and
-        failed initialization cannot enable the world;
-        see [initialization evidence](aas-routing-init-validation.md).
-  - [x] Routing cache cvar kilobytes convert to signed bytes without overflowing
-        casts/multiplication; valid truncation/defaults remain intact;
-        see [limit evidence](aas-cache-limit-validation.md).
-  - [ ] Validate the entire AAS file and graph before setting `loaded`.
-- [ ] [#48 — bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48)
-      — **high**, parser fixed-buffer corruption/invalid cleanup.
-  - [x] Several primitive, diagnostic, and preprocessor bounds fixes are
-        locally ported.
-  - [x] Bot allocation adapters check signed import/prefix sizes, propagate
-        nullable clearing and accept null cleanup while retaining heap/hunk
-        ownership; see [allocator evidence](bot-memory-validation.md).
-  - [x] Native numeric libvars preserve valid decimal values and reject malformed
-        fractions/unrepresentable floats without trailing-NUL overread or signed
-        divisor overflow; see [numeric evidence](bot-libvar-validation.md).
-  - [x] Libvar value/name costs and nullable allocations preserve dictionary and
-        prior value ownership on failure; aliased replacements clone before
-        release; see [ownership evidence](bot-libvar-ownership-validation.md).
-  - [x] Builtin date/time expansion borrows runtime time storage and releases
-        copied tokens on failed/empty expansion while retaining native token
-        text, types and location metadata;
-        see [builtin evidence](bot-builtin-validation.md).
-  - [x] Include paths append complete strings with NUL capacity, reject overflow
-        and incomplete angle directives without partial lookups, preserve
-        next-line tokens and release recursively rejected scripts;
-        see [include evidence](bot-include-validation.md).
-  - [x] Token stringize/paste operations reserve closing quotes and NUL space,
-        reject without partial output, and release private argument/output
-        chains after overflow, malformed arguments or nullable token copies;
-        see [macro evidence](bot-macro-validation.md).
-  - [x] Character filenames check complete native prefix/path costs, indexes
-        80 and larger reject before narrowing/assignment, and selected skill
-        EOF/nullable character-string imports release partial owners; real
-        quote stripping handles overlap and empty text;
-        see [character evidence](bot-character-validation.md).
-  - [x] Native script/source creation checks complete signed buffer and path
-        costs, rejects short reads, closes failed files and releases partial
-        script/table/dictionary/global-copy owners; native byte classification
-        and punctuation indexing avoid signed high-byte indexes;
-        see [source evidence](bot-source-validation.md).
-  - [x] Individual global definition deletion unlinks before freeing, preserves
-        definitions copied by existing sources and exposes only remaining
-        originals to later sources; native duplicate/case semantics remain;
-        see [registry evidence](bot-global-validation.md).
-  - [x] Character interpolation publishes only complete header/string owners,
-        releases partial output after nullable imports and preserves input
-        characters and ordinary native values;
-        see [interpolation evidence](bot-interpolation-validation.md).
-  - [x] Default inheritance clones missing strings before changing fields,
-        rejects failed cached/new/reload targets, preserves existing owners
-        and releases only newly loaded failed targets;
-        see [default evidence](bot-default-validation.md).
-  - [x] Numeric tokens reject unsigned overflow before wrap/index assignment,
-        preserve native bases/suffixes, and check float conversion/fraction
-        costs with bounded auxiliary integers;
-        see [number evidence](bot-number-validation.md).
-  - [x] Numeric escape values clamp before signed overflow, invalid escapes
-        fail without output-byte mutation, and legacy literal/punctuation
-        helpers keep quote consumption and buffer cursors bounded;
-        see [escape evidence](bot-escape-validation.md).
-  - [x] Source errors retain private status through suppressed diagnostics,
-        string lookahead and include unwinding; failed lexical readers preserve
-        queued owners and cannot continue into parents;
-        see [error evidence](bot-source-error-validation.md).
-  - [x] Weight configurations reject source errors before cache publication,
-        release current names/partial trees on failure, and roll back nullable
-        configuration/name/separator imports in cached and reload modes;
-        see [weight evidence](bot-weight-validation.md).
-  - [x] Public characteristic integer getters reject non-finite/unrepresentable
-        casts; finite bounded floats clamp before conversion while representable
-        truncation, signed integer fields and native error fallbacks remain;
-        see [integer evidence](bot-character-integer-validation.md).
-  - [x] Public characteristic string output ignores missing/nonpositive buffers
-        before size subtraction/copy, preserving exact native truncation/NUL
-        padding for every valid capacity;
-        see [string evidence](bot-character-string-validation.md).
-  - [x] Character numeric fields reject unrepresentable/non-finite floats and
-        oversized native integer words before publication; prior strings/source
-        owners release, while valid float and 32-bit word patterns remain;
-        see [publication evidence](bot-character-numeric-validation.md).
-  - [x] Requested NaN skills and unsafe cached skill casts reject before imports
-        while native finite/infinity clamps, rounding/fallback/cache behavior and
-        all existing character/string owners remain;
-        see [skill evidence](bot-character-skill-validation.md).
-  - [x] Interpolation rejects invalid endpoint/scale/result representations,
-        releases staged output after numeric failure, preserves available equal
-        fallback endpoints, and formats floating skill logs with matching types;
-        see [blend evidence](bot-interpolation-numeric-validation.md).
-  - [x] Public float getters reject invalid stored representations and NaN
-        bounds while retaining exact finite clamping, signed integer conversion,
-        negative zero and defined native infinity-bound behavior;
-        see [float getter evidence](bot-character-float-getter-validation.md).
-  - [x] Synonym loaders retain source diagnostics until validation, check aligned
-        measured capacity in both passes, stage nullable writes in heap memory
-        and publish/rebase one complete native hunk owner; invalid source/weight/
-        changed-capacity failures release all staged owners;
-        see [synonym evidence](bot-synonym-validation.md).
-  - [x] Expression result tokens initialize magnitude metadata, format complete
-        unsigned integer magnitudes without signed absolute overflow, reject
-        non-finite float results and safely clamp auxiliary integer values;
-        number/sign copies publish atomically with native text/type behavior;
-        see [expression token evidence](bot-eval-token-validation.md).
-  - [x] Expression collectors release copied operands on every parse/evaluation/
-        nullable-copy failure, reject lexical errors and malformed dollar/defined
-        grammar before publication, and retain valid macro/defined values and
-        historical source-error recovery;
-        see [operand evidence](bot-eval-collection-validation.md).
-  - [x] Selected expression arithmetic checks signed add/subtract/multiply and
-        division/remainder traps, validates shifts with native word semantics,
-        avoids unused integer operations in float mode and rejects non-finite
-        operands/results before publication; fractional float division remains;
-        see [arithmetic evidence](bot-eval-arithmetic-validation.md).
-  - [x] Failed unread-token copies preserve queued owners and record source
-        status; nullable conditional pushes preserve the existing stack/skip
-        count and return failure through entering directives; else/elif reuse
-        complete frames and preserve failed-expression/EOF recovery;
-        see [factory evidence](bot-source-factory-validation.md).
-  - [x] Macro definitions stage names/parameters/body tokens before dictionary
-        publication, preserve complete prior definitions on malformed/nullable
-        failures, parse parameter names without expanding prior macros and clean
-        external temporary dictionaries/scripts on every failed import;
-        see [definition evidence](bot-define-validation.md).
-  - [x] Complete empty macro expansion reports successful consumption so readers
-        continue to subsequent tokens, concatenated strings, included parents and
-        lexical errors; empty-only input reaches actual EOF and valid character
-        fields publish with native values;
-        see [empty-expansion evidence](bot-empty-expansion-validation.md).
-  - [x] Movement setup stages all ten native libvar references, rejects each
-        nullable import before brush/reference publication and preserves complete
-        prior state; retries retain native cached/configured values and models;
-        see [movement setup evidence](bot-move-setup-validation.md).
-  - [x] File loading checks block-comment closure before compression removes
-        diagnostics; malformed root/include/character imports release all owners
-        while valid files retain native compressed bytes and token metadata;
-        see [file-comment evidence](bot-file-comment-validation.md).
-  - [x] Compressed files update the EOF pointer to their complete new length;
-        exhausted roots/includes unwind conditional frames and skip state while
-        preserving native bytes/tokens and complete parent recovery;
-        see [file EOF evidence](bot-file-eof-validation.md).
-  - [x] Elevator height checks use native floating magnitude for the float
-        barrier libvar, avoiding unsafe integer conversion and retaining tested
-        integer-barrier behavior while correcting fractional barrier decisions;
-        see [distance evidence](bot-elevator-distance-validation.md).
-  - [x] AAS/public setup validates native count conversions and entity cost,
-        stages nullable cache/hunk imports before replacing world state and
-        preserves prior entities on failure; native defaults and truncation stay;
-        see [setup evidence](aas-setup-validation.md).
-  - [x] Entity proximity compares both float coordinate magnitudes directly;
-        defined native constant-40 decisions remain and unsafe integer casts
-        disappear; see [proximity evidence](aas-nearest-distance-validation.md).
-  - [x] Action setup stages complete input storage before replacing pointer/
-        actual capacity; nullable failure preserves usable prior payload, and
-        successful replacement releases its logical allocator record;
-        see [action setup evidence](bot-action-setup-validation.md).
-  - [x] Item configuration validates native count/cost and full filenames,
-        parses checked heap staging, rejects source errors and releases complete
-        sources before publishing a rebased hunk owner; native item values stay;
-        see [item evidence](bot-item-config-validation.md).
-  - [x] Structure numeric fields stage finite float results and checked native
-        integer words/bounds before writing destination bytes; 16-bit ranges and
-        ordinary native field values stay;
-        see [structure evidence](bot-structure-number-validation.md).
-  - [x] Goal setup validates native game-type conversion and stages complete
-        config/weight references before item parsing/publication; failed imports
-        retain prior goal payload and successful replacement releases its logical
-        record; see [goal evidence](bot-goal-setup-validation.md).
-  - [x] Level-item pool validates native count/cost, stages complete free links
-        before heap/list replacement and propagates failures before public map
-        information reset/map-API success; game load/setup failures disable bot
-        creation/frames until success while human initialization continues. Engine
-        readiness survives game VM resets through an existing syscall query. Retail
-        void ABI, prior pool bytes and native positive counts remain;
-        see [pool evidence](bot-level-pool-validation.md).
-  - [x] Map metadata stages checked locations/camps and publishes roots with
-        the complete level pool; nullable failure preserves all prior bytes,
-        cleans private owners and propagates through the checked map API;
-        see [metadata evidence](bot-map-info-validation.md).
-  - [x] Projectile model descriptors use the projectile offset, preserve every
-        scalar field across string order/boundaries and retain native layouts;
-        see [projectile evidence](bot-projectile-model-validation.md).
-  - [x] Weapon configuration checks native counts/full filenames and complete
-        allocation cost, parses checked heap staging, rejects source errors and
-        fixes projectiles before publishing rebased hunk arrays; failed loads keep
-        prior payload and consume no additional physical hunk;
-        see [weapon evidence](bot-weapon-config-validation.md).
-  - [x] Weapon setup checks its filename variable and stages complete config
-        before replacing the shared root; failure keeps every prior array/fixup
-        byte and success releases the prior logical record;
-        see [setup evidence](bot-weapon-setup-validation.md).
-  - [x] Weapon weights stage complete config/index pairs, keep prior bytes
-        on source/allocation failure and safely reuse cached aliases; repeated
-        cleanup clears both roots and native evaluation stays;
-        see [weight evidence](bot-weapon-weight-validation.md).
-  - [x] Live weapon-table replacement stages every active state's index
-        before persistent allocation and publishes complete table/index roots
-        together; growth/shrink, empty tables and all prior bytes stay safe;
-        see [table evidence](bot-weapon-table-validation.md).
-  - [x] Public weapon factories return zero on failed state imports; getters
-        reject absent tables/outputs and the exclusive array bound, and selection
-        guards incomplete inputs while valid native bytes/evaluation stay;
-        see [API evidence](bot-weapon-api-validation.md).
-  - [x] Chat state imports return native zero failure handles and retry
-        without prior-byte changes; shutdown releases the final client slot and
-        clears both console roots while valid properties/FIFO values stay;
-        see [chat lifecycle evidence](bot-chat-state-validation.md).
-  - [x] Console pools check native counts/cost and all nullable imports,
-        migrate complete queued messages before root replacement, and reject
-        capacity/shape errors and foreign/misaligned/stale/shared nodes before
-        dereference or arena use; chat setup propagates failure
-        before dictionary mutation, preserving the void helper and native values;
-        see [console pool evidence](bot-chat-pool-validation.md).
-  - [x] Public chat queue text reserves its native NUL terminator; missing
-        input/output/name and nonpositive chat output sizes reject before prior
-        state changes, preserving valid FIFO/property/match/output behavior;
-        see [chat API evidence](bot-chat-api-validation.md).
-  - [x] Reply input must fit the native match array before copying; initial
-        counts/selectors handle missing files/state/type, and missing match spans
-        return the native empty result while valid construction/timing stays;
-        see [consumer evidence](bot-chat-consumer-validation.md).
-  - [ ] Finish expression work limits, remaining character/source allocation
-        consumers, and aggregate parser work/recursion limits.
+## B1 — Regressions and runtime bugs to clear before the first target run
 
-## P1 — high-impact security, runtime, and release blockers
+Each blocks or corrupts a normal base-game session. All are host-verifiable except #256.
 
-- [ ] [#22 — packaging selects unverified assets and unpinned downloads](https://github.com/jm2/Quake-III-Arena/issues/22)
-      — **high**, release input/supply-chain integrity.
-  - [x] Local scripts copy sibling paks and require missionpack data when
-        Team Arena is selected.
-  - [ ] Require an explicit legal asset root, identities/digests, pinned
-        downloads, and offline tests.
-- [ ] [#23 — packaging can report success without a complete Classic app](https://github.com/jm2/Quake-III-Arena/issues/23)
-      — **high**, false/recoverably unusable releases.
-  - [x] Local scripts require PEF conversion, Rez output, resources, and an
-        HFS-capable image tool.
-  - [x] Local PowerShell path removes stale outputs, checks exit codes, and
-        requires fresh nonempty image/MacBinary outputs.
-  - [ ] Mount and validate PEF, `cfrg`, `BNDL`, icons, resource fork,
-        type/creator, and Finder flags for every package path.
-- [ ] [#1 — incomplete Retro68/OpenGL readiness checks](https://github.com/jm2/Quake-III-Arena/issues/1)
-      — **high**, build blocker/false toolchain readiness.
-  - [x] Bash/PowerShell repair and complete-prerequisite checks drafted.
-  - [ ] Test compiler-only, raw-SDK-only, missing-SDK, and Windows setup paths.
-- [ ] [#2 — disabled Team Arena consumed stale binaries/assets](https://github.com/jm2/Quake-III-Arena/issues/2)
-      — **high**, release artifact provenance.
-  - [x] Local conversion, validation, and packaging follow the configured
-        target; Bash OFF/ON alternation passed.
-  - [ ] Run equivalent PowerShell stale-artifact tests.
-- [ ] [#8 — demo fallback produced an unusable full-game package](https://github.com/jm2/Quake-III-Arena/issues/8)
-      — **high**, guaranteed startup failure.
-  - [x] Local scripts fail clearly without retail `baseq3/pak0.pk3`.
-- [ ] [#50 — Windows packaging used a nonexistent Rez include path](https://github.com/jm2/Quake-III-Arena/issues/50)
-      — **high**, Windows resource/package blocker.
-  - [x] Local code probes prepared/source layouts and requires `Types.r` plus
-        `CodeFragments.r`.
-  - [ ] Run native Windows Rez and full packaging.
-- [ ] [#15 — renderer initialization leaks partial AGL/DrawSprocket state](https://github.com/jm2/Quake-III-Arena/issues/15)
-      — **high**, display/context corruption on retry/failure.
-- [ ] [#16 — gamma snapshot allocation failure makes restore unsafe](https://github.com/jm2/Quake-III-Arena/issues/16)
-      — **high**, invalid restore/desktop damage.
-- [ ] [#17 — InputSprocket trusts counts and element ordering](https://github.com/jm2/Quake-III-Arena/issues/17)
-      — **high**, input OOB/latched state.
-  - [x] Local count clamp and missing-axis guard cross-build.
-  - [ ] Map by kind/label and make initialization/focus cleanup transactional.
-- [ ] [#20 — Open Transport ignores critical failures and network cvars](https://github.com/jm2/Quake-III-Arena/issues/20)
-      — **high**, invalid endpoints or main-loop blocking.
-- [ ] [#19 — Classic event pumping/application handlers are incomplete](https://github.com/jm2/Quake-III-Arena/issues/19)
-      — **high**, starvation and broken activation/quit behavior.
-  - [x] Local code no longer consumes an undefined `EventRecord`.
-- [ ] [#5 — Classic Mac sound remains opt-in and unvalidated](https://github.com/jm2/Quake-III-Arena/issues/5)
-      — **high**, major runtime subsystem incomplete.
-  - [x] Local init return, command lifecycle, DMA position, and callback UPP
-        candidates cross-build.
-  - [ ] Validate playback, restart, suspend, disconnect, and shutdown on target.
-- [ ] [#4 — `Sys_ListFiles` hardcoded filenames and hid mods/content](https://github.com/jm2/Quake-III-Arena/issues/4)
-      — **high**, core filesystem/mod functionality.
-  - [x] Local Catalog Manager enumeration handles files, directories, suffixes,
-        and recursive filters.
-  - [ ] Validate HFS aliases, recursion, and mod discovery on target.
-- [ ] [#11 — Team Arena parser cannot represent retail menu syntax](https://github.com/jm2/Quake-III-Arena/issues/11)
-      — **high**, product UI blocker.
-  - [x] Local numeric/signed token classification and exact reads cross-build.
-  - [ ] Restore retail punctuation, preprocessing, include, define, and source
-        location behavior; parse/traverse the full menu corpus.
-- [ ] [#12 — Team Arena skips model and bot discovery](https://github.com/jm2/Quake-III-Arena/issues/12)
-      — **high**, player setup/add-bot blocker.
-- [ ] [#13 — static modules override QVM-only mods](https://github.com/jm2/Quake-III-Arena/issues/13)
-      — **high**, mod compatibility/trust-boundary error.
-- [ ] [#14 — intro/idlogo cinematics are unconditionally bypassed](https://github.com/jm2/Quake-III-Arena/issues/14)
-      — **high runtime**, decoder failure hidden by content-name filtering.
-- [ ] [#3 — anisotropic extension dereferences an unregistered cvar](https://github.com/jm2/Quake-III-Arena/issues/3)
-      — **high target crash**.
-  - [x] Local registration fix cross-builds.
-  - [ ] Exercise extension-present and extension-absent target paths.
-- [ ] [#24 — Classic startup command-line assembly can overflow](https://github.com/jm2/Quake-III-Arena/issues/24)
-      — **high**, stack corruption.
-  - [x] Local bounded construction exits before overflow.
-  - [ ] Add exact-fit and overlong argument tests.
-- [ ] [#18 — Classic event queue overflow leaks payloads/latches input](https://github.com/jm2/Quake-III-Arena/issues/18)
-      — **high correctness**, ownership and key-release loss.
-  - [x] Local queue frees the evicted payload and preserves the newest event.
-  - [ ] Add pointer-ownership and key-transition stress tests.
-- [ ] [#49 — Team Arena UI allocation/reload failures are unsafe](https://github.com/jm2/Quake-III-Arena/issues/49)
-      — **moderate-high**, deterministic OOM/cvar crashes.
-  - [x] Local pool/type/item/string checks, reload-name initialization, and
-        bounded model cvar copies cross-build.
-  - [ ] Audit every direct allocator consumer and inject OOM at each site.
-- [ ] [#38 — connectionless rate limiting is bypassable and unfair](https://github.com/jm2/Quake-III-Arena/issues/38)
-      — **medium security**, reflection/DoS and RCON starvation.
-- [ ] [#39 — QVMs can modify protected cvars and engine commands](https://github.com/jm2/Quake-III-Arena/issues/39)
-      — **medium security**, module privilege-boundary failure.
-- [ ] [#40 — server-controlled `clientNum` reaches native indexes](https://github.com/jm2/Quake-III-Arena/issues/40)
-      — **medium security**, native client OOB.
-  - [x] Local parser rejects values outside `[0, MAX_CLIENTS)`.
-  - [ ] Add malformed-gamestate tests and audit other native module indexes.
+- [ ] [#270 — SV_GentityNum bound faults the server on botlib passent -1 traces during map load](https://github.com/jm2/Quake-III-Arena/issues/270) — **critical**; server faults on botlib passent -1 traces while loading maps with suspended items; PR #285; needs target test.
+- [ ] [#243 — BSP reference preflight rejects retail q3dm17 (flare surfaces with fogNum 0 and no fogs)](https://github.com/jm2/Quake-III-Arena/issues/243) — **critical**; retail q3dm17 rejected by both BSP loaders; PR #284.
+- [ ] [#233 — Monolithic link aliases botlib g_gametype/bot_developer onto the game's vmCvar_t globals](https://github.com/jm2/Quake-III-Arena/issues/233) — **high**; static link aliases botlib ints onto game vmCvar_t globals; gametype rules corrupt; PR #287.
+- [ ] [#246 — Unsigned char match-variable offsets make SV_GameBotMatch drop the server on PPC](https://github.com/jm2/Quake-III-Arena/issues/246) — **high**; unsigned char match offsets drop the server on PPC; PR #286.
+- [ ] [#223 — Retro68 target compiles with unsigned char, diverging from retail 1.32c and all host tests](https://github.com/jm2/Quake-III-Arena/issues/223) — **medium**; target char signedness differs from retail and every host test; PR #286.
+- [ ] [#244 — MD3 frame-bounds check rejects all stock tag-only weapon hand models](https://github.com/jm2/Quake-III-Arena/issues/244) — **high**; stock weapon hand models rejected; PR #282.
+- [ ] [#245 — Bot synonym replacement can no longer lengthen text, and chat word matching changed](https://github.com/jm2/Quake-III-Arena/issues/245) — **high**; bots stop understanding lengthening synonyms and some chat.
+- [ ] [#237 — QVM libc shim bg_lib.c replaces libc rand/atof/memmove/qsort in the native executable](https://github.com/jm2/Quake-III-Arena/issues/237) — **medium**; bg_lib.c replaces libc rand/atof/memmove/qsort; PR #280.
+- [ ] [#256 — Modifier keys only register when another OS event arrives (Ctrl-fire/Shift-run latch)](https://github.com/jm2/Quake-III-Arena/issues/256) — **high**; Ctrl/Shift/Alt only noticed on unrelated events; PR #281; needs target test.
+- [ ] [#240 — Info_SetValueForKey_Big rejects values of 1024+ chars, dropping pure pak lists from systeminfo](https://github.com/jm2/Quake-III-Arena/issues/240) — **medium**; pure pak lists of 1024+ chars dropped from systeminfo; PR #289.
+- [ ] [#236 — glconfig_t layout change breaks retail 1.32c cgame/UI QVMs](https://github.com/jm2/Quake-III-Arena/issues/236) — **high**; glconfig_t layout break for retail cgame/UI QVMs.
+- [ ] [#248 — Interpreter traps on shifts >= 32 break retail cgame QVM scoreboards with clients >= 32](https://github.com/jm2/Quake-III-Arena/issues/248) — **medium**; interpreter traps on shifts that retail QVMs rely on.
+- [ ] [#247 — RoQ codebook rule truncates retail idlogo.RoQ, and VQ decode is ~5x slower](https://github.com/jm2/Quake-III-Arena/issues/247) — **medium**; retail idlogo.RoQ truncated (latent behind #14); decode ~5x slower.
+- [ ] [#252 — Botlib disables bots on level-item pool exhaustion and drops zero-cost goal routes](https://github.com/jm2/Quake-III-Arena/issues/252) — **low**; botlib fails closed on pool exhaustion and zero-cost routes.
+- [ ] [#242 — trap_BotMutateGoalFuzzyLogic passes a float without PASSFLOAT](https://github.com/jm2/Quake-III-Arena/issues/242) — **low**; missing PASSFLOAT on one botlib trap; PR #288.
+- [ ] [#241 — Monolithic cgame compiles the non-retail cg_particles.c instead of the 1.32 particle code](https://github.com/jm2/Quake-III-Arena/issues/241) — **low**; non-retail particle code compiled into cgame.
 
-## P2 — medium correctness, target validation, and build quality
+## B2 — Build, toolchain and packaging
 
-- [ ] [#6 — renderer forced `r_fullscreen 0`](https://github.com/jm2/Quake-III-Arena/issues/6)
-      — **medium**.
-  - [x] Local override removed.
-  - [ ] Test windowed/fullscreen persistence and cleanup.
-- [ ] [#7 — 16-bit fallback still requested 24-bit color](https://github.com/jm2/Quake-III-Arena/issues/7)
-      — **medium**.
-  - [x] Local 16-bit path requests 5/5/5.
-  - [ ] Fault-test pixel-format fallback.
-- [ ] [#9 — Finder creator code differed from BNDL signature](https://github.com/jm2/Quake-III-Arena/issues/9)
-      — **medium release metadata**.
-  - [x] Local resources/package mappings use `IDQ3`.
-  - [ ] Inspect a mounted HFS artifact in Finder.
-- [ ] [#10 — startup logging always opens RetroConsole](https://github.com/jm2/Quake-III-Arena/issues/10)
-      — **medium presentation/fullscreen policy**.
-- [ ] [#21 — dedicated networking busy-spins without console input](https://github.com/jm2/Quake-III-Arena/issues/21)
-      — **medium dedicated-server functionality**.
-- [ ] [#25 — fatal engine errors exit with success status](https://github.com/jm2/Quake-III-Arena/issues/25)
-      — **medium automation/release correctness**.
-  - [x] Local fatal path shuts down and exits 1.
-  - [ ] Verify normal/fatal status and flushing under emulator automation.
-- [ ] [#26 — recording with an open console freezes client time](https://github.com/jm2/Quake-III-Arena/issues/26)
-      — **medium gameplay/network correctness**.
-  - [x] Local `msec = 0` condition removed.
-  - [ ] Record/open-console runtime regression.
-- [ ] [#27 — build target selection is cache-dependent](https://github.com/jm2/Quake-III-Arena/issues/27)
-      — **medium build reproducibility**.
-  - [x] Local Bash/PowerShell flags always pass the selected CMake value.
-  - [x] Bash base/Team Arena alternation passed.
-  - [ ] Exercise both modes and packaging on Windows.
-- [ ] [#28 — Release forces `-O0 -g` and disables GL fast paths](https://github.com/jm2/Quake-III-Arena/issues/28)
-      — **medium performance/playability**.
-- [ ] [#33 — synchronous DNS freezes the client for ten seconds](https://github.com/jm2/Quake-III-Arena/issues/33)
-      — **medium responsiveness**.
-- [ ] [#51 — setup requires unrelated tools for cached inputs](https://github.com/jm2/Quake-III-Arena/issues/51)
-      — **medium offline/setup portability**.
-  - [x] Local setup removes unused `hmount` and checks `wget` only on download.
-  - [ ] Add controlled-PATH cached/partial/missing input tests.
-- [ ] [#34 — AGL commands re-register on renderer initialization](https://github.com/jm2/Quake-III-Arena/issues/34)
-      — **medium-low lifecycle correctness**.
-  - [x] Local registration guard is set.
-  - [ ] Loop `vid_restart` and renderer retry paths.
+A launchable application must come out of every build, from a pinned toolchain, before release packaging work.
 
-## P3 — low-risk metadata, presentation, and latent features
+- [ ] [#226 — Default build produces a non-launchable PEF; resources are only compiled in package mode](https://github.com/jm2/Quake-III-Arena/issues/226) — **medium**; default build output is a bare PEF; resources only in package mode.
+- [ ] [#225 — Packaging on a macOS host fails because Rez output lives in the resource fork](https://github.com/jm2/Quake-III-Arena/issues/225) — **medium**; macOS-host packaging reads the empty data fork.
+- [ ] [#269 — Toolchain readiness accepts binaries that cannot run, and setup cannot repair them](https://github.com/jm2/Quake-III-Arena/issues/269) — **medium**; readiness accepts a toolchain that cannot run.
+- [ ] [#227 — Retro68 toolchain and Apple SDK inputs are unpinned and unverified](https://github.com/jm2/Quake-III-Arena/issues/227) — **medium**; Retro68 and SDK inputs unpinned.
+- [ ] [#1 — Build scripts accept incomplete Retro68 toolchain and fail on missing prepared OpenGL headers](https://github.com/jm2/Quake-III-Arena/issues/1) — **high**; readiness does not check prepared OpenGL SDK files.
+- [ ] [#230 — Minimum SIZE partition leaves ~5 MB headroom; enabling sound can corrupt memory](https://github.com/jm2/Quake-III-Arena/issues/230) — **medium**; SIZE partition headroom about 5 MB; sound pool unchecked.
+- [ ] [#8 — Demo packaging fallback produces an unusable directory/layout](https://github.com/jm2/Quake-III-Arena/issues/8) — **high**; retail data required; demo fallback removed.
+- [ ] [#22 — Packaging selects unverified assets and unpinned downloads](https://github.com/jm2/Quake-III-Arena/issues/22) — **high**; asset provenance and pinned downloads.
+- [ ] [#23 — Packaging can report success without a complete Classic application](https://github.com/jm2/Quake-III-Arena/issues/23) — **high**; mounted-image resource and Finder validation.
+- [ ] [#2 — Disabled Team Arena builds still validate and package stale binaries](https://github.com/jm2/Quake-III-Arena/issues/2) — **high**; stale Team Arena artifacts.
+- [ ] [#27 — Build target selection is cache-dependent](https://github.com/jm2/Quake-III-Arena/issues/27) — **medium**; cache-dependent target selection.
+- [ ] [#50 — Windows packaging uses a nonexistent Retro68 Rez include path](https://github.com/jm2/Quake-III-Arena/issues/50) — **high**; Windows Rez include path.
+- [ ] [#51 — Retro68 setup requires unrelated tools even for cached inputs](https://github.com/jm2/Quake-III-Arena/issues/51) — **medium**; setup needs unrelated tools.
+- [ ] [#9 — Finder creator code does not match the BNDL icon signature](https://github.com/jm2/Quake-III-Arena/issues/9) — **medium**; IDQ3 everywhere; needs Finder inspection of a mounted image.
+- [ ] [#231 — Build/setup scripts depend on the caller's directory and lack xxd/ruby/exit-code checks](https://github.com/jm2/Quake-III-Arena/issues/231) — **low**; scripts depend on the caller directory; missing tool checks.
+- [ ] [#232 — Remove stale build inputs: MacGamma.cpp, empty q3.rsrc, unused ui_obj and CMake variables](https://github.com/jm2/Quake-III-Arena/issues/232) — **low**; stale build inputs.
 
-- [ ] [#30 — stereo begins two eyes but renders one centered frame](https://github.com/jm2/Quake-III-Arena/issues/30)
-      — **low/latent** while Mac stereo is not requested.
-- [ ] [#31 — generated color icons lack a matching CLUT](https://github.com/jm2/Quake-III-Arena/issues/31)
-      — **low visual metadata**.
-- [ ] [#32 — MacBinary output writes invalid zero dates](https://github.com/jm2/Quake-III-Arena/issues/32)
-      — **low metadata**.
-  - [x] Local encoder writes `SOURCE_DATE_EPOCH` or input mtime in Mac epoch.
-  - [x] Host fixture checks dates, fork layout, and CRC against Python's
-        independent `binascii.crc_hqx` implementation.
-  - [ ] Validate with a complete independent decoder and on target.
-- [ ] [#52 — MacBinary filename length counted characters, not bytes](https://github.com/jm2/Quake-III-Arena/issues/52)
-      — **low metadata**.
-  - [x] Local encoder strictly encodes MacRoman, then truncates/counts bytes and
-        validates fork widths.
-  - [x] Host tests cover a 64-byte MacRoman name truncated to 63 bytes and
-        rejection of an unrepresentable name.
-  - [ ] Add exact 63-byte and short representable non-ASCII fixtures; validate
-        the complete result with an independent MacBinary II reader.
+## B3 — Test and CI coverage
 
-## Completed review work not tied to one open issue
+Close the gaps that let the September regressions through.
 
-- [x] Inventory build entry points, Classic Mac sources, historical plans, and
-      stabilization/security history.
-- [x] Complete independent platform, engine/protocol, asset/parser, and
-      release-tool source passes.
-- [x] Cross-build base and Team Arena with the local review patch set.
-- [x] Validate PEF architecture/header and classify compiler output.
-- [x] Add first-pass ioquake3 provenance and accepted/missing family mapping.
-- [x] Preserve pre-existing user logs during the July review; its candidate
-      changes were subsequently committed in `204fe36`. New work follows the
-      PR/CI/bot-review merge process above.
-- [x] Add portable GitHub Actions starter CI, packaging/ledger unit tests,
-      isolated ASan/UBSan C regressions, CI documentation, and pinned-action
-      Dependabot updates.
+- [ ] [#253 — No real-content equivalence tests; synthetic fixtures missed stock-asset regressions](https://github.com/jm2/Quake-III-Arena/issues/253) — **high**; real-content equivalence tests against the pre-hardening baseline.
+- [ ] [#224 — CI never builds the PPC product or tests any 32-bit big-endian configuration](https://github.com/jm2/Quake-III-Arena/issues/224) — **medium**; 32-bit big-endian and unsigned-char CI; PPC product build.
+- [ ] [#29 — Modern CVE coverage has no auditable provenance or regression matrix](https://github.com/jm2/Quake-III-Arena/issues/29) — **assurance gate**; CVE provenance and regression matrix.
+- [ ] [#276 — Code comments and plan cite CVE ids that belong to unrelated products or other bugs](https://github.com/jm2/Quake-III-Arena/issues/276) — **informational**; CVE ids in comments that belong to other products.
 
-## Required validation matrix
+## B4 — Remote and network security
 
-- [x] Bash scripts parse.
-- [x] PowerShell scripts parse and build help runs.
-- [x] Python utilities compile.
-- [x] Base and Team Arena PPC cross-build and strong PEF checks pass.
-- [x] Deterministic MacBinary fixture is recognized with valid dates, CRC,
-      type, creator, name, and fork length.
-- [x] Host ASan/UBSan malformed-input corpus for message/Huffman and the
-      out-of-band caller, including commercial stream goldens.
-- [ ] Host ASan/UBSan malformed-input corpora for downloads, ZIP, QVM, RoQ,
-      images/JPEG, models, BSP, shader/skin/font, bot/AAS, UI allocation, and
-      format strings that are not already covered by focused runners.
-- [ ] PowerShell setup/build/package on native Windows.
-- [ ] Offline package from an explicit legal asset root.
-- [ ] Mounted package resource/Finder validation.
-- [ ] Base and Team Arena end-to-end Mac OS 9 smoke tests.
-- [ ] Sound, InputSprocket, Open Transport, fullscreen/gamma, suspend/resume,
-      fatal exit, and normal quit target tests.
+Remote memory corruption and denial of service reachable from the network come before further local-content hardening.
 
-## Exact continuation point
+- [ ] [#254 — Netchan fragment reassembly overflows the receive buffer by 4 bytes](https://github.com/jm2/Quake-III-Arena/issues/254) — **critical**; netchan reassembly overruns the receive buffer by 4 bytes.
+- [ ] [#255 — Unauthenticated master-server responses overflow cls.globalServerAddresses](https://github.com/jm2/Quake-III-Arena/issues/255) — **critical**; unauthenticated master replies overflow the server list.
+- [ ] [#257 — Sys_SendPacket errors on replies over 1400 bytes; one getstatus drops a Mac server](https://github.com/jm2/Quake-III-Arena/issues/257) — **high**; one oversized getstatus reply drops a Mac-hosted server.
+- [ ] [#271 — Repeated donedl commands queue unbounded gamestate copies and exhaust the server zone](https://github.com/jm2/Quake-III-Arena/issues/271) — **high**; repeated donedl exhausts the server zone.
+- [ ] [#239 — Native cgame trusts server tinfo client numbers and entity weapon indices](https://github.com/jm2/Quake-III-Arena/issues/239) — **high**; server-controlled tinfo/weapon indices write native cgame memory.
+- [ ] [#238 — UI/cgame syscalls pass unchecked key, ping and entity indices to native arrays](https://github.com/jm2/Quake-III-Arena/issues/238) — **high**; QVM key/ping/sound indices write native arrays.
+- [ ] [#37 — Bind connection setup and sequenced packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37) — **high**; challenge binding for connection setup and netchan, 1.32c compatible.
+- [ ] [#36 — Reject oversized and truncated PK3 entries before allocation](https://github.com/jm2/Quake-III-Arena/issues/36) — **high**; hostile ZIP fixtures around caps and truncation.
+- [ ] [#272 — One client's userinfo burst overflows every other client's reliable-command window](https://github.com/jm2/Quake-III-Arena/issues/272) — **medium**; userinfo bursts overflow other clients.
+- [ ] [#273 — Clients can remove or forge the server-maintained ip userinfo key and evade IP bans](https://github.com/jm2/Quake-III-Arena/issues/273) — **medium**; client-forged ip userinfo evades bans.
+- [ ] [#274 — CVE-2017-6903 only partly ported: configs load from pk3s, VM writes are not extension-restricted](https://github.com/jm2/Quake-III-Arena/issues/274) — **medium**; CVE-2017-6903 partial: configs from pk3s, VM writes.
+- [ ] [#262 — HFS ':' separators bypass qpath and fs_game traversal checks](https://github.com/jm2/Quake-III-Arena/issues/262) — **medium**; HFS : separators bypass traversal checks.
+- [ ] [#38 — Rate-limit all connectionless commands fairly per address and globally](https://github.com/jm2/Quake-III-Arena/issues/38) — **medium**; per-address and global connectionless rate limits.
+- [ ] [#39 — Prevent QVMs from modifying protected cvars and engine commands](https://github.com/jm2/Quake-III-Arena/issues/39) — **medium**; protected cvars and engine commands.
+- [ ] [#40 — Validate server-controlled clientNum before native cgame initialization](https://github.com/jm2/Quake-III-Arena/issues/40) — **medium**; clientNum check present; malformed-gamestate tests and index audit remain.
+- [ ] [#275 — Client echo/print connectionless handlers accept any source address](https://github.com/jm2/Quake-III-Arena/issues/275) — **low**; echo/print accept any sender.
+- [ ] [#277 — Mac Sys_StringToAdr copies unbounded hostnames into a 256-byte DNSAddress](https://github.com/jm2/Quake-III-Arena/issues/277) — **low**; unbounded hostnames into a 256-byte DNSAddress.
+- [ ] [#265 — Sys_GetPacket ignores T_MORE, splitting oversize datagrams into two packets](https://github.com/jm2/Quake-III-Arena/issues/265) — **low**; T_MORE datagrams split into two packets.
 
-Current source is master `31a6554caa3c941d6657d664849511e27233089d`, through
-merged #172, with the independent host-timeout step #180. The [continuation evidence](review-continuation-2026-09-18.md)
-records the refreshed 52-issue inventory, pending stack and its current gates.
-All 52 issue-level entries remain open; nested implementation checks cover only
-the stated work. The milestones below retain their dated source evidence.
+## B5 — Mac OS 9 platform and target bring-up
 
-- [x] AAS portal/travel/routing/workspace/cache/init steps #126–#130/#132 and
-      native variable/parser/character steps #131/#133–#148 merged
-      after exact-head CI, completed clean Codex and resolved bot findings.
-- [x] Source steps #149–#170 merged after four green exact-head CI checks,
-      completed clean Codex and resolved findings. #158's later CodeRabbit
-      documentation finding was fixed before renewed review and fresh CI.
-- [x] Host-timeout step #180 merged after all four CI checks, completed clean
-      Codex and resolved findings; every required check remains mandatory.
-- [x] Projectile model descriptor #172 merged after the same four-job
-      exact-head CI/clean Codex/resolved-finding gate.
-- [ ] Merge eligible independent steps and the pending dependency chain,
-      rechecking four successful Portable CI jobs, completed clean current-head
-      Codex and all resolved CodeRabbit findings immediately before each merge.
-- [ ] Require all fresh CI checks on the workflow-only timeout revisions;
-      product source/PPC evidence is unchanged and renewed Codex is clean.
-- [ ] Merge the validated weapon/chat/dictionary/cache/state steps and
-      filesystem/ZIP steps in dependency order. Continue remaining nullable
-      consumers, full library/world transactions and aggregate resource/work
-      limits; keep broad acceptance and deferred live testing open.
+Most items need Mac OS 9 hardware with a 3D accelerator (#268). Entries marked needs target test already have code fixes.
 
-- [x] Reconcile all 52 open issues against `204fe36`, existing test coverage,
-      and July evidence; retain their current priorities and closure gates.
-- [x] Re-run the eight Python tests, q_shared ASan/UBSan harness, Bash syntax
-      and help, and PowerShell syntax and help on 2026-09-17.
-- [x] Confirm Codex and CodeRabbit are enabled and review PRs automatically.
-- [x] User confirmed the merge gate: clean current-head Codex review plus
-      resolved CodeRabbit findings; no additional merge approval is needed.
-- [x] User requires commercial Quake III Arena 1.32c wire compatibility for
-      #37, as supported by Quake3e/ioquake3; no mandatory incompatible fields.
-- [x] User authorized host tests and cross-builds without retail assets or a
-      Mac OS 9 environment; live acceptance is deferred to a follow-up session.
-- [x] QVM steps #54–#67/#69 and single-run CI #68 are merged at master
-      `4fd62bd`, each after successful CI, clean completed Codex review and
-      resolved CodeRabbit findings.
-- [x] RoQ/image/JPEG/model/BSP steps #70–#77/#79–#82 and assessment #78
-      are merged at master `95a6c18`, after the same current-head CI/review gates.
-- [x] BSP steps #83–#91/#93–#101 and shader capacity #102 are merged at
-      master `cdc8c38` after the same current-head CI/review gates.
-- [x] Skin/font/shader and ledger PRs #103–#114 are merged at master
-      `fc6c10e`, each after exact-head CI, completed clean Codex review and
-      resolution of every bot finding. The [September 18 snapshot](review-2026-09-18.md)
-      records the earlier queue; its dated evidence remains unchanged.
-- [x] Derived shader conversions/noise PR #115 merged at `aa25e88` after
-      exact-head CI, clean completed Codex and resolved bot findings.
-- [x] Sky subdivisions/shared cloud mesh #116 merged at `e59b66d` after
-      exact-head CI, clean completed Codex and resolved bot findings.
-- [x] Cloud-layer math/publication #117 merged at `c4251e7` after the
-      same exact-head CI/Codex/resolved-finding gate.
-- [x] Native material fallback #118 merged at `f18ca23` after exact-head
-      CI, completed clean Codex and resolved review findings.
-- [ ] Continue renderer budgets/transactions and AAS/preprocessor roots;
-      retain deferred acceptance.
-- [x] AAS layout/endian/writer PRs #119–#121 merged at `431e272` after
-      exact-head CI, completed clean Codex and resolved review findings.
-- [x] AAS geometry #122 merged at `b242458` and allocator/import #123
-      at `ed42d87`, after exact-head CI, clean completed Codex and all
-      CodeRabbit findings resolved.
-- [x] Node/reachability #124–#125 merged at `86c1667` after exact-head
-      CI, clean completed Codex and resolved review findings.
-- [ ] Finish #47 runtime query, memory/work budgets and late-load
-      transactions after the merged portal/travel/workspace prerequisites.
-- [ ] Finish #45 renderer aggregate capacity and full transactional
-      publication; retain remaining query/candidate costs and deferred target
-      acceptance. Collision aggregate and derived geometry/facet checks are
-      merged; keep parent acceptance open.
-- [ ] Record and execute the deferred retail/target compatibility checks when
-      the user provides the assets and test environment.
+- [ ] [#268 — Renderer requires accelerated AGL, so Mac OS 9 emulators cannot run acceptance tests](https://github.com/jm2/Quake-III-Arena/issues/268) — **medium**; emulators fail the accelerated-renderer check; define hardware-only checks.
+- [ ] [#258 — Retro68 open() requests read/write for every fopen, so locked or read-only data cannot load](https://github.com/jm2/Quake-III-Arena/issues/258) — **high**; Retro68 open() asks for write access; read-only media fail.
+- [ ] [#15 — Mac renderer initialization leaks partial AGL and DrawSprocket state](https://github.com/jm2/Quake-III-Arena/issues/15) — **high**; partial AGL/DrawSprocket state on failure.
+- [ ] [#16 — Gamma snapshot allocation failures make restore unsafe](https://github.com/jm2/Quake-III-Arena/issues/16) — **high**; gamma snapshot allocation failure.
+- [ ] [#17 — InputSprocket initialization trusts counts and element ordering](https://github.com/jm2/Quake-III-Arena/issues/17) — **high**; InputSprocket counts and element ordering.
+- [ ] [#19 — Classic Mac event pumping and application event handlers are incomplete](https://github.com/jm2/Quake-III-Arena/issues/19) — **high**; incomplete event pump and application events.
+- [ ] [#20 — Open Transport initialization ignores critical errors and network cvars](https://github.com/jm2/Quake-III-Arena/issues/20) — **high**; Open Transport errors and network cvars.
+- [ ] [#5 — Classic Mac sound backend remains disabled and unvalidated](https://github.com/jm2/Quake-III-Arena/issues/5) — **high**; sound backend disabled and unvalidated.
+- [ ] [#259 — Retro68 rename/unlink are stubs; downloads fall back to an unchecked whole-file malloc copy](https://github.com/jm2/Quake-III-Arena/issues/259) — **medium**; rename/unlink stubs; unchecked copy fallback.
+- [ ] [#260 — Unique pk3 reads buffer whole entries in the 16 MB zone and fatally fail on large RoQ/music](https://github.com/jm2/Quake-III-Arena/issues/260) — **medium**; unique pk3 entries buffered whole in the zone.
+- [ ] [#261 — Classic Mac build has no startup parameters: +set, safe and fs_game are unreachable](https://github.com/jm2/Quake-III-Arena/issues/261) — **medium**; no startup parameters on Classic Mac OS.
+- [ ] [#13 — Static built-in modules override QVM-only mods](https://github.com/jm2/Quake-III-Arena/issues/13) — **high**; static modules override QVM-only mods.
+- [ ] [#14 — Intro and idlogo cinematics are unconditionally bypassed](https://github.com/jm2/Quake-III-Arena/issues/14) — **high**; intro/idlogo bypass.
+- [ ] [#18 — Classic Mac event queue overflow leaks payloads and can latch input](https://github.com/jm2/Quake-III-Arena/issues/18) — **high**; event queue ownership; needs stress tests.
+- [ ] [#24 — Classic Mac startup command-line assembly can overflow](https://github.com/jm2/Quake-III-Arena/issues/24) — **high**; bounded command line; input path is dead until #261.
+- [ ] [#4 — Classic Mac Sys_ListFiles hardcodes filenames and disables mods/custom content](https://github.com/jm2/Quake-III-Arena/issues/4) — **high**; Catalog Manager enumeration; needs target test.
+- [ ] [#3 — Mac GL extension detection dereferences an unregistered anisotropic-filter cvar](https://github.com/jm2/Quake-III-Arena/issues/3) — **high**; anisotropic cvar registered; needs target test.
+- [ ] [#6 — Mac renderer overrides r_fullscreen and cannot honor fullscreen configuration](https://github.com/jm2/Quake-III-Arena/issues/6) — **medium**; r_fullscreen override removed; needs target test.
+- [ ] [#7 — Mac 16-bit pixel-format fallback still requests 24-bit color](https://github.com/jm2/Quake-III-Arena/issues/7) — **medium**; 16-bit 5/5/5 request; needs target test.
+- [ ] [#25 — Fatal engine errors exit with success status](https://github.com/jm2/Quake-III-Arena/issues/25) — **medium**; fatal exit status 1; needs target test.
+- [ ] [#26 — Opening the console while recording freezes client time](https://github.com/jm2/Quake-III-Arena/issues/26) — **medium**; record/console clock fix; needs target test.
+- [ ] [#34 — AGL console commands re-register on every renderer initialization](https://github.com/jm2/Quake-III-Arena/issues/34) — **medium-low**; AGL command registration guard; needs target test.
+- [ ] [#10 — Startup logging always opens the Retro68 console even when viewlog is hidden](https://github.com/jm2/Quake-III-Arena/issues/10) — **medium**; RetroConsole always opens.
+- [ ] [#21 — Dedicated server networking busy-spins without console input](https://github.com/jm2/Quake-III-Arena/issues/21) — **medium**; dedicated server busy-spins.
+- [ ] [#33 — Synchronous DNS resolution can freeze the Mac client for ten seconds](https://github.com/jm2/Quake-III-Arena/issues/33) — **medium**; synchronous DNS.
+- [ ] [#263 — Toolbox is initialized only as a side effect of the first printf](https://github.com/jm2/Quake-III-Arena/issues/263) — **low**; Toolbox initialized only by the first printf.
+- [ ] [#264 — Sound Manager runs at 22254.5 Hz while the mixer assumes 22050 Hz](https://github.com/jm2/Quake-III-Arena/issues/264) — **low**; Sound Manager rate 22254.5 Hz vs mixer 22050 Hz.
+- [ ] [#266 — Mac console input: navigation keys emit control characters and clipboard paste is a stub](https://github.com/jm2/Quake-III-Arena/issues/266) — **low**; navigation keys emit control chars; clipboard stub.
+- [ ] [#267 — Base path at a volume root lacks a trailing ':' and fails catalog enumeration](https://github.com/jm2/Quake-III-Arena/issues/267) — **low**; base path at a volume root.
+- [ ] [#30 — Stereo screen path begins two eyes but renders one centered frame](https://github.com/jm2/Quake-III-Arena/issues/30) — **low**; stereo sequencing.
 
-- [x] Run the new portable CI suite locally and correct every failure.
-- [x] Re-run both product builds after the last formatter/release-tool/CI
-      edits; update the PEF sizes/hashes above and leave CMake base-only.
-- [x] Remove only the review-generated `__pycache__/`; preserve `q3-logs/`.
-- [ ] P0 implementation order: #35, #41, #42, #43, #44, #45, #46, #47,
-      #48, then the compatibility-sensitive #37.
-- [ ] P0 validation order for local candidates: #36, downloads, and known
-      format-string fixes. Message/Huffman exact bounds are complete.
-- [ ] P1 target/runtime order: #11 after #48; #15, #16, #17, #5, #20, #19.
-      Re-enable #12 after #47/#48, #13 after #35/#39, and #14 after #41.
-      Validate fullscreen/gamma behavior after #15/#16.
-- [ ] Add a legally provisioned Retro68 CI runner for both product builds
-      before treating portable CI as release evidence.
-- [ ] Do not close an issue solely because a cross-build passed.
+## B6 — Remaining content-hardening parents
+
+The paused September queue. Resume only after B1–B4, and fix false positives against real content (#253) before extending checks.
+
+- [ ] [#35 — Harden interpreted QVM validation and sandbox bounds](https://github.com/jm2/Quake-III-Arena/issues/35) — **high**; QVM sandbox: remaining syscall ranges and retail QVM compatibility.
+- [ ] [#41 — Bound RoQ chunks, dimensions, audio output, and decoder cursors](https://github.com/jm2/Quake-III-Arena/issues/41) — **high**; RoQ: retail acceptance.
+- [ ] [#42 — Replace legacy BMP, PCX, and TGA loaders with bounded cursor decoders](https://github.com/jm2/Quake-III-Arena/issues/42) — **high**; BMP/PCX/TGA: retail and PPC acceptance.
+- [ ] [#43 — Make JPEG I/O length-aware and consolidate duplicate libjpeg APIs](https://github.com/jm2/Quake-III-Arena/issues/43) — **high**; JPEG: retail and screenshot acceptance.
+- [ ] [#44 — Validate MD3 and MD4 layout before allocation, copy, or endian swap](https://github.com/jm2/Quake-III-Arena/issues/44) — **high**; MD3/MD4: retail and missionpack acceptance.
+- [ ] [#45 — Validate BSP lumps and cross-references transactionally](https://github.com/jm2/Quake-III-Arena/issues/45) — **high**; BSP: remaining payload and graph validation.
+- [ ] [#46 — Enforce fixed limits and ownership in shader, skin, and font parsers](https://github.com/jm2/Quake-III-Arena/issues/46) — **high**; shader/skin/font: derived rendering conversions.
+- [ ] [#47 — Validate AAS lumps and graph indexes before enabling bot world](https://github.com/jm2/Quake-III-Arena/issues/47) — **high**; AAS: validate the whole file before loaded.
+- [ ] [#48 — Bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48) — **high**; bot parser: work and recursion limits (open PRs #214–#217).
+- [ ] [#290 — BotExpandChatMessage accepts match variable index 8 and overflowing digit strings](https://github.com/jm2/Quake-III-Arena/issues/290) — **medium**; out-of-bounds match variable read and stack copy from chat templates.
+
+## B7 — Performance
+
+Measure on target after B1; the product still builds at -O0.
+
+- [ ] [#28 — Release builds force debug optimization and disable key GL fast paths](https://github.com/jm2/Quake-III-Arena/issues/28) — **medium**; Release builds at -O0 with GL fast paths disabled.
+- [ ] [#249 — Per-vertex float guards call out-of-line Com_Memcpy (5-13x slower lighting loops)](https://github.com/jm2/Quake-III-Arena/issues/249) — **medium**; per-vertex float guards 5–13x slower.
+- [ ] [#250 — Interpreted VM executes ~3x more PPC instructions per QVM instruction](https://github.com/jm2/Quake-III-Arena/issues/250) — **medium**; interpreted VM about 3x more instructions per op.
+- [ ] [#251 — Map-load preflights and non-recursive box queries add 1.2-2.3x load and query cost](https://github.com/jm2/Quake-III-Arena/issues/251) — **low**; map-load preflights and box queries 1.2–2.3x slower.
+
+## B8 — Team Arena
+
+Team Arena cannot reach its menu today; keep it building (BUILD_TEAM_ARENA=ON) and fix after the base game.
+
+- [ ] [#235 — Team Arena executable never mounts missionpack data on a Finder launch](https://github.com/jm2/Quake-III-Arena/issues/235) — **high**; executable never mounts missionpack.
+- [ ] [#234 — Team Arena cgame uses the UI module's ui_shared.c and issues UI syscalls in cgame context](https://github.com/jm2/Quake-III-Arena/issues/234) — **high**; cgame uses the UI module ui_shared.c.
+- [ ] [#11 — Team Arena simple parser cannot represent retail menu syntax](https://github.com/jm2/Quake-III-Arena/issues/11) — **high**; simple parser cannot read retail menus.
+- [ ] [#12 — Team Arena skips model and bot discovery](https://github.com/jm2/Quake-III-Arena/issues/12) — **high**; model and bot discovery skipped.
+- [ ] [#49 — Make Team Arena UI menu and reload failures allocation-safe](https://github.com/jm2/Quake-III-Arena/issues/49) — **moderate-high**; UI allocation and reload failures.
+
+## B9 — Low-risk metadata
+
+- [ ] [#31 — Generated icl8/ics8 icons use adaptive indexes without a matching CLUT](https://github.com/jm2/Quake-III-Arena/issues/31) — **low**; icon CLUT.
+- [ ] [#32 — MacBinary encoder writes invalid zero creation and modification dates](https://github.com/jm2/Quake-III-Arena/issues/32) — **low**; MacBinary dates; host tests pass, target check remains.
+- [ ] [#52 — MacBinary filename length counts Unicode characters instead of encoded bytes](https://github.com/jm2/Quake-III-Arena/issues/52) — **low**; MacBinary name bytes; host tests pass, independent reader remains.
+
+## Next steps
+
+- Merge B0 so CI finishes on every PR and new issues can be added here.
+- Clear B1, then B2 items #226/#269/#227 so a launchable application comes
+  out of a pinned toolchain.
+- Add real-content (#253) and 32-bit big-endian (#224) CI before resuming any
+  B6 hardening.
+- Work B4 remote-security items before the paused parser queue.
+- First target run (base game, retail data, real hardware): main menu, a bot
+  match on q3dm1, disconnect, normal quit, fatal-exit status. Record results
+  here and on each `needs target test` issue.

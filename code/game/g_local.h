@@ -911,7 +911,7 @@ int		trap_StringContains(char *str1, char *str2, int casesensitive);
 int		trap_BotFindMatch(char *str, void /* struct bot_match_s */ *match, unsigned long int context);
 void	trap_BotMatchVariable(void /* struct bot_match_s */ *match, int variable, char *buf, int size);
 void	trap_UnifyWhiteSpaces(char *string);
-void	trap_BotReplaceSynonyms(char *string, unsigned long int context);
+void	trap_BotReplaceSynonyms(char *string, unsigned long int context, int size);
 int		trap_BotLoadChatFile(int chatstate, char *chatfile, char *chatname);
 void	trap_BotSetChatGender(int chatstate, int gender);
 void	trap_BotSetChatName(int chatstate, char *name, int client);

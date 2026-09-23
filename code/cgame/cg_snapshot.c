@@ -248,6 +248,38 @@ static void CG_SetNextSnap( snapshot_t *snap ) {
 
 /*
 ========================
+CG_CheckSnapshotIndexes
+
+The native cgame indexes its client, weapon, sound and item tables
+with these playerstate fields, which arrive from the server unchecked
+========================
+*/
+static void CG_CheckSnapshotIndexes( const snapshot_t *snap ) {
+	const playerState_t	*ps;
+
+	ps = &snap->ps;
+	if ( ps->clientNum < 0 || ps->clientNum >= MAX_CLIENTS ) {
+		CG_Error( "CG_ReadNextSnapshot: playerstate clientNum %i out of range", ps->clientNum );
+	}
+	if ( ps->weapon < 0 || ps->weapon >= MAX_WEAPONS ) {
+		CG_Error( "CG_ReadNextSnapshot: playerstate weapon %i out of range", ps->weapon );
+	}
+	if ( ps->loopSound < 0 || ps->loopSound >= MAX_SOUNDS ) {
+		CG_Error( "CG_ReadNextSnapshot: playerstate loopSound %i out of range", ps->loopSound );
+	}
+	if ( ps->stats[STAT_HOLDABLE_ITEM] < 0 || ps->stats[STAT_HOLDABLE_ITEM] >= bg_numItems ) {
+		CG_Error( "CG_ReadNextSnapshot: holdable item %i out of range", ps->stats[STAT_HOLDABLE_ITEM] );
+	}
+#ifdef MISSIONPACK
+	if ( ps->stats[STAT_PERSISTANT_POWERUP] < 0 || ps->stats[STAT_PERSISTANT_POWERUP] >= bg_numItems ) {
+		CG_Error( "CG_ReadNextSnapshot: persistant powerup %i out of range", ps->stats[STAT_PERSISTANT_POWERUP] );
+	}
+#endif
+}
+
+
+/*
+========================
 CG_ReadNextSnapshot
 
 This is the only place new snapshots are requested
@@ -284,6 +316,7 @@ static snapshot_t *CG_ReadNextSnapshot( void ) {
 
 		// if it succeeded, return
 		if ( r ) {
+			CG_CheckSnapshotIndexes( dest );
 			CG_AddLagometerSnapshotInfo( dest );
 			return dest;
 		}

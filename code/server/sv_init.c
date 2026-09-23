@@ -697,6 +697,11 @@ void SV_Shutdown( char *finalmsg ) {
 
 	// free server static data
 	if ( svs.clients ) {
+		int		i;
+
+		for ( i = 0 ; i < svs.clientCapacity ; i++ ) {
+			SV_Netchan_FreeQueue( &svs.clients[i] );
+		}
 		Z_Free( svs.clients );
 	}
 	Com_Memset( &svs, 0, sizeof( svs ) );

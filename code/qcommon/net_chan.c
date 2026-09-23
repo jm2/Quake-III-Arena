@@ -52,7 +52,7 @@ to the new value before sending out any replies.
 #define	FRAGMENT_SIZE			(MAX_PACKETLEN - 100)
 #define	PACKET_HEADER			10			// two ints and a short
 
-#define	FRAGMENT_BIT	(1<<31)
+#define	FRAGMENT_BIT	(1U<<31)
 
 cvar_t		*showpackets;
 cvar_t		*showdrop;
@@ -296,9 +296,10 @@ Netchan_Process
 Returns qfalse if the message should not be processed due to being
 out of order or a fragment.
 
-Msg must be large enough to hold MAX_MSGLEN, because if this is the
-final fragment of a multi-part message, the entire thing will be
-copied out.
+Msg must be large enough to hold MAX_MSGLEN plus the 4 byte sequence
+(MAX_MSGLEN_BUF), because if this is the final fragment of a multi-part
+message, the entire thing will be copied out.  A reassembled message
+that does not fit in msg->maxsize is dropped.
 =================
 */
 qboolean Netchan_Process( netchan_t *chan, msg_t *msg ) {
@@ -425,8 +426,9 @@ qboolean Netchan_Process( netchan_t *chan, msg_t *msg ) {
 			return qfalse;
 		}
 
-		if ( chan->fragmentLength > msg->maxsize ) {
-			Com_Printf( "%s:fragmentLength %i > msg->maxsize\n"
+		// the sequence number is written in front of the reassembled message
+		if ( chan->fragmentLength > msg->maxsize - 4 ) {
+			Com_Printf( "%s:fragmentLength %i > msg->maxsize - 4\n"
 				, NET_AdrToString (chan->remoteAddress ),
 				chan->fragmentLength );
 			return qfalse;

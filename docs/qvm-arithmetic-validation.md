@@ -33,3 +33,18 @@ The [next step](qvm-call-validation.md) covers VM call arguments.
 Keep #35 open: syscall-specific pointer/range checks remain. Retail baseq3/Team Arena and Mac OS 9 acceptance remains
 deferred. The controlled errors cover invalid arithmetic; no complete sandbox
 or target runtime compatibility claim is made.
+
+## #248 update — 2026-09-23
+
+This supersedes the arithmetic faults described above. Retail QVMs rely on
+native results (`cg_scoreboard.c` evaluates `1 << score->client` for clients
+32–63), so these operations now return defined values instead of faulting.
+Shifts, modulo by zero, and float-to-int conversion reproduce the retail
+PowerPC JIT (`vm_ppc.c`/`vm_ppc_new.c`): shifts use the low six count bits,
+so counts 32–63 give 0 (sign fill for RSHI) and 64 shifts by 0; `x % 0` keeps
+`x`; CVFI truncates toward zero, saturates out-of-range values and infinities
+to INT_MIN/INT_MAX, and converts NaN to INT_MIN. `divw` leaves `x / 0` and
+`INT_MIN / -1` undefined (x86 `idiv` faults), so they are defined as 0 and
+INT_MIN, and `INT_MIN % -1` as 0. The runtime regression asserts these values,
+including `1 << client` for every client below MAX_CLIENTS. A retail 1.32
+cgame scoreboard with clients 32 or higher on Mac OS 9 remains untested.

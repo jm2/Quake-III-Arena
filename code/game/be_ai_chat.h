@@ -54,7 +54,7 @@ typedef struct bot_consolemessage_s
 //match variable
 typedef struct bot_matchvariable_s
 {
-	char offset;
+	signed char offset;		//-1 = unset; explicitly signed so it survives unsigned-char targets
 	int length;
 } bot_matchvariable_t;
 //returned to AI when a match is found
@@ -102,8 +102,8 @@ int BotFindMatch(char *str, bot_match_t *match, unsigned long int context);
 void BotMatchVariable(bot_match_t *match, int variable, char *buf, int size);
 //unify all the white spaces in the string
 void UnifyWhiteSpaces(char *string);
-//replace all the context related synonyms in the string
-void BotReplaceSynonyms(char *string, unsigned long int context);
+//replace all the context related synonyms in the string within size bytes
+void BotReplaceSynonyms(char *string, unsigned long int context, int size);
 //loads a chat file for the chat state
 int BotLoadChatFile(int chatstate, char *chatfile, char *chatname);
 //store the gender of the bot in the chat state

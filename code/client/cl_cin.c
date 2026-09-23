@@ -73,9 +73,10 @@ static	long				ROQ_UB_tab[256];
 static	long				ROQ_UG_tab[256];
 static	long				ROQ_VG_tab[256];
 static	long				ROQ_VR_tab[256];
-static byte vq2[256][2*2*4];
-static byte vq4[256][4*4*4];
-static byte vq8[256][8*8*4];
+/* RGBA pixels in frame-buffer byte order; word elements keep every table row 4-byte aligned. */
+static unsigned int vq2[256][2*2];
+static unsigned int vq4[256][4*4];
+static unsigned int vq8[256][8*8];
 
 
 typedef struct {
@@ -329,39 +330,29 @@ long RllDecodeStereoToMono(unsigned char *from,short *to,unsigned int size,char 
 *
 ******************************************************************************/
 
-/** Copy complete RGBA rows without assuming native double alignment or pointer aliasing. */
-static void RoQCopyBlock( const byte *source, byte *output, int size, int sourceStride, int outputStride ) {
-	int row;
-	for ( row = 0; row < size; row++ ) {
-		memcpy( output + row * outputStride, source + row * sourceStride, size * 4 );
-	}
+/*
+** VQ blocks are copied as 32-bit RGBA words. cin.linbuf starts a structure of longs and pointers, every
+** destination comes from the quad table and every motion source is checked to start on a pixel, so all
+** rows are 4-byte aligned and no copy needs double alignment. Frame bytes are only accessed as bytes or
+** as these words, and the port builds with -fno-strict-aliasing.
+*/
+/** Copy four rows of four RGBA words; strides are in words. */
+static void RoQCopy4x4( const unsigned int *source, unsigned int *output, long sourceStride, long outputStride ) {
+	output[0] = source[0]; output[1] = source[1]; output[2] = source[2]; output[3] = source[3];
+	source += sourceStride; output += outputStride;
+	output[0] = source[0]; output[1] = source[1]; output[2] = source[2]; output[3] = source[3];
+	source += sourceStride; output += outputStride;
+	output[0] = source[0]; output[1] = source[1]; output[2] = source[2]; output[3] = source[3];
+	source += sourceStride; output += outputStride;
+	output[0] = source[0]; output[1] = source[1]; output[2] = source[2]; output[3] = source[3];
 }
 
-typedef struct {
-	byte *next, *end;
-	unsigned short codes;
-	int remaining;
-} roqCursor_t;
-
-/** Fetch a complete little-endian control word before consuming one of its eight codes. */
-static qboolean RoQReadCode( roqCursor_t *cursor, unsigned int *code ) {
-	if ( !cursor->remaining ) {
-		if ( cursor->end - cursor->next < 2 ) return qfalse;
-		cursor->codes = cursor->next[0] | (unsigned int)cursor->next[1] << 8;
-		cursor->next += 2;
-		cursor->remaining = 8;
-	}
-	*code = cursor->codes >> 14;
-	cursor->codes <<= 2;
-	cursor->remaining--;
-	return qtrue;
-}
-
-/** Read one checked codebook or motion index. */
-static qboolean RoQReadIndex( roqCursor_t *cursor, unsigned int *index ) {
-	if ( cursor->next == cursor->end ) return qfalse;
-	*index = *cursor->next++;
-	return qtrue;
+/** Copy an 8x8 block of RGBA words as its four 4x4 quarters. */
+static void RoQCopy8x8( const unsigned int *source, unsigned int *output, long sourceStride, long outputStride ) {
+	RoQCopy4x4( source, output, sourceStride, outputStride );
+	RoQCopy4x4( source + 4, output + 4, sourceStride, outputStride );
+	RoQCopy4x4( source + 4 * sourceStride, output + 4 * outputStride, sourceStride, outputStride );
+	RoQCopy4x4( source + 4 * sourceStride + 4, output + 4 * outputStride + 4, sourceStride, outputStride );
 }
 
 /** Check every row and column against one frame half, not merely the combined allocation. */
@@ -373,69 +364,86 @@ static qboolean RoQFrameBlock( long offset, int size ) {
 	       offset + (size - 1) * movie->samplesPerLine + bytes <= movie->screenDelta;
 }
 
-/** Validate a block and all input indices, then optionally apply it after full-frame preflight. */
-static qboolean RoQApplyBlock( roqCursor_t *cursor, byte *output, int size, unsigned int code, qboolean write ) {
+/*
+** setupQuad checks every 8x8 and 4x4 destination against its frame half while it builds the quad table,
+** and records the table's geometry only once the table is complete. A frame therefore only has to use
+** its own half of a table built for its own geometry. Each control word, index and motion source is
+** then checked before its block is written, in a single pass. A rejected frame can leave earlier blocks
+** in the half it was decoding, but that half is never shown: buf still names the previous frame, and
+** rejection stops playback.
+*/
+/** Decode complete 8x8 groups and their four 4x4 children, checking each block's input and motion source before writing it. */
+static qboolean blitVQQuad32fs( byte **status, byte *next, byte *end ) {
 	cin_cache *movie = &cinTable[currentHandle];
-	long half = (movie->numQuads & 1) ? movie->screenDelta : 0;
-	long local, sourceLocal;
-	unsigned int index[4], i;
+	long half, stride, shift, block, step, local;
+	unsigned int codes = 0, remaining = 0, children = 0, code, size;
 	byte *source;
-	if ( !output ) return qfalse;
-	local = output - cin.linbuf - half;
-	if ( !RoQFrameBlock(local, size) ) return qfalse;
-	if ( !code ) return qtrue;
-	if ( code == 3 ) {
-		if ( size != 4 ) return qfalse;
-		for ( i = 0; i < 4; i++ ) if ( !RoQReadIndex(cursor, &index[i]) ) return qfalse;
-		if ( write ) {
-			for ( i = 0; i < 4; i++ ) {
-				RoQCopyBlock( vq2[index[i]], output + (i / 2) * 2 * movie->samplesPerLine + (i % 2) * 8, 2, 8, movie->samplesPerLine );
-			}
-		}
-		return qtrue;
-	}
-	if ( !RoQReadIndex(cursor, &index[0]) ) return qfalse;
-	if ( code == 1 ) {
-		sourceLocal = local + cin.mcomp[index[0]] - movie->normalBuffer0;
-		if ( !RoQFrameBlock(sourceLocal, size) ) return qfalse;
-		source = cin.linbuf + (movie->screenDelta - half) + sourceLocal;
-		if ( write ) RoQCopyBlock( source, output, size, movie->samplesPerLine, movie->samplesPerLine );
-	} else {
-		source = size == 8 ? vq8[index[0]] : vq4[index[0]];
-		if ( write ) RoQCopyBlock( source, output, size, size * 4, movie->samplesPerLine );
-	}
-	return qtrue;
-}
-
-/** Walk complete 8x8 groups and their four 4x4 children with the same checked cursor in both passes. */
-static qboolean RoQVQPass( byte **status, byte *begin, byte *end, qboolean write ) {
-	roqCursor_t cursor;
-	long root;
-	int child;
-	unsigned int code;
-	memset( &cursor, 0, sizeof(cursor) );
-	cursor.next = begin;
-	cursor.end = end;
-	for ( root = 0; root < cinTable[currentHandle].onQuad; root += 5 ) {
-		if ( !RoQReadCode(&cursor, &code) ) return qfalse;
-		if ( code == 3 ) {
-			for ( child = 1; child <= 4; child++ ) {
-				if ( !RoQReadCode(&cursor, &code) || !RoQApplyBlock(&cursor, status[root + child], 4, code, write) ) return qfalse;
-			}
-		} else if ( !RoQApplyBlock(&cursor, status[root], 8, code, write) ) return qfalse;
-	}
-	return qtrue;
-}
-
-/** Reject the entire frame before writes if any code/index or motion-source rectangle is invalid. */
-static qboolean blitVQQuad32fs( byte **status, byte *begin, byte *end ) {
-	cin_cache *movie = &cinTable[currentHandle];
+	const unsigned int *a, *b;
+	unsigned int *output;
 	if ( movie->onQuad <= 0 || movie->onQuad % 5 ||
 	     movie->onQuad > sizeof(cin.qStatus[0]) / sizeof(cin.qStatus[0][0]) - 64 ||
 	     movie->screenDelta <= 0 || movie->screenDelta > sizeof(cin.linbuf) / 2 ||
 	     movie->samplesPerLine < 32 || movie->numQuads < 0 ) return qfalse;
-	if ( !RoQVQPass(status, begin, end, qfalse) ) return qfalse;
-	return RoQVQPass( status, begin, end, qtrue );
+	if ( status != cin.qStatus[movie->numQuads & 1] || movie->xsize != cin.oldxsize || movie->ysize != cin.oldysize ||
+	     movie->samplesPerLine != movie->xsize * 4 || movie->screenDelta != movie->ysize * movie->samplesPerLine ||
+	     movie->onQuad != (movie->xsize / 8) * (movie->ysize / 8) * 5 ) return qfalse;
+	half = (movie->numQuads & 1) ? movie->screenDelta : 0;
+	stride = movie->samplesPerLine / 4;
+	/* Motion sources are offsets into the opposite half; mcomp holds normalBuffer0 minus each vector. */
+	shift = -half - movie->normalBuffer0;
+	source = cin.linbuf + (movie->screenDelta - half);
+	for ( block = 0; block < movie->onQuad; block += step ) {
+		if ( !remaining ) {
+			if ( end - next < 2 ) return qfalse;
+			codes = next[0] | (unsigned int)next[1] << 8;
+			next += 2;
+			remaining = 8;
+		}
+		code = (codes >> 14) & 3;
+		codes <<= 2;
+		remaining--;
+		if ( children ) {
+			children--;
+			size = 4;
+			step = 1;
+		} else if ( code == 3 ) {
+			children = 4;
+			step = 1;
+			continue;
+		} else {
+			size = 8;
+			step = 5;
+		}
+		if ( !code ) continue;
+		output = (unsigned int *)status[block];
+		if ( code == 3 ) {
+			if ( end - next < 4 ) return qfalse;
+			a = vq2[next[0]]; b = vq2[next[1]];
+			output[0] = a[0]; output[1] = a[1]; output[2] = b[0]; output[3] = b[1];
+			output += stride;
+			output[0] = a[2]; output[1] = a[3]; output[2] = b[2]; output[3] = b[3];
+			output += stride;
+			a = vq2[next[2]]; b = vq2[next[3]];
+			output[0] = a[0]; output[1] = a[1]; output[2] = b[0]; output[3] = b[1];
+			output += stride;
+			output[0] = a[2]; output[1] = a[3]; output[2] = b[2]; output[3] = b[3];
+			next += 4;
+			continue;
+		}
+		if ( next == end ) return qfalse;
+		if ( code == 1 ) {
+			local = ((byte *)output - cin.linbuf) + shift + cin.mcomp[*next];
+			if ( !RoQFrameBlock(local, size) ) return qfalse;
+			if ( size == 4 ) RoQCopy4x4( (unsigned int *)(source + local), output, stride, stride );
+			else RoQCopy8x8( (unsigned int *)(source + local), output, stride, stride );
+		} else if ( size == 4 ) {
+			RoQCopy4x4( vq4[*next], output, 4, stride );
+		} else {
+			RoQCopy8x8( vq8[*next], output, 8, stride );
+		}
+		next++;
+	}
+	return qtrue;
 }
 
 static void ROQ_GenYUVTables( void )
@@ -500,27 +508,40 @@ static unsigned int yuv_to_rgb24( long y, long u, long v )
 *
 ******************************************************************************/
 
-/** Validate all codebook input before updates, then build fixed-size byte-oriented RGBA tables. */
+/*
+** A codebook argument holds the 2x2 entry count in its high byte (0 means 256) and the 4x4 count in its
+** low byte. id's encoder writes both 0 and 256 4x4 entries as a low byte of 0: retail idlogo.RoQ has an
+** argument-0 chunk of 1,536 bytes that holds only its 256 2x2 entries, and id's decoder, which always
+** took argument 0 as 256 of each, read the missing 1,024 bytes from beyond that chunk. FFmpeg's
+** roqvideodec.c takes a low byte of 0 as 256 only when the chunk is longer than its 2x2 entries
+** (nv1 * 6 < chunk size) and as 0 otherwise. Here a low byte of 0 means 256 only when all 1,024 bytes of
+** those entries are present, so a shorter chunk updates only its 2x2 entries and nothing past it is read.
+*/
+/** Validate all codebook input before updates, then build fixed-size RGBA word tables. */
 static qboolean decodeCodeBook( byte *input, byte *end, unsigned short flags ) {
-	unsigned int two = flags >> 8, four = flags & 255, i, j, x, y, pixel;
-	unsigned int index[4];
+	unsigned int two = flags >> 8, four = flags & 255, i, j, y;
+	const unsigned int *a, *b;
+	unsigned int *c, *d;
 	if ( !two ) two = 256;
-	if ( !flags ) four = 256;
+	if ( !four && end - input >= two * 6 + 256 * 4 ) four = 256;
 	if ( end - input < two * 6 + four * 4 ) return qfalse;
-	for ( i = 0; i < two; i++ ) {
-		for ( j = 0; j < 4; j++ ) {
-			pixel = yuv_to_rgb24( input[j], input[4], input[5] );
-			memcpy( vq2[i] + j * 4, &pixel, 4 );
-		}
-		input += 6;
+	for ( i = 0; i < two; i++, input += 6 ) {
+		for ( j = 0; j < 4; j++ ) vq2[i][j] = yuv_to_rgb24( input[j], input[4], input[5] );
 	}
-	for ( i = 0; i < four; i++ ) {
-		for ( j = 0; j < 4; j++ ) index[j] = *input++;
-		for ( j = 0; j < 4; j++ ) {
-			RoQCopyBlock( vq2[index[j]], vq4[i] + (j / 2) * 2 * 16 + (j % 2) * 8, 2, 8, 16 );
-		}
-		for ( y = 0; y < 8; y++ ) {
-			for ( x = 0; x < 8; x++ ) memcpy( vq8[i] + (y * 8 + x) * 4, vq4[i] + ((y / 2) * 4 + x / 2) * 4, 4 );
+	/* Each pair of 2x2 entries fills two 4x4 rows, and each 4x4 pixel becomes a 2x2 square of the 8x8 entry. */
+	for ( i = 0; i < four; i++, input += 4 ) {
+		c = vq4[i];
+		d = vq8[i];
+		for ( j = 0; j < 4; j += 2 ) {
+			a = vq2[input[j]];
+			b = vq2[input[j + 1]];
+			for ( y = 0; y < 2; y++, a += 2, b += 2, c += 4, d += 16 ) {
+				c[0] = a[0]; c[1] = a[1]; c[2] = b[0]; c[3] = b[1];
+				d[0] = d[1] = d[8] = d[9] = a[0];
+				d[2] = d[3] = d[10] = d[11] = a[1];
+				d[4] = d[5] = d[12] = d[13] = b[0];
+				d[6] = d[7] = d[14] = d[15] = b[1];
+			}
 		}
 	}
 	return qtrue;
@@ -553,6 +574,8 @@ static qboolean setupQuad( void ) {
 	if ( count <= 0 || count > sizeof(cin.qStatus[0]) / sizeof(cin.qStatus[0][0]) - 64 ||
 	     movie->screenDelta <= 0 || movie->screenDelta > sizeof(cin.linbuf) / 2 ) return qfalse;
 	if ( movie->onQuad == count && movie->ysize == cin.oldysize && movie->xsize == cin.oldxsize ) return qtrue;
+	/* A failed rebuild must not leave a partly replaced table recorded as another geometry's. */
+	cin.oldysize = cin.oldxsize = 0;
 	movie->onQuad = 0;
 	for ( y = 0; y < movie->ysize; y += 16 ) {
 		for ( x = 0; x < movie->xsize; x += 16 ) {

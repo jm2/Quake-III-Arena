@@ -988,6 +988,14 @@ extern trGlobals_t	tr;
 extern glconfig_t	glConfig;		// outside of TR since it shouldn't be cleared during ref re-init
 extern glstate_t	glState;		// outside of TR since it shouldn't be cleared during ref re-init
 
+// renderer-only GL capabilities; glconfig_t is copied into cgame/ui QVMs and
+// must keep the retail 1.32c layout, so new fields go here instead
+typedef struct {
+	qboolean	textureFilterAnisotropicAvailable;
+} glconfigExt_t;
+
+extern glconfigExt_t	glConfigExt;	// cleared together with glConfig
+
 
 //
 // cvars

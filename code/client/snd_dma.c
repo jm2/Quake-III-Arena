@@ -266,7 +266,7 @@ static long S_HashSFXName(const char *name) {
 	hash = 0;
 	i = 0;
 	while (name[i] != '\0') {
-		letter = tolower(name[i]);
+		letter = tolower((unsigned char)name[i]);
 		if (letter =='.') break;				// don't include extension
 		if (letter =='\\') letter = '/';		// damn path names
 		hash+=(long)(letter)*(i+119);
@@ -531,7 +531,7 @@ void S_StartSound(vec3_t origin, int entityNum, int entchannel, sfxHandle_t sfxH
 		return;
 	}
 
-	if ( !origin && ( entityNum < 0 || entityNum > MAX_GENTITIES ) ) {
+	if ( !origin && ( entityNum < 0 || entityNum >= MAX_GENTITIES ) ) {
 		Com_Error( ERR_DROP, "S_StartSound: bad entitynum %i", entityNum );
 	}
 
@@ -1066,7 +1066,7 @@ let the sound system know where an entity currently is
 ======================
 */
 void S_UpdateEntityPosition( int entityNum, const vec3_t origin ) {
-	if ( entityNum < 0 || entityNum > MAX_GENTITIES ) {
+	if ( entityNum < 0 || entityNum >= MAX_GENTITIES ) {
 		Com_Error( ERR_DROP, "S_UpdateEntityPosition: bad entitynum %i", entityNum );
 	}
 	VectorCopy( origin, loopSounds[entityNum].origin );

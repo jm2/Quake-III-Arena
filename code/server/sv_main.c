@@ -300,6 +300,11 @@ CONNECTIONLESS COMMANDS
 ==============================================================================
 */
 
+// A maximum challenge length of 128 should be more than plenty.  Longer
+// getstatus/getinfo challenges are ignored, as ioquake3 and Quake3e do,
+// instead of being echoed into a reply that a spoofed query can inflate.
+#define	MAX_CHALLENGE_ECHO	128
+
 /*
 ================
 SVC_Status
@@ -321,6 +326,11 @@ void SVC_Status( netadr_t from ) {
 
 	// ignore if we are in single player
 	if ( Cvar_VariableValue( "g_gametype" ) == GT_SINGLE_PLAYER ) {
+		return;
+	}
+
+	if ( strlen( Cmd_Argv(1) ) > MAX_CHALLENGE_ECHO ) {
+		Com_DPrintf( "SVC_Status: ignoring oversized challenge from %s\n", NET_AdrToString( from ) );
 		return;
 	}
 
@@ -375,6 +385,11 @@ void SVC_Info( netadr_t from ) {
 
 	// ignore if we are in single player
 	if ( Cvar_VariableValue( "g_gametype" ) == GT_SINGLE_PLAYER || Cvar_VariableValue("ui_singlePlayerActive")) {
+		return;
+	}
+
+	if ( strlen( Cmd_Argv(1) ) > MAX_CHALLENGE_ECHO ) {
+		Com_DPrintf( "SVC_Info: ignoring oversized challenge from %s\n", NET_AdrToString( from ) );
 		return;
 	}
 

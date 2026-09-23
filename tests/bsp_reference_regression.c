@@ -42,6 +42,8 @@ static void RejectReferences(void) {
 	for(a=0;a<4;a++) { alignment=a;RejectCM(); }alignment=0;
 }
 static void BadWord(unsigned int offset,unsigned int value) { Restore();Word(offset,value);RejectReferences(); }
+/* Issue #243: retail q3dm17 has no fogs, and q3map leaves its flares at fogNum 0. */
+static void NoFogs(void) { Restore();Word(At(LUMP_SURFACES,0,sizeof(dsurface_t))+offsetof(dsurface_t,fogNum),0xffffffffu);Word(At(LUMP_SURFACES,2,sizeof(dsurface_t))+offsetof(dsurface_t,fogNum),0);Word(12+LUMP_FOGS*8,0); }
 static void LoadGolden(const char *name) {
 	int checksum=0,patchBefore=patchCalls;readable=advertised=sourceSize;alignment=0;missing=0;
 	CM_LoadMap(name,qfalse,&checksum);Check(cm.numShaders==2 && cm.numSurfaces==3 && cm.surfaces[1] && patchCalls==patchBefore+1 && !fileAllocation,"actual valid collision materials and patch callback");
@@ -64,7 +66,10 @@ int main(void) {
 	for(i=0;i<3;i++) { BadWord(offset+offsetof(dleaf_t,firstLeafSurface),bad[i]);BadWord(offset+offsetof(dleaf_t,numLeafSurfaces),bad[i]);BadWord(offset+offsetof(dleaf_t,firstLeafBrush),bad[i]);BadWord(offset+offsetof(dleaf_t,numLeafBrushes),bad[i]); }
 	for(i=0;i<2;i++) { offset=At(LUMP_MODELS,i,sizeof(dmodel_t));BadWord(offset+offsetof(dmodel_t,firstSurface),4);BadWord(offset+offsetof(dmodel_t,numSurfaces),4);BadWord(offset+offsetof(dmodel_t,firstBrush),1);BadWord(offset+offsetof(dmodel_t,numBrushes),2);for(j=0;j<3;j++) { BadWord(offset+offsetof(dmodel_t,firstSurface),bad[j]);BadWord(offset+offsetof(dmodel_t,numSurfaces),bad[j]);BadWord(offset+offsetof(dmodel_t,firstBrush),bad[j]);BadWord(offset+offsetof(dmodel_t,numBrushes),bad[j]); } }
 	offset=At(LUMP_FOGS,0,sizeof(dfog_t));BadWord(offset+offsetof(dfog_t,brushNum),1);BadWord(offset+offsetof(dfog_t,visibleSide),6);BadWord(offset+offsetof(dfog_t,visibleSide),0xfffffffeu);Restore();memset(source+offset,'x',MAX_QPATH);RejectReferences();
-	for(i=0;i<3;i++) { offset=At(LUMP_SURFACES,i,sizeof(dsurface_t));BadWord(offset+offsetof(dsurface_t,shaderNum),2);BadWord(offset+offsetof(dsurface_t,fogNum),1);BadWord(offset+offsetof(dsurface_t,fogNum),0xfffffffeu);BadWord(offset+offsetof(dsurface_t,surfaceType),MST_BAD);BadWord(offset+offsetof(dsurface_t,surfaceType),MST_FLARE+1); }
+	for(i=0;i<3;i++) { offset=At(LUMP_SURFACES,i,sizeof(dsurface_t));BadWord(offset+offsetof(dsurface_t,shaderNum),2);BadWord(offset+offsetof(dsurface_t,surfaceType),MST_BAD);BadWord(offset+offsetof(dsurface_t,surfaceType),MST_FLARE+1); }
+	for(i=0;i<2;i++) { offset=At(LUMP_SURFACES,i,sizeof(dsurface_t));BadWord(offset+offsetof(dsurface_t,fogNum),1);BadWord(offset+offsetof(dsurface_t,fogNum),0xfffffffeu);for(j=1;j<3;j++)BadWord(offset+offsetof(dsurface_t,fogNum),bad[j]); }
+	/* Non-flare surfaces keep the strict fog bound in a map without fogs, including planar faces. */
+	for(i=0;i<3;i++) { NoFogs();offset=At(LUMP_SURFACES,i/2,sizeof(dsurface_t));if(i==1)Word(offset+offsetof(dsurface_t,surfaceType),MST_PLANAR);AcceptReferences();Word(offset+offsetof(dsurface_t,fogNum),0);RejectReferences(); }
 	for(i=0;i<2;i++) { offset=At(LUMP_SURFACES,i,sizeof(dsurface_t));BadWord(offset+offsetof(dsurface_t,firstVert),13);BadWord(offset+offsetof(dsurface_t,numVerts),13);for(j=0;j<3;j++) { BadWord(offset+offsetof(dsurface_t,firstVert),bad[j]);BadWord(offset+offsetof(dsurface_t,numVerts),bad[j]); } }
 	offset=At(LUMP_SURFACES,0,sizeof(dsurface_t));BadWord(offset+offsetof(dsurface_t,firstIndex),3);BadWord(offset+offsetof(dsurface_t,numIndexes),4);for(i=0;i<3;i++) { BadWord(offset+offsetof(dsurface_t,firstIndex),bad[i]);BadWord(offset+offsetof(dsurface_t,numIndexes),bad[i]);BadWord(At(LUMP_DRAWINDEXES,i,4),3);BadWord(At(LUMP_DRAWINDEXES,i,4),0xffffffffu); }
 	offset=At(LUMP_SURFACES,1,sizeof(dsurface_t));BadWord(offset+offsetof(dsurface_t,lightmapNum),0xfffffffbu);BadWord(offset+offsetof(dsurface_t,lightmapNum),0x80000000u);
@@ -74,6 +79,9 @@ int main(void) {
 	Word(At(LUMP_LEAFS,0,sizeof(dleaf_t))+offsetof(dleaf_t,area),0xffffffffu);AcceptReferences();LoadGolden("opaque-unassigned.bsp");Check(cm.numAreas==0,"opaque leaf area -1 convention preserved");
 	for(i=0;i<4;i++) { Restore();Word(At(LUMP_SURFACES,1,sizeof(dsurface_t))+offsetof(dsurface_t,lightmapNum),0xfffffffcu+i);AcceptReferences(); }
 	Restore();Word(At(LUMP_SURFACES,1,sizeof(dsurface_t))+offsetof(dsurface_t,lightmapNum),0x7fffffffu);AcceptReferences();
+	/* Flare fogNum is unused by collision, and the renderer maps an out-of-range value to no fog. */
+	NoFogs();AcceptReferences();LoadGolden("flare-fog0-nofogs.bsp");
+	for(i=0;i<5;i++) { unsigned int flareFogs[]={1,0xfffffffeu,0x80000000u,0x7fffffffu,0xffffffffu};NoFogs();Word(At(LUMP_SURFACES,2,sizeof(dsurface_t))+offsetof(dsurface_t,fogNum),flareFogs[i]);AcceptReferences();Restore();Word(At(LUMP_SURFACES,2,sizeof(dsurface_t))+offsetof(dsurface_t,fogNum),flareFogs[i]);AcceptReferences(); }
 	Restore();Word(At(LUMP_LEAFS,0,sizeof(dleaf_t))+offsetof(dleaf_t,firstLeafSurface),3);Word(At(LUMP_LEAFS,0,sizeof(dleaf_t))+offsetof(dleaf_t,numLeafSurfaces),0);AcceptReferences();
 	Restore();offset=Append(LUMP_MODELS,256*sizeof(dmodel_t));Check(!BSP_ValidateHeader(source,sourceSize,&header) && !BSP_ValidateReferences(source,&header),"reference-valid 256 submodels");readable=advertised=sourceSize;CM_LoadMap("models256.bsp",qfalse,&j);Check(cm.numSubModels==256,"native submodel boundary preserved");
 	Restore();Append(LUMP_MODELS,257*sizeof(dmodel_t));Check(!BSP_ValidateHeader(source,sourceSize,&header) && !BSP_ValidateReferences(source,&header),"renderer references do not inherit collision handle cap");RejectCM();
