@@ -2158,6 +2158,9 @@ int Com_EventLoop( void ) {
 	int eventLoopIter = 0;
 	static int firstCall = 1;
 
+	// compile-time check: Netchan_Process copies a MAX_MSGLEN message after its 4 byte sequence
+	(void)sizeof( char[( sizeof( bufData ) >= MAX_MSGLEN + 4 ) ? 1 : -1] );
+
 	MSG_Init( &buf, bufData, sizeof( bufData ) );
 
 	while ( 1 ) {
