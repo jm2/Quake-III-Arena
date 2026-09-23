@@ -440,7 +440,9 @@ gotnewcl:
 
 	SV_UserinfoChanged( newcl );
 	if ( newcl->state == CS_ZOMBIE ) {
-		return;		// the game left no room for the "ip" key
+		// the game left no room for the "ip" key
+		NET_OutOfBandPrint( NS_SERVER, from, "print\nUserinfo string length exceeded.\n" );
+		return;
 	}
 
 	// send the connect packet to the client
