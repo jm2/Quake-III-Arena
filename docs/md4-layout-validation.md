@@ -15,8 +15,8 @@ surface's negative header back reference points to the actual model header.
 Consumed surface/shader names terminate; triangle and bone indexes fit their
 arrays. Every variable vertex header and weight span is checked, including
 late surfaces and LODs. Frame bounds/radii, bone matrices, normals, texture
-coordinates, weights and offsets are finite. Ordered bounds and nonnegative
-radii retain the earlier MD3 metadata checks.
+coordinates, weights and offsets are finite. Nonnegative radii and unordered
+bounds retain the earlier MD3 metadata checks.
 
 An absent optional bone-name table and zero-weight vertices remain accepted.
 Present bone-name spans are bounded, but unused names are not interpreted as

@@ -13,7 +13,8 @@ the format's frame/tag/surface/shader limits and the renderer's strict tess
 limits (at most 999 vertices and 1999 triangles per surface). Surface frame
 counts match the header. Consumed surface/tag/shader names terminate in
 bounds; triangle indexes fit vertices. Culling metadata, tags and texture
-coordinates are finite, with nonnegative radii and ordered frame bounds.
+coordinates are finite, with nonnegative radii; frame bounds may be inverted,
+as q3data's cleared bounds on tag-only hand models are (#244).
 Unused fixed-width frame labels and reserved flags are not interpreted as
 strings or array references. Native copying/conversion retains packed vertex
 normals, surface naming and shader registration behavior. Tag lookup also
