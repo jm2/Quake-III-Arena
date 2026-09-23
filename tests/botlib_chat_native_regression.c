@@ -8,6 +8,60 @@ botlib_import_t botimport;
 static void Check( int ok, const char *message ) {
 	if(!ok) { fprintf(stderr,"Native bot chat regression failed: %s\n",message); exit(1); }
 }
+static int printErrors;
+/** Count botlib errors so each rejected escape reports exactly once. */
+static void QDECL CountPrint( int type, char *format, ... ) { (void)format; if(type==PRT_ERROR) printErrors++; }
+/** Issue #290: variable escapes accept only decimal indexes below MAX_MATCHVARIABLES and bounded spans. */
+static void VariableEscapes( bot_match_t *match, char *buffer, char *source ) {
+	static char *rejected[]={"8","99999999999","x","/","-1",""};
+	bot_randomstring_t no={"No.",NULL}; bot_randomlist_t negative={"negative",1,&no,NULL};
+	char message[64]; int i;
+	botimport.Print=CountPrint; randomstrings=&negative;
+	memset(match,0,sizeof(*match)); strcpy(match->string,"Sarge sure camper");
+	for(i=0;i<MAX_MATCHVARIABLES;i++) match->variables[i].offset=-1;
+	match->variables[0].offset=6; match->variables[0].length=4;
+	match->variables[7].offset=11; match->variables[7].length=6;
+	sprintf(message,"%crnegative%c I'm not %cv0%c.",ESCAPE_CHAR,ESCAPE_CHAR,ESCAPE_CHAR,ESCAPE_CHAR);
+	Check(BotExpandChatMessage(buffer,message,0,match,0,qtrue) && !strcmp(buffer,"No. I'm not sure."),"retail reply template");
+	sprintf(message,"Is drinking the cause of your problem, %cv7%c?",ESCAPE_CHAR,ESCAPE_CHAR);
+	Check(!BotExpandChatMessage(buffer,message,0,match,0,qtrue) && !strcmp(buffer,"Is drinking the cause of your problem, camper?"),"last match variable 7 expands");
+	sprintf(message,"%cv007%c",ESCAPE_CHAR,ESCAPE_CHAR);
+	Check(!BotExpandChatMessage(buffer,message,0,match,0,qfalse) && !strcmp(buffer,"camper"),"leading zeros keep retail index");
+	match->subtype=MAX_MESSAGE_SIZE*4; /* the old parser read "/" as variables[-1], overlapping type/subtype */
+	for(i=0;i<(int)(sizeof(rejected)/sizeof(rejected[0]));i++) {
+		sprintf(message,"%cv%s%c",ESCAPE_CHAR,rejected[i],ESCAPE_CHAR); strcpy(buffer,"z"); printErrors=0;
+		Check(!BotExpandChatMessage(buffer,message,0,match,0,qfalse) && !strcmp(buffer,"z") && printErrors==1,"invalid variable index rejected before copying");
+		sprintf(message,"%crnegative%c %cv%s%c",ESCAPE_CHAR,ESCAPE_CHAR,ESCAPE_CHAR,rejected[i],ESCAPE_CHAR); printErrors=0;
+		Check(!BotExpandChatMessage(buffer,message,0,match,0,qfalse) && printErrors==1,"invalid variable index after a random rejected");
+	}
+	match->variables[7].length=MAX_MESSAGE_SIZE*4; sprintf(message,"%cv7%c!",ESCAPE_CHAR,ESCAPE_CHAR);
+	Check(!BotExpandChatMessage(buffer,message,0,match,0,qfalse) && !strcmp(buffer,"!"),"span past the match string expands to nothing");
+	memset(match->string,'x',MAX_MESSAGE_SIZE-1); match->string[MAX_MESSAGE_SIZE-1]=0;
+	match->variables[7].offset=0; match->variables[7].length=MAX_MESSAGE_SIZE-1; sprintf(message,"%cv7%c",ESCAPE_CHAR,ESCAPE_CHAR);
+	Check(!BotExpandChatMessage(buffer,message,0,match,0,qfalse) && strlen(buffer)==MAX_MESSAGE_SIZE-1,"full-length variable fills temp exactly");
+	source[0]=ESCAPE_CHAR; source[1]='r'; memset(source+2,'a',MAX_MESSAGE_SIZE*2); source[MAX_MESSAGE_SIZE*2+2]=ESCAPE_CHAR; source[MAX_MESSAGE_SIZE*2+3]=0;
+	strcpy(buffer,"z"); printErrors=0;
+	Check(!BotExpandChatMessage(buffer,source,0,match,0,qfalse) && !strcmp(buffer,"z") && printErrors==1,"overlong random name rejected before copying");
+	randomstrings=NULL; botimport.Print=NULL;
+}
+/** Literal text that fills the output keeps its terminator inside MAX_MESSAGE_SIZE. */
+static void LiteralCapacity( bot_match_t *match, char *buffer, char *source ) {
+	static const int lengths[]={MAX_MESSAGE_SIZE-1,MAX_MESSAGE_SIZE,MAX_MESSAGE_SIZE+44};
+	char message[16]; int i;
+	botimport.Print=CountPrint;
+	for(i=0;i<3;i++) {
+		memset(source,'a',lengths[i]); source[lengths[i]]=0; printErrors=0;
+		Check(!BotExpandChatMessage(buffer,source,0,match,0,qfalse) && strlen(buffer)==MAX_MESSAGE_SIZE-1 &&
+		      printErrors==(lengths[i]>=MAX_MESSAGE_SIZE),"literal text keeps its terminator inside the output");
+	}
+	memset(match,0,sizeof(*match)); memset(match->string,'x',250);
+	for(i=0;i<MAX_MATCHVARIABLES;i++) match->variables[i].offset=-1;
+	match->variables[0].offset=0; match->variables[0].length=250;
+	sprintf(message,"%cv0%c123456789",ESCAPE_CHAR,ESCAPE_CHAR); printErrors=0;
+	Check(!BotExpandChatMessage(buffer,message,0,match,0,qfalse) && strlen(buffer)==MAX_MESSAGE_SIZE-1 &&
+	      !strcmp(buffer+250,"12345") && printErrors==1,"literal text after a variable stops before the terminator");
+	botimport.Print=NULL;
+}
 /** Keep real match routines linked without pulling in the full engine. */
 void Com_Memcpy( void *dest, const void *src, size_t size ) { memcpy(dest,src,size); }
 /** Support the real chat helpers' native initialization. */
@@ -58,6 +112,7 @@ int main( void ) {
 	(void)BotExpandChatMessage(buffer,variableMessage,0,match,1,qtrue);
 	Check(!strcmp(buffer,"hello"),"known-capacity reply variable still grows");
 	synonyms=NULL;
+	VariableEscapes(match,buffer,source); LiteralCapacity(match,buffer,source);
 	strcpy(inside,"foo bar"); Check(StringContainsWord(inside,"bar",qfalse)==inside+4,"later whole word");
 	strcpy(inside,"foo    "); Check(StringContainsWord(inside,"bar",qfalse)==NULL,"trailing delimiters");
 	memset(source,'x',1023); source[1023]=0; memset(match,0,sizeof(*match));
