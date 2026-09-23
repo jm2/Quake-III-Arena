@@ -13,9 +13,13 @@ and its evidence links, is archived unchanged in
 
 ## Process
 
-- One focused PR per fix. Merge only after CI passes on the current head, a
-  completed clean Codex review of that head, and every CodeRabbit finding is
-  resolved. Absent, pending or failed CI/Codex results are not clean.
+- One focused PR per fix. Merge only after CI passes on the current head
+  and an independent adversarial reviewer (a fresh Claude reviewer agent that
+  did not write the change) has approved that exact head in a PR comment,
+  with every blocking finding fixed and re-reviewed. Absent, pending or
+  failed results are not approval. CodeRabbit findings are addressed when it
+  reviews a PR but are not a merge blocker. (From 2026-09-23; Codex review
+  credits are exhausted and CodeRabbit is throttled to one review per hour.)
 - Engine changes cross-build both products (base and `BUILD_TEAM_ARENA=ON`)
   with the local Retro68 toolchain and add no compiler warnings. Host changes
   run the relevant host checks.
