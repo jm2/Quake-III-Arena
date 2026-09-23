@@ -10,7 +10,7 @@ instructions, confirmed defects, and the durable review handoff are in:
 
   docs/building-mac-os9.md
   docs/ci.md
-  docs/review-findings.md
+  docs/review-2026-09-23.md
   docs/task.md
 
 This file contains the following sections:
