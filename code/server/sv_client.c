@@ -531,6 +531,9 @@ void SV_DropClient( client_t *drop, const char *reason ) {
 		SV_BotFreeClient( drop - svs.clients );
 	}
 
+	// forget a userinfo change still held back by the rate limit
+	drop->userinfoPending = qfalse;
+
 	// nuke user info
 	SV_SetUserinfo( drop - svs.clients, "" );
 
@@ -1237,6 +1240,81 @@ void SV_UserinfoChanged( client_t *cl ) {
 
 /*
 ==================
+SV_UserinfoRateLimited
+
+Every accepted userinfo change is relayed to all the other clients as a
+configstring update, and the game usually adds a "renamed" print, so a
+burst of changes from one client can overflow everyone else's reliable
+command window.  Allow USERINFO_RATE_BURST changes at once and one more
+every USERINFO_RATE_PERIOD msec, like Quake3e's
+SVC_RateLimit( &cl->info_rate, 5, 1000 ).
+==================
+*/
+#define	USERINFO_RATE_BURST		5
+#define	USERINFO_RATE_PERIOD	1000
+
+static qboolean SV_UserinfoRateLimited( client_t *cl ) {
+	int		interval, expired;
+
+	interval = svs.time - cl->userinfoRateTime;
+	expired = interval / USERINFO_RATE_PERIOD;
+	if ( interval < 0 || expired > cl->userinfoRateBurst ) {
+		cl->userinfoRateBurst = 0;
+		cl->userinfoRateTime = svs.time;
+	} else {
+		cl->userinfoRateBurst -= expired;
+		cl->userinfoRateTime = svs.time - interval % USERINFO_RATE_PERIOD;
+	}
+
+	if ( cl->userinfoRateBurst >= USERINFO_RATE_BURST ) {
+		return qtrue;
+	}
+	cl->userinfoRateBurst++;
+	return qfalse;
+}
+
+/*
+==================
+SV_ApplyUserinfo
+==================
+*/
+static void SV_ApplyUserinfo( client_t *cl, const char *userinfo ) {
+	Q_strncpyz( cl->userinfo, userinfo, sizeof(cl->userinfo) );
+
+	SV_UserinfoChanged( cl );
+	if ( cl->state == CS_ZOMBIE ) {
+		return;		// dropped: the real "ip" did not fit
+	}
+	// call prog code to allow overrides
+	VM_Call( gvm, GAME_CLIENT_USERINFO_CHANGED, cl - svs.clients );
+}
+
+/*
+==================
+SV_ApplyPendingUserinfo
+
+Called every server frame: apply the newest userinfo change held back by
+the rate limit as soon as the client is allowed another one
+==================
+*/
+void SV_ApplyPendingUserinfo( void ) {
+	int			i;
+	client_t	*cl;
+
+	for ( i = 0, cl = svs.clients ; i < sv_maxclients->integer ; i++, cl++ ) {
+		if ( cl->state < CS_CONNECTED || !cl->userinfoPending ) {
+			continue;
+		}
+		if ( SV_UserinfoRateLimited( cl ) ) {
+			continue;
+		}
+		cl->userinfoPending = qfalse;
+		SV_ApplyUserinfo( cl, cl->pendingUserinfo );
+	}
+}
+
+/*
+==================
 SV_UpdateUserinfo_f
 ==================
 */
@@ -1251,14 +1329,21 @@ static void SV_UpdateUserinfo_f( client_t *cl ) {
 		return;
 	}
 
-	Q_strncpyz( cl->userinfo, userinfo, sizeof(cl->userinfo) );
-
-	SV_UserinfoChanged( cl );
-	if ( cl->state == CS_ZOMBIE ) {
-		return;		// dropped: the real "ip" did not fit
+	// over the rate limit, keep only the newest userinfo for
+	// SV_ApplyPendingUserinfo.  The command is still acknowledged and the
+	// rest of the packet processed as usual, so the client neither lags
+	// nor fills its own reliable command window.  This is not limited to
+	// CS_ACTIVE: a client that withholds usercmds stays CS_PRIMED, and its
+	// changes are still relayed to everyone else
+	if ( cl->netchan.remoteAddress.type != NA_BOT && SV_UserinfoRateLimited( cl ) ) {
+		Q_strncpyz( cl->pendingUserinfo, userinfo, sizeof(cl->pendingUserinfo) );
+		cl->userinfoPending = qtrue;
+		return;
 	}
-	// call prog code to allow overrides
-	VM_Call( gvm, GAME_CLIENT_USERINFO_CHANGED, cl - svs.clients );
+
+	// this change supersedes any held back one
+	cl->userinfoPending = qfalse;
+	SV_ApplyUserinfo( cl, userinfo );
 }
 
 typedef struct {
