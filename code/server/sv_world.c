@@ -518,6 +518,12 @@ void SV_ClipMoveToEntities( moveclip_t *clip ) {
 
 	num = SV_AreaEntities( clip->boxmins, clip->boxmaxs, touchlist, MAX_GENTITIES);
 
+	// botlib traces with passent -1 (BotInitLevelItems); an index outside the
+	// registered game entities names no pass entity, like ENTITYNUM_NONE
+	if ( clip->passEntityNum < 0 || clip->passEntityNum >= sv.num_entities ) {
+		clip->passEntityNum = ENTITYNUM_NONE;
+	}
+
 	if ( clip->passEntityNum != ENTITYNUM_NONE ) {
 		passOwnerNum = ( SV_GentityNum( clip->passEntityNum ) )->r.ownerNum;
 		if ( passOwnerNum == ENTITYNUM_NONE ) {

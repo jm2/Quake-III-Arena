@@ -1470,7 +1470,7 @@ char *stristr(char *str, char *charset) {
 
 	while(*str) {
 		for (i = 0; charset[i] && str[i]; i++) {
-			if (toupper(charset[i]) != toupper(str[i])) break;
+			if (toupper((unsigned char)charset[i]) != toupper((unsigned char)str[i])) break;
 		}
 		if (!charset[i]) return str;
 		str++;
@@ -4624,7 +4624,8 @@ void BotCheckConsoleMessages(bot_state_t *bs) {
 		//replace synonyms in the netname
 		if (m.type == CMS_CHAT) {
 			//
-			if (trap_BotFindMatch(m.message, &match, MTCONTEXT_REPLYCHAT)) {
+			//an unset MESSAGE offset (-1) keeps the whole message
+			if (trap_BotFindMatch(m.message, &match, MTCONTEXT_REPLYCHAT) && match.variables[MESSAGE].offset >= 0) {
 				ptr = m.message + match.variables[MESSAGE].offset;
 			}
 		}
@@ -4632,7 +4633,8 @@ void BotCheckConsoleMessages(bot_state_t *bs) {
 		trap_UnifyWhiteSpaces(ptr);
 		//replace synonyms in the right context
 		context = BotSynonymContext(bs);
-		trap_BotReplaceSynonyms(ptr, context);
+		//the chat text may start after the sender name inside the message buffer
+		trap_BotReplaceSynonyms(ptr, context, m.message + sizeof(m.message) - ptr);
 		//if there's no match
 		if (!BotMatchMessage(bs, m.message)) {
 			//if it is a chat message

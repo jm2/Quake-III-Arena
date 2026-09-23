@@ -116,20 +116,38 @@ CG_ParseTeamInfo
 static void CG_ParseTeamInfo( void ) {
 	int		i;
 	int		client;
+	int		count;
+	int		weapon;
 
-	numSortedTeamPlayers = atoi( CG_Argv( 1 ) );
+	// the native cgame keeps these globals across a drop, so only a
+	// checked count is ever published to the team overlay
+	count = atoi( CG_Argv( 1 ) );
+	if ( count < 0 || count > TEAM_MAXOVERLAY ) {
+		CG_Error( "CG_ParseTeamInfo: numSortedTeamPlayers out of range (%d)", count );
+		return;
+	}
 
-	for ( i = 0 ; i < numSortedTeamPlayers ; i++ ) {
+	for ( i = 0 ; i < count ; i++ ) {
 		client = atoi( CG_Argv( i * 6 + 2 ) );
+		if ( client < 0 || client >= MAX_CLIENTS ) {
+			CG_Error( "CG_ParseTeamInfo: bad client number: %d", client );
+			return;
+		}
 
 		sortedTeamPlayers[i] = client;
 
 		cgs.clientinfo[ client ].location = atoi( CG_Argv( i * 6 + 3 ) );
 		cgs.clientinfo[ client ].health = atoi( CG_Argv( i * 6 + 4 ) );
 		cgs.clientinfo[ client ].armor = atoi( CG_Argv( i * 6 + 5 ) );
-		cgs.clientinfo[ client ].curWeapon = atoi( CG_Argv( i * 6 + 6 ) );
+		// the overlay indexes cg_weapons with this, so show no weapon instead
+		weapon = atoi( CG_Argv( i * 6 + 6 ) );
+		if ( weapon < 0 || weapon >= MAX_WEAPONS ) {
+			weapon = WP_NONE;
+		}
+		cgs.clientinfo[ client ].curWeapon = weapon;
 		cgs.clientinfo[ client ].powerups = atoi( CG_Argv( i * 6 + 7 ) );
 	}
+	numSortedTeamPlayers = count;
 }
 
 
@@ -154,6 +172,9 @@ void CG_ParseServerinfo( void ) {
 	cgs.capturelimit = atoi( Info_ValueForKey( info, "capturelimit" ) );
 	cgs.timelimit = atoi( Info_ValueForKey( info, "timelimit" ) );
 	cgs.maxclients = atoi( Info_ValueForKey( info, "sv_maxclients" ) );
+	if ( cgs.maxclients > MAX_CLIENTS ) {
+		cgs.maxclients = MAX_CLIENTS;	// loops over cgs.clientinfo stop here
+	}
 	mapname = Info_ValueForKey( info, "mapname" );
 	Com_sprintf( cgs.mapname, sizeof( cgs.mapname ), "maps/%s.bsp", mapname );
 	Q_strncpyz( cgs.redTeam, Info_ValueForKey( info, "g_redTeam" ), sizeof(cgs.redTeam) );
@@ -878,7 +899,7 @@ void CG_AddBufferedVoiceChat( bufferedVoiceChat_t *vchat ) {
 	cg.voiceChatBufferIn = (cg.voiceChatBufferIn + 1) % MAX_VOICECHATBUFFER;
 	if (cg.voiceChatBufferIn == cg.voiceChatBufferOut) {
 		CG_PlayVoiceChat( &voiceChatBuffer[cg.voiceChatBufferOut] );
-		cg.voiceChatBufferOut++;
+		cg.voiceChatBufferOut = (cg.voiceChatBufferOut + 1) % MAX_VOICECHATBUFFER;
 	}
 #endif
 }

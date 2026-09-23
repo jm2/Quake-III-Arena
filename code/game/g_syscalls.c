@@ -585,8 +585,8 @@ void trap_UnifyWhiteSpaces(char *string) {
 	syscall( BOTLIB_AI_UNIFY_WHITE_SPACES, string );
 }
 
-void trap_BotReplaceSynonyms(char *string, unsigned long int context) {
-	syscall( BOTLIB_AI_REPLACE_SYNONYMS, string, context );
+void trap_BotReplaceSynonyms(char *string, unsigned long int context, int size) {
+	syscall( BOTLIB_AI_REPLACE_SYNONYMS, string, context, size );
 }
 
 int trap_BotLoadChatFile(int chatstate, char *chatfile, char *chatname) {

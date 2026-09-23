@@ -295,10 +295,10 @@ static void GLimp_Extensions( void ) {
 	}
 
 	// GL_EXT_texture_filter_anisotropic
-	glConfig.textureFilterAnisotropicAvailable = qfalse;
+	glConfigExt.textureFilterAnisotropicAvailable = qfalse;
 	if ( strstr( glConfig.extensions_string, "EXT_texture_filter_anisotropic" ) )
 	{
-		glConfig.textureFilterAnisotropicAvailable = qtrue;
+		glConfigExt.textureFilterAnisotropicAvailable = qtrue;
 		ri.Printf( PRINT_ALL, "...GL_EXT_texture_filter_anisotropic available\n" );
 
 		if ( r_ext_texture_filter_anisotropic->integer )
@@ -789,6 +789,7 @@ void GLimp_Init( void ) {
 	}
 	
 	memset( &glConfig, 0, sizeof( glConfig ) );
+	memset( &glConfigExt, 0, sizeof( glConfigExt ) );
 
 
 	r_swapInterval->modified = qtrue;	// force a set next frame
@@ -869,6 +870,7 @@ void GLimp_Shutdown( void ) {
 	GLimp_ResetDisplay();
 	
 	memset( &glConfig, 0, sizeof( glConfig ) );
+	memset( &glConfigExt, 0, sizeof( glConfigExt ) );
 }
 
 

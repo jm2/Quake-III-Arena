@@ -185,7 +185,6 @@ typedef struct {
 	qboolean				deviceSupportsGamma;
 	textureCompression_t	textureCompression;
 	qboolean				textureEnvAddAvailable;
-	qboolean				textureFilterAnisotropicAvailable;
 
 	int						vidWidth, vidHeight;
 	// aspect is the screen's physical width / height, which may be different

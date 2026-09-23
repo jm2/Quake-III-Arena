@@ -607,7 +607,7 @@ int StringContains(char *str1, char *str2, int casesensitive)
 			} //end if
 			else
 			{
-				if (toupper(str1[j]) != toupper(str2[j])) break;
+				if (toupper((unsigned char)str1[j]) != toupper((unsigned char)str2[j])) break;
 			} //end else
 		} //end for
 		if (!str2[j]) return index;
@@ -620,21 +620,45 @@ int StringContains(char *str1, char *str2, int casesensitive)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
-/** Find a whole word without stepping beyond the input terminator. */
+/** Find a whole word with the 1.32 word boundaries, stopping at the input terminator. */
 char *StringContainsWord(char *str1, char *str2, int casesensitive)
 {
-	char *word;
-	int j;
-	if (!*str2) return str1;
-	for (word = str1; *word; word++) {
-		if (word > str1 && word[-1] != ' ' && word[-1] != '.' && word[-1] != ',' && word[-1] != '!') continue;
-		for (j = 0; str2[j] && word[j]; j++) {
-			if (casesensitive ? word[j] != str2[j] : toupper((unsigned char)word[j]) != toupper((unsigned char)str2[j])) break;
-		}
-		if (!str2[j] && (!word[j] || word[j] == ' ' || word[j] == '.' || word[j] == ',' || word[j] == '!')) return word;
-	}
+	int len, i, j;
+
+	len = strlen(str1) - strlen(str2);
+	for (i = 0; i <= len; i++, str1++)
+	{
+		//if not at the start of the string
+		if (i)
+		{
+			//skip to the start of the next word
+			while(*str1 && *str1 != ' ' && *str1 != '.' && *str1 != ',' && *str1 != '!') str1++;
+			if (!*str1) break;
+			str1++;
+		} //end for
+		//compare the word
+		for (j = 0; str2[j]; j++)
+		{
+			if (casesensitive)
+			{
+				if (str1[j] != str2[j]) break;
+			} //end if
+			else
+			{
+				if (toupper((unsigned char)str1[j]) != toupper((unsigned char)str2[j])) break;
+			} //end else
+		} //end for
+		//if there was a word match
+		if (!str2[j])
+		{
+			//if the first string has an end of word
+			if (!str1[j] || str1[j] == ' ' || str1[j] == '.' || str1[j] == ',' || str1[j] == '!') return str1;
+		} //end if
+		//a trailing delimiter leaves no later word before the terminator
+		if (!*str1) break;
+	} //end for
 	return NULL;
-}
+} //end of the function StringContainsWord
 //===========================================================================
 //
 // Parameter:				-
@@ -675,8 +699,10 @@ static void StringReplaceWordsSized(char *string, char *synonym, char *replaceme
 		{
 			if (!BotReplaceChatWord(string, str, synonym, replacement, capacity)) break;
 		} //end if
+		//a skipped synonym near the end leaves no search position before the terminator
+		if (strlen(str) < strlen(replacement)) break;
 		//find the next synonym in the string
-		str = StringContainsWord(str + strlen(str2 ? synonym : replacement), synonym, qfalse);
+		str = StringContainsWord(str+strlen(replacement), synonym, qfalse);
 	} //end if
 } //end of the function StringReplaceWords
 //===========================================================================
@@ -986,9 +1012,9 @@ static void BotReplaceSynonymsSized(char *string, unsigned long int context, siz
 	} //end for
 }
 
-/** Preserve the size-less retail ABI by keeping replacements within the original string span. */
-void BotReplaceSynonyms(char *string, unsigned long int context) {
-	if ( string ) BotReplaceSynonymsSized(string, context, strlen(string) + 1);
+/** Replace synonyms within the caller's writable size; size-less QVM calls pass their original span. */
+void BotReplaceSynonyms(char *string, unsigned long int context, int size) {
+	if ( string && size > 0 ) BotReplaceSynonymsSized(string, context, size);
 }
 //===========================================================================
 //
@@ -1603,9 +1629,13 @@ int StringsMatch(bot_matchpiece_t *pieces, bot_match_t *match)
 					newstrptr = strptr + index;
 					if (lastvariable >= 0)
 					{
-						match->variables[lastvariable].length =
-								(newstrptr - match->string) - match->variables[lastvariable].offset;
-								//newstrptr - match->variables[lastvariable].ptr;
+						//a variable left unset by its far offset keeps no length
+						if (match->variables[lastvariable].offset >= 0)
+						{
+							match->variables[lastvariable].length =
+									(newstrptr - match->string) - match->variables[lastvariable].offset;
+									//newstrptr - match->variables[lastvariable].ptr;
+						} //end if
 						lastvariable = -1;
 						break;
 					} //end if
@@ -1623,7 +1653,9 @@ int StringsMatch(bot_matchpiece_t *pieces, bot_match_t *match)
 		else if (mp->type == MT_VARIABLE)
 		{
 			//Log_Write("MT_VARIABLE");
-			match->variables[mp->variable].offset = strptr - match->string;
+			//the signed char offset cannot hold a start past byte 127: leave it unset
+			index = strptr - match->string;
+			match->variables[mp->variable].offset = index > 127 ? -1 : index;
 			lastvariable = mp->variable;
 		} //end else if
 	} //end for
@@ -1631,7 +1663,7 @@ int StringsMatch(bot_matchpiece_t *pieces, bot_match_t *match)
 	if (!mp && (lastvariable >= 0 || !strlen(strptr)))
 	{
 		//if the last piece was a variable string
-		if (lastvariable >= 0)
+		if (lastvariable >= 0 && match->variables[lastvariable].offset >= 0)
 		{
         		assert( match->variables[lastvariable].offset >= 0 ); // bk001204
 			match->variables[lastvariable].length =
@@ -2492,27 +2524,27 @@ int BotExpandChatMessage(char *outmessage, char *message, unsigned long mcontext
 				case 'v': //variable
 				{
 					msgptr++;
-					num = 0;
+					//only a non-empty decimal index below MAX_MATCHVARIABLES is valid;
+					//stop accumulating once out of range so long digit strings cannot overflow
+					num = (*msgptr && *msgptr != ESCAPE_CHAR) ? 0 : MAX_MATCHVARIABLES;
 					while(*msgptr && *msgptr != ESCAPE_CHAR)
 					{
-						num = num * 10 + (*msgptr++) - '0';
+						if (*msgptr < '0' || *msgptr > '9') num = MAX_MATCHVARIABLES;
+						else if (num < MAX_MATCHVARIABLES) num = num * 10 + *msgptr - '0';
+						msgptr++;
 					} //end while
 					//step over the trailing escape char
 					if (*msgptr) msgptr++;
-					if (num > MAX_MATCHVARIABLES)
+					if (num >= MAX_MATCHVARIABLES)
 					{
-						botimport.Print(PRT_ERROR, "BotConstructChat: message %s variable %d out of range\n", message, num);
+						botimport.Print(PRT_ERROR, "BotConstructChat: message %s variable out of range\n", message);
 						return qfalse;
 					} //end if
 					if (match->variables[num].offset >= 0)
 					{
 					        assert( match->variables[num].offset >= 0 ); // bk001204
-						ptr = &match->string[ (int) match->variables[num].offset];
-						for (i = 0; i < match->variables[num].length; i++)
-						{
-							temp[i] = ptr[i];
-						} //end for
-						temp[i] = 0;
+						//copy the span bounded by temp and the terminated match string
+						BotMatchVariable(match, num, temp, sizeof(temp));
 						//if it's a reply message
 						if (reply)
 						{
@@ -2540,6 +2572,11 @@ int BotExpandChatMessage(char *outmessage, char *message, unsigned long mcontext
 					msgptr++;
 					for (i = 0; (*msgptr && *msgptr != ESCAPE_CHAR); i++)
 					{
+						if (i >= (int) sizeof(temp) - 1)
+						{
+							botimport.Print(PRT_ERROR, "BotConstructChat: message \"%s\" random name too long\n", message);
+							return qfalse;
+						} //end if
 						temp[i] = *msgptr++;
 					} //end while
 					temp[i] = '\0';
@@ -2571,12 +2608,13 @@ int BotExpandChatMessage(char *outmessage, char *message, unsigned long mcontext
 		} //end if
 		else
 		{
-			outputbuf[len++] = *msgptr++;
-			if (len >= MAX_MESSAGE_SIZE)
+			//keep room for the terminator
+			if (len >= MAX_MESSAGE_SIZE - 1)
 			{
 				botimport.Print(PRT_ERROR, "BotConstructChat: message \"%s\" too long\n", message);
 				break;
 			} //end if
+			outputbuf[len++] = *msgptr++;
 		} //end else
 	} //end while
 	outputbuf[len] = '\0';

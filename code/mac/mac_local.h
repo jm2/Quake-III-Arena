@@ -289,6 +289,11 @@
 typedef char assert_EventRecord_packed[ (sizeof(EventRecord) == 16) ? 1 : -1 ];
 typedef char assert_FSSpec_packed[ (sizeof(FSSpec) == 70) ? 1 : -1 ];
 
+// Compile-time guard: plain 'char' must be signed, as in retail 1.32c and the
+// host tests. If this fails, CMakeLists.txt has lost -fsigned-char and the
+// Retro68 default (unsigned) changes how bytes >= 0x80 tokenize.
+typedef char assert_char_signed[ ((char)-1 < 0) ? 1 : -1 ];
+
 // mac_main.c
 extern	int		sys_ticBase;
 extern	int		sys_msecBase;

@@ -8,6 +8,60 @@ botlib_import_t botimport;
 static void Check( int ok, const char *message ) {
 	if(!ok) { fprintf(stderr,"Native bot chat regression failed: %s\n",message); exit(1); }
 }
+static int printErrors;
+/** Count botlib errors so each rejected escape reports exactly once. */
+static void QDECL CountPrint( int type, char *format, ... ) { (void)format; if(type==PRT_ERROR) printErrors++; }
+/** Issue #290: variable escapes accept only decimal indexes below MAX_MATCHVARIABLES and bounded spans. */
+static void VariableEscapes( bot_match_t *match, char *buffer, char *source ) {
+	static char *rejected[]={"8","99999999999","x","/","-1",""};
+	bot_randomstring_t no={"No.",NULL}; bot_randomlist_t negative={"negative",1,&no,NULL};
+	char message[64]; int i;
+	botimport.Print=CountPrint; randomstrings=&negative;
+	memset(match,0,sizeof(*match)); strcpy(match->string,"Sarge sure camper");
+	for(i=0;i<MAX_MATCHVARIABLES;i++) match->variables[i].offset=-1;
+	match->variables[0].offset=6; match->variables[0].length=4;
+	match->variables[7].offset=11; match->variables[7].length=6;
+	sprintf(message,"%crnegative%c I'm not %cv0%c.",ESCAPE_CHAR,ESCAPE_CHAR,ESCAPE_CHAR,ESCAPE_CHAR);
+	Check(BotExpandChatMessage(buffer,message,0,match,0,qtrue) && !strcmp(buffer,"No. I'm not sure."),"retail reply template");
+	sprintf(message,"Is drinking the cause of your problem, %cv7%c?",ESCAPE_CHAR,ESCAPE_CHAR);
+	Check(!BotExpandChatMessage(buffer,message,0,match,0,qtrue) && !strcmp(buffer,"Is drinking the cause of your problem, camper?"),"last match variable 7 expands");
+	sprintf(message,"%cv007%c",ESCAPE_CHAR,ESCAPE_CHAR);
+	Check(!BotExpandChatMessage(buffer,message,0,match,0,qfalse) && !strcmp(buffer,"camper"),"leading zeros keep retail index");
+	match->subtype=MAX_MESSAGE_SIZE*4; /* the old parser read "/" as variables[-1], overlapping type/subtype */
+	for(i=0;i<(int)(sizeof(rejected)/sizeof(rejected[0]));i++) {
+		sprintf(message,"%cv%s%c",ESCAPE_CHAR,rejected[i],ESCAPE_CHAR); strcpy(buffer,"z"); printErrors=0;
+		Check(!BotExpandChatMessage(buffer,message,0,match,0,qfalse) && !strcmp(buffer,"z") && printErrors==1,"invalid variable index rejected before copying");
+		sprintf(message,"%crnegative%c %cv%s%c",ESCAPE_CHAR,ESCAPE_CHAR,ESCAPE_CHAR,rejected[i],ESCAPE_CHAR); printErrors=0;
+		Check(!BotExpandChatMessage(buffer,message,0,match,0,qfalse) && printErrors==1,"invalid variable index after a random rejected");
+	}
+	match->variables[7].length=MAX_MESSAGE_SIZE*4; sprintf(message,"%cv7%c!",ESCAPE_CHAR,ESCAPE_CHAR);
+	Check(!BotExpandChatMessage(buffer,message,0,match,0,qfalse) && !strcmp(buffer,"!"),"span past the match string expands to nothing");
+	memset(match->string,'x',MAX_MESSAGE_SIZE-1); match->string[MAX_MESSAGE_SIZE-1]=0;
+	match->variables[7].offset=0; match->variables[7].length=MAX_MESSAGE_SIZE-1; sprintf(message,"%cv7%c",ESCAPE_CHAR,ESCAPE_CHAR);
+	Check(!BotExpandChatMessage(buffer,message,0,match,0,qfalse) && strlen(buffer)==MAX_MESSAGE_SIZE-1,"full-length variable fills temp exactly");
+	source[0]=ESCAPE_CHAR; source[1]='r'; memset(source+2,'a',MAX_MESSAGE_SIZE*2); source[MAX_MESSAGE_SIZE*2+2]=ESCAPE_CHAR; source[MAX_MESSAGE_SIZE*2+3]=0;
+	strcpy(buffer,"z"); printErrors=0;
+	Check(!BotExpandChatMessage(buffer,source,0,match,0,qfalse) && !strcmp(buffer,"z") && printErrors==1,"overlong random name rejected before copying");
+	randomstrings=NULL; botimport.Print=NULL;
+}
+/** Literal text that fills the output keeps its terminator inside MAX_MESSAGE_SIZE. */
+static void LiteralCapacity( bot_match_t *match, char *buffer, char *source ) {
+	static const int lengths[]={MAX_MESSAGE_SIZE-1,MAX_MESSAGE_SIZE,MAX_MESSAGE_SIZE+44};
+	char message[16]; int i;
+	botimport.Print=CountPrint;
+	for(i=0;i<3;i++) {
+		memset(source,'a',lengths[i]); source[lengths[i]]=0; printErrors=0;
+		Check(!BotExpandChatMessage(buffer,source,0,match,0,qfalse) && strlen(buffer)==MAX_MESSAGE_SIZE-1 &&
+		      printErrors==(lengths[i]>=MAX_MESSAGE_SIZE),"literal text keeps its terminator inside the output");
+	}
+	memset(match,0,sizeof(*match)); memset(match->string,'x',250);
+	for(i=0;i<MAX_MATCHVARIABLES;i++) match->variables[i].offset=-1;
+	match->variables[0].offset=0; match->variables[0].length=250;
+	sprintf(message,"%cv0%c123456789",ESCAPE_CHAR,ESCAPE_CHAR); printErrors=0;
+	Check(!BotExpandChatMessage(buffer,message,0,match,0,qfalse) && strlen(buffer)==MAX_MESSAGE_SIZE-1 &&
+	      !strcmp(buffer+250,"12345") && printErrors==1,"literal text after a variable stops before the terminator");
+	botimport.Print=NULL;
+}
 /** Keep real match routines linked without pulling in the full engine. */
 void Com_Memcpy( void *dest, const void *src, size_t size ) { memcpy(dest,src,size); }
 /** Support the real chat helpers' native initialization. */
@@ -16,6 +70,41 @@ void Com_Memset( void *dest, int value, size_t size ) { memset(dest,value,size);
 void QDECL Com_Error( int level, const char *format, ... ) { (void)level; (void)format; Check(0,"engine error"); }
 /** Ignore unrelated shared utility output. */
 void QDECL Com_Printf( const char *format, ... ) { (void)format; }
+/** Issue #246: variables a template never sets ("camp there" has no KEYAREA) stay unset even with unsigned char. */
+static void UnsetVariables( bot_match_t *match, char *buffer, char *out ) {
+	bot_matchstring_t there={" camp there",NULL};
+	bot_matchpiece_t text={MT_STRING,&there,0,NULL}, name={MT_VARIABLE,NULL,0,&text};
+	bot_matchtemplate_t camp={1,0,0,&name,NULL};
+	char keyarea[]={ESCAPE_CHAR,'v','3',ESCAPE_CHAR,0}; int i;
+	matchtemplates=&camp; memset(match,0x5a,sizeof(*match));
+	Check(BotFindMatch("Sarge camp there",match,1),"camp there template");
+	for(i=1;i<MAX_MATCHVARIABLES;i++) Check(match->variables[i].offset<0,"unset variable reads negative");
+	BotMatchVariable(match,0,out,8); Check(!strcmp(out,"Sarge"),"set variable beside unset ones");
+	strcpy(buffer,"z"); (void)BotExpandChatMessage(buffer,keyarea,0,match,1,qfalse);
+	Check(!*buffer,"unset variable with stale length expands to nothing");
+	for(i=1;i<MAX_MATCHVARIABLES;i++) { out[0]='z'; BotMatchVariable(match,i,out,8); Check(!*out,"unset variable reads empty"); }
+	matchtemplates=NULL;
+}
+/** A variable starting past byte 127 does not fit the signed offset: it reads unset, never asserts or wraps. */
+static void FarVariables( bot_match_t *match, char *out ) {
+	char input[MAX_MESSAGE_SIZE]; int i, n;
+	bot_matchstring_t kill={" kill ",NULL}, now={" now",NULL};
+	bot_matchpiece_t tail={MT_STRING,&now,0,NULL}, enemy={MT_VARIABLE,NULL,1,NULL};
+	bot_matchpiece_t word={MT_STRING,&kill,0,&enemy}, name={MT_VARIABLE,NULL,0,&word};
+	bot_matchtemplate_t order={1,0,0,&name,NULL};
+	matchtemplates=&order;
+	for(i=0;i<4;i++) {
+		n=121+(i&1); enemy.next=(i&2)?&tail:NULL;
+		memset(input,'a',n); strcpy(input+n,(i&2)?" kill bob now":" kill bob");
+		memset(match,0x5a,sizeof(*match));
+		Check(BotFindMatch(input,match,1),"template with a far variable still matches");
+		BotMatchVariable(match,0,out,8); Check(!strcmp(out,"aaaaaaa"),"leading variable before a far one");
+		BotMatchVariable(match,1,out,8);
+		if(n+6<=127) Check(match->variables[1].offset==127 && !strcmp(out,"bob"),"variable starting at byte 127");
+		else Check(match->variables[1].offset==-1 && !*out,"variable starting at byte 128 reads unset");
+	}
+	matchtemplates=NULL;
+}
 /** Cover growing, shrinking, unchanged, full-capacity, and overlapping native operations. */
 int main( void ) {
 	char *buffer=malloc(MAX_MESSAGE_SIZE), *inside=malloc(8), *source=malloc(1024), *out=malloc(8), *small=malloc(6);
@@ -23,9 +112,10 @@ int main( void ) {
 	bot_match_t *match=malloc(sizeof(*match));
 	bot_synonym_t replacement={0}, old={0}; bot_synonymlist_t list={0};
 	Check(buffer && inside && source && out && small && match,"allocation");
-	strcpy(buffer,"hi hi"); StringReplaceWordsSized(buffer,"hi","hello",MAX_MESSAGE_SIZE); Check(!strcmp(buffer,"hello hello"),"growth");
+	/* 1.32 resumes each search at the delimiter after a replacement, which skips the adjacent word. */
+	strcpy(buffer,"hi hi"); StringReplaceWordsSized(buffer,"hi","hello",MAX_MESSAGE_SIZE); Check(!strcmp(buffer,"hello hi"),"growth");
 	StringReplaceWordsSized(buffer,"hello","hi",MAX_MESSAGE_SIZE); Check(!strcmp(buffer,"hi hi"),"shrink");
-	StringReplaceWordsSized(buffer,"hi","",MAX_MESSAGE_SIZE); Check(!strcmp(buffer," "),"empty replacement");
+	StringReplaceWordsSized(buffer,"hi","",MAX_MESSAGE_SIZE); Check(!strcmp(buffer," hi"),"empty replacement");
 	strcpy(inside,"foo bar"); StringReplaceWordsSized(inside,"bar","foo bar",8); Check(!strcmp(inside,"foo bar"),"inside existing replacement");
 	memset(buffer,'a',MAX_MESSAGE_SIZE-1); buffer[MAX_MESSAGE_SIZE-1]=0;
 	buffer[0]='h'; buffer[1]='i'; buffer[2]=' ';
@@ -38,18 +128,23 @@ int main( void ) {
 	strcpy(buffer,"hi hi"); BotReplaceReplySynonymsSized(buffer,1,MAX_MESSAGE_SIZE); Check(!strcmp(buffer,"hello hello"),"reply synonym growth");
 	memset(buffer,'a',255); buffer[255]=0; memcpy(buffer,"hi ",3);
 	BotReplaceReplySynonymsSized(buffer,1,MAX_MESSAGE_SIZE); Check(strlen(buffer)==255 && !memcmp(buffer,"hi ",3),"reply synonym overflow preserved");
-	strcpy(small,"hi hi"); BotReplaceSynonyms(small,1); Check(!strcmp(small,"hi hi"),"exact object skips growth");
-	replacement.string="yo"; BotReplaceSynonyms(small,1); Check(!strcmp(small,"yo yo"),"same-size replacement");
-	replacement.string="h"; strcpy(small,"hi hi"); BotReplaceSynonyms(small,1); Check(!strcmp(small,"h h"),"shrinking replacement");
+	strcpy(small,"hi hi"); BotReplaceSynonyms(small,1,6); Check(!strcmp(small,"hi hi"),"exact object skips growth");
+	replacement.string="yo"; BotReplaceSynonyms(small,1,6); Check(!strcmp(small,"yo hi"),"same-size replacement");
+	replacement.string="h"; strcpy(small,"hi hi"); BotReplaceSynonyms(small,1,0); BotReplaceSynonyms(small,1,-1);
+	Check(!strcmp(small,"hi hi"),"missing or negative size");
+	BotReplaceSynonyms(small,1,6); Check(!strcmp(small,"h hi"),"shrinking replacement");
 	replacement.string="hello"; memset(buffer,0x5a,MAX_MESSAGE_SIZE); strcpy(buffer+128,"hi hi");
-	BotReplaceSynonyms(buffer+128,1); Check(!strcmp(buffer+128,"hi hi"),"interior object skips growth");
+	BotReplaceSynonyms(buffer+128,1,6); Check(!strcmp(buffer+128,"hi hi"),"interior legacy span skips growth");
 	for(i=0;i<128;i++) Check((unsigned char)buffer[i]==0x5a,"interior prefix canary");
 	for(i=134;i<MAX_MESSAGE_SIZE;i++) Check((unsigned char)buffer[i]==0x5a,"interior tail canary");
-	memset(buffer,0x5a,MAX_MESSAGE_SIZE); strcpy(buffer+250,"hi hi"); BotReplaceSynonyms(buffer+250,1);
+	BotReplaceSynonyms(buffer+128,1,MAX_MESSAGE_SIZE-128); Check(!strcmp(buffer+128,"hello hi"),"interior known size grows");
+	for(i=0;i<128;i++) Check((unsigned char)buffer[i]==0x5a,"grown interior prefix canary");
+	for(i=137;i<MAX_MESSAGE_SIZE;i++) Check((unsigned char)buffer[i]==0x5a,"grown interior tail canary");
+	memset(buffer,0x5a,MAX_MESSAGE_SIZE); strcpy(buffer+250,"hi hi"); BotReplaceSynonyms(buffer+250,1,MAX_MESSAGE_SIZE-250);
 	Check(!strcmp(buffer+250,"hi hi"),"interior object at allocation end");
 	for(i=0;i<250;i++) Check((unsigned char)buffer[i]==0x5a,"near-end prefix canary");
-	buffer[255]=0; BotReplaceSynonyms(buffer+255,1); Check(!buffer[255],"empty final-byte object");
-	BotReplaceSynonyms(NULL,1);
+	buffer[255]=0; BotReplaceSynonyms(buffer+255,1,1); Check(!buffer[255],"empty final-byte object");
+	BotReplaceSynonyms(NULL,1,MAX_MESSAGE_SIZE);
 	memset(match,0,sizeof(*match)); strcpy(match->string,"hi");
 	for(i=0;i<MAX_MATCHVARIABLES;i++) match->variables[i].offset=-1;
 	match->variables[0].offset=0; match->variables[0].length=2;
@@ -58,6 +153,7 @@ int main( void ) {
 	(void)BotExpandChatMessage(buffer,variableMessage,0,match,1,qtrue);
 	Check(!strcmp(buffer,"hello"),"known-capacity reply variable still grows");
 	synonyms=NULL;
+	VariableEscapes(match,buffer,source); LiteralCapacity(match,buffer,source);
 	strcpy(inside,"foo bar"); Check(StringContainsWord(inside,"bar",qfalse)==inside+4,"later whole word");
 	strcpy(inside,"foo    "); Check(StringContainsWord(inside,"bar",qfalse)==NULL,"trailing delimiters");
 	memset(source,'x',1023); source[1023]=0; memset(match,0,sizeof(*match));
@@ -73,6 +169,7 @@ int main( void ) {
 	BotMatchVariable(match,0,out,8); Check(!*out,"span after end");
 	memset(match->string,'x',256); BotMatchVariable(match,0,out,8); Check(!*out,"unterminated embedded string");
 	out[0]='z'; BotMatchVariable(match,0,out,0); Check(out[0]=='z',"empty output unchanged");
+	UnsetVariables(match,buffer,out); FarVariables(match,out);
 	free(small); free(match); free(out); free(source); free(inside); free(buffer);
 	puts("Native bot chat buffer regressions passed (issues #35/#48)"); return 0;
 }

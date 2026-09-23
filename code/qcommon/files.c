@@ -380,7 +380,7 @@ static long FS_HashFileName( const char *fname, int hashSize ) {
 	hash = 0;
 	i = 0;
 	while (fname[i] != '\0') {
-		letter = tolower(fname[i]);
+		letter = tolower((unsigned char)fname[i]);
 		if (letter =='.') break;				// don't include extension
 		if (letter =='\\') letter = '/';		// damn path names
 		if (letter == PATH_SEP) letter = '/';		// damn path names
@@ -468,13 +468,64 @@ Fix things up differently for win/unix/mac
 ====================
 */
 static void FS_ReplaceSeparators( char *path ) {
-	char	*s;
+	char	*s, *d;
 
-	for ( s = path ; *s ; s++ ) {
-		if ( *s == '/' || *s == '\\' ) {
-			*s = PATH_SEP;
+	for ( s = d = path ; *s ; s++ ) {
+		if ( *s == '/' || *s == '\\' || *s == PATH_SEP ) {
+			// on HFS every separator that follows another one walks
+			// up a directory, so never emit two in a row there
+			if ( PATH_SEP == ':' && d > path && d[-1] == PATH_SEP ) {
+				continue;
+			}
+			*d++ = PATH_SEP;
+		} else {
+			*d++ = *s;
 		}
 	}
+	*d = 0;
+}
+
+/*
+====================
+FS_CheckQPath
+
+Returns qfalse for a qpath that could leave its game directory once
+FS_ReplaceSeparators has run.  ':' is illegal in qpaths and ".." walks
+up on win32 and unix.  On HFS (PATH_SEP ':') each separator following
+another one walks up instead, so a leading or doubled '/' or '\\' is
+refused there as well.
+====================
+*/
+static qboolean FS_CheckQPath( const char *qpath ) {
+	const char	*s;
+
+	if ( strchr( qpath, ':' ) || strstr( qpath, ".." ) ) {
+		return qfalse;
+	}
+	if ( PATH_SEP == ':' ) {
+		for ( s = qpath ; *s ; s++ ) {
+			if ( ( *s == '/' || *s == '\\' ) &&
+				( s == qpath || s[-1] == '/' || s[-1] == '\\' ) ) {
+				return qfalse;
+			}
+		}
+	}
+	return qtrue;
+}
+
+/*
+====================
+FS_CheckGameDir
+
+A game directory is a single name directly under a search path
+====================
+*/
+static qboolean FS_CheckGameDir( const char *dir ) {
+	if ( !strcmp( dir, "." ) || !strcmp( dir, ".." ) || strchr( dir, ':' ) ||
+		strchr( dir, '/' ) || strchr( dir, '\\' ) ) {
+		return qfalse;
+	}
+	return qtrue;
 }
 
 /*
@@ -954,6 +1005,11 @@ fileHandle_t FS_FOpenFileWrite( const char *filename ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
 	}
 
+	if ( !FS_CheckQPath( filename ) ) {
+		Com_Printf( "WARNING: refusing to write illegal qpath \"%s\"\n", filename );
+		return 0;
+	}
+
 	if ( !FS_CheckFilenameIsMutable( filename, "FS_FOpenFileWrite" ) ) {
 		return 0;
 	}
@@ -997,6 +1053,11 @@ fileHandle_t FS_FOpenFileAppend( const char *filename ) {
 
 	if ( !fs_searchpaths ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
+	}
+
+	if ( !FS_CheckQPath( filename ) ) {
+		Com_Printf( "WARNING: refusing to write illegal qpath \"%s\"\n", filename );
+		return 0;
 	}
 
 	if ( !FS_CheckFilenameIsMutable( filename, "FS_FOpenFileAppend" ) ) {
@@ -1147,6 +1208,9 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 
 	if ( file == NULL ) {
 		// just wants to see if file is there
+		if ( !FS_CheckQPath( filename ) ) {
+			return qfalse;
+		}
 		for ( search = fs_searchpaths ; search ; search = search->next ) {
 			// autoexec.cfg and q3config.cfg can only be loaded outside of pk3 files
 			if ( isLocalConfig && search->pack ) {
@@ -1193,7 +1257,7 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 	// make absolutely sure that it can't back up the path.
 	// The searchpaths do guarantee that something will always
 	// be prepended, so we don't need to worry about "c:" or "//limbo" 
-	if ( strstr( filename, ".." ) || strstr( filename, "::" ) ) {
+	if ( !FS_CheckQPath( filename ) ) {
 		*file = 0;
 		return -1;
 	}
@@ -2261,7 +2325,7 @@ char **FS_ListFilteredFiles( const char *path, const char *extension, char *filt
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
 	}
 
-	if ( !path ) {
+	if ( !path || !FS_CheckQPath( path ) ) {
 		*numfiles = 0;
 		return NULL;
 	}
@@ -3196,6 +3260,17 @@ static void FS_Startup( const char *gameName ) {
 	fs_homepath = Cvar_Get ("fs_homepath", homePath, CVAR_INIT );
 	fs_gamedirvar = Cvar_Get ("fs_game", "", CVAR_INIT|CVAR_SYSTEMINFO );
 	fs_restrict = Cvar_Get ("fs_restrict", "", CVAR_INIT );
+
+	// servers and VMs can set these; a ':' or separator in them could
+	// walk out of the install folder, so drop them instead
+	if ( !FS_CheckGameDir( fs_basegame->string ) ) {
+		Com_Printf( "WARNING: ignoring illegal fs_basegame \"%s\"\n", fs_basegame->string );
+		Cvar_Set( "fs_basegame", "" );
+	}
+	if ( !FS_CheckGameDir( fs_gamedirvar->string ) ) {
+		Com_Printf( "WARNING: ignoring illegal fs_game \"%s\"\n", fs_gamedirvar->string );
+		Cvar_Set( "fs_game", "" );
+	}
 
 	// add search path elements in reverse priority order
 	if (fs_cdpath->string[0]) {

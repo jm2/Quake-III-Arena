@@ -499,6 +499,9 @@ static void SV_GameBotChatVariables( int *args, int start, char **variables, int
 	}
 }
 
+/* Match variables are a 1-byte signed offset (-1 = unset) and a 32-bit length in the retail QVM ABI. */
+typedef char qvmBotMatchSizeCheck[(sizeof(bot_matchvariable_t) == 8 && sizeof(bot_match_t) == 328) ? 1 : -1];
+
 /** Validate the selected match span inside its fixed embedded string before native use. */
 static bot_match_t *SV_GameBotMatch( int value, int variable ) {
 	bot_match_t *match = VM_CheckedArgPtr( value, sizeof(bot_match_t), 4, qfalse );
@@ -603,9 +606,12 @@ static int SV_BotLibChatCalls( int *args ) {
 	case BOTLIB_AI_UNIFY_WHITE_SPACES:
 		botlib_export->ai.UnifyWhiteSpaces( VMAS(1) );
 		return 0;
-	case BOTLIB_AI_REPLACE_SYNONYMS:
-		botlib_export->ai.BotReplaceSynonyms( SV_GameBotChatMessage( args[1] ), args[2] );
+	case BOTLIB_AI_REPLACE_SYNONYMS: {
+		char *message = SV_GameBotChatMessage( args[1] );
+		// only native modules pass a size; retail QVMs keep the original string span
+		botlib_export->ai.BotReplaceSynonyms( message, args[2], VM_IsNative( gvm ) ? args[3] : (int)strlen( message ) + 1 );
 		return 0;
+	}
 	case BOTLIB_AI_LOAD_CHAT_FILE:
 		return botlib_export->ai.BotLoadChatFile( args[1], VMAS(2), VMAS(3) );
 	case BOTLIB_AI_SET_CHAT_GENDER:
