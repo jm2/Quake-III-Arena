@@ -8,9 +8,11 @@
 # over the handle of the game's `vmCvar_t g_gametype`.
 #
 #   bash tests/run_duplicate_global_tests.sh
-#       Host mode (CI): configures CMakeLists.txt with $CC and
-#       -DBUILD_TEAM_ARENA=ON, builds the objects of every executable with
-#       CMake's own compile rules plus -fno-common, and runs $NM (default nm).
+#       Host mode (CI): configures CMakeLists.txt with $CC,
+#       -DBUILD_TEAM_ARENA=ON and stub Retro68 MakePEF and Rez tools, builds
+#       the objects of every executable with CMake's own compile rules plus
+#       -fno-common, and runs $NM (default nm). It never links, so the stubs
+#       never run and no Retro68 toolchain is needed.
 #   bash tests/run_duplicate_global_tests.sh --build-dir DIR
 #       Retro68 mode: runs $NM (default powerpc-apple-macos-nm) over the
 #       objects of a Unix Makefiles build tree made with the Retro68 toolchain.
@@ -73,9 +75,22 @@ else
     printf '%s\n' 'typedef struct _XDisplay Display; typedef struct XVisualInfo XVisualInfo;' \
         'typedef struct __GLXcontextRec *GLXContext; typedef unsigned long GLXDrawable; typedef int Bool;' \
         > "$Q3_TEST_WORK/gl/GL/glx.h"
+    # CMakeLists.txt stops the configure unless it finds MakePEF, Rez and the
+    # Rez includes under Rez's grandparent directory. Only the application
+    # steps run the tools, and host mode never builds them, so stubs that fail
+    # are enough.
+    mkdir -p "$Q3_TEST_WORK/retro68/bin" "$Q3_TEST_WORK/retro68/universal/RIncludes"
+    for tool in MakePEF Rez; do
+        printf '#!/bin/sh\nexit 1\n' > "$Q3_TEST_WORK/retro68/bin/$tool"
+        chmod +x "$Q3_TEST_WORK/retro68/bin/$tool"
+    done
+    : > "$Q3_TEST_WORK/retro68/universal/RIncludes/Types.r"
+    : > "$Q3_TEST_WORK/retro68/universal/RIncludes/CodeFragments.r"
     Q3_BUILD_DIR="$Q3_TEST_WORK/build"
     if ! cmake -S "$Q3_TEST_ROOT" -B "$Q3_BUILD_DIR" -G "Unix Makefiles" \
             -DCMAKE_C_COMPILER="${CC:-cc}" -DBUILD_TEAM_ARENA=ON \
+            -DRETRO68_MAKEPEF="$Q3_TEST_WORK/retro68/bin/MakePEF" \
+            -DRETRO68_REZ="$Q3_TEST_WORK/retro68/bin/Rez" \
             "-DCMAKE_C_FLAGS=-U__MACOS__ -U__POWERPC__ -fno-common -w -I$Q3_TEST_WORK/gl" \
             > "$Q3_TEST_WORK/cmake.log" 2>&1; then
         cat "$Q3_TEST_WORK/cmake.log" >&2
