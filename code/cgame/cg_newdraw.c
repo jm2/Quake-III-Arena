@@ -235,7 +235,8 @@ static void CG_DrawPlayerAmmoIcon( rectDef_t *rect, qboolean draw2D ) {
 		  CG_DrawPic( rect->x, rect->y, rect->w, rect->h, icon );
 		}
   } else if (cg_draw3dIcons.integer) {
-  	if ( cent->currentState.weapon && cg_weapons[ cent->currentState.weapon ].ammoModel ) {
+  	if ( cent->currentState.weapon && cent->currentState.weapon < MAX_WEAPONS
+  		&& cg_weapons[ cent->currentState.weapon ].ammoModel ) {
 	    VectorClear( angles );
 	  	origin[0] = 70;
   		origin[1] = 0;
@@ -255,7 +256,7 @@ static void CG_DrawPlayerAmmoValue(rectDef_t *rect, float scale, vec4_t color, q
 	cent = &cg_entities[cg.snap->ps.clientNum];
 	ps = &cg.snap->ps;
 
-	if ( cent->currentState.weapon ) {
+	if ( cent->currentState.weapon && cent->currentState.weapon < MAX_WEAPONS ) {
 		value = ps->ammo[cent->currentState.weapon];
 		if ( value > -1 ) {
 			if (shader) {
@@ -930,7 +931,7 @@ float CG_GetValue(int ownerDraw) {
 		return ps->stats[STAT_ARMOR];
     break;
   case CG_PLAYER_AMMO_VALUE:
-		if ( cent->currentState.weapon ) {
+		if ( cent->currentState.weapon && cent->currentState.weapon < MAX_WEAPONS ) {
 		  return ps->ammo[cent->currentState.weapon];
 		}
     break;

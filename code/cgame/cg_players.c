@@ -1534,7 +1534,8 @@ static void CG_BreathPuffs( centity_t *cent, refEntity_t *head) {
 	vec3_t up, origin;
 	int contents;
 
-	ci = &cgs.clientinfo[ cent->currentState.number ];
+	// CG_Player checked clientNum; the entity number can be any entity
+	ci = &cgs.clientinfo[ cent->currentState.clientNum ];
 
 	if (!cg_enableBreath.integer) {
 		return;
@@ -1766,6 +1767,10 @@ static void CG_PlayerTokens( centity_t *cent, int renderfx ) {
 	refEntity_t	ent;
 	vec3_t		dir, origin;
 	skulltrail_t *trail;
+	// trails exist only for client entities; corpses use higher numbers
+	if ( cent->currentState.number < 0 || cent->currentState.number >= MAX_CLIENTS ) {
+		return;
+	}
 	trail = &cg.skulltrails[cent->currentState.number];
 	tokens = cent->currentState.generic1;
 	if ( !tokens ) {
@@ -2591,6 +2596,12 @@ A player just came into view or teleported, so reset all animation info
 void CG_ResetPlayerEntity( centity_t *cent ) {
 	cent->errorTime = -99999;		// guarantee no error decay added
 	cent->extrapolated = qfalse;	
+
+	// snapshot transitions reset new player entities before CG_Player checks them
+	if ( cent->currentState.clientNum < 0 || cent->currentState.clientNum >= MAX_CLIENTS ) {
+		CG_Error( "Bad clientNum on player entity" );
+		return;
+	}
 
 	CG_ClearLerpFrame( &cgs.clientinfo[ cent->currentState.clientNum ], &cent->pe.legs, cent->currentState.legsAnim );
 	CG_ClearLerpFrame( &cgs.clientinfo[ cent->currentState.clientNum ], &cent->pe.torso, cent->currentState.torsoAnim );

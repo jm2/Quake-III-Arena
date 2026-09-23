@@ -395,6 +395,14 @@ void CG_ScorePlum( int client, vec3_t org, int score ) {
 		return;
 	}
 
+	// CG_AddScorePlum keeps the value in a float and draws it into ten
+	// digit slots, sign included, so keep server values small and exact
+	if ( score > 9999999 ) {
+		score = 9999999;
+	} else if ( score < -9999999 ) {
+		score = -9999999;
+	}
+
 	le = CG_AllocLocalEntity();
 	le->leFlags = 0;
 	le->leType = LE_SCOREPLUM;

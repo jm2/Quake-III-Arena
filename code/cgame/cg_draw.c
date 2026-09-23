@@ -553,7 +553,9 @@ static void CG_DrawStatusBar( void ) {
 	VectorClear( angles );
 
 	// draw any 3D icons first, so the changes back to 2D are minimized
-	if ( cent->currentState.weapon && cg_weapons[ cent->currentState.weapon ].ammoModel ) {
+	// (a packet entity with our number can replace the playerstate weapon)
+	if ( cent->currentState.weapon && cent->currentState.weapon < MAX_WEAPONS
+		&& cg_weapons[ cent->currentState.weapon ].ammoModel ) {
 		origin[0] = 70;
 		origin[1] = 0;
 		origin[2] = 0;
@@ -597,7 +599,7 @@ static void CG_DrawStatusBar( void ) {
 	//
 	// ammo
 	//
-	if ( cent->currentState.weapon ) {
+	if ( cent->currentState.weapon && cent->currentState.weapon < MAX_WEAPONS ) {
 		value = ps->ammo[cent->currentState.weapon];
 		if ( value > -1 ) {
 			if ( cg.predictedPlayerState.weaponstate == WEAPON_FIRING

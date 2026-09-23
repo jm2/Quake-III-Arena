@@ -610,6 +610,12 @@ void CG_RegisterWeapon( int weaponNum ) {
 	vec3_t			mins, maxs;
 	int				i;
 
+	// entity and playerstate weapons come from the server
+	if ( weaponNum < 0 || weaponNum >= MAX_WEAPONS ) {
+		CG_Error( "CG_RegisterWeapon: weaponNum %d out of range [0-%d]", weaponNum, MAX_WEAPONS-1 );
+		return;
+	}
+
 	weaponInfo = &cg_weapons[weaponNum];
 
 	if ( weaponNum == 0 ) {
