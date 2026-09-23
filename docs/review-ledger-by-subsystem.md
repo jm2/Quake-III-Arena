@@ -3,9 +3,9 @@
 Last updated: 2026-09-18
 
 This preserves the first review session's subsystem-oriented evidence and
-local-fix notes. It is not the work-order queue. Use the priority/severity
-sorted [task.md](task.md) as the authoritative handoff and update both files
-when evidence here materially changes.
+local-fix notes. It is historical as of 2026-09-19 and no longer updated; the
+work order is the burndown ledger in [task.md](task.md), and the matching
+security-first queue is archived in [task-2026-09-19.md](task-2026-09-19.md).
 
 The July candidate changes are committed in `204fe36`. The September
 [reassessment](review-2026-09-17.md) supersedes their old worktree status;
