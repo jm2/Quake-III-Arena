@@ -519,7 +519,7 @@ void CL_PlayDemo_f( void ) {
 	// `demo ../../some/file` resolves through FS_FOpenFileRead to whatever
 	// the engine has read access to, leaking arbitrary files via the demo
 	// playback path.
-	if ( strstr( arg, ".." ) || strstr( arg, "::" ) ) {
+	if ( strstr( arg, ".." ) || strchr( arg, ':' ) ) {
 		Com_Printf( "Refusing to play demo with traversal in name: %s\n", arg );
 		return;
 	}
