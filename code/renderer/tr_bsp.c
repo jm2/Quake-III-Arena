@@ -527,10 +527,14 @@ ParseFlare
 */
 static void ParseFlare( dsurface_t *ds, drawVert_t *verts, msurface_t *surf, int *indexes ) {
 	srfFlare_t		*flare;
-	int				i;
+	int				i, fogNum;
 
-	// get fog volume
-	surf->fogIndex = LittleLong( ds->fogNum ) + 1;
+	// get fog volume; q3map leaves flares at fogNum 0 even in maps without fogs
+	fogNum = LittleLong( ds->fogNum );
+	if ( fogNum < -1 || fogNum >= s_worldData.numfogs - 1 ) {
+		fogNum = -1;
+	}
+	surf->fogIndex = fogNum + 1;
 
 	// get shader
 	surf->shader = ShaderForShaderNum( ds->shaderNum, LIGHTMAP_BY_VERTEX );
