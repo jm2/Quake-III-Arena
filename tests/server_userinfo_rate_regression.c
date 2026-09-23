@@ -22,7 +22,7 @@ qboolean com_errorEntered;
 static cvar_t maxclients, dedicated, clRunning, floodProtect, pure, lanForceRate, shownet;
 static cvar_t svRunning, speeds, paused, fps, timeout, zombietime, killserver;
 static char gameNames[CLIENTS][MAX_NAME_LENGTH];
-static char queued[CLIENTS][QUEUE][256];
+static char queued[CLIENTS][QUEUE][MAX_STRING_CHARS];
 static int queuedSequence[CLIENTS], moveTime[CLIENTS], thinks[CLIENTS], gameCommands[CLIENTS], applied[CLIENTS], worstWindow;
 
 /** Fail with the violated property. */
@@ -96,7 +96,11 @@ int VM_CallArgs( vm_t *vm, int callNum, const int *args, int argCount ) {
 	if ( callNum == GAME_CLIENT_USERINFO_CHANGED ) GameUserinfoChanged( n );
 	else if ( callNum == GAME_CLIENT_THINK ) thinks[n]++;
 	else if ( callNum == GAME_CLIENT_COMMAND ) gameCommands[n]++;
-	else Check( callNum == GAME_CLIENT_DISCONNECT, "unexpected game call" );
+	else if ( callNum == GAME_CLIENT_DISCONNECT ) {	/* baseq3 ClientDisconnect clears the player's configstring */
+		gameNames[n][0] = 0;
+		SV_SetConfigstring( CS_PLAYERS + n, "" );
+	}
+	else Check( 0, "unexpected game call" );
 	return 0;
 }
 
@@ -270,6 +274,44 @@ static void Superseded( int listen ) {
 	Check( applied[NORMAL] == BURST + 1, "an older held-back change was applied over a newer one" );
 	CheckPropagated( NORMAL, "new" );
 }
+/** Five quick renames, then a near-limit userinfo with a forged "IP" that leaves no room for the real
+    "ip" (#323).  It is held back, and applying it from SV_Frame must drop the client before the game
+    sees it, or ClientUserinfoChanged republishes the freed slot as a ghost player. */
+static void OversizedHeld( int listen ) {
+	client_t *cl = &svs.clients[FLOODER];	/* a remote client: "localhost" is shorter */
+	char info[MAX_STRING_CHARS];
+	size_t used;
+	int i;
+	Reset( listen );
+	for ( i = 0; i < BURST; i++ ) Queue( FLOODER, va( "userinfo \"\\name\\quick%i\\model\\sarge\"", i ) );
+	Com_sprintf( info, sizeof( info ), "userinfo \"\\name\\big\\model\\sarge\\IP\\203.0.113.5:27960\\pad\\" );
+	used = strlen( info );
+	memset( info + used, 'p', MAX_STRING_CHARS - 4 - used ); strcpy( info + MAX_STRING_CHARS - 4, "\"" );
+	Queue( FLOODER, info );
+	Frame( FLOODER, 1 );
+	Check( applied[FLOODER] == BURST && cl->state == CS_ACTIVE, "near-limit userinfo not held back" );
+	for ( i = 0; i < 2 * PERIOD / FRAME_MSEC && cl->state == CS_ACTIVE; i++ ) Frame( FLOODER, 1 );
+	Check( cl->state == CS_ZOMBIE, "held-back userinfo without room for the real ip did not drop the client" );
+	Check( !strcmp( cl->reliableCommands[cl->reliableSequence & ( MAX_RELIABLE_COMMANDS - 1 )],
+		"disconnect \"userinfo string length exceeded\"" ), "drop reason" );
+	Check( applied[FLOODER] == BURST, "game saw the userinfo of a dropped client" );
+	for ( i = 0; i < 2 * PERIOD / FRAME_MSEC; i++ ) Frame( FLOODER, 1 );
+	Check( !sv.configstrings[CS_PLAYERS + FLOODER][0], "dropped client left a ghost player in CS_PLAYERS" );
+}
+/** A malformed userinfo sent over the budget is refused, and does not replace the held-back one. */
+static void MalformedHeld( int listen ) {
+	int i;
+	Reset( listen );
+	for ( i = 0; i < BURST; i++ ) Queue( NORMAL, va( "userinfo \"\\name\\quick%i\\model\\sarge\"", i ) );
+	Queue( NORMAL, "userinfo \"\\name\\kept\\model\\sarge\"" );
+	Queue( NORMAL, "userinfo \"\\name\\evil;quit\\model\\sarge\"" );	/* Info_Validate refuses ';' */
+	Frame( NORMAL, 1 );
+	Check( applied[NORMAL] == BURST, "burst not limited" );
+	for ( i = 0; i < 2 * PERIOD / FRAME_MSEC; i++ ) Frame( NORMAL, 1 );
+	Check( applied[NORMAL] == BURST + 1, "held-back userinfo not applied exactly once" );
+	CheckPropagated( NORMAL, "kept" );
+	Check( !strstr( svs.clients[NORMAL].userinfo, "evil" ), "malformed userinfo applied" );
+}
 /** A UI control on key repeat: HELD changes, REPEAT per frame, then the same again ending in a disconnect. */
 static void HeldKey( int listen ) {
 	client_t *cl = &svs.clients[NORMAL];
@@ -323,6 +365,8 @@ int main( void ) {
 		/* More changes than MAX_RELIABLE_COMMANDS from a client still in CS_PRIMED. */
 		Flood( PRIMED, MAX_RELIABLE_COMMANDS + 8, listen );
 		Superseded( listen );
+		OversizedHeld( listen );
+		MalformedHeld( listen );
 		HeldKey( listen );
 	}
 	puts( "Server userinfo rate regressions passed (issue #272)" );
