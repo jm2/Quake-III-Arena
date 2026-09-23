@@ -385,7 +385,7 @@ void CL_SystemInfoChanged( void ) {
 			int i;
 			qboolean safe = qtrue;
 			for (i=0; value[i]; i++) {
-				if (value[i] == '.' || value[i] == '/' || value[i] == '\\' || value[i] == ';' || value[i] == '&') {
+				if (value[i] == '.' || value[i] == '/' || value[i] == '\\' || value[i] == ':' || value[i] == ';' || value[i] == '&') {
 					safe = qfalse;
 					break;
 				}
