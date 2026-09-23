@@ -285,6 +285,7 @@ typedef struct {
 	int pingUpdateSource;		// source currently pinging or updating
 
 	int masterNum;
+	netadr_t	masterServer;	// getserversResponse is only accepted from here
 
 	// update server info
 	netadr_t	updateServer;
