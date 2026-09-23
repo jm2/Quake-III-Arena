@@ -620,21 +620,45 @@ int StringContains(char *str1, char *str2, int casesensitive)
 // Returns:					-
 // Changes Globals:		-
 //===========================================================================
-/** Find a whole word without stepping beyond the input terminator. */
+/** Find a whole word with the 1.32 word boundaries, stopping at the input terminator. */
 char *StringContainsWord(char *str1, char *str2, int casesensitive)
 {
-	char *word;
-	int j;
-	if (!*str2) return str1;
-	for (word = str1; *word; word++) {
-		if (word > str1 && word[-1] != ' ' && word[-1] != '.' && word[-1] != ',' && word[-1] != '!') continue;
-		for (j = 0; str2[j] && word[j]; j++) {
-			if (casesensitive ? word[j] != str2[j] : toupper((unsigned char)word[j]) != toupper((unsigned char)str2[j])) break;
-		}
-		if (!str2[j] && (!word[j] || word[j] == ' ' || word[j] == '.' || word[j] == ',' || word[j] == '!')) return word;
-	}
+	int len, i, j;
+
+	len = strlen(str1) - strlen(str2);
+	for (i = 0; i <= len; i++, str1++)
+	{
+		//if not at the start of the string
+		if (i)
+		{
+			//skip to the start of the next word
+			while(*str1 && *str1 != ' ' && *str1 != '.' && *str1 != ',' && *str1 != '!') str1++;
+			if (!*str1) break;
+			str1++;
+		} //end for
+		//compare the word
+		for (j = 0; str2[j]; j++)
+		{
+			if (casesensitive)
+			{
+				if (str1[j] != str2[j]) break;
+			} //end if
+			else
+			{
+				if (toupper((unsigned char)str1[j]) != toupper((unsigned char)str2[j])) break;
+			} //end else
+		} //end for
+		//if there was a word match
+		if (!str2[j])
+		{
+			//if the first string has an end of word
+			if (!str1[j] || str1[j] == ' ' || str1[j] == '.' || str1[j] == ',' || str1[j] == '!') return str1;
+		} //end if
+		//a trailing delimiter leaves no later word before the terminator
+		if (!*str1) break;
+	} //end for
 	return NULL;
-}
+} //end of the function StringContainsWord
 //===========================================================================
 //
 // Parameter:				-
@@ -675,8 +699,10 @@ static void StringReplaceWordsSized(char *string, char *synonym, char *replaceme
 		{
 			if (!BotReplaceChatWord(string, str, synonym, replacement, capacity)) break;
 		} //end if
+		//a skipped synonym near the end leaves no search position before the terminator
+		if (strlen(str) < strlen(replacement)) break;
 		//find the next synonym in the string
-		str = StringContainsWord(str + strlen(str2 ? synonym : replacement), synonym, qfalse);
+		str = StringContainsWord(str+strlen(replacement), synonym, qfalse);
 	} //end if
 } //end of the function StringReplaceWords
 //===========================================================================
@@ -986,9 +1012,9 @@ static void BotReplaceSynonymsSized(char *string, unsigned long int context, siz
 	} //end for
 }
 
-/** Preserve the size-less retail ABI by keeping replacements within the original string span. */
-void BotReplaceSynonyms(char *string, unsigned long int context) {
-	if ( string ) BotReplaceSynonymsSized(string, context, strlen(string) + 1);
+/** Replace synonyms within the caller's writable size; size-less QVM calls pass their original span. */
+void BotReplaceSynonyms(char *string, unsigned long int context, int size) {
+	if ( string && size > 0 ) BotReplaceSynonymsSized(string, context, size);
 }
 //===========================================================================
 //
