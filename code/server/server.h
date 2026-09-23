@@ -403,5 +403,6 @@ void SV_ClipToEntity( trace_t *trace, const vec3_t start, const vec3_t mins, con
 //
 void SV_Netchan_Transmit( client_t *client, msg_t *msg);
 void SV_Netchan_TransmitNextFragment( client_t *client );
+void SV_Netchan_FreeQueue( client_t *client );
 qboolean SV_Netchan_Process( client_t *client, msg_t *msg );
 
