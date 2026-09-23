@@ -26,7 +26,12 @@ merging several PRs in a row never cancels or drops a master run.
     and bundle flag;
   - validate MacBinary name bytes, fork lengths/padding, deterministic Mac
     dates, version fields, and CRC;
-  - reject filenames that cannot be represented in MacRoman.
+  - reject filenames that cannot be represented in MacRoman;
+  - check `mac_app.py` against Rez-shaped MacBinary, AppleDouble and HFS
+    containers: kHasBundle updates (with MacBinary CRC), resource-map parsing,
+    each launch-blocking defect (type/creator, data fork, missing or empty
+    resources, `cfrg`, `SIZE`, `BNDL` signature, bundle flag), removal of
+    incomplete outputs, and resource-fork/Finder-info export (issues #225/#226).
 - `Host C regressions (ASan/UBSan)`
   - summarizes eight parallel jobs, `Host C regressions (gcc|clang K/4)`. Each
     runs one quarter of the sorted `tests/run_*_tests.sh` runners through
@@ -211,7 +216,7 @@ checks real registration pass counts and cache reuse.
 export TMPDIR="${TMPDIR:-/var/tmp}"
 bash tests/check_shell_syntax.sh
 ./build_mac.sh --help
-python3 -m py_compile create_appledouble.py generate_icon_r.py macbinary_encode.py
+python3 -m py_compile create_appledouble.py generate_icon_r.py macbinary_encode.py mac_app.py
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 bash tests/run_host_regressions.sh            # every runner, $CC (default cc)
 CC=clang bash tests/run_host_regressions.sh   # the same runners with Clang
