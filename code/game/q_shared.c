@@ -1274,7 +1274,7 @@ void Info_SetValueForKey_Big( char *s, const char *key, const char *value ) {
 		return;
 	}
 
-	if ( strlen( key ) >= MAX_INFO_KEY || strlen( value ) >= MAX_INFO_VALUE ) {
+	if ( strlen( key ) >= BIG_INFO_KEY || strlen( value ) >= BIG_INFO_VALUE ) {
 		Com_Printf( "Info_SetValueForKey_Big: key/value too long\n" );
 		return;
 	}

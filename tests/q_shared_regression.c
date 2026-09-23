@@ -75,10 +75,51 @@ static void TestTokenTermination( void ) {
 	Check( token[MAX_TOKEN_CHARS - 1] == '\0', "token termination" );
 }
 
+/* Issue #240: the big variant carries systeminfo values up to BIG_INFO_VALUE. */
+static void TestBigInfoValues( void ) {
+	static char info[BIG_INFO_STRING];
+	static char value[BIG_INFO_VALUE + 1];
+	static char small[MAX_INFO_STRING];
+
+	memset( value, 'p', 4000 );
+	value[4000] = 0;
+	info[0] = 0;
+	Info_SetValueForKey_Big( info, "sv_paks", value );
+	Check( strlen( Info_ValueForKey( info, "sv_paks" ) ) == 4000,
+		"4000-character big info value round-trips" );
+	Check( !strcmp( Info_ValueForKey( info, "sv_paks" ), value ), "big info value bytes" );
+
+	Info_SetValueForKey_Big( info, "sv_pakNames", "pak0 pak1" );
+	Check( !strcmp( Info_ValueForKey( info, "sv_pakNames" ), "pak0 pak1" ), "second big key" );
+	Check( strlen( Info_ValueForKey( info, "sv_paks" ) ) == 4000, "first big key kept" );
+
+	memset( value, 'q', BIG_INFO_VALUE );
+	value[BIG_INFO_VALUE] = 0;
+	Info_SetValueForKey_Big( info, "sv_paks", value );
+	Check( strlen( Info_ValueForKey( info, "sv_paks" ) ) == 4000,
+		"BIG_INFO_VALUE-length value is rejected and the previous value kept" );
+	Check( strlen( info ) < BIG_INFO_STRING, "big info string stays bounded" );
+
+	memset( value, 'r', 5000 );
+	value[5000] = 0;
+	info[0] = 0;
+	Info_SetValueForKey_Big( info, "a", value );
+	Info_SetValueForKey_Big( info, "b", value );
+	Check( strlen( Info_ValueForKey( info, "a" ) ) == 5000, "first 5000-character value stored" );
+	Check( !strcmp( Info_ValueForKey( info, "b" ), "" ), "value exceeding total big capacity is refused" );
+
+	memset( value, 's', MAX_INFO_VALUE );
+	value[MAX_INFO_VALUE] = 0;
+	small[0] = 0;
+	Info_SetValueForKey( small, "name", value );
+	Check( !strcmp( Info_ValueForKey( small, "name" ), "" ), "small info keeps MAX_INFO_VALUE limit" );
+}
+
 int main( void ) {
 	TestStripExtension();
 	TestBoundedFormatting();
 	TestTokenTermination();
+	TestBigInfoValues();
 	puts( "q_shared portable regressions passed" );
 	return 0;
 }
