@@ -10,8 +10,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: portable-ci-${{ github.workflow }}-${{ github.ref }}
-  # Superseded PR heads can be cancelled; every master commit keeps its run.
+  # PR runs share a group per branch, so a newer head cancels the older run.
+  # Push runs get a group per commit: GitHub keeps only one pending run per
+  # group, so a shared master group would still drop queued merge commits.
+  group: portable-ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -98,7 +100,7 @@ jobs:
       - name: Run host memory-safety regressions
         env:
           CC: ${{ matrix.cc }}
-        run: bash tests/run_host_regressions.sh --shard ${{ matrix.shard }}/4
+        run: bash tests/run_host_regressions.sh --shard ${{ matrix.shard }}/4 --deadline 1200
 
   host-c-regressions:
     name: Host C regressions (ASan/UBSan)

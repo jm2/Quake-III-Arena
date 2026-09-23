@@ -7,8 +7,8 @@ Retro68 installation, proprietary retail data, or a Mac OS 9 emulator.
 Feature branch updates run through the pull-request trigger. Filtering the
 push trigger to master avoids duplicate copies of the same jobs for each PR
 head while retaining checks on the merged default branch. A newer PR head
-cancels the older run; master runs are never cancelled, so every merged commit
-gets a result.
+cancels the older run. Push runs use one concurrency group per commit, so
+merging several PRs in a row never cancels or drops a master run.
 
 ## Required checks
 
@@ -31,8 +31,10 @@ gets a result.
   - summarizes eight parallel jobs, `Host C regressions (gcc|clang K/4)`. Each
     runs one quarter of the sorted `tests/run_*_tests.sh` runners through
     `tests/run_host_regressions.sh`, which discovers runners with
-    `git ls-files`, runs them in parallel, bounds each runner at 15 minutes,
-    and prints the log tail of any runner that fails. Every runner runs under
+    `git ls-files`, runs them in parallel, prints each result as it finishes,
+    bounds each runner at 10 minutes and the shard at 20 minutes (naming any
+    runner that did not finish), and prints the full log of any runner that
+    fails. Every runner runs under
     both GCC and Clang. A new runner needs no workflow edit;
   - exercises actual world traversal with stock visibility/frustum/draw goldens,
     deep pending-state cleanup and all 32 dynamic-light mask bits;
