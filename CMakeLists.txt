@@ -104,7 +104,15 @@ list(REMOVE_ITEM SERVER_SRCS "${CMAKE_SOURCE_DIR}/code/server/sv_rankings.c")
 
 # Game Modules - Compiled with unique naming for monolithic build
 file(GLOB GAME_SRCS code/game/*.c)
-list(REMOVE_ITEM GAME_SRCS "${CMAKE_SOURCE_DIR}/code/game/g_rankings.c")
+# bg_lib.c is the libc replacement for QVM bytecode builds only (the retail
+# native targets - win32 x86, code/unix/Makefile incl. q3static, and the macOS
+# project - exclude it). Linking it here would replace libc's rand/srand,
+# atof, memmove and qsort for the whole executable: its rand() tops out at
+# 0x7fff while RAND_MAX is 0x7fffffff, flattening the renderer noise table.
+list(REMOVE_ITEM GAME_SRCS
+    "${CMAKE_SOURCE_DIR}/code/game/g_rankings.c"
+    "${CMAKE_SOURCE_DIR}/code/game/bg_lib.c"
+)
 
 # All module libraries are STATIC, not OBJECT. Retro68's binutils has a known
 # crash when consuming OBJECT libraries at link time (see q3ui_lib comment
