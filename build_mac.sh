@@ -5,9 +5,12 @@ usage() {
     cat <<EOF
 Usage: $(basename "$0") [package|--package] [--base-only|--team-arena] [-h|--help]
 
-  (no args)            Configure, build, and PEF-validate Quake3 only.
-  package, --package   Build, then assemble a Mac OS 9 install image
-                       (.img.bin) under release_mac/.
+  (no args)            Configure, build, and validate the launchable Quake3
+                       application: build_mac/Quake3.bin (MacBinary),
+                       Quake3.dsk (HFS image) and Quake3.ad + %Quake3.ad
+                       (AppleDouble). No game data is needed.
+  package, --package   Build, then add retail game data and assemble a
+                       Mac OS 9 install image (.img.bin) under release_mac/.
   --base-only          Build only Quake3 (the default).
   --team-arena         Build Quake3 and Quake3_TeamArena.
   -h, --help           Show this message.
@@ -166,7 +169,9 @@ case "$TEAM_ARENA_CACHE_VALUE" in
         ;;
 esac
 
-# Build
+# Build. CMake links each XCOFF image, converts it with MakePEF, and has Rez
+# combine the PEF with code/mac's resources into a launchable application in
+# host-independent containers (see CMakeLists.txt).
 make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
 # Validate that a converted PEF is plausibly well-formed. Catches the case
@@ -216,48 +221,25 @@ validate_pef() {
     return 0
 }
 
-# Convert to PEF (Fix for XCOFF output)
-MAKEPEF="../tools/Retro68-build/bin/MakePEF"
-if [ -f "$MAKEPEF" ]; then
-    echo "Checking binaries for PEF conversion..."
-
-    if [ -f "Quake3" ]; then
-        # Check if already PEF (Joy! header) using xxd
-        MAGIC=$(xxd -l 4 -p Quake3 2>/dev/null || echo "00000000")
-        if [[ "$MAGIC" != "4a6f7921" ]]; then
-             echo "Converting Quake3 to PEF..."
-             "$MAKEPEF" Quake3 -o Quake3.pef
-             mv Quake3.pef Quake3
-             echo "Created Quake3 (PEF)"
-        else
-             echo "Quake3 is already PEF."
-        fi
-        validate_pef Quake3 || exit 1
-    fi
-
-    if [ "$BUILD_TEAM_ARENA_ENABLED" -eq 1 ]; then
-        if [ ! -f "Quake3_TeamArena" ]; then
-            echo "PEF validation FAILED: Team Arena is enabled but its binary is missing"
-            exit 1
-        fi
-
-        MAGIC=$(xxd -l 4 -p Quake3_TeamArena 2>/dev/null || echo "00000000")
-        if [[ "$MAGIC" != "4a6f7921" ]]; then
-             echo "Converting Quake3_TeamArena to PEF..."
-             "$MAKEPEF" Quake3_TeamArena -o Quake3_TeamArena.pef
-             mv Quake3_TeamArena.pef Quake3_TeamArena
-             echo "Created Quake3_TeamArena (PEF)"
-        else
-             echo "Quake3_TeamArena is already PEF."
-        fi
-        validate_pef Quake3_TeamArena || exit 1
-    fi
-else
-    echo "Error: MakePEF not found; a Classic Mac application cannot be produced."
-    exit 1
+APPLICATIONS="Quake3"
+if [ "$BUILD_TEAM_ARENA_ENABLED" -eq 1 ]; then
+    APPLICATIONS="$APPLICATIONS Quake3_TeamArena"
 fi
 
-echo "Build complete. Check build_mac/Quake3 or similar."
+# Every build, not only package mode, must yield a launchable application:
+# APPL/IDQ3 with kHasBundle, the PEF as its data fork, and cfrg/SIZE/BNDL/FREF
+# and icon resources in every container.
+for app in $APPLICATIONS; do
+    validate_pef "$app.pef" || exit 1
+    python3 ../mac_app.py verify --pef "$app.pef" \
+        "$app.bin" "$app.dsk" "%$app.ad" || exit 1
+done
+
+echo "Build complete. Launchable Classic application(s) in build_mac/:"
+for app in $APPLICATIONS; do
+    echo "  $app.bin (MacBinary), $app.dsk (HFS disk image),"
+    echo "  $app.ad + %$app.ad (AppleDouble)"
+done
 
 # Packaging Subcommand
 if [ "$PACKAGE_MODE" -eq 1 ]; then
@@ -284,15 +266,8 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
     mkdir -p "$TEMP_DIR"
     chmod -R u+w "$RELEASE_ROOT" 2>/dev/null || true # Ensure we can overwrite
     
-    # 1. Copy Binary
-    if [ -f "build_mac/Quake3" ]; then
-        cp "build_mac/Quake3" "$CONTENT_DIR/Quake 3 Arena/"
-    else
-        echo "Error: Binary build_mac/Quake3 not found."
-        exit 1
-    fi
-    
-    # 1. Asset Retrieval Strategy
+    # 1. Asset Retrieval Strategy. Only the game data needs retail files; the
+    # applications themselves come from the build step above.
     echo "Checking for Game Assets..."
     
     # Check for baseq3/pak0.pk3 (look specifically for 'pak0.pk3' inside a 'baseq3' folder)
@@ -371,32 +346,7 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
         exit 1
     fi
 
-    # Icon Generation
-    # Check if we need to generate icons (if quake3_icons.r doesn't exist)
-    if [ ! -f "code/mac/quake3_icons.r" ] || [ ! -s "code/mac/quake3_icons.r" ]; then
-        if [ -f "code/mac/quake3.svg" ] && command -v convert &> /dev/null; then
-            echo "Generating Icons from SVG..."
-            convert -background none -resize 32x32 code/mac/quake3.svg code/mac/quake3_32.png
-            convert -background none -resize 16x16 code/mac/quake3.svg code/mac/quake3_16.png
-            
-            if [ -f "code/mac/quake3_32.png" ] && [ -f "code/mac/quake3_16.png" ]; then
-                 python3 generate_icon_r.py code/mac/quake3_32.png code/mac/quake3_16.png > code/mac/quake3_icons.r
-            fi
-        fi
-    else
-        echo "Icons already generated (code/mac/quake3_icons.r exists)."
-    fi
-
-    # Manually compile Mac Resources
-    echo "Compiling Mac Resources..."
-    # Ensure quake3_icons.r exists (create dummy if missing to avoid Rez error)
-    if [ ! -f "code/mac/quake3_icons.r" ]; then
-        echo "/* No icons */" > "code/mac/quake3_icons.r"
-    fi
-    
-    tools/Retro68-build/bin/Rez -o build_mac/Quake3.rsrc -I tools/Retro68-src/InterfacesAndLibraries/Interfaces/RIncludes -I code/mac code/mac/mac_resources.r
-    
-    # 3. Create HFS/ISO Hybrid Image
+    # 2. Create HFS/ISO Hybrid Image
     # We revert to genisoimage as hfsutils wrappers caused mounting errors (-8819/-8816).
     # genisoimage produces a valid hybrid (ISOf) that Disk Copy 6.5 can read.
     echo "Creating HFS/ISO Hybrid Image..."
@@ -422,40 +372,53 @@ EOF
          exit 1
     fi
     
-    # Prepare Content:
-    # 1. Copy Binary
-    cp build_mac/Quake3 "$RELEASE_ROOT/content/Quake 3 Arena/Quake3"
-    
-    if [ "$BUILD_TEAM_ARENA_ENABLED" -eq 1 ]; then
-         if [ ! -f "build_mac/Quake3_TeamArena" ]; then
-             echo "Error: Team Arena is enabled but build_mac/Quake3_TeamArena is missing."
-             exit 1
-         fi
-         cp build_mac/Quake3_TeamArena "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena"
-    fi
-    
-    # 2. Generate AppleDouble for Resource Fork
-    # Only needed for mkisofs strategy or if we want to retain them generally.
-    # We generate them here for compatibility, but hdiutil path handles them natively.
-    
-    # Retro68 Rez might output to .rsrc subdirectory
-    RSRC_FILE="build_mac/Quake3.rsrc"
-    if [ -f "build_mac/.rsrc/Quake3.rsrc" ]; then
-        RSRC_FILE="build_mac/.rsrc/Quake3.rsrc"
-    fi
+    # Stage an application the build step produced. Rez already wrote it in
+    # host-independent containers, so packaging neither recompiles resources
+    # nor depends on how Rez stores resource forks on this host.
+    stage_application() {
+        local name="$1"
+        local destination="$2"
+        local container finder_info
 
-    if [ -f "$RSRC_FILE" ] && [ -s "$RSRC_FILE" ]; then
-        echo "Generating AppleDouble resource fork for mkisofs (from $RSRC_FILE)..."
-        # mkisofs expects '%' prefix for AppleDouble files to merge them into the resource fork
-        python3 create_appledouble.py "$RSRC_FILE" "$RELEASE_ROOT/content/Quake 3 Arena/%Quake3"
-        
-        if [ -f "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena" ]; then
-             cp "$RELEASE_ROOT/content/Quake 3 Arena/%Quake3" "$RELEASE_ROOT/content/Quake 3 Arena/%Quake3_TeamArena"
+        for container in "build_mac/$name.bin" "build_mac/$name.ad" \
+                         "build_mac/%$name.ad"; do
+            if [ ! -s "$container" ]; then
+                echo "Error: $container is missing; rebuild before packaging." >&2
+                exit 1
+            fi
+        done
+
+        cp "build_mac/$name.ad" "$destination/$name"
+        if [ "$MKISOFS" == "hdiutil" ]; then
+            # hdiutil reads real forks: export them from the MacBinary.
+            python3 mac_app.py resource-fork "build_mac/$name.bin" \
+                "$TEMP_DIR/$name.rsrc"
+            cat "$TEMP_DIR/$name.rsrc" > "$destination/$name/..namedfork/rsrc"
+            finder_info=$(python3 mac_app.py finder-info "build_mac/$name.bin")
+            xattr -wx com.apple.FinderInfo "$finder_info" "$destination/$name"
+        else
+            # genisoimage/mkisofs -double merges %Name into Name's forks.
+            cp "build_mac/%$name.ad" "$destination/%$name"
         fi
-    else
-        echo "Error: Quake3.rsrc not found or empty; refusing an incomplete Classic app."
-        exit 1
-    fi
+    }
+
+    # Confirm an HFS image holds every application intact. hdiutil writes
+    # HFS+, which mac_app.py does not read.
+    verify_image_applications() {
+        local image="$1"
+        local app
+
+        if [ "$MKISOFS" != "hdiutil" ]; then
+            for app in $APPLICATIONS; do
+                python3 mac_app.py verify --hfs-name "$app" \
+                    --pef "build_mac/$app.pef" "$image"
+            done
+        fi
+    }
+
+    for app in $APPLICATIONS; do
+        stage_application "$app" "$CONTENT_DIR/Quake 3 Arena"
+    done
 
     # 3. Copy all pak*.pk3 files recursively
     # (Already handled in Step 1)
@@ -466,31 +429,6 @@ EOF
      if [ "$MKISOFS" == "hdiutil" ]; then
          # Native macOS approach
          echo "Using hdiutil to create hybrid image..."
-         
-         # 1. Apply resource forks natively
-         if [ -f "$RSRC_FILE" ]; then
-             echo "Applying resource forks natively for hdiutil (from $RSRC_FILE)..."
-             # Apply to base binary
-             cat "$RSRC_FILE" > "$RELEASE_ROOT/content/Quake 3 Arena/Quake3/..namedfork/rsrc"
-             
-             # Apply to Team Arena binary
-             if [ -f "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena" ]; then
-                  cat "$RSRC_FILE" > "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena/..namedfork/rsrc"
-             fi
-             
-             # Set Type/Creator Codes
-             # Quake3: APPL/IDQ3, matching the BNDL signature.
-             # We use python to set FinderInfo if SetFile is missing
-             echo "Setting FinderInfo (Type/Creator)..."
-             # Type: APPL (0x4150504C), Creator: IDQ3 (0x49445133) followed by 24 bytes of zeros
-             # Hex: 4150504C49445133000000000000000000000000000000000000000000000000
-             FINDER_INFO_HEX="4150504C49445133000000000000000000000000000000000000000000000000"
-             
-             xattr -wx com.apple.FinderInfo "$FINDER_INFO_HEX" "$RELEASE_ROOT/content/Quake 3 Arena/Quake3"
-             if [ -f "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena" ]; then
-                 xattr -wx com.apple.FinderInfo "$FINDER_INFO_HEX" "$RELEASE_ROOT/content/Quake 3 Arena/Quake3_TeamArena"
-             fi
-         fi
          
          # hdiutil makehybrid
          # -hfs creates a hybrid (or pure HFS+ if others omitted).
@@ -512,6 +450,7 @@ EOF
          $MKISOFS -hfs -double -map "$MAPPING_FILE" -o "$IMAGE_NAME" -V "Quake 3 Arena" "$CONTENT_DIR"
     fi
     
+    verify_image_applications "$IMAGE_NAME"
     echo "HFS Image created: $IMAGE_NAME"
     
     # MacBinary Encode
@@ -528,21 +467,9 @@ EOF
     BIN_IMG_NAME="$RELEASE_ROOT/Quake3_Bin.img"
     mkdir -p "$BIN_CONTENT_DIR"
     
-    # Copy Binaries and AppleDouble resource forks (for linux mkisofs)
-    # If using hdiutil, resources are inside the file, but we can't easily split them on Linux without hfsutils.
-    # We assume mkisofs strategy here since we are on Linux.
-    
-    cp "$CONTENT_DIR/Quake 3 Arena/Quake3" "$BIN_CONTENT_DIR/"
-    if [ -f "$CONTENT_DIR/Quake 3 Arena/%Quake3" ]; then
-        cp "$CONTENT_DIR/Quake 3 Arena/%Quake3" "$BIN_CONTENT_DIR/"
-    fi
-    
-    if [ -f "$CONTENT_DIR/Quake 3 Arena/Quake3_TeamArena" ]; then
-        cp "$CONTENT_DIR/Quake 3 Arena/Quake3_TeamArena" "$BIN_CONTENT_DIR/"
-        if [ -f "$CONTENT_DIR/Quake 3 Arena/%Quake3_TeamArena" ]; then
-             cp "$CONTENT_DIR/Quake 3 Arena/%Quake3_TeamArena" "$BIN_CONTENT_DIR/"
-        fi
-    fi
+    for app in $APPLICATIONS; do
+        stage_application "$app" "$BIN_CONTENT_DIR"
+    done
 
     # FIX: Include ui/menus.txt in binaries image too
     if [ -f "ui/menus.txt" ]; then
@@ -555,12 +482,18 @@ EOF
     if [[ "$MKISOFS" != "hdiutil" ]]; then
          $MKISOFS -hfs -double -map "$MAPPING_FILE" -o "$BIN_IMG_NAME" -V "Quake 3 Binaries" "$BIN_CONTENT_DIR"
     else
-         # On macOS, native copy works
-         hdiutil makehybrid -o "$BIN_IMG_NAME" -hfs -joliet -iso -default-volume-name "Quake 3 Binaries" "$BIN_CONTENT_DIR"
-         if [ -f "${BIN_IMG_NAME}.iso" ]; then mv "${BIN_IMG_NAME}.iso" "$BIN_IMG_NAME"; fi
+         # Same HFS-only hybrid as the install image; -joliet -iso would
+         # reintroduce the dual-volume mount.
+         hdiutil makehybrid -o "$BIN_IMG_NAME" -hfs -default-volume-name "Quake 3 Binaries" "$BIN_CONTENT_DIR"
+         if [ -f "${BIN_IMG_NAME}.iso" ]; then
+             mv "${BIN_IMG_NAME}.iso" "$BIN_IMG_NAME"
+         elif [ -f "${BIN_IMG_NAME}.dmg" ]; then
+             mv "${BIN_IMG_NAME}.dmg" "$BIN_IMG_NAME"
+         fi
     fi
     
     if [ -f "$BIN_IMG_NAME" ]; then
+         verify_image_applications "$BIN_IMG_NAME"
          echo "Encoding Binaries Image..."
          python3 macbinary_encode.py "$BIN_IMG_NAME" "${BIN_IMG_NAME}.bin" "iso " "dCpy"
          echo "Package created: ${BIN_IMG_NAME}.bin"
