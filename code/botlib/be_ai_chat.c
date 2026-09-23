@@ -2492,27 +2492,27 @@ int BotExpandChatMessage(char *outmessage, char *message, unsigned long mcontext
 				case 'v': //variable
 				{
 					msgptr++;
-					num = 0;
+					//only a non-empty decimal index below MAX_MATCHVARIABLES is valid;
+					//stop accumulating once out of range so long digit strings cannot overflow
+					num = (*msgptr && *msgptr != ESCAPE_CHAR) ? 0 : MAX_MATCHVARIABLES;
 					while(*msgptr && *msgptr != ESCAPE_CHAR)
 					{
-						num = num * 10 + (*msgptr++) - '0';
+						if (*msgptr < '0' || *msgptr > '9') num = MAX_MATCHVARIABLES;
+						else if (num < MAX_MATCHVARIABLES) num = num * 10 + *msgptr - '0';
+						msgptr++;
 					} //end while
 					//step over the trailing escape char
 					if (*msgptr) msgptr++;
-					if (num > MAX_MATCHVARIABLES)
+					if (num >= MAX_MATCHVARIABLES)
 					{
-						botimport.Print(PRT_ERROR, "BotConstructChat: message %s variable %d out of range\n", message, num);
+						botimport.Print(PRT_ERROR, "BotConstructChat: message %s variable out of range\n", message);
 						return qfalse;
 					} //end if
 					if (match->variables[num].offset >= 0)
 					{
 					        assert( match->variables[num].offset >= 0 ); // bk001204
-						ptr = &match->string[ (int) match->variables[num].offset];
-						for (i = 0; i < match->variables[num].length; i++)
-						{
-							temp[i] = ptr[i];
-						} //end for
-						temp[i] = 0;
+						//copy the span bounded by temp and the terminated match string
+						BotMatchVariable(match, num, temp, sizeof(temp));
 						//if it's a reply message
 						if (reply)
 						{
@@ -2540,6 +2540,11 @@ int BotExpandChatMessage(char *outmessage, char *message, unsigned long mcontext
 					msgptr++;
 					for (i = 0; (*msgptr && *msgptr != ESCAPE_CHAR); i++)
 					{
+						if (i >= (int) sizeof(temp) - 1)
+						{
+							botimport.Print(PRT_ERROR, "BotConstructChat: message \"%s\" random name too long\n", message);
+							return qfalse;
+						} //end if
 						temp[i] = *msgptr++;
 					} //end while
 					temp[i] = '\0';
@@ -2571,12 +2576,13 @@ int BotExpandChatMessage(char *outmessage, char *message, unsigned long mcontext
 		} //end if
 		else
 		{
-			outputbuf[len++] = *msgptr++;
-			if (len >= MAX_MESSAGE_SIZE)
+			//keep room for the terminator
+			if (len >= MAX_MESSAGE_SIZE - 1)
 			{
 				botimport.Print(PRT_ERROR, "BotConstructChat: message \"%s\" too long\n", message);
 				break;
 			} //end if
+			outputbuf[len++] = *msgptr++;
 		} //end else
 	} //end while
 	outputbuf[len] = '\0';
