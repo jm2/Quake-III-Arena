@@ -4624,7 +4624,8 @@ void BotCheckConsoleMessages(bot_state_t *bs) {
 		//replace synonyms in the netname
 		if (m.type == CMS_CHAT) {
 			//
-			if (trap_BotFindMatch(m.message, &match, MTCONTEXT_REPLYCHAT)) {
+			//an unset MESSAGE offset (-1) keeps the whole message
+			if (trap_BotFindMatch(m.message, &match, MTCONTEXT_REPLYCHAT) && match.variables[MESSAGE].offset >= 0) {
 				ptr = m.message + match.variables[MESSAGE].offset;
 			}
 		}

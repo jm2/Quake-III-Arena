@@ -31,6 +31,26 @@ static void UnsetVariables( bot_match_t *match, char *buffer, char *out ) {
 	for(i=1;i<MAX_MATCHVARIABLES;i++) { out[0]='z'; BotMatchVariable(match,i,out,8); Check(!*out,"unset variable reads empty"); }
 	matchtemplates=NULL;
 }
+/** A variable starting past byte 127 does not fit the signed offset: it reads unset, never asserts or wraps. */
+static void FarVariables( bot_match_t *match, char *out ) {
+	char input[MAX_MESSAGE_SIZE]; int i, n;
+	bot_matchstring_t kill={" kill ",NULL}, now={" now",NULL};
+	bot_matchpiece_t tail={MT_STRING,&now,0,NULL}, enemy={MT_VARIABLE,NULL,1,NULL};
+	bot_matchpiece_t word={MT_STRING,&kill,0,&enemy}, name={MT_VARIABLE,NULL,0,&word};
+	bot_matchtemplate_t order={1,0,0,&name,NULL};
+	matchtemplates=&order;
+	for(i=0;i<4;i++) {
+		n=121+(i&1); enemy.next=(i&2)?&tail:NULL;
+		memset(input,'a',n); strcpy(input+n,(i&2)?" kill bob now":" kill bob");
+		memset(match,0x5a,sizeof(*match));
+		Check(BotFindMatch(input,match,1),"template with a far variable still matches");
+		BotMatchVariable(match,0,out,8); Check(!strcmp(out,"aaaaaaa"),"leading variable before a far one");
+		BotMatchVariable(match,1,out,8);
+		if(n+6<=127) Check(match->variables[1].offset==127 && !strcmp(out,"bob"),"variable starting at byte 127");
+		else Check(match->variables[1].offset==-1 && !*out,"variable starting at byte 128 reads unset");
+	}
+	matchtemplates=NULL;
+}
 /** Cover growing, shrinking, unchanged, full-capacity, and overlapping native operations. */
 int main( void ) {
 	char *buffer=malloc(MAX_MESSAGE_SIZE), *inside=malloc(8), *source=malloc(1024), *out=malloc(8), *small=malloc(6);
@@ -88,7 +108,7 @@ int main( void ) {
 	BotMatchVariable(match,0,out,8); Check(!*out,"span after end");
 	memset(match->string,'x',256); BotMatchVariable(match,0,out,8); Check(!*out,"unterminated embedded string");
 	out[0]='z'; BotMatchVariable(match,0,out,0); Check(out[0]=='z',"empty output unchanged");
-	UnsetVariables(match,buffer,out);
+	UnsetVariables(match,buffer,out); FarVariables(match,out);
 	free(small); free(match); free(out); free(source); free(inside); free(buffer);
 	puts("Native bot chat buffer regressions passed (issues #35/#48)"); return 0;
 }
