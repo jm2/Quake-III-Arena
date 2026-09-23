@@ -179,6 +179,8 @@ int main(void) {
 	memcpy(source,saved,baseline); Word(vertex,0xff800000u); Reject();
 	memcpy(source,saved,baseline); Float(frame+36,-1); Reject();
 	memcpy(source,saved,baseline); Float(frame,99999); Float(frame+12,-99999); Reset(); memset(&model,0,sizeof(model)); Check(Direct(baseline,&model) && allocations==1,"unordered frame bounds");
+	memcpy(source,saved,baseline); Word(frame+12,0xff800000u); Reject();
+	memcpy(source,saved,baseline); Word(frame+36,0x7fc00000u); Reject();
 	memcpy(source,saved,baseline); Word(frame+40,0x7f800000u); Reject();
 	memcpy(source,saved,baseline); memset(source+surface+4,'x',64); Reject();
 	memcpy(source,saved,baseline); memset(source+surface+68,'x',64); Reject();

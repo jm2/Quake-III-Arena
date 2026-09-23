@@ -46,7 +46,7 @@ INT_MIN/INT_MAX frames exercise both interpolated and final-frame output.
 
 Malformed inputs cover signed/huge counts and offsets, zero progress in early
 and late LODs/surfaces, overlap/alignment, invalid indexes and back references,
-unterminated names, nonfinite data, invalid bounds/radii, weight spans,
+unterminated names, nonfinite data/bounds/radii, negative radii, weight spans,
 aggregate allocation overflow and failed registration/cache cleanup. Maxima
 include 128 bones, 128 weights, 999 vertices and 1999 triangles. Valid cases
 also cover 2048 frames, four LODs and 40 surfaces, absent unused names,

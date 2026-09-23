@@ -44,11 +44,12 @@ alignments test every prefix of a small two-frame/two-surface model. Golden
 copies check header/frame/tag values, lowercase names, shader indexes,
 triangle indexes, ST values and packed vertex/normal words. The input remains
 unchanged. Cases exercise maximum frame/tag/surface/shader and native tess
-counts without oversized output allocation.
+counts without oversized output allocation. A tag-only 16-frame model with
+q3data's cleared (inverted) bounds registers at all four alignments.
 
 Malformed cases include negative/huge offsets and counts, zero surface
 progress, mismatched frames, overlapping/misaligned sections, unterminated
-names, triangle indexes, NaN/infinity, reversed bounds, negative radius,
+names, triangle indexes, NaN/infinity, negative radius,
 invalid identification/version and aggregate allocation overflow. Rejection
 asserts no payload allocation, shader registration or changed model state.
 Actual registration checks missing and malformed optional LODs, incompatible
