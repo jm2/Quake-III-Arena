@@ -569,8 +569,8 @@ void CL_ParseDownload ( msg_t *msg ) {
 			FS_FCloseFile( clc.download );
 			clc.download = 0;
 
-			// rename the file
-			FS_SV_Rename ( clc.downloadTempName, clc.downloadName );
+			// rename the file; trusted: CL_BeginDownload only accepts .pk3 names
+			FS_SV_Rename ( clc.downloadTempName, clc.downloadName, qfalse );
 		}
 		*clc.downloadTempName = *clc.downloadName = 0;
 		Cvar_Set( "cl_downloadName", "" );
