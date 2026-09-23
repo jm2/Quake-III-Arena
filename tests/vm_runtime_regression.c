@@ -322,53 +322,64 @@ static void TestSyscallSnapshot( void ) {
 	inspectSyscall = 1; lastSyscallArgument = 42; Run( qfalse, 123, NULL );
 }
 
-static void BinaryArithmetic( int op, int left, int right,
-                              qboolean rejected, int result, const char *reason ) {
-	ResetCode(); Emit( OP_CONST, left ); Emit( OP_CONST, right );
-	Emit( op, 0 ); Emit( OP_LEAVE, 0 ); Run( rejected, result, reason );
+static void BinaryArithmetic( int op, int left, int right, int result ) {
+	ResetCode(); Emit( OP_CONST, left ); Emit( OP_CONST, right ); Emit( op, 0 );
+	Emit( OP_LEAVE, 0 );
+	// Name the case in a failure message; only Com_Error overwrites this.
+	snprintf( lastError, sizeof(lastError), "opcode %d: %d, %d", op, left, right );
+	Run( qfalse, result, NULL );
 }
 
+// Issue #248: edge cases return the retail PowerPC result instead of faulting.
 static void TestArithmetic( void ) {
-	const int divisions[] = {OP_DIVI, OP_DIVU, OP_MODI, OP_MODU};
-	const int shifts[] = {OP_LSH, OP_RSHI, OP_RSHU};
-	const int badShifts[] = {INT_MIN, -1, 32, INT_MAX};
-	const struct { int bits, result; qboolean rejected; } conversions[] = {
-		{0x3ff33333, 1, qfalse}, {(int)0xbff33333u, -1, qfalse},
-		{0x4effffff, 2147483520, qfalse}, {(int)0xcf000000u, INT_MIN, qfalse},
-		{0x4f000000, 0, qtrue}, {(int)0xcf000001u, 0, qtrue},
-		{0x7f800000, 0, qtrue}, {(int)0xff800000u, 0, qtrue},
-		{0x7fc00000, 0, qtrue}, {0x7f800001, 0, qtrue}
+	const struct { int op, left, right, result; } binary[] = {
+		{OP_ADD, INT_MAX, 1, INT_MIN}, {OP_SUB, INT_MIN, 1, INT_MAX},
+		{OP_MULI, INT_MAX, 2, -2}, {OP_MULU, INT_MAX, 2, -2},
+		// x / 0 is 0; x % 0 is x (mullw+subf after divw); INT_MIN / -1 wraps.
+		{OP_DIVI, 42, 0, 0}, {OP_DIVI, -42, 0, 0}, {OP_DIVU, -1, 0, 0},
+		{OP_MODI, 42, 0, 42}, {OP_MODI, -42, 0, -42}, {OP_MODU, -1, 0, -1},
+		{OP_DIVI, INT_MIN, -1, INT_MIN}, {OP_MODI, INT_MIN, -1, 0},
+		{OP_DIVI, 7, -1, -7}, {OP_MODI, 7, -1, 0},
+		{OP_DIVU, INT_MIN, -1, 0}, {OP_MODU, INT_MIN, -1, INT_MIN},
+		{OP_DIVI, -7, 2, -3}, {OP_MODI, -7, 2, -1},
+		{OP_DIVU, -1, 2, INT_MAX}, {OP_MODU, -1, 2, 1},
+		// slw/srw/sraw use six count bits: 32-63 empty or sign-fill the word.
+		{OP_LSH, 1, 32, 0}, {OP_LSH, 1, 40, 0}, {OP_LSH, -1, -1, 0},
+		{OP_LSH, 1, INT_MAX, 0}, {OP_LSH, 1, 64, 1}, {OP_LSH, 1, 65, 2},
+		{OP_LSH, 1, INT_MIN, 1}, {OP_RSHU, INT_MIN, 32, 0}, {OP_RSHU, -1, 40, 0},
+		{OP_RSHU, -1, -1, 0}, {OP_RSHU, -1, 64, -1}, {OP_RSHU, INT_MIN, 95, 1},
+		{OP_RSHI, INT_MIN, 32, -1}, {OP_RSHI, -1, 40, -1}, {OP_RSHI, -2, -1, -1},
+		{OP_RSHI, INT_MAX, 32, 0}, {OP_RSHI, INT_MAX, -1, 0}, {OP_RSHI, -4, 65, -2},
+		{OP_RSHI, 5, INT_MIN, 5},
+		{OP_LSH, -1, 0, -1}, {OP_RSHI, -1, 0, -1}, {OP_RSHU, -1, 0, -1},
+		{OP_LSH, 1, 31, INT_MIN}, {OP_LSH, -1, 1, -2}, {OP_RSHI, INT_MIN, 31, -1},
+		{OP_RSHI, -3, 1, -2}, {OP_RSHU, INT_MIN, 31, 1}
 	};
-	size_t i, j;
+	// fctiwz truncates, saturates, and converts NaN to INT_MIN.
+	const struct { int bits, result; } conversions[] = {
+		{0x3ff33333, 1}, {(int)0xbff33333u, -1},
+		{0x4effffff, 2147483520}, {(int)0xcf000000u, INT_MIN},
+		{0x4f000000, INT_MAX}, {0x501502f9, INT_MAX}, {0x7f800000, INT_MAX},
+		{(int)0xcf000001u, INT_MIN}, {(int)0xd01502f9u, INT_MIN},
+		{(int)0xff800000u, INT_MIN}, {0x7fc00000, INT_MIN}, {0x7f800001, INT_MIN},
+		{(int)0xffc00000u, INT_MIN}
+	};
+	size_t i;
+	int client;
 	ResetCode(); Emit( OP_CONST, INT_MIN ); Emit( OP_NEGI, 0 ); Emit( OP_LEAVE, 0 );
 	Run( qfalse, INT_MIN, NULL );
-	BinaryArithmetic( OP_ADD, INT_MAX, 1, qfalse, INT_MIN, NULL );
-	BinaryArithmetic( OP_SUB, INT_MIN, 1, qfalse, INT_MAX, NULL );
-	BinaryArithmetic( OP_MULI, INT_MAX, 2, qfalse, -2, NULL );
-	BinaryArithmetic( OP_MULU, INT_MAX, 2, qfalse, -2, NULL );
-	for ( i = 0; i < sizeof(divisions)/sizeof(divisions[0]); i++ ) {
-		BinaryArithmetic( divisions[i], 42, 0, qtrue, 0, "division" );
+	for ( i = 0; i < sizeof(binary)/sizeof(binary[0]); i++ ) {
+		BinaryArithmetic( binary[i].op, binary[i].left, binary[i].right, binary[i].result );
 	}
-	BinaryArithmetic( OP_DIVI, INT_MIN, -1, qtrue, 0, "division" );
-	BinaryArithmetic( OP_MODI, INT_MIN, -1, qtrue, 0, "division" );
-	BinaryArithmetic( OP_DIVI, -7, 2, qfalse, -3, NULL );
-	BinaryArithmetic( OP_MODI, -7, 2, qfalse, -1, NULL );
-	BinaryArithmetic( OP_DIVU, -1, 2, qfalse, INT_MAX, NULL );
-	BinaryArithmetic( OP_MODU, -1, 2, qfalse, 1, NULL );
-	for ( i = 0; i < sizeof(shifts)/sizeof(shifts[0]); i++ ) {
-		for ( j = 0; j < sizeof(badShifts)/sizeof(badShifts[0]); j++ ) {
-			BinaryArithmetic( shifts[i], 1, badShifts[j], qtrue, 0, "shift" );
-		}
-		BinaryArithmetic( shifts[i], -1, 0, qfalse, -1, NULL );
+	// cg_scoreboard.c: STAT_CLIENTS_READY & ( 1 << score->client )
+	for ( client = 0; client < MAX_CLIENTS; client++ ) {
+		BinaryArithmetic( OP_LSH, 1, client, client < 32 ? (int)(1u << client) : 0 );
 	}
-	BinaryArithmetic( OP_LSH, 1, 31, qfalse, INT_MIN, NULL );
-	BinaryArithmetic( OP_LSH, -1, 1, qfalse, -2, NULL );
-	BinaryArithmetic( OP_RSHI, INT_MIN, 31, qfalse, -1, NULL );
-	BinaryArithmetic( OP_RSHI, -3, 1, qfalse, -2, NULL );
-	BinaryArithmetic( OP_RSHU, INT_MIN, 31, qfalse, 1, NULL );
 	for ( i = 0; i < sizeof(conversions)/sizeof(conversions[0]); i++ ) {
 		ResetCode(); Emit( OP_CONST, conversions[i].bits ); Emit( OP_CVFI, 0 );
-		Emit( OP_LEAVE, 0 ); Run( conversions[i].rejected, conversions[i].result, "float conversion" );
+		Emit( OP_LEAVE, 0 );
+		snprintf( lastError, sizeof(lastError), "CVFI 0x%08x", (unsigned int)conversions[i].bits );
+		Run( qfalse, conversions[i].result, NULL );
 	}
 }
 
