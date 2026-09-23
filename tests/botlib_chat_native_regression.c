@@ -70,6 +70,41 @@ void Com_Memset( void *dest, int value, size_t size ) { memset(dest,value,size);
 void QDECL Com_Error( int level, const char *format, ... ) { (void)level; (void)format; Check(0,"engine error"); }
 /** Ignore unrelated shared utility output. */
 void QDECL Com_Printf( const char *format, ... ) { (void)format; }
+/** Issue #246: variables a template never sets ("camp there" has no KEYAREA) stay unset even with unsigned char. */
+static void UnsetVariables( bot_match_t *match, char *buffer, char *out ) {
+	bot_matchstring_t there={" camp there",NULL};
+	bot_matchpiece_t text={MT_STRING,&there,0,NULL}, name={MT_VARIABLE,NULL,0,&text};
+	bot_matchtemplate_t camp={1,0,0,&name,NULL};
+	char keyarea[]={ESCAPE_CHAR,'v','3',ESCAPE_CHAR,0}; int i;
+	matchtemplates=&camp; memset(match,0x5a,sizeof(*match));
+	Check(BotFindMatch("Sarge camp there",match,1),"camp there template");
+	for(i=1;i<MAX_MATCHVARIABLES;i++) Check(match->variables[i].offset<0,"unset variable reads negative");
+	BotMatchVariable(match,0,out,8); Check(!strcmp(out,"Sarge"),"set variable beside unset ones");
+	strcpy(buffer,"z"); (void)BotExpandChatMessage(buffer,keyarea,0,match,1,qfalse);
+	Check(!*buffer,"unset variable with stale length expands to nothing");
+	for(i=1;i<MAX_MATCHVARIABLES;i++) { out[0]='z'; BotMatchVariable(match,i,out,8); Check(!*out,"unset variable reads empty"); }
+	matchtemplates=NULL;
+}
+/** A variable starting past byte 127 does not fit the signed offset: it reads unset, never asserts or wraps. */
+static void FarVariables( bot_match_t *match, char *out ) {
+	char input[MAX_MESSAGE_SIZE]; int i, n;
+	bot_matchstring_t kill={" kill ",NULL}, now={" now",NULL};
+	bot_matchpiece_t tail={MT_STRING,&now,0,NULL}, enemy={MT_VARIABLE,NULL,1,NULL};
+	bot_matchpiece_t word={MT_STRING,&kill,0,&enemy}, name={MT_VARIABLE,NULL,0,&word};
+	bot_matchtemplate_t order={1,0,0,&name,NULL};
+	matchtemplates=&order;
+	for(i=0;i<4;i++) {
+		n=121+(i&1); enemy.next=(i&2)?&tail:NULL;
+		memset(input,'a',n); strcpy(input+n,(i&2)?" kill bob now":" kill bob");
+		memset(match,0x5a,sizeof(*match));
+		Check(BotFindMatch(input,match,1),"template with a far variable still matches");
+		BotMatchVariable(match,0,out,8); Check(!strcmp(out,"aaaaaaa"),"leading variable before a far one");
+		BotMatchVariable(match,1,out,8);
+		if(n+6<=127) Check(match->variables[1].offset==127 && !strcmp(out,"bob"),"variable starting at byte 127");
+		else Check(match->variables[1].offset==-1 && !*out,"variable starting at byte 128 reads unset");
+	}
+	matchtemplates=NULL;
+}
 /** Cover growing, shrinking, unchanged, full-capacity, and overlapping native operations. */
 int main( void ) {
 	char *buffer=malloc(MAX_MESSAGE_SIZE), *inside=malloc(8), *source=malloc(1024), *out=malloc(8), *small=malloc(6);
@@ -134,6 +169,7 @@ int main( void ) {
 	BotMatchVariable(match,0,out,8); Check(!*out,"span after end");
 	memset(match->string,'x',256); BotMatchVariable(match,0,out,8); Check(!*out,"unterminated embedded string");
 	out[0]='z'; BotMatchVariable(match,0,out,0); Check(out[0]=='z',"empty output unchanged");
+	UnsetVariables(match,buffer,out); FarVariables(match,out);
 	free(small); free(match); free(out); free(source); free(inside); free(buffer);
 	puts("Native bot chat buffer regressions passed (issues #35/#48)"); return 0;
 }

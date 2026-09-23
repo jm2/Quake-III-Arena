@@ -607,7 +607,7 @@ int StringContains(char *str1, char *str2, int casesensitive)
 			} //end if
 			else
 			{
-				if (toupper(str1[j]) != toupper(str2[j])) break;
+				if (toupper((unsigned char)str1[j]) != toupper((unsigned char)str2[j])) break;
 			} //end else
 		} //end for
 		if (!str2[j]) return index;
@@ -1629,9 +1629,13 @@ int StringsMatch(bot_matchpiece_t *pieces, bot_match_t *match)
 					newstrptr = strptr + index;
 					if (lastvariable >= 0)
 					{
-						match->variables[lastvariable].length =
-								(newstrptr - match->string) - match->variables[lastvariable].offset;
-								//newstrptr - match->variables[lastvariable].ptr;
+						//a variable left unset by its far offset keeps no length
+						if (match->variables[lastvariable].offset >= 0)
+						{
+							match->variables[lastvariable].length =
+									(newstrptr - match->string) - match->variables[lastvariable].offset;
+									//newstrptr - match->variables[lastvariable].ptr;
+						} //end if
 						lastvariable = -1;
 						break;
 					} //end if
@@ -1649,7 +1653,9 @@ int StringsMatch(bot_matchpiece_t *pieces, bot_match_t *match)
 		else if (mp->type == MT_VARIABLE)
 		{
 			//Log_Write("MT_VARIABLE");
-			match->variables[mp->variable].offset = strptr - match->string;
+			//the signed char offset cannot hold a start past byte 127: leave it unset
+			index = strptr - match->string;
+			match->variables[mp->variable].offset = index > 127 ? -1 : index;
 			lastvariable = mp->variable;
 		} //end else if
 	} //end for
@@ -1657,7 +1663,7 @@ int StringsMatch(bot_matchpiece_t *pieces, bot_match_t *match)
 	if (!mp && (lastvariable >= 0 || !strlen(strptr)))
 	{
 		//if the last piece was a variable string
-		if (lastvariable >= 0)
+		if (lastvariable >= 0 && match->variables[lastvariable].offset >= 0)
 		{
         		assert( match->variables[lastvariable].offset >= 0 ); // bk001204
 			match->variables[lastvariable].length =

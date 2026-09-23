@@ -499,6 +499,9 @@ static void SV_GameBotChatVariables( int *args, int start, char **variables, int
 	}
 }
 
+/* Match variables are a 1-byte signed offset (-1 = unset) and a 32-bit length in the retail QVM ABI. */
+typedef char qvmBotMatchSizeCheck[(sizeof(bot_matchvariable_t) == 8 && sizeof(bot_match_t) == 328) ? 1 : -1];
+
 /** Validate the selected match span inside its fixed embedded string before native use. */
 static bot_match_t *SV_GameBotMatch( int value, int variable ) {
 	bot_match_t *match = VM_CheckedArgPtr( value, sizeof(bot_match_t), 4, qfalse );

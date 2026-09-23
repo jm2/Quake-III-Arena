@@ -807,7 +807,7 @@ char *Q_strlwr( char *s1 ) {
 
     s = s1;
 	while ( *s ) {
-		*s = tolower(*s);
+		*s = tolower((unsigned char)*s);
 		s++;
 	}
     return s1;
@@ -818,7 +818,7 @@ char *Q_strupr( char *s1 ) {
 
     s = s1;
 	while ( *s ) {
-		*s = toupper(*s);
+		*s = toupper((unsigned char)*s);
 		s++;
 	}
     return s1;

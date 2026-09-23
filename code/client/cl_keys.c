@@ -663,7 +663,7 @@ Key_IsDown
 ===================
 */
 qboolean Key_IsDown( int keynum ) {
-	if ( keynum == -1 ) {
+	if ( keynum < 0 || keynum >= MAX_KEYS ) {
 		return qfalse;
 	}
 
@@ -691,7 +691,7 @@ int Key_StringToKeynum( char *str ) {
 		return -1;
 	}
 	if ( !str[1] ) {
-		return str[0];
+		return (unsigned char)str[0];	// high-bit names must not go negative
 	}
 
 	// check for hex code
@@ -783,7 +783,7 @@ Key_SetBinding
 ===================
 */
 void Key_SetBinding( int keynum, const char *binding ) {
-	if ( keynum == -1 ) {
+	if ( keynum < 0 || keynum >= MAX_KEYS ) {
 		return;
 	}
 
@@ -807,7 +807,7 @@ Key_GetBinding
 ===================
 */
 char *Key_GetBinding( int keynum ) {
-	if ( keynum == -1 ) {
+	if ( keynum < 0 || keynum >= MAX_KEYS ) {
 		return "";
 	}
 
@@ -891,7 +891,7 @@ void Key_Bind_f (void)
 		return;
 	}
 	b = Key_StringToKeynum (Cmd_Argv(1));
-	if (b==-1)
+	if (b < 0 || b >= MAX_KEYS)
 	{
 		Com_Printf ("\"%s\" isn't a valid key\n", Cmd_Argv(1));
 		return;
