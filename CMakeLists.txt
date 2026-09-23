@@ -27,6 +27,16 @@ option(BUILD_TEAM_ARENA "Build the Quake3_TeamArena (mission pack) executable" O
 # external definition (undefined refs to AAS_*_inline at -O0), GNU89 does.
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -fgnu89-inline -O0 -g -fno-strict-aliasing")
 
+# -fsigned-char: Retro68's PowerPC GCC defaults to unsigned 'char'
+# (__CHAR_UNSIGNED__), but retail 1.32c was built with signed 'char' (x86,
+# Darwin/CodeWarrior PPC; code/unix/Makefile passes -fsigned-char) and so are
+# all host tests. Tokenizers such as SkipWhitespace and Cmd_TokenizeString
+# (*text <= ' ') and bot match offsets (-1 = unset) depend on it: with unsigned
+# 'char', bytes >= 0x80 tokenize differently from retail peers. mac_local.h
+# fails the build if this flag goes missing.
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsigned-char")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsigned-char")
+
 # CMake appends CMAKE_C_FLAGS_<CONFIG> *after* CMAKE_C_FLAGS on the compile
 # line, and the Release defaults are "-O3 -DNDEBUG" — which silently overrode
 # the -O0 -g above (the last -O flag wins). Clear the per-config flags so the

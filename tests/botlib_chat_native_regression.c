@@ -16,6 +16,21 @@ void Com_Memset( void *dest, int value, size_t size ) { memset(dest,value,size);
 void QDECL Com_Error( int level, const char *format, ... ) { (void)level; (void)format; Check(0,"engine error"); }
 /** Ignore unrelated shared utility output. */
 void QDECL Com_Printf( const char *format, ... ) { (void)format; }
+/** Issue #246: variables a template never sets ("camp there" has no KEYAREA) stay unset even with unsigned char. */
+static void UnsetVariables( bot_match_t *match, char *buffer, char *out ) {
+	bot_matchstring_t there={" camp there",NULL};
+	bot_matchpiece_t text={MT_STRING,&there,0,NULL}, name={MT_VARIABLE,NULL,0,&text};
+	bot_matchtemplate_t camp={1,0,0,&name,NULL};
+	char keyarea[]={ESCAPE_CHAR,'v','3',ESCAPE_CHAR,0}; int i;
+	matchtemplates=&camp; memset(match,0x5a,sizeof(*match));
+	Check(BotFindMatch("Sarge camp there",match,1),"camp there template");
+	for(i=1;i<MAX_MATCHVARIABLES;i++) Check(match->variables[i].offset<0,"unset variable reads negative");
+	BotMatchVariable(match,0,out,8); Check(!strcmp(out,"Sarge"),"set variable beside unset ones");
+	strcpy(buffer,"z"); (void)BotExpandChatMessage(buffer,keyarea,0,match,1,qfalse);
+	Check(!*buffer,"unset variable with stale length expands to nothing");
+	for(i=1;i<MAX_MATCHVARIABLES;i++) { out[0]='z'; BotMatchVariable(match,i,out,8); Check(!*out,"unset variable reads empty"); }
+	matchtemplates=NULL;
+}
 /** Cover growing, shrinking, unchanged, full-capacity, and overlapping native operations. */
 int main( void ) {
 	char *buffer=malloc(MAX_MESSAGE_SIZE), *inside=malloc(8), *source=malloc(1024), *out=malloc(8), *small=malloc(6);
@@ -73,6 +88,7 @@ int main( void ) {
 	BotMatchVariable(match,0,out,8); Check(!*out,"span after end");
 	memset(match->string,'x',256); BotMatchVariable(match,0,out,8); Check(!*out,"unterminated embedded string");
 	out[0]='z'; BotMatchVariable(match,0,out,0); Check(out[0]=='z',"empty output unchanged");
+	UnsetVariables(match,buffer,out);
 	free(small); free(match); free(out); free(source); free(inside); free(buffer);
 	puts("Native bot chat buffer regressions passed (issues #35/#48)"); return 0;
 }

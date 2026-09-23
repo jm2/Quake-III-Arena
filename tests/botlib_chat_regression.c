@@ -121,6 +121,13 @@ int main( void ) {
 	match->variables[0].length=4; match->variables[0].offset=5; Reject(args);
 	match->variables[0].offset=0; args[2]=-1; Reject(args); args[2]=MAX_MATCHVARIABLES; Reject(args); args[2]=0;
 	memset(match->string,'x',sizeof(match->string)); Reject(args); strcpy(match->string,"test");
+	/* Issue #246: unset (-1) offsets with stale lengths stay unset on unsigned-char targets and still dispatch. */
+	for(i=0;i<MAX_MATCHVARIABLES;i++) { match->variables[i].offset=-1; match->variables[i].length=INT_MAX; }
+	for(i=0;i<MAX_MATCHVARIABLES;i++) {
+		int calls=callbacks; args[2]=i; Check(match->variables[i].offset<0,"unset offset reads negative");
+		Check(SV_BotLibChatCalls(args)==0 && callbacks==calls+1,"unset match variable dispatched without fault");
+	}
+	match->variables[0].offset=0; match->variables[0].length=4; args[2]=0;
 	args[0]=BOTLIB_AI_STRING_CONTAINS; args[1]=0; args[2]=0; args[3]=1;
 	Check(SV_BotLibChatCalls(args)==-1,"nullable contains"); botlib_export=NULL; Reject(args);
 	free(vm.dataBase); puts("Botlib chat dispatcher regressions passed (issue #35)"); return 0;
