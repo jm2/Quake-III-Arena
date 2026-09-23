@@ -11,7 +11,7 @@ PR head while retaining checks on the merged default branch.
 ## Required checks
 
 - `Scripts and review ledger`
-  - parses Bash and PowerShell entry points;
+  - parses every tracked Bash script individually (`tests/check_shell_syntax.sh`) and the PowerShell entry points;
   - runs both build-script help paths;
   - compiles the Python utilities;
   - requires `docs/task.md` to remain in P0-to-P3 order with exactly one direct
@@ -199,7 +199,7 @@ checks real registration pass counts and cache reuse.
 
 ```sh
 export TMPDIR="${TMPDIR:-/var/tmp}"
-bash -n build_mac.sh setup_retro68.sh tests/run_host_c_tests.sh
+bash tests/check_shell_syntax.sh
 ./build_mac.sh --help
 python3 -m py_compile create_appledouble.py generate_icon_r.py macbinary_encode.py
 python3 -m unittest discover -s tests -p 'test_*.py' -v
