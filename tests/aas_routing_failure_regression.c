@@ -2,7 +2,7 @@
 #include Q3_AAS_ROUTE_SOURCE
 botlib_import_t botimport;
 aas_t aasworld;
-int bot_developer;
+int botDeveloper;
 static aas_cluster_t clusters[4];
 static aas_areasettings_t settings[6];
 static aas_area_t areas[6];

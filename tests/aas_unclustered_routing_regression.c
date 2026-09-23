@@ -3,7 +3,7 @@
 #include Q3_AAS_CLUSTER_SOURCE
 botlib_import_t botimport;
 aas_t aasworld;
-int bot_developer;
+int botDeveloper;
 static aas_cluster_t clusters[2];
 static aas_areasettings_t settings[4];
 static aas_area_t areas[4];

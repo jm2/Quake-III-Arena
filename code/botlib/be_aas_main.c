@@ -254,7 +254,7 @@ int AAS_StartFrame(float time)
 	//
 	aasworld.frameroutingupdates = 0;
 	//
-	if (bot_developer)
+	if (botDeveloper)
 	{
 		if (LibVarGetValue("showcacheupdates"))
 		{

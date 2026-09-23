@@ -1,7 +1,7 @@
 /* Actual checked console pool, queue migration and chat setup failure gate. */
 #define Q3_CHAT_STATE_NO_MAIN
 #include "bot_chat_state_regression.c"
-int bot_developer;
+int botDeveloper;
 #ifdef Q3_CHAT_POOL_ORIGINAL
 static int consolemessageheapcount;
 static int InitConsoleMessageHeapChecked(void)
