@@ -390,14 +390,17 @@ void Sys_SendKeyEvents (void) {
 	}
 	//Sys_LogPrintf( "Sys_SendKeyEvents: Event check done, gotEvent=%d what=%d\n", gotEvent, event.what );
 
+	// When no event is pending, WaitNextEvent/GetOSEvent return false with a
+	// null event whose when/where/modifiers fields are still filled in.
+	// Classic Mac OS posts no keyDown/keyUp for modifier keys, so their state
+	// must be sampled on every poll, including null events, or Ctrl/Shift/Alt
+	// presses and releases are only noticed when some other event arrives.
+	Sys_ModifierEvents( event.modifiers );
+	sys_lastEventTic = event.when;
+
 	if ( !gotEvent ) {
 		return;
 	}
-
-	// event is undefined when WaitNextEvent/GetOSEvent returns false.
-	// Consume its timestamp and modifiers only after a real event arrived.
-	Sys_ModifierEvents( event.modifiers );
-	sys_lastEventTic = event.when;
     
     //Sys_LogPrintf("Sys_SendKeyEvents: Processing event types=%d\n", event.what);
 
