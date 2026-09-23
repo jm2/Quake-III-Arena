@@ -372,11 +372,13 @@ Mac OS 9 runtime behavior. Passing these starter checks alone does not close
 security or target-runtime issues; each issue needs its specified regressions
 and applicable target evidence.
 
-For every new PR, require successful CI and a clean Codex review on the current
-head, plus resolution of every CodeRabbit finding. The user confirmed that
-CodeRabbit rate limits need not block a merge once this gate is satisfied.
-Resolve findings, push fixes, and obtain successful checks and renewed Codex
-review. Absent, pending, or failed Codex review is not a clean review.
+For every PR, require successful CI on the current head and an approving
+review of that exact head by an independent adversarial reviewer agent that
+did not write the change (posted as a PR comment). Resolve blocking findings,
+push fixes, and obtain successful checks and a renewed approval on the new
+head. CodeRabbit findings are addressed when it reviews a PR but do not block
+merging. Absent, pending, or failed CI or review is not approval. (Changed on
+2026-09-23: Codex review credits are exhausted and CodeRabbit is throttled.)
 
 The user has deferred retail-content and Mac OS 9 live testing to a follow-up
 session. Host-tested fixes may merge with those limitations recorded; do not
@@ -388,7 +390,7 @@ The next CI layers should be:
 
 1. a legally provisioned/self-hosted Retro68 runner that builds base and Team
    Arena and validates `Joy!peff` / `pwpc`;
-2. hostile-input ASan/UBSan harnesses for the P0 parser/protocol issues;
+2. hostile-input ASan/UBSan harnesses for the parser/protocol security issues;
 3. mounted HFS resource/Finder inspection;
 4. emulator smoke tests using externally provisioned legal game data.
 

@@ -1,7 +1,9 @@
 """Structural checks for the docs/task.md burndown ledger (#229).
 
 The expected issue set is derived from the ledger itself, so filing a new
-issue only requires adding its entry; nothing here needs editing.
+issue only requires adding its entry; nothing here needs editing. Issues are
+never removed from the ledger, so TRACKED_FLOOR guards against losing the
+entries that existed when this test was written.
 """
 from collections import Counter
 from pathlib import Path
@@ -16,7 +18,10 @@ ISSUE_PATTERN = re.compile(ISSUE_URL)
 ENTRY_PATTERN = re.compile(r"^- \[([ x])\] \[#(\d+) [^\]]*\]\(" + ISSUE_URL + r"\)(.*)$")
 SECTION_PATTERN = re.compile(r"^## B(\d+) — \S")
 SEVERITY_PATTERN = re.compile(
-    r"\*\*(?:assurance gate|critical|high|moderate-high|medium-low|medium|low)\*\*")
+    r"\*\*(?:assurance gate|critical|high|moderate-high|medium-low|medium|low|"
+    r"informational)\*\*")
+CHECKBOX_PATTERN = re.compile(r"^\s*[-*+]\s*\[[^\]]?\]")
+TRACKED_FLOOR = frozenset(range(1, 53)) | frozenset(range(220, 278)) | {290}
 
 
 class ReviewLedgerTests(unittest.TestCase):
@@ -28,9 +33,9 @@ class ReviewLedgerTests(unittest.TestCase):
         cls.entries = []
         section = None
         for number, line in enumerate(cls.lines, 1):
-            heading = SECTION_PATTERN.match(line)
-            if heading:
-                section = int(heading.group(1))
+            if line.startswith("## "):
+                heading = SECTION_PATTERN.match(line)
+                section = int(heading.group(1)) if heading else None
             match = ENTRY_PATTERN.match(line)
             if match:
                 cls.entries.append((number, section, match))
@@ -50,9 +55,14 @@ class ReviewLedgerTests(unittest.TestCase):
             self.assertEqual(match.group(2), match.group(3), f"line {line}")
 
     def test_entries_live_in_burndown_sections(self):
-        """No entry precedes the first B section heading."""
+        """Entries sit under a B section heading, not before or after them."""
         for line, section, _ in self.entries:
             self.assertIsNotNone(section, f"line {line} is outside a B section")
+
+    def test_tracked_issues_keep_their_entries(self):
+        """Removing an existing issue's entry fails; new issues need no edit here."""
+        entered = {int(m.group(2)) for _, _, m in self.entries}
+        self.assertEqual(TRACKED_FLOOR - entered, set())
 
     def test_links_only_reference_entered_issues(self):
         """Any other issue link in the ledger must point at an issue with an entry."""
@@ -63,7 +73,7 @@ class ReviewLedgerTests(unittest.TestCase):
     def test_issue_links_outside_entries_are_not_checkboxes(self):
         """A checkbox line that links an issue must be a well-formed entry."""
         for number, line in enumerate(self.lines, 1):
-            if line.startswith("- [") and ISSUE_PATTERN.search(line):
+            if CHECKBOX_PATTERN.match(line) and ISSUE_PATTERN.search(line):
                 self.assertRegex(line, ENTRY_PATTERN, f"line {number}")
 
     def test_entries_carry_a_severity(self):

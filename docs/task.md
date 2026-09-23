@@ -33,14 +33,16 @@ and its evidence links, is archived unchanged in
   data where it is available locally (never committed), or against the
   original `dbe4ddb` code in a differential host test.
 - The paused hardening PRs (#171, #184–#196, #211–#219) are not merged until
-  they are re-scoped against this order. Their issues stay in B6 and B4.
-- A checkbox is ticked when its issue closes.
+  they are re-scoped against this order. Their issues keep their entries
+  below.
+- A checkbox is ticked when its issue closes. Entry titles omit bracketed
+  prefixes such as `[security]`; the severity carries that information.
 
 ## Current evidence
 
 - Last Mac OS 9 run: 2026-04-27, which stopped at `Couldn't load default.cfg`
   after demo data was packaged as `baseq3` (#8). No target run since.
-- `master` cross-builds with Retro68 (GCC 12.2.0, Retro68 `83b9c8d2c5`):
+- `master` at `46dcc75` cross-builds with Retro68 (GCC 12.2.0, Retro68 `83b9c8d2c5`):
   base `Quake3.pef` 3,796,539 bytes, `Joy!peff`/`pwpc`, 0 compiler warnings
   (2026-09-23). The maintainer's toolchain needs a host-library shim or a
   rebuild after the Fedora 44 upgrade (#269).
@@ -63,21 +65,21 @@ Land these first: every later PR depends on a CI run that finishes and a ledger 
 
 Each blocks or corrupts a normal base-game session. All are host-verifiable except #256.
 
-- [ ] [#270 — SV_GentityNum bound faults the server on botlib passent -1 traces during map load](https://github.com/jm2/Quake-III-Arena/issues/270) — **critical**; server faults on botlib passent -1 traces while loading maps with suspended items.
-- [ ] [#243 — BSP reference preflight rejects retail q3dm17 (flare surfaces with fogNum 0 and no fogs)](https://github.com/jm2/Quake-III-Arena/issues/243) — **critical**; retail q3dm17 rejected by both BSP loaders.
-- [ ] [#233 — Monolithic link aliases botlib g_gametype/bot_developer onto the game's vmCvar_t globals](https://github.com/jm2/Quake-III-Arena/issues/233) — **high**; static link aliases botlib ints onto game vmCvar_t globals; gametype rules corrupt.
-- [ ] [#246 — Unsigned char match-variable offsets make SV_GameBotMatch drop the server on PPC](https://github.com/jm2/Quake-III-Arena/issues/246) — **high**; unsigned char match offsets drop the server on PPC.
-- [ ] [#223 — Retro68 target compiles with unsigned char, diverging from retail 1.32c and all host tests](https://github.com/jm2/Quake-III-Arena/issues/223) — **medium**; target char signedness differs from retail and every host test.
-- [ ] [#244 — MD3 frame-bounds check rejects all stock tag-only weapon hand models](https://github.com/jm2/Quake-III-Arena/issues/244) — **high**; stock weapon hand models rejected.
+- [ ] [#270 — SV_GentityNum bound faults the server on botlib passent -1 traces during map load](https://github.com/jm2/Quake-III-Arena/issues/270) — **critical**; server faults on botlib passent -1 traces while loading maps with suspended items; PR #285; needs target test.
+- [ ] [#243 — BSP reference preflight rejects retail q3dm17 (flare surfaces with fogNum 0 and no fogs)](https://github.com/jm2/Quake-III-Arena/issues/243) — **critical**; retail q3dm17 rejected by both BSP loaders; PR #284.
+- [ ] [#233 — Monolithic link aliases botlib g_gametype/bot_developer onto the game's vmCvar_t globals](https://github.com/jm2/Quake-III-Arena/issues/233) — **high**; static link aliases botlib ints onto game vmCvar_t globals; gametype rules corrupt; PR #287.
+- [ ] [#246 — Unsigned char match-variable offsets make SV_GameBotMatch drop the server on PPC](https://github.com/jm2/Quake-III-Arena/issues/246) — **high**; unsigned char match offsets drop the server on PPC; PR #286.
+- [ ] [#223 — Retro68 target compiles with unsigned char, diverging from retail 1.32c and all host tests](https://github.com/jm2/Quake-III-Arena/issues/223) — **medium**; target char signedness differs from retail and every host test; PR #286.
+- [ ] [#244 — MD3 frame-bounds check rejects all stock tag-only weapon hand models](https://github.com/jm2/Quake-III-Arena/issues/244) — **high**; stock weapon hand models rejected; PR #282.
 - [ ] [#245 — Bot synonym replacement can no longer lengthen text, and chat word matching changed](https://github.com/jm2/Quake-III-Arena/issues/245) — **high**; bots stop understanding lengthening synonyms and some chat.
 - [ ] [#237 — QVM libc shim bg_lib.c replaces libc rand/atof/memmove/qsort in the native executable](https://github.com/jm2/Quake-III-Arena/issues/237) — **medium**; bg_lib.c replaces libc rand/atof/memmove/qsort; PR #280.
 - [ ] [#256 — Modifier keys only register when another OS event arrives (Ctrl-fire/Shift-run latch)](https://github.com/jm2/Quake-III-Arena/issues/256) — **high**; Ctrl/Shift/Alt only noticed on unrelated events; PR #281; needs target test.
-- [ ] [#240 — Info_SetValueForKey_Big rejects values of 1024+ chars, dropping pure pak lists from systeminfo](https://github.com/jm2/Quake-III-Arena/issues/240) — **medium**; pure pak lists of 1024+ chars dropped from systeminfo.
+- [ ] [#240 — Info_SetValueForKey_Big rejects values of 1024+ chars, dropping pure pak lists from systeminfo](https://github.com/jm2/Quake-III-Arena/issues/240) — **medium**; pure pak lists of 1024+ chars dropped from systeminfo; PR #289.
 - [ ] [#236 — glconfig_t layout change breaks retail 1.32c cgame/UI QVMs](https://github.com/jm2/Quake-III-Arena/issues/236) — **high**; glconfig_t layout break for retail cgame/UI QVMs.
 - [ ] [#248 — Interpreter traps on shifts >= 32 break retail cgame QVM scoreboards with clients >= 32](https://github.com/jm2/Quake-III-Arena/issues/248) — **medium**; interpreter traps on shifts that retail QVMs rely on.
 - [ ] [#247 — RoQ codebook rule truncates retail idlogo.RoQ, and VQ decode is ~5x slower](https://github.com/jm2/Quake-III-Arena/issues/247) — **medium**; retail idlogo.RoQ truncated (latent behind #14); decode ~5x slower.
 - [ ] [#252 — Botlib disables bots on level-item pool exhaustion and drops zero-cost goal routes](https://github.com/jm2/Quake-III-Arena/issues/252) — **low**; botlib fails closed on pool exhaustion and zero-cost routes.
-- [ ] [#242 — trap_BotMutateGoalFuzzyLogic passes a float without PASSFLOAT](https://github.com/jm2/Quake-III-Arena/issues/242) — **low**; missing PASSFLOAT on one botlib trap.
+- [ ] [#242 — trap_BotMutateGoalFuzzyLogic passes a float without PASSFLOAT](https://github.com/jm2/Quake-III-Arena/issues/242) — **low**; missing PASSFLOAT on one botlib trap; PR #288.
 - [ ] [#241 — Monolithic cgame compiles the non-retail cg_particles.c instead of the 1.32 particle code](https://github.com/jm2/Quake-III-Arena/issues/241) — **low**; non-retail particle code compiled into cgame.
 
 ## B2 — Build, toolchain and packaging
@@ -108,7 +110,7 @@ Close the gaps that let the September regressions through.
 - [ ] [#253 — No real-content equivalence tests; synthetic fixtures missed stock-asset regressions](https://github.com/jm2/Quake-III-Arena/issues/253) — **high**; real-content equivalence tests against the pre-hardening baseline.
 - [ ] [#224 — CI never builds the PPC product or tests any 32-bit big-endian configuration](https://github.com/jm2/Quake-III-Arena/issues/224) — **medium**; 32-bit big-endian and unsigned-char CI; PPC product build.
 - [ ] [#29 — Modern CVE coverage has no auditable provenance or regression matrix](https://github.com/jm2/Quake-III-Arena/issues/29) — **assurance gate**; CVE provenance and regression matrix.
-- [ ] [#276 — Code comments and plan cite CVE ids that belong to unrelated products or other bugs](https://github.com/jm2/Quake-III-Arena/issues/276) — **low**; CVE ids in comments that belong to other products.
+- [ ] [#276 — Code comments and plan cite CVE ids that belong to unrelated products or other bugs](https://github.com/jm2/Quake-III-Arena/issues/276) — **informational**; CVE ids in comments that belong to other products.
 
 ## B4 — Remote and network security
 
@@ -181,6 +183,7 @@ The paused September queue. Resume only after B1–B4, and fix false positives a
 - [ ] [#46 — Enforce fixed limits and ownership in shader, skin, and font parsers](https://github.com/jm2/Quake-III-Arena/issues/46) — **high**; shader/skin/font: derived rendering conversions.
 - [ ] [#47 — Validate AAS lumps and graph indexes before enabling bot world](https://github.com/jm2/Quake-III-Arena/issues/47) — **high**; AAS: validate the whole file before loaded.
 - [ ] [#48 — Bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48) — **high**; bot parser: work and recursion limits (open PRs #214–#217).
+- [ ] [#290 — BotExpandChatMessage accepts match variable index 8 and overflowing digit strings](https://github.com/jm2/Quake-III-Arena/issues/290) — **medium**; out-of-bounds match variable read and stack copy from chat templates.
 
 ## B7 — Performance
 
@@ -206,6 +209,7 @@ Team Arena cannot reach its menu today; keep it building (BUILD_TEAM_ARENA=ON) a
 - [ ] [#31 — Generated icl8/ics8 icons use adaptive indexes without a matching CLUT](https://github.com/jm2/Quake-III-Arena/issues/31) — **low**; icon CLUT.
 - [ ] [#32 — MacBinary encoder writes invalid zero creation and modification dates](https://github.com/jm2/Quake-III-Arena/issues/32) — **low**; MacBinary dates; host tests pass, target check remains.
 - [ ] [#52 — MacBinary filename length counts Unicode characters instead of encoded bytes](https://github.com/jm2/Quake-III-Arena/issues/52) — **low**; MacBinary name bytes; host tests pass, independent reader remains.
+
 ## Next steps
 
 - Merge B0 so CI finishes on every PR and new issues can be added here.
