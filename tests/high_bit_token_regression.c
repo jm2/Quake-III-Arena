@@ -80,10 +80,21 @@ static void TestInfo( void ) {
 	Check( !strcmp( Info_ValueForKey( info, "model" ), "sarge" ), "Info neighbours survive high-bit values" );
 }
 
+/** Case folding changes ASCII letters only; high-bit bytes pass through (C locale, as retail). */
+static void TestCaseFolding( void ) {
+	char text[] = "A" "\xC4" "b" "\xD6" "\x81";
+
+	Q_strlwr( text );
+	Check( !strcmp( text, "a" "\xC4" "b" "\xD6" "\x81" ), "Q_strlwr leaves high-bit bytes alone" );
+	Q_strupr( text );
+	Check( !strcmp( text, "A" "\xC4" "B" "\xD6" "\x81" ), "Q_strupr leaves high-bit bytes alone" );
+}
+
 int main( void ) {
 	TestComParse();
 	TestCmdTokenize();
 	TestInfo();
+	TestCaseFolding();
 	puts( "High-bit tokenization matches retail signed-char 1.32c (issue #223)" );
 	return 0;
 }

@@ -607,7 +607,7 @@ int StringContains(char *str1, char *str2, int casesensitive)
 			} //end if
 			else
 			{
-				if (toupper(str1[j]) != toupper(str2[j])) break;
+				if (toupper((unsigned char)str1[j]) != toupper((unsigned char)str2[j])) break;
 			} //end else
 		} //end for
 		if (!str2[j]) return index;

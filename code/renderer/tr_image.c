@@ -69,7 +69,7 @@ static long generateHashValue( const char *fname ) {
 	hash = 0;
 	i = 0;
 	while (fname[i] != '\0') {
-		letter = tolower(fname[i]);
+		letter = tolower((unsigned char)fname[i]);
 		if (letter =='.') break;				// don't include extension
 		if (letter =='\\') letter = '/';		// damn path names
 		hash+=(long)(letter)*(i+119);
@@ -871,9 +871,9 @@ image_t	*R_FindImageFile( const char *name, qboolean mipmap, qboolean allowPicmi
     int len;                                              //  
     strcpy( altname, name );                              //
     len = strlen( altname );                              // 
-    altname[len-3] = toupper(altname[len-3]);             // and try upper case extension for unix systems
-    altname[len-2] = toupper(altname[len-2]);             //
-    altname[len-1] = toupper(altname[len-1]);             //
+    altname[len-3] = toupper((unsigned char)altname[len-3]);             // and try upper case extension for unix systems
+    altname[len-2] = toupper((unsigned char)altname[len-2]);             //
+    altname[len-1] = toupper((unsigned char)altname[len-1]);             //
 		ri.Printf( PRINT_ALL, "trying %s...\n", altname );    // 
 	  R_LoadImage( altname, &pic, &width, &height );        //
     if (pic == NULL) {                                    // if that fails

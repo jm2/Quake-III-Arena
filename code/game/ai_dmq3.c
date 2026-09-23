@@ -1470,7 +1470,7 @@ char *stristr(char *str, char *charset) {
 
 	while(*str) {
 		for (i = 0; charset[i] && str[i]; i++) {
-			if (toupper(charset[i]) != toupper(str[i])) break;
+			if (toupper((unsigned char)charset[i]) != toupper((unsigned char)str[i])) break;
 		}
 		if (!charset[i]) return str;
 		str++;

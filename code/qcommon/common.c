@@ -596,7 +596,7 @@ char *Com_StringContains(char *str1, char *str2, int casesensitive) {
 				}
 			}
 			else {
-				if (toupper(str1[j]) != toupper(str2[j])) {
+				if (toupper((unsigned char)str1[j]) != toupper((unsigned char)str2[j])) {
 					break;
 				}
 			}
@@ -651,8 +651,8 @@ int Com_Filter(char *filter, char *name, int casesensitive)
 						if (*name >= *filter && *name <= *(filter+2)) found = qtrue;
 					}
 					else {
-						if (toupper(*name) >= toupper(*filter) &&
-							toupper(*name) <= toupper(*(filter+2))) found = qtrue;
+						if (toupper((unsigned char)*name) >= toupper((unsigned char)*filter) &&
+							toupper((unsigned char)*name) <= toupper((unsigned char)*(filter+2))) found = qtrue;
 					}
 					filter += 3;
 				}
@@ -661,7 +661,7 @@ int Com_Filter(char *filter, char *name, int casesensitive)
 						if (*filter == *name) found = qtrue;
 					}
 					else {
-						if (toupper(*filter) == toupper(*name)) found = qtrue;
+						if (toupper((unsigned char)*filter) == toupper((unsigned char)*name)) found = qtrue;
 					}
 					filter++;
 				}
@@ -679,7 +679,7 @@ int Com_Filter(char *filter, char *name, int casesensitive)
 				if (*filter != *name) return qfalse;
 			}
 			else {
-				if (toupper(*filter) != toupper(*name)) return qfalse;
+				if (toupper((unsigned char)*filter) != toupper((unsigned char)*name)) return qfalse;
 			}
 			filter++;
 			name++;
@@ -3386,7 +3386,7 @@ static void FindMatches( const char *s ) {
 
 	// cut shortestMatch to the amount common with s
 	for ( i = 0 ; s[i] ; i++ ) {
-		if ( tolower(shortestMatch[i]) != tolower(s[i]) ) {
+		if ( tolower((unsigned char)shortestMatch[i]) != tolower((unsigned char)s[i]) ) {
 			shortestMatch[i] = 0;
 		}
 	}

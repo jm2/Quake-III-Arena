@@ -266,7 +266,7 @@ static long S_HashSFXName(const char *name) {
 	hash = 0;
 	i = 0;
 	while (name[i] != '\0') {
-		letter = tolower(name[i]);
+		letter = tolower((unsigned char)name[i]);
 		if (letter =='.') break;				// don't include extension
 		if (letter =='\\') letter = '/';		// damn path names
 		hash+=(long)(letter)*(i+119);
