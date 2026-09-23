@@ -1,4 +1,4 @@
-"""Issues #42/#43: keep portable image decoders linked in every existing renderer target."""
+"""Build manifest checks: portable image decoders (#42/#43) and native libc (#237)."""
 from pathlib import Path
 import re
 import unittest
@@ -55,6 +55,16 @@ class RendererBuildManifests(unittest.TestCase):
                 self.assertTrue(any("isa = PBXGroup;" in body and f"{ref}," in body
                                     for body in objects.values()))
 
+
+    def test_native_cmake_build_excludes_qvm_libc_replacement(self):
+        """bg_lib.c replaces libc for QVM bytecode only; natively it overrides rand/atof (#237)."""
+        cmake = re.sub(r"#[^\n]*", "", (ROOT / "CMakeLists.txt").read_text())
+        match = re.search(r"file\(GLOB GAME_SRCS code/game/\*\.c\)\s*"
+                          r"list\(REMOVE_ITEM GAME_SRCS([^)]*)\)", cmake)
+        self.assertIsNotNone(match)
+        self.assertIn("/code/game/bg_lib.c", match.group(1))
+        self.assertEqual(cmake.count("bg_lib.c"), 1)        # not re-added anywhere
+        self.assertEqual(cmake.count("code/game/*.c"), 1)   # no second glob of the dir
 
 if __name__ == "__main__":
     unittest.main()
