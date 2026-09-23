@@ -26,7 +26,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 // normal play queues at most a resent gamestate and the two final
 // messages sent on shutdown behind a fragmented message
-#define MAX_QUEUED_MESSAGES	8
+#define MAX_QUEUED_MESSAGES	4
+// all clients together, so that holding many slots cannot exhaust the zone
+#define MAX_QUEUED_BYTES	( 2 * 1024 * 1024 )
 
 /*
 ==============
@@ -197,17 +199,27 @@ void SV_Netchan_Transmit( client_t *client, msg_t *msg) {	//int length, const by
 	MSG_WriteByte( msg, svc_EOF );
 	if (client->netchan.unsentFragments) {
 		netchan_buffer_t *netbuf;
-		int queued;
+		client_t *cl;
+		int i, queued, total;
 
 		// the queue only drains one message per completed fragment train, so
 		// a client that keeps provoking large messages (gamestate resends)
 		// must not be able to grow it until Z_Malloc fails fatally
-		queued = 0;
-		for ( netbuf = client->netchan_start_queue ; netbuf ; netbuf = netbuf->next ) {
-			queued++;
+		queued = total = 0;
+		for ( i = 0, cl = svs.clients ; i < sv_maxclients->integer ; i++, cl++ ) {
+			for ( netbuf = cl->netchan_start_queue ; netbuf ; netbuf = netbuf->next ) {
+				if ( cl == client ) {
+					queued++;
+				}
+				total++;
+			}
 		}
 		if ( queued >= MAX_QUEUED_MESSAGES ) {
 			SV_DropClient( client, "Netchan queue overflow" );
+			return;
+		}
+		if ( ( total + 1 ) * (int)sizeof( netchan_buffer_t ) > MAX_QUEUED_BYTES ) {
+			SV_DropClient( client, "Server netchan queue full" );
 			return;
 		}
 		Com_DPrintf("#462 SV_Netchan_Transmit: unsent fragments, stacked\n");

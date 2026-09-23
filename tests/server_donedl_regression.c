@@ -6,14 +6,15 @@
 #include <string.h>
 
 #define ZONE_BYTES ( 16 << 20 )	/* DEF_COMZONEMEGS: Z_Malloc failure is ERR_FATAL */
-#define QUEUE_CAP 8
+#define QUEUE_CAP 4
+#define QUEUE_BUDGET ( 2 << 20 )
 #define FLOOD 1500
 #define SERVER_ID 4242
 
 serverStatic_t svs;
 server_t sv;
 vm_t *gvm;
-static cvar_t zero = { .string = "" }, maxclients = { .string = "2", .integer = 2 };
+static cvar_t zero = { .string = "" }, maxclients = { .string = "64", .integer = MAX_CLIENTS };
 static cvar_t running = { .string = "1", .integer = 1 }, reconnect = { .string = "3", .integer = 3 };
 static cvar_t flood = { .string = "1", .integer = 1 };
 cvar_t *sv_maxclients = &maxclients, *sv_reconnectlimit = &reconnect, *sv_floodProtect = &flood;
@@ -24,8 +25,8 @@ cvar_t *sv_privatePassword = &zero, *com_dedicated = &zero, *com_cl_running = &z
 qboolean com_errorEntered;
 extern cvar_t *showpackets, *showdrop;
 
-static sharedEntity_t entities[2];
-static playerState_t players[2];
+static sharedEntity_t entities[MAX_CLIENTS];
+static playerState_t players[MAX_CLIENTS];
 static byte pvs[MAX_MAP_AREA_BYTES];
 static int zoneBytes, zonePeak, queueAllocs, begins, disconnects;
 static char dropReason[MAX_STRING_CHARS];
@@ -153,7 +154,7 @@ static void Setup( void ) {
 	int i, j; unsigned seed = 1;
 	static char set[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/_";
 	showpackets = showdrop = &zero;
-	svs.clients = Z_Malloc( 2 * sizeof(client_t) ); svs.clientCapacity = 2; svs.time = 10000;
+	svs.clients = Z_Malloc( MAX_CLIENTS * sizeof(client_t) ); svs.clientCapacity = MAX_CLIENTS; svs.time = 10000;
 	svs.numSnapshotEntities = 64; svs.snapshotEntities = calloc( 64, sizeof(entityState_t) );
 	sv.state = SS_GAME; sv.serverId = sv.restartedServerId = SERVER_ID; sv.checksumFeed = 0x1234567;
 	for ( i = 0; i < MAX_CONFIGSTRINGS; i++ ) {
@@ -162,7 +163,7 @@ static void Setup( void ) {
 		for ( j = 0; j < len; j++ ) { seed = seed * 1103515245 + 12345; sv.configstrings[i][j] = set[(seed >> 16) & 63]; }
 	}
 }
-/** Retail download completion: one gamestate, the client enters the world, later donedl is ignored. */
+/** Retail download completion: one gamestate, the client enters the world; repeats stay single copies. */
 static void LegitimateFlow( qboolean mapChange ) {
 	client_t *cl = Connect( 1, 11 ); int before, gamestate;
 	InitialGamestate( cl ); Drain( cl );
@@ -182,10 +183,12 @@ static void LegitimateFlow( qboolean mapChange ) {
 	Check( gamestate == before, "one message on the wire" );
 	Packet( cl, sv.serverId, gamestate, NULL, 0, qtrue );
 	Check( cl->state == CS_ACTIVE && begins == 1, "client enters the world after the new gamestate" );
-	Packet( cl, sv.serverId, gamestate, "donedl", 1, qfalse );
-	Check( cl->state == CS_ACTIVE && cl->netchan.outgoingSequence == gamestate + 1 && !cl->netchan.unsentFragments &&
-	       cl->gamestateMessageNum == before, "donedl from an active client is ignored" );
-	Check( !queueAllocs, "no queued copies" );
+	// as on master an in-game donedl reloads the gamestate, but once per acknowledged gamestate
+	Packet( cl, sv.serverId, gamestate, "donedl", 3, qfalse );
+	Check( cl->state == CS_PRIMED && cl->gamestateMessageNum == gamestate + 1 && !Queued( cl ) && !queueAllocs,
+	       "repeated in-game donedl sends one gamestate" );
+	Drain( cl ); Packet( cl, sv.serverId, gamestate + 1, NULL, 0, qtrue );
+	Check( cl->state == CS_ACTIVE && begins == 2, "client enters the world again" );
 	puts( mapChange ? "download across a map change sends one gamestate" : "download completion sends one gamestate" );
 }
 /** A packet full of donedl with an honest acknowledge yields one gamestate; the rest are ignored. */
@@ -209,7 +212,7 @@ static void ForgedAcknowledge( void ) {
 	Packet( cl, SERVER_ID, 0x7fffff00, "donedl", FLOOD, qfalse );
 	Check( cl->state == CS_ZOMBIE && disconnects == 1 && !strcmp( dropReason, "\"Netchan queue overflow\"" ),
 	       "queue overflow drops the client" );
-	// the ten-fragment gamestate is still in flight, so every copy queued until the next one overflowed
+	// the ten-fragment gamestate is still in flight, so copies queued until the fifth overflowed
 	Check( queueAllocs == QUEUE_CAP && cl->lastClientCommand == QUEUE_CAP + 1, "rest of the packet was not run" );
 	Check( !Queued( cl ) && zoneBytes == base, "dropping the client frees its queue" );
 	Check( zonePeak - base <= QUEUE_CAP * (int)sizeof(netchan_buffer_t), "zone use stayed under the cap" );
@@ -224,6 +227,41 @@ static void Reconnect( void ) {
 	svs.time += 5000;
 	Check( Connect( 2, 22 ) == cl && !Queued( cl ) && zoneBytes == base, "reconnect frees the old queue" );
 	puts( "reconnect releases queued messages" );
+}
+/** SV_MapRestart_f forces a downloading client active; its donedl must still bring the new gamestate. */
+static void MapRestartDuringDownload( void ) {
+	client_t *cl = Connect( 1, 11 ); int before, gamestate;
+	InitialGamestate( cl ); Drain( cl );
+	before = cl->netchan.outgoingSequence;
+	Packet( cl, SERVER_ID, before - 1, "download maps.pk3", 1, qfalse );
+	sv.serverId = SERVER_ID + 1;				// map_restart leaves restartedServerId unchanged
+	SV_ClientEnterWorld( cl, &cl->lastUsercmd );	// as SV_MapRestart_f does to every client >= CS_CONNECTED
+	Packet( cl, SERVER_ID, before - 1, "nextdl 0", 1, qfalse );
+	Packet( cl, SERVER_ID, before - 1, "donedl", 1, qfalse );
+	Check( cl->state == CS_PRIMED && cl->gamestateMessageNum == before && cl->netchan.unsentFragments,
+	       "donedl after a map_restart during the download sends the gamestate" );
+	Drain( cl ); gamestate = cl->netchan.outgoingSequence - 1;
+	Packet( cl, sv.serverId, gamestate, NULL, 0, qtrue );
+	Check( cl->state == CS_ACTIVE && begins == 2 && !queueAllocs, "client enters the restarted map" );
+	puts( "download across a map_restart sends one gamestate" );
+}
+/** Every slot filled up to the per-client cap cannot queue more than the server-wide budget. */
+static void ManyClients( void ) {
+	client_t *cl; int i, base = zoneBytes, full = 0;
+	for ( i = 1; i <= MAX_CLIENTS; i++ ) {
+		cl = Connect( i, i ); InitialGamestate( cl );
+		Packet( cl, SERVER_ID, 0x7fffff00, "donedl", QUEUE_CAP, qfalse );
+		if ( cl->state == CS_ZOMBIE ) {
+			Check( !strcmp( dropReason, "\"Server netchan queue full\"" ) && !Queued( cl ), "budget overflow drops the client" );
+		} else {
+			Check( Queued( cl ) == QUEUE_CAP, "client under the budget keeps its queue" ); full++;
+		}
+		Check( zoneBytes - base <= QUEUE_BUDGET, "queued memory stays within the server budget" );
+	}
+	Check( full == QUEUE_BUDGET / (int)sizeof(netchan_buffer_t) / QUEUE_CAP && disconnects == MAX_CLIENTS - full,
+	       "only clients past the budget were dropped" );
+	Check( zonePeak - base <= QUEUE_BUDGET, "peak queued memory within the budget" );
+	puts( "all client slots together stay within the queue budget" );
 }
 /** Final messages queued behind a fragment train are released with the client array. */
 static void Shutdown( void ) {
@@ -249,7 +287,9 @@ int main( int argc, char **argv ) {
 	case 3: Reconnect(); break;
 	case 4: Shutdown(); break;
 	case 5: LegitimateFlow( qtrue ); break;
-	default: Check( 0, "usage: server-donedl-tests <0-5>" );
+	case 6: MapRestartDuringDownload(); break;
+	case 7: ManyClients(); break;
+	default: Check( 0, "usage: server-donedl-tests <0-7>" );
 	}
 	return 0;
 }

@@ -692,10 +692,11 @@ Downloads are finished
 ==================
 */
 void SV_DoneDownload_f( client_t *cl ) {
-	// like ioq3 and Quake3e, ignore it from a client that is already in the
-	// game.  A client that has not acknowledged the last gamestate has one
-	// in flight already, so a repeated donedl must not queue another copy.
-	if ( cl->state == CS_ACTIVE || cl->messageAcknowledge < cl->gamestateMessageNum ) {
+	// a client that has not acknowledged the last gamestate has one in
+	// flight already, so a repeated donedl must not queue another copy.
+	// CS_ACTIVE is no reason to ignore it: SV_MapRestart_f makes a client
+	// that is still downloading active, and it waits for this gamestate.
+	if ( cl->messageAcknowledge < cl->gamestateMessageNum ) {
 		return;
 	}
 

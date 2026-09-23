@@ -19,7 +19,7 @@ Q3_TEST_FLAGS=(-std=gnu99 -fno-omit-frame-pointer -ffunction-sections -fdata-sec
     "$Q3_TEST_ROOT/code/qcommon/msg.c" "$Q3_TEST_ROOT/code/qcommon/huffman.c" \
     "$Q3_TEST_ROOT/code/qcommon/cmd.c" "$Q3_TEST_ROOT/code/game/q_shared.c" \
     "$Q3_TEST_DIR/net_chan.o" -Wl,--gc-sections -lm -o "$Q3_TEST_DIR/server-donedl-tests"
-for Q3_CASE in 0 1 2 3 4 5; do
+for Q3_CASE in 0 1 2 3 4 5 6 7; do
     # LeakSanitizer cannot initialize in the local ptrace sandbox.
     ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 \
     UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 "$Q3_TEST_DIR/server-donedl-tests" "$Q3_CASE"
