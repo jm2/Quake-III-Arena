@@ -235,6 +235,9 @@ implementation or check, without implying issue completion.
         have [sanitizer regressions](qvm-botlib-actions-validation.md).
   - [x] Remaining bot AI structures, inventory/rank arrays, optional goals,
         and native genetic endpoints have [sanitizer regressions](qvm-botlib-ai-validation.md).
+  - [x] Source game/client/UI modules compile and link in base/missionpack
+        retail QVM format with existing libc helpers, complete particle manifests
+        and portable console diagnostics; see [source build evidence](qvm-source-build-validation.md).
   - [ ] Complete remaining syscall pointer/range handling before accepting
         untrusted QVMs.
 - [ ] [#36 — oversized/truncated PK3 entries](https://github.com/jm2/Quake-III-Arena/issues/36)

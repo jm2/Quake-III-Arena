@@ -5,7 +5,7 @@ cd vm
 
 CC="q3lcc -DQ3_VM -DCGAME -S -Wf-target=bytecode -Wf-g -I../../cgame -I../../game -I../../q3_ui"
 
-$CC ../cg_syscalls.c
+# The manifest links syscall assembly; native wrappers are not QVM sources.
 $CC ../../game/bg_misc.c
 $CC ../../game/bg_pmove.c
 $CC ../../game/bg_slidemove.c
@@ -23,6 +23,7 @@ $CC ../cg_localents.c
 $CC ../cg_main.c
 $CC ../cg_marks.c
 $CC ../cg_players.c
+$CC ../cg_particles.c
 $CC ../cg_playerstate.c
 $CC ../cg_predict.c
 $CC ../cg_scoreboard.c

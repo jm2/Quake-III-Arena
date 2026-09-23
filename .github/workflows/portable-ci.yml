@@ -35,6 +35,9 @@ jobs:
           bash tests/check_shell_syntax.sh
           ./build_mac.sh --help
 
+      - name: Check retail QVM recipe syntax
+        run: bash -n code/game/game.sh code/game/game_ta.sh code/cgame/cgame.sh code/cgame/cgame_ta.sh code/q3_ui/q3_ui.sh
+
       - name: Check PowerShell syntax and help
         shell: pwsh
         run: |

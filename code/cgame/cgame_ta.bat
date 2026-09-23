@@ -40,6 +40,8 @@ set cc=lcc -DQ3_VM -DMISSIONPACK -DCGAME -S -Wf-target=bytecode -Wf-g -I..\..\cg
 @if errorlevel 1 goto quit
 %cc% ../cg_players.c
 @if errorlevel 1 goto quit
+%cc% ../cg_particles.c
+@if errorlevel 1 goto quit
 %cc% ../cg_playerstate.c
 @if errorlevel 1 goto quit
 %cc% ../cg_predict.c

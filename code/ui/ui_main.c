@@ -166,10 +166,6 @@ void _UI_MouseEvent( int dx, int dy );
 void _UI_Refresh( int realtime );
 qboolean _UI_IsFullscreen( void );
 int vmMain( int command, int arg0, int arg1, int arg2, int arg3, int arg4, int arg5, int arg6, int arg7, int arg8, int arg9, int arg10, int arg11  ) {
-	// Debug logging
-    // We use trap_Print if initialized, otherwise printf might be safer or vice versa depending on stage.
-    // Since this is static link, printf should appear in stdout.
-
   switch ( command ) {
 	  case UI_GETAPIVERSION:
 		  return UI_API_VERSION;
@@ -639,7 +635,7 @@ void _UI_Refresh( int realtime )
 		// Diagnostic: Only print once to avoid spam
 		static int printedMenuPaint = 0;
 		if (!printedMenuPaint) {
-			printf("UI_Refresh: Painting %d menus\n", Menu_Count()); fflush(stdout);
+			trap_Print(va("UI_Refresh: Painting %d menus\n", Menu_Count()));
 			printedMenuPaint = 1;
 		}
 		// paint all the menus
@@ -654,7 +650,7 @@ void _UI_Refresh( int realtime )
 		// Diagnostic: Print once if NO menus
 		static int printedNoMenus = 0;
 		if (!printedNoMenus) {
-			printf("!!! UI_Refresh: Menu_Count = 0, NO MENUS TO PAINT !!!\n"); fflush(stdout);
+			trap_Print(va("!!! UI_Refresh: Menu_Count = 0, NO MENUS TO PAINT !!!\n"));
 			printedNoMenus = 1;
 		}
 	}
@@ -957,18 +953,18 @@ void UI_LoadMenus(const char *menuFile, qboolean reset) {
 	int start;
 	int tokenCount = 0;
 
-	printf("UI_LoadMenus: START file='%s' reset=%d\n", menuFile, reset); fflush(stdout);
+	trap_Print(va("UI_LoadMenus: START file='%s' reset=%d\n", menuFile, reset));
 
 	start = trap_Milliseconds();
 
 	handle = trap_PC_LoadSource( menuFile );
-	printf("UI_LoadMenus: trap_PC_LoadSource returned handle=%d\n", handle); fflush(stdout);
+	trap_Print(va("UI_LoadMenus: trap_PC_LoadSource returned handle=%d\n", handle));
 	if (!handle) {
-		printf("UI_LoadMenus: File not found, trying default\n"); fflush(stdout);
+		trap_Print(va("UI_LoadMenus: File not found, trying default\n"));
 		trap_Print( va( S_COLOR_YELLOW "menu file not found: %s, using default\n", menuFile ) );
 		handle = trap_PC_LoadSource( "ui/menus.txt" );
 		if (!handle) {
-			printf("UI_LoadMenus: DEFAULT FILE ALSO NOT FOUND - FATAL\n"); fflush(stdout);
+			trap_Print(va("UI_LoadMenus: DEFAULT FILE ALSO NOT FOUND - FATAL\n"));
 			trap_Error( va( S_COLOR_RED "default menu file not found: ui/menus.txt, unable to continue!\n", menuFile ) );
 		}
 	}
@@ -976,26 +972,26 @@ void UI_LoadMenus(const char *menuFile, qboolean reset) {
 	ui_new.integer = 1;
 
 	if (reset) {
-		printf("UI_LoadMenus: Calling Menu_Reset()\n"); fflush(stdout);
+		trap_Print(va("UI_LoadMenus: Calling Menu_Reset()\n"));
 		Menu_Reset();
 	}
 
-	printf("UI_LoadMenus: Starting token parse loop...\n"); fflush(stdout);
+	trap_Print(va("UI_LoadMenus: Starting token parse loop...\n"));
 	while ( 1 ) {
 		if (!trap_PC_ReadToken(handle, &token)) {
-			printf("UI_LoadMenus: trap_PC_ReadToken returned 0, breaking\n"); fflush(stdout);
+			trap_Print(va("UI_LoadMenus: trap_PC_ReadToken returned 0, breaking\n"));
 			break;
 		}
 		tokenCount++;
 		// Print first 10 tokens for debugging
 		if (tokenCount <= 10) {
-			printf("UI_LoadMenus: Token[%d] = '%s'\n", tokenCount, token.string); fflush(stdout);
+			trap_Print(va("UI_LoadMenus: Token[%d] = '%s'\n", tokenCount, token.string));
 		} else if (tokenCount == 11) {
-			printf("UI_LoadMenus: (more tokens, stopping print...)\n"); fflush(stdout);
+			trap_Print(va("UI_LoadMenus: (more tokens, stopping print...)\n"));
 		}
 		
 		if( token.string[0] == 0 || token.string[0] == '}') {
-			printf("UI_LoadMenus: Empty or '}' token, breaking\n"); fflush(stdout);
+			trap_Print(va("UI_LoadMenus: Empty or '}' token, breaking\n"));
 			break;
 		}
 
@@ -1004,19 +1000,19 @@ void UI_LoadMenus(const char *menuFile, qboolean reset) {
 		}
 
 		if (Q_stricmp(token.string, "loadmenu") == 0) {
-			printf("UI_LoadMenus: Found 'loadmenu', calling Load_Menu\n"); fflush(stdout);
+			trap_Print(va("UI_LoadMenus: Found 'loadmenu', calling Load_Menu\n"));
 			if (Load_Menu(handle)) {
-				printf("UI_LoadMenus: Load_Menu succeeded, Menu_Count now = %d\n", Menu_Count()); fflush(stdout);
+				trap_Print(va("UI_LoadMenus: Load_Menu succeeded, Menu_Count now = %d\n", Menu_Count()));
 				continue;
 			} else {
-				printf("UI_LoadMenus: Load_Menu FAILED, breaking\n"); fflush(stdout);
+				trap_Print(va("UI_LoadMenus: Load_Menu FAILED, breaking\n"));
 				break;
 			}
 		}
 	}
 
-	printf("UI_LoadMenus: END - tokenCount=%d, Menu_Count=%d, time=%dms\n", 
-		tokenCount, Menu_Count(), trap_Milliseconds() - start); fflush(stdout);
+	trap_Print(va("UI_LoadMenus: END - tokenCount=%d, Menu_Count=%d, time=%dms\n",
+		tokenCount, Menu_Count(), trap_Milliseconds() - start));
 
 	trap_PC_FreeSource( handle );
 }
@@ -5072,20 +5068,20 @@ void _UI_Init( qboolean inGameLoad ) {
 	const char *menuSet;
 	int start;
 
-	printf("=== _UI_Init START ===\n"); fflush(stdout);
+	trap_Print(va("=== _UI_Init START ===\n"));
 
 	//uiInfo.inGameLoad = inGameLoad;
 
-	printf("UI_Init: Registering CVars...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Registering CVars...\n"));
 	UI_RegisterCvars();
-	printf("UI_Init: Initializing Memory...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Initializing Memory...\n"));
 	UI_InitMemory();
 
 	// cache redundant calulations
-	printf("UI_Init: Getting GL Config...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Getting GL Config...\n"));
 	trap_GetGlconfig( &uiInfo.uiDC.glconfig );
-	printf("UI_Init: vidWidth=%d, vidHeight=%d\n", 
-		uiInfo.uiDC.glconfig.vidWidth, uiInfo.uiDC.glconfig.vidHeight); fflush(stdout);
+	trap_Print(va("UI_Init: vidWidth=%d, vidHeight=%d\n",
+		uiInfo.uiDC.glconfig.vidWidth, uiInfo.uiDC.glconfig.vidHeight));
 
 	// for 640x480 virtualized screen
 	uiInfo.uiDC.yscale = uiInfo.uiDC.glconfig.vidHeight * (1.0/480.0);
@@ -5152,17 +5148,17 @@ void _UI_Init( qboolean inGameLoad ) {
 	uiInfo.uiDC.drawCinematic = &UI_DrawCinematic;
 	uiInfo.uiDC.runCinematicFrame = &UI_RunCinematicFrame;
 
-	printf("UI_Init: Init_Display...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Init_Display...\n"));
 	Init_Display(&uiInfo.uiDC);
 
-	printf("UI_Init: String_Init...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: String_Init...\n"));
 	String_Init();
   
-	printf("UI_Init: Registering cursor and white shader...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Registering cursor and white shader...\n"));
 	uiInfo.uiDC.cursor	= trap_R_RegisterShaderNoMip( "menu/art/3_cursor2" );
 	uiInfo.uiDC.whiteShader = trap_R_RegisterShaderNoMip( "white" );
 
-	printf("UI_Init: AssetCache...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: AssetCache...\n"));
 	AssetCache();
 
 	start = trap_Milliseconds();
@@ -5175,11 +5171,11 @@ void _UI_Init( qboolean inGameLoad ) {
 	UI_ParseTeamInfo("demoteaminfo.txt");
 	UI_ParseGameInfo("demogameinfo.txt");
 #else
-	printf("UI_Init: Parsing teaminfo.txt...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Parsing teaminfo.txt...\n"));
 	UI_ParseTeamInfo("teaminfo.txt");
-	printf("UI_Init: Loading teams...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Loading teams...\n"));
 	UI_LoadTeams();
-	printf("UI_Init: Parsing gameinfo.txt...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Parsing gameinfo.txt...\n"));
 	UI_ParseGameInfo("gameinfo.txt");
 #endif
 
@@ -5187,7 +5183,7 @@ void _UI_Init( qboolean inGameLoad ) {
 	if (menuSet == NULL || menuSet[0] == '\0') {
 		menuSet = "ui/menus.txt";
 	}
-	printf("UI_Init: menuSet = '%s'\n", menuSet); fflush(stdout);
+	trap_Print(va("UI_Init: menuSet = '%s'\n", menuSet));
 
 #if 0
 	if (uiInfo.inGameLoad) {
@@ -5195,62 +5191,62 @@ void _UI_Init( qboolean inGameLoad ) {
 	} else { // bk010222: left this: UI_LoadMenus(menuSet, qtrue);
 	}
 #else 
-	printf("UI_Init: Loading main menus from '%s'...\n", menuSet); fflush(stdout);
+	trap_Print(va("UI_Init: Loading main menus from '%s'...\n", menuSet));
 	UI_LoadMenus(menuSet, qtrue);
-	printf("UI_Init: After main menus, Menu_Count = %d\n", Menu_Count()); fflush(stdout);
-	printf("UI_Init: Loading ingame menus...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: After main menus, Menu_Count = %d\n", Menu_Count()));
+	trap_Print(va("UI_Init: Loading ingame menus...\n"));
 	UI_LoadMenus("ui/ingame.txt", qfalse);
-	printf("UI_Init: After ingame menus, Menu_Count = %d\n", Menu_Count()); fflush(stdout);
+	trap_Print(va("UI_Init: After ingame menus, Menu_Count = %d\n", Menu_Count()));
 #endif
 	
 	// Diagnostic: Print menu count to verify loading
-	printf("*** UI_Init: FINAL Menu_Count = %d ***\n", Menu_Count()); fflush(stdout);
+	trap_Print(va("*** UI_Init: FINAL Menu_Count = %d ***\n", Menu_Count()));
 	
 	Menus_CloseAll();
 
-	printf("UI_Init: Loading cached servers...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Loading cached servers...\n"));
 	trap_LAN_LoadCachedServers();
-	printf("UI_Init: Loading best scores...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Loading best scores...\n"));
 	// Skip if map list is empty to prevent crash
 	if (uiInfo.mapCount > 0) {
-		printf("UI_Init: mapCount=%d, loading best scores for map\n", uiInfo.mapCount); fflush(stdout);
+		trap_Print(va("UI_Init: mapCount=%d, loading best scores for map\n", uiInfo.mapCount));
 		UI_LoadBestScores(uiInfo.mapList[ui_currentMap.integer].mapLoadName, uiInfo.gameTypes[ui_gameType.integer].gtEnum);
 	} else {
-		printf("UI_Init: SKIPPING UI_LoadBestScores - mapCount=0\n"); fflush(stdout);
+		trap_Print(va("UI_Init: SKIPPING UI_LoadBestScores - mapCount=0\n"));
 	}
 
-	printf("UI_Init: Building model list...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Building model list...\n"));
 	// UI_BuildQ3Model_List();  // SKIPPED: May cause freeze
-	printf("UI_Init: SKIPPING UI_BuildQ3Model_List (debug)\n"); fflush(stdout);
-	printf("UI_Init: SKIPPING UI_LoadBots (debug)\n"); fflush(stdout);
+	trap_Print(va("UI_Init: SKIPPING UI_BuildQ3Model_List (debug)\n"));
+	trap_Print(va("UI_Init: SKIPPING UI_LoadBots (debug)\n"));
 	// UI_LoadBots();  // SKIPPED: Causes freeze
 
 	// sets defaults for ui temp cvars
-	printf("UI_Init: Setting effectsColor...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Setting effectsColor...\n"));
 	uiInfo.effectsColor = gamecodetoui[(int)trap_Cvar_VariableValue("color1")-1];
-	printf("UI_Init: Setting crosshair...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Setting crosshair...\n"));
 	uiInfo.currentCrosshair = (int)trap_Cvar_VariableValue("cg_drawCrosshair");
-	printf("UI_Init: Setting mousePitch...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Setting mousePitch...\n"));
 	trap_Cvar_Set("ui_mousePitch", (trap_Cvar_VariableValue("m_pitch") >= 0) ? "0" : "1");
 
-	printf("UI_Init: Setting serverStatus...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Setting serverStatus...\n"));
 	uiInfo.serverStatus.currentServerCinematic = -1;
 	uiInfo.previewMovie = -1;
 
-	printf("UI_Init: Checking TeamArenaFirstRun...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Checking TeamArenaFirstRun...\n"));
 	if (trap_Cvar_VariableValue("ui_TeamArenaFirstRun") == 0) {
 		trap_Cvar_Set("s_volume", "0.8");
 		trap_Cvar_Set("s_musicvolume", "0.5");
 		trap_Cvar_Set("ui_TeamArenaFirstRun", "1");
 	}
 
-	printf("UI_Init: Registering debug_protocol...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Registering debug_protocol...\n"));
 	trap_Cvar_Register(NULL, "debug_protocol", "", 0 );
 
-	printf("UI_Init: Setting ui_actualNetGameType...\n"); fflush(stdout);
+	trap_Print(va("UI_Init: Setting ui_actualNetGameType...\n"));
 	trap_Cvar_Set("ui_actualNetGameType", va("%d", ui_netGameType.integer));
 	
-	printf("=== _UI_Init COMPLETE ===\n"); fflush(stdout);
+	trap_Print(va("=== _UI_Init COMPLETE ===\n"));
 }
 
 

@@ -9,8 +9,7 @@ set cc=lcc -DQ3_VM -S -Wf-target=bytecode -Wf-g -I..\..\cgame -I..\..\game -I..\
 %cc%  ../g_main.c
 @if errorlevel 1 goto quit
 
-%cc%  ../g_syscalls.c
-@if errorlevel 1 goto quit
+rem The manifest links syscall assembly; native wrappers are not QVM sources.
 
 %cc%  ../bg_misc.c
 @if errorlevel 1 goto quit
