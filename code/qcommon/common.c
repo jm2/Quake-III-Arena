@@ -2163,10 +2163,13 @@ Returns last event time
 int Com_EventLoop( void ) {
 	sysEvent_t	ev;
 	netadr_t	evFrom;
-	byte		bufData[MAX_MSGLEN];
+	byte		bufData[MAX_MSGLEN_BUF];
 	msg_t		buf;
 	int eventLoopIter = 0;
 	static int firstCall = 1;
+
+	// compile-time check: Netchan_Process copies a MAX_MSGLEN message after its 4 byte sequence
+	(void)sizeof( char[( sizeof( bufData ) >= MAX_MSGLEN + 4 ) ? 1 : -1] );
 
 	MSG_Init( &buf, bufData, sizeof( bufData ) );
 
