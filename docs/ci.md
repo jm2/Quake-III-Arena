@@ -57,8 +57,8 @@ merging several PRs in a row never cancels or drops a master run.
     syscalls, faulted shutdown re-entry, and valid execution;
   - checks full-width loads, legacy masked stores, ARG boundaries, block-copy
     bounds/overlap, and bounded syscall argument snapshots;
-  - checks wrapping integer arithmetic, division/modulo traps, shift counts,
-    and float conversion limits;
+  - checks wrapping integer arithmetic and the defined division/modulo by
+    zero, oversized shift count, and float conversion results;
   - checks native/compiled/interpreted VM dispatch with empty, partial, and
     twelve-parameter calls, zero padding, single argument evaluation, and
     invalid counts, and faulted VM re-entry;
