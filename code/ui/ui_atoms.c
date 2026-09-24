@@ -225,7 +225,7 @@ static void UI_CalcPostGameStats() {
 	char		fileName[MAX_QPATH];
 	char		info[MAX_INFO_STRING];
 	fileHandle_t f;
-	int size, game, time, adjustedTime;
+	int size, game, time, adjustedTime, currentMap;
 	postGameInfo_t oldInfo;
 	postGameInfo_t newInfo;
 	qboolean newHigh = qfalse;
@@ -262,7 +262,14 @@ static void UI_CalcPostGameStats() {
 	newInfo.captures = atoi(UI_Argv(14));
 
 	newInfo.time = (time - trap_Cvar_VariableValue("ui_matchStartTime")) / 1000;
-	adjustedTime = uiInfo.mapList[ui_currentMap.integer].timeToBeat[game];
+	// issue #389: ui_currentMap is an archived cvar, and the server names the
+	// game type; the skirmish menu starts the first map for a value past the
+	// map list, and a game type past the table has no time to beat
+	currentMap = ui_currentMap.integer;
+	if (currentMap < 0 || currentMap >= uiInfo.mapCount) {
+		currentMap = 0;
+	}
+	adjustedTime = (game >= 0 && game < MAX_GAMETYPES) ? uiInfo.mapList[currentMap].timeToBeat[game] : 0;
 	if (newInfo.time < adjustedTime) { 
 		newInfo.timeBonus = (adjustedTime - newInfo.time) * 10;
 	} else {
