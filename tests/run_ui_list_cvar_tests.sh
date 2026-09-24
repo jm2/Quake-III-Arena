@@ -8,8 +8,9 @@ trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 # Issue #389: the menus' list selections are archived cvars, so a config or
 # the console (or a server, before anything registers them) can set them to
 # anything, and the Team Arena UI and q3_ui video menu index their lists with
-# them. Each fixture sets the cvar through the real CL_SystemInfoChanged and
-# cvar.c behind the module's real syscall layer, then drives every consumer.
+# them, and with numbers from gameinfo.txt, which any pk3 can supply. Each
+# fixture sets the cvar through the real CL_SystemInfoChanged and cvar.c
+# behind the module's real syscall layer, then drives every consumer.
 # The UIs read some of the cvars back as floats; GCC's -fsanitize=undefined
 # leaves out the float to int conversion check that Clang's includes.
 Q3_TEST_ENGINE=(
@@ -97,6 +98,19 @@ done
 for Q3_TEST_VALUE in -1 0 3 7 15 16 "${Q3_TEST_EDGES[@]}"; do
     "${Q3_TEST_RUN[@]}" "$Q3_TEST_DIR/ui" postgame "$Q3_TEST_VALUE"
 done
+# gameinfo.txt's numbers, which any pk3 can supply: the Harvester's game type
+# number (7 in retail data) against the maps' 16 (MAX_GAMETYPES) times to beat
+# and their game type bits, and a map's team size against a team's 5 players
+for Q3_TEST_VALUE in -1 7 15 16 100000; do
+    "${Q3_TEST_RUN[@]}" "$Q3_TEST_DIR/ui" gtEnum "$Q3_TEST_VALUE"
+done
+for Q3_TEST_VALUE in -1 0 2 5 6 100000 "${Q3_TEST_EDGES[@]}"; do
+    "${Q3_TEST_RUN[@]}" "$Q3_TEST_DIR/ui" teamMembers "$Q3_TEST_VALUE"
+done
+# the postgame skill bonus, skill levels 1 to 5
+for Q3_TEST_VALUE in -1 0 1 3 5 6 "${Q3_TEST_EDGES[@]}"; do
+    "${Q3_TEST_RUN[@]}" "$Q3_TEST_DIR/ui" skillBonus "$Q3_TEST_VALUE"
+done
 # no gameinfo.txt yet: every game type selection names no entry, and the
 # saved map (2) must survive until a menu loads the list
 for Q3_TEST_VALUE in -1 0 3 "${Q3_TEST_EDGES[@]}"; do
@@ -110,4 +124,9 @@ for Q3_TEST_CVAR in r_fullscreen r_allowExtensions; do
     for Q3_TEST_VALUE in -1 0 1 2 3 "${Q3_TEST_EDGES[@]}"; do
         "${Q3_TEST_RUN[@]}" "$Q3_TEST_DIR/q3ui" "$Q3_TEST_CVAR" "$Q3_TEST_VALUE"
     done
+done
+# the texture detail slider (3 - r_picmip, 0 to 3), and a NaN, which the
+# slider's clamp let through to an int conversion
+for Q3_TEST_VALUE in -1 0 2 3 4 nan "${Q3_TEST_EDGES[@]}"; do
+    "${Q3_TEST_RUN[@]}" "$Q3_TEST_DIR/q3ui" r_picmip "$Q3_TEST_VALUE"
 done

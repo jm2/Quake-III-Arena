@@ -656,8 +656,10 @@ static void GraphicsOptions_SetMenuItems( void )
 	{
 		s_graphicsoptions.tq.curvalue = 0;
 	}
-	else if ( s_graphicsoptions.tq.curvalue > 3 )
+	else if ( !( s_graphicsoptions.tq.curvalue <= 3 ) )
 	{
+		// also a NaN, which GraphicsOptions_GetInitialVideo would convert to
+		// int; the renderer reads r_picmip "nan" as 0, full detail (#389)
 		s_graphicsoptions.tq.curvalue = 3;
 	}
 

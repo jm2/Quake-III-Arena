@@ -8,7 +8,10 @@
  *   cg_drawCrosshair and ui_mapIndex are read back as floats, whose
  *   conversion to int is undefined past the int range;
  * - the postgame command looks up the map's time to beat for the game type
- *   the server names.
+ *   the server names, and multiplies the score by g_spSkill;
+ * - gameinfo.txt, which any pk3 can supply, names each game type's number,
+ *   which indexes the maps' times to beat and shifts their game type bits,
+ *   and each map's team size, which counts the team's players.
  * Each value reaches the UI through the real CL_SystemInfoChanged and cvar.c,
  * and every consumer that reads it runs: _UI_Init, the owner draws and their
  * widths, the visibility flags, the items' keys, the feeders and the menu
@@ -37,10 +40,12 @@ void dllEntry( int (QDECL *syscallptr)( int arg, ... ) );	/* ui_syscalls.c */
 #define PLAYING 0x3000	/* the maps' cinematics, PLAYING + map, before a stop */
 #define SCALE 0.3f	/* between ui_smallFont and ui_bigFont */
 #define START_TIME 10	/* the postgame match time, seconds */
+#define BASE_SCORE "100"	/* the postgame base score */
 
 /* gameinfo.txt: Team Arena's game types, and four skirmish maps with their
- * times to beat per game type (0 for none); the last has no single player */
-static const struct {
+ * times to beat per game type (0 for none); the last has no single player.
+ * The gtEnum and teamMembers cases change a number in it. */
+static struct {
 	const char *name;
 	int gt;
 } gameTypes[] = {
@@ -51,7 +56,7 @@ static const struct {
 	{ "All", -1 }, { "Free For All", GT_FFA }, { "Tournament", GT_TOURNAMENT }, { "Team Deathmatch", GT_TEAM },
 	{ "Capture the Flag", GT_CTF }, { "One Flag CTF", GT_1FCTF }, { "Overload", GT_OBELISK }, { "Harvester", GT_HARVESTER },
 };
-static const struct {
+static struct {
 	const char *name, *loadName, *opponent;
 	int teamMembers;
 	int times[GT_MAX_GAME_TYPE];
@@ -81,6 +86,7 @@ static const struct {
 };
 
 static const char *cvar, *value;
+static char install[64];	/* the case's change to gameinfo.txt */
 static char gameinfoText[4096];
 static qboolean noGameInfo;	/* the install has no gameinfo.txt yet */
 static char serverInfo[MAX_INFO_STRING];	/* CS_SERVERINFO */
@@ -97,7 +103,7 @@ static int stoppedCinematic;
 /** Fail with the cvar and value under test and the contract that broke. */
 static void Check( int ok, const char *what ) {
 	if ( !ok ) {
-		fprintf( stderr, "UI list cvar regression failed (%s %s): %s\n", cvar, value, what );
+		fprintf( stderr, "UI list cvar regression failed (%s %s%s): %s\n", cvar, value, install, what );
 		exit( 1 );
 	}
 }
@@ -474,6 +480,9 @@ static qboolean MapListed( int m, int gt, qboolean singlePlayer ) {
 	if ( gt == GT_TEAM ) {
 		gt = GT_FFA;
 	}
+	if ( gt < 0 || gt >= GT_MAX_GAME_TYPE ) {
+		return qfalse;	// no map has a time for it
+	}
 	return maps[m].times[gt] && ( !singlePlayer || maps[m].times[GT_SINGLE_PLAYER] );
 }
 
@@ -536,6 +545,7 @@ static void CheckPostgame( int t ) {
 	for ( i = 1; i < argCount; i++ ) {
 		args[i] = "0";
 	}
+	args[9] = BASE_SCORE;
 	Com_sprintf( matchTime, sizeof( matchTime ), "%d", START_TIME * 1000 );
 	args[13] = matchTime;
 	Check( UI_ConsoleCommand( 0 ), "postgame" );
@@ -544,7 +554,7 @@ static void CheckPostgame( int t ) {
 
 /** The time to beat an item draws for map m and game type gt. */
 static const char *TimeToBeat( int m, int gt ) {
-	int t = maps[m].times[gt];
+	int t = gt >= 0 && gt < GT_MAX_GAME_TYPE ? maps[m].times[gt] : 0;
 	return Format( "%02i:%02i", t / 60, t % 60 );
 }
 
@@ -627,7 +637,7 @@ static void TestNetGameType( long v ) {
 
 	Set( "ui_currentNetMap", "0" );
 	RunScript( "StartServer" );
-	Check( atoi( CvarString( "g_gametype" ) ) == gt, "StartServer sets g_gametype" );
+	Check( atoi( CvarString( "g_gametype" ) ) == ( gt < 0 ? 0 : gt > 8 ? 8 : gt ), "StartServer sets g_gametype" );
 	CheckMapStarted( 0, "StartServer" );
 	RunScript( "voteGame" );
 	Check( !strcmp( executed, e == v ? Format( "callvote g_gametype %i\n", gt ) : "" ), "voteGame votes only for a listed game type" );
@@ -876,6 +886,40 @@ static void TestPostgame( long v ) {
 	CheckPostgame( v >= 0 && v < GT_MAX_GAME_TYPE ? maps[m].times[v] : 0 );
 }
 
+/** A map's team size from gameinfo.txt: the skirmish sizes the server for
+ * both teams and adds a bot for every player but the local one, and a team
+ * names TEAM_MEMBERS players. */
+static void TestTeamSize( long v ) {
+	int members = v < 0 ? 0 : v > TEAM_MEMBERS ? TEAM_MEMBERS : (int)v;
+	int bots = 0;
+	const char *s;
+
+	cvar = "ui_currentMap";
+	value = "0";
+	RunScript( "SkirmishStart" );
+	CheckMapStarted( 0, "SkirmishStart" );
+	Check( atoi( CvarString( "sv_maxClients" ) ) == members * 2, "SkirmishStart sizes the server for both teams" );
+	for ( s = strstr( executed, "addbot " ); s; s = strstr( s + 1, "addbot " ) ) {
+		bots++;
+	}
+	Check( bots == members + ( members > 0 ? members - 1 : 0 ), "SkirmishStart adds the teams' bots" );
+}
+
+/** The postgame skill bonus: g_spSkill's level, 1 to 5, multiplies the score
+ * that is kept as the map's best. */
+static void TestSkillBonus( long v ) {
+	int skill = v < 1 ? 1 : v > 5 ? 5 : (int)v;
+	int m = 1;
+
+	Set( "g_spSkill", value );
+	Set( "ui_currentMap", "1" );
+	Com_sprintf( serverInfo, sizeof( serverInfo ), "\\mapname\\%s\\g_gametype\\%d", maps[m].loadName, GT_CTF );
+	CheckPostgame( maps[m].times[GT_CTF] );
+	Check( atoi( CvarString( "ui_scoreSkillBonus" ) ) == skill, "postgame skill bonus" );
+	Check( atoi( CvarString( "ui_scoreScore" ) ) == ( atoi( BASE_SCORE ) + ( maps[m].times[GT_CTF] - START_TIME ) * 10 ) * skill,
+		"postgame score" );
+}
+
 /** No gameinfo.txt yet: the game type and map lists are empty, and every game
  * type selection reads the empty first entry. The keys step as they always
  * did (the skirmish item's previous game type is then -1, the browser's
@@ -916,7 +960,7 @@ static void TestEmptyLists( void ) {
 int main( int argc, char **argv ) {
 	static const char *cvars[] = { "ui_gameType", "ui_netGameType", "ui_joinGameType", "ui_currentMap", "ui_currentNetMap",
 		"ui_netSource", "ui_serverFilterType", "ui_currentTier", "g_spSkill", "ui_blueteam1", "ui_redteam1",
-		"cg_drawCrosshair", "ui_mapIndex", "postgame", "emptyLists" };
+		"cg_drawCrosshair", "ui_mapIndex", "postgame", "emptyLists", "gtEnum", "teamMembers", "skillBonus" };
 	char *end;
 	long v;
 	int i, m;
@@ -932,6 +976,17 @@ int main( int argc, char **argv ) {
 	Check( i < ARRAY_LEN( cvars ), "a cvar under test" );
 	v = strtol( value, &end, 10 );
 	Check( *value && !*end && v >= INT_MIN && v <= INT_MAX, "a decimal int" );
+	if ( !strcmp( argv[1], "gtEnum" ) ) {
+		// the Harvester's number, as a pk3's gameinfo.txt can give it; the
+		// skirmish and create server menus then select it
+		gameTypes[7].gt = (int)v;
+		Com_sprintf( install, sizeof( install ), ", Harvester's gtEnum %s", value );
+		cvar = "ui_gameType";
+		value = "7";
+	} else if ( !strcmp( argv[1], "teamMembers" ) ) {
+		maps[0].teamMembers = (int)v;
+		Com_sprintf( install, sizeof( install ), ", map 0's teamMembers %s", value );
+	}
 
 	// gameinfo.txt from the tables above
 	Q_strcat( gameinfoText, sizeof( gameinfoText ), "gametypes {\n" );
@@ -965,7 +1020,15 @@ int main( int argc, char **argv ) {
 	}
 	Init();
 
-	if ( !strcmp( cvar, "ui_gameType" ) ) {
+	if ( !strcmp( argv[1], "gtEnum" ) ) {
+		TestGameType( 7 );
+		cvar = "ui_netGameType";
+		TestNetGameType( 7 );
+	} else if ( !strcmp( argv[1], "teamMembers" ) ) {
+		TestTeamSize( v );
+	} else if ( !strcmp( cvar, "skillBonus" ) ) {
+		TestSkillBonus( v );
+	} else if ( !strcmp( cvar, "ui_gameType" ) ) {
 		TestGameType( v );
 	} else if ( !strcmp( cvar, "ui_netGameType" ) ) {
 		TestNetGameType( v );

@@ -1103,7 +1103,7 @@ INT_MIN. The menus' own range checks then see an out of range value, and
 every value inside the int range converts as before.
 ===============
 */
-static int UI_CvarInt(const char *name) {
+int UI_CvarInt(const char *name) {
 	float value = trap_Cvar_VariableValue(name);
 
 	if (value >= 2147483648.0f) {
@@ -1309,13 +1309,16 @@ static void UI_DrawMapPreview(rectDef_t *rect, float scale, vec4_t color, qboole
 
 
 static void UI_DrawMapTimeToBeat(rectDef_t *rect, float scale, vec4_t color, int textStyle) {
-	int minutes, seconds, time;
+	int minutes, seconds, time, game;
 	if (ui_currentMap.integer < 0 || ui_currentMap.integer >= uiInfo.mapCount) {
 		ui_currentMap.integer = 0;
 		trap_Cvar_Set("ui_currentMap", "0");
 	}
 
-	time = uiInfo.mapList[ui_currentMap.integer].timeToBeat[uiInfo.gameTypes[UI_ListIndex(ui_gameType.integer, uiInfo.numGameTypes)].gtEnum];
+	// gameinfo.txt, which any pk3 can supply, names the game type's number;
+	// one past the table has no time to beat (issue #389)
+	game = uiInfo.gameTypes[UI_ListIndex(ui_gameType.integer, uiInfo.numGameTypes)].gtEnum;
+	time = (game >= 0 && game < MAX_GAMETYPES) ? uiInfo.mapList[ui_currentMap.integer].timeToBeat[game] : 0;
 
 	minutes = time / 60;
 	seconds = time % 60;
@@ -3083,7 +3086,7 @@ static qboolean UI_SetNextMap(int actual, int index) {
 
 
 static void UI_StartSkirmish(qboolean next) {
-	int i, k, g, delay, temp, map;
+	int i, k, g, delay, temp, map, members;
 	float skill;
 	char buff[MAX_STRING_CHARS];
 
@@ -3156,15 +3159,23 @@ static void UI_StartSkirmish(qboolean next) {
 		Com_sprintf( buff, sizeof(buff), "wait ; addbot %s %f "", %i \n", uiInfo.mapList[map].opponentName, skill, delay);
 		trap_Cmd_ExecuteText( EXEC_APPEND, buff );
 	} else {
-		temp = uiInfo.mapList[map].teamMembers * 2;
+		// gameinfo.txt names the map's team size, and a team has
+		// TEAM_MEMBERS players (issue #389)
+		members = uiInfo.mapList[map].teamMembers;
+		if (members < 0) {
+			members = 0;
+		} else if (members > TEAM_MEMBERS) {
+			members = TEAM_MEMBERS;
+		}
+		temp = members * 2;
 		trap_Cvar_Set("sv_maxClients", va("%d", temp));
-		for (i =0; i < uiInfo.mapList[map].teamMembers; i++) {
+		for (i =0; i < members; i++) {
 			Com_sprintf( buff, sizeof(buff), "addbot %s %f %s %i %s\n", UI_AIFromName(uiInfo.teamList[k].teamMembers[i]), skill, (g == GT_FFA) ? "" : "Blue", delay, uiInfo.teamList[k].teamMembers[i]);
 			trap_Cmd_ExecuteText( EXEC_APPEND, buff );
 			delay += 500;
 		}
 		k = UI_TeamIndexFromName(UI_Cvar_VariableString("ui_teamName"));
-		for (i =0; i < uiInfo.mapList[map].teamMembers-1; i++) {
+		for (i =0; i < members-1; i++) {
 			Com_sprintf( buff, sizeof(buff), "addbot %s %f %s %i %s\n", UI_AIFromName(uiInfo.teamList[k].teamMembers[i]), skill, (g == GT_FFA) ? "" : "Red", delay, uiInfo.teamList[k].teamMembers[i]);
 			trap_Cmd_ExecuteText( EXEC_APPEND, buff );
 			delay += 500;
@@ -3768,7 +3779,9 @@ static int UI_MapCountByGameType(qboolean singlePlayer) {
 
 	for (i = 0; i < uiInfo.mapCount; i++) {
 		uiInfo.mapList[i].active = qfalse;
-		if ( uiInfo.mapList[i].typeBits & (1 << game)) {
+		// a game type number from gameinfo.txt past the table lists no maps
+		// (issue #389)
+		if ( game >= 0 && game < MAX_GAMETYPES && ( uiInfo.mapList[i].typeBits & (1 << game) ) ) {
 			if (singlePlayer) {
 				if (!(uiInfo.mapList[i].typeBits & (1 << GT_SINGLE_PLAYER))) {
 					continue;

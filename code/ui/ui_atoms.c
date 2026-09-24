@@ -282,9 +282,14 @@ static void UI_CalcPostGameStats() {
 		newInfo.shutoutBonus = 0;
 	}
 
-	newInfo.skillBonus = trap_Cvar_VariableValue("g_spSkill");
+	// issue #389: g_spSkill can hold any value; the bonus is its skill level,
+	// 1 to 5 as the game's G_InitBots clamps it, so a bogus value cannot
+	// multiply the score past the int range or into the saved best score
+	newInfo.skillBonus = UI_CvarInt("g_spSkill");
 	if (newInfo.skillBonus <= 0) {
 		newInfo.skillBonus = 1;
+	} else if (newInfo.skillBonus > 5) {
+		newInfo.skillBonus = 5;
 	}
 	newInfo.score = newInfo.baseScore + newInfo.shutoutBonus + newInfo.timeBonus;
 	newInfo.score *= newInfo.skillBonus;
