@@ -339,7 +339,9 @@ void SV_DirectConnect( netadr_t from ) {
 			newcl = cl;
 
 			// the slot is rebuilt below, don't leak its queued messages
+			// or the file handle and blocks of a download in progress
 			SV_Netchan_FreeQueue( newcl );
+			SV_CloseDownload( newcl );
 
 			// this doesn't work because it nukes the players userinfo
 

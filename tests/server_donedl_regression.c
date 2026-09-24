@@ -1,4 +1,5 @@
-/* Issue #271: repeated donedl commands must not queue unbounded gamestate copies. */
+/* Issue #271: repeated donedl commands must not queue unbounded gamestate copies.
+   Issue #314: reconnecting into a slot must release its download. */
 #include "../code/server/server.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -10,17 +11,19 @@
 #define QUEUE_BUDGET ( 2 << 20 )
 #define FLOOD 1500
 #define SERVER_ID 4242
+#define DOWNLOAD_PAK "baseq3/mapdl"
+#define DOWNLOAD_BYTES ( 64 << 10 )	/* more than the block window, so the download stays in progress */
 
 serverStatic_t svs;
 server_t sv;
 vm_t *gvm;
 static cvar_t zero = { .string = "" }, maxclients = { .string = "64", .integer = MAX_CLIENTS };
 static cvar_t running = { .string = "1", .integer = 1 }, reconnect = { .string = "3", .integer = 3 };
-static cvar_t flood = { .string = "1", .integer = 1 };
+static cvar_t flood = { .string = "1", .integer = 1 }, allowDownload = { .string = "0" };
 cvar_t *sv_maxclients = &maxclients, *sv_reconnectlimit = &reconnect, *sv_floodProtect = &flood;
 cvar_t *com_sv_running = &running;
 cvar_t *sv_maxRate = &zero, *sv_pure = &zero, *sv_padPackets = &zero, *sv_lanForceRate = &zero;
-cvar_t *sv_allowDownload = &zero, *sv_minPing = &zero, *sv_maxPing = &zero, *sv_privateClients = &zero;
+cvar_t *sv_allowDownload = &allowDownload, *sv_minPing = &zero, *sv_maxPing = &zero, *sv_privateClients = &zero;
 cvar_t *sv_privatePassword = &zero, *com_dedicated = &zero, *com_cl_running = &zero;
 qboolean com_errorEntered;
 extern cvar_t *showpackets, *showdrop;
@@ -30,6 +33,9 @@ static playerState_t players[MAX_CLIENTS];
 static byte pvs[MAX_MAP_AREA_BYTES];
 static int zoneBytes, zonePeak, queueAllocs, begins, disconnects;
 static char dropReason[MAX_STRING_CHARS];
+static const char *referencedPaks = "";
+static qboolean fileOpen[MAX_FILE_HANDLES];
+static int filePos[MAX_FILE_HANDLES], openFiles;
 
 /** Stop on the first behaviour that differs from the bounded policy. */
 static void Check( int ok, const char *message ) {
@@ -94,10 +100,27 @@ void CL_Disconnect( qboolean showMainMenu ) { (void)showMainMenu; }
 void Cvar_Set( const char *name, const char *value ) { (void)name; (void)value; }
 qboolean FS_idPak( char *pak, char *base ) { (void)pak; (void)base; return qfalse; }
 int FS_FileIsInPAK( const char *name, int *sum ) { (void)name; (void)sum; return -1; }
-void FS_FCloseFile( fileHandle_t f ) { (void)f; }
-int FS_SV_FOpenFileRead( const char *name, fileHandle_t *fp ) { (void)name; *fp = 0; return 0; }
-int FS_Read( void *buffer, int len, fileHandle_t f ) { (void)buffer; (void)len; (void)f; return 0; }
-const char *FS_ReferencedPakNames( void ) { return ""; }
+/** The FS_HandleForFile table: handle 0 is never used and a full table is ERR_DROP. */
+int FS_SV_FOpenFileRead( const char *name, fileHandle_t *fp ) {
+	int f;
+	*fp = 0;
+	if ( strcmp( name, DOWNLOAD_PAK ".pk3" ) ) return 0;
+	for ( f = 1; f < MAX_FILE_HANDLES && fileOpen[f]; f++ ) {}
+	if ( f == MAX_FILE_HANDLES ) Com_Error( ERR_DROP, "FS_HandleForFile: none free" );
+	fileOpen[f] = qtrue; filePos[f] = 0; openFiles++; *fp = f;
+	return DOWNLOAD_BYTES;
+}
+void FS_FCloseFile( fileHandle_t f ) {
+	Check( f > 0 && f < MAX_FILE_HANDLES && fileOpen[f], "closed a file that is not open" );
+	fileOpen[f] = qfalse; openFiles--;
+}
+int FS_Read( void *buffer, int len, fileHandle_t f ) {
+	Check( f > 0 && f < MAX_FILE_HANDLES && fileOpen[f], "read a file that is not open" );
+	if ( len > DOWNLOAD_BYTES - filePos[f] ) len = DOWNLOAD_BYTES - filePos[f];
+	memset( buffer, 'd', len ); filePos[f] += len;
+	return len;
+}
+const char *FS_ReferencedPakNames( void ) { return referencedPaks; }
 const char *FS_LoadedPakPureChecksums( void ) { return ""; }
 qboolean FS_FilenameCompare( const char *a, const char *b ) { return strcmp( a, b ) != 0; }
 
@@ -228,6 +251,25 @@ static void Reconnect( void ) {
 	Check( Connect( 2, 22 ) == cl && !Queued( cl ) && zoneBytes == base, "reconnect frees the old queue" );
 	puts( "reconnect releases queued messages" );
 }
+/** Reconnecting mid-download, more times than there are file handles, must close the file and free
+    its block window every time; as in retail, the game gets no ClientDisconnect for a reconnect. */
+static void ReconnectDuringDownload( void ) {
+	client_t *cl = Connect( 3, 33 ); int cycle, base = zoneBytes;
+	allowDownload.integer = 1; referencedPaks = DOWNLOAD_PAK;
+	for ( cycle = 0; cycle < 2 * MAX_FILE_HANDLES; cycle++ ) {
+		InitialGamestate( cl ); Drain( cl );
+		Packet( cl, SERVER_ID, cl->netchan.outgoingSequence - 1, "download " DOWNLOAD_PAK ".pk3", 1, qfalse );
+		SV_SendClientSnapshot( cl );
+		Check( openFiles == 1 && cl->downloadXmitBlock > 0 && zoneBytes - base >= MAX_DOWNLOAD_WINDOW * MAX_DOWNLOAD_BLKSIZE,
+		       "download in progress: file open, block window read, first block sent" );
+		svs.time += 5000;
+		Check( Connect( 3, 33 ) == cl && cl->state == CS_CONNECTED, "client reconnects into its slot" );
+		Check( !openFiles, "reconnect closes the download file" );
+		Check( zoneBytes == base, "reconnect frees the download blocks" );
+	}
+	Check( !disconnects && !begins, "reconnect does not call ClientDisconnect" );
+	puts( "reconnect during a download releases its file handle and blocks" );
+}
 /** SV_MapRestart_f forces a downloading client active; its donedl must still bring the new gamestate. */
 static void MapRestartDuringDownload( void ) {
 	client_t *cl = Connect( 1, 11 ); int before, gamestate;
@@ -289,7 +331,8 @@ int main( int argc, char **argv ) {
 	case 5: LegitimateFlow( qtrue ); break;
 	case 6: MapRestartDuringDownload(); break;
 	case 7: ManyClients(); break;
-	default: Check( 0, "usage: server-donedl-tests <0-7>" );
+	case 8: ReconnectDuringDownload(); break;
+	default: Check( 0, "usage: server-donedl-tests <0-8>" );
 	}
 	return 0;
 }
