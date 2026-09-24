@@ -796,17 +796,35 @@ char	*Cvar_InfoString( int bit ) {
 Cvar_InfoString_Big
 
   handles large info strings ( CS_SYSTEMINFO )
+
+  Values that would fit a normal info string go in first and the big
+  ones (the pure and referenced pak lists) last, so a pak list that
+  fills the string can never push out a short key such as sv_serverid,
+  and a value that no longer fits is reported. Readers look keys up by
+  name, so the order is not part of the protocol.
 =====================
 */
 char	*Cvar_InfoString_Big( int bit ) {
 	static char	info[BIG_INFO_STRING];
 	cvar_t	*var;
+	int		pass, len;
 
 	info[0] = 0;
 
-	for (var = cvar_vars ; var ; var = var->next) {
-		if (var->flags & bit) {
+	for ( pass = 0 ; pass < 2 ; pass++ ) {
+		for (var = cvar_vars ; var ; var = var->next) {
+			if ( !(var->flags & bit) ) {
+				continue;
+			}
+			if ( ( strlen( var->string ) >= MAX_INFO_VALUE ) != pass ) {
+				continue;
+			}
+			len = (int)strlen( info );
 			Info_SetValueForKey_Big (info, var->name, var->string);
+			if ( var->string[0] && (int)strlen( info ) == len ) {
+				Com_Printf( "WARNING: no room for %s (%i chars) in the big info string, left it out\n",
+					var->name, (int)strlen( var->string ) );
+			}
 		}
 	}
 	return info;
