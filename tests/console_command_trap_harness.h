@@ -129,6 +129,8 @@ static void RunConsoleCommandTrap( int (*dispatch)( int * ), int trap, const cha
 	Cbuf_Init();
 	for ( native = 0; native < 2; native++ ) {
 		if ( native && !Below4GiB( vm.dataBase ) ) {
+			/* CI output hides passing runners, so a CI host must run the native pass */
+			Check( !getenv( "CI" ), "low native page (CI does not skip the native pass)" );
 			printf( "%s console-command trap: SKIPPED the native pass, no page below 4 GiB on this host\n", module );
 			break;
 		}

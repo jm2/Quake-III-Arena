@@ -153,7 +153,11 @@ int main( void ) {
 		strcpy(native+100,"hi hi"); args[1]=(int)(unsigned long)(native+100); args[3]=MAX_MESSAGE_SIZE-100;
 		vm.entryPoint=NativeEntry; Check(SV_BotLibChatCalls(args)==0 && synonymSize==MAX_MESSAGE_SIZE-100 && !strcmp(native+100,"sssss"),"native message size");
 		vm.entryPoint=NULL; munmap(native,4096);
-	} else puts("Botlib chat regression: SKIPPED the native message size check, no page below 4 GiB on this host");
+	} else {
+		/* CI output hides passing runners, so a CI host must run the native check */
+		Check(!getenv("CI"),"low native page (CI does not skip the native check)");
+		puts("Botlib chat regression: SKIPPED the native message size check, no page below 4 GiB on this host");
+	}
 	args[3]=0;
 	args[0]=BOTLIB_AI_MATCH_VARIABLE; args[1]=64; args[2]=0; args[3]=IMAGE_SIZE-8; args[4]=8;
 	match=(bot_match_t *)(vm.dataBase+64); memset(match,0,sizeof(*match)); strcpy(match->string,"test");
