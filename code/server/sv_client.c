@@ -1398,13 +1398,15 @@ void SV_ExecuteClientCommand( client_t *cl, const char *s, qboolean clientOK ) {
 		}
 	}
 
-	// the game only takes commands from a client that has its gamestate.
-	// Below CS_PRIMED the client has not loaded the map, yet retail's team
-	// command would spawn it with ClientBegin while the server still has
-	// it CS_CONNECTED.  So its game commands are refused, as ioquake3 and
-	// Quake3e do; its server level commands above still run, which is all
-	// a connecting or downloading client needs
-	if (clientOK && cl->state >= CS_PRIMED) {
+	// the game only takes commands from a network client that has its
+	// gamestate.  Below CS_PRIMED the client has not loaded the map, yet
+	// retail's team command would spawn it with ClientBegin while the
+	// server still has it CS_CONNECTED.  So its game commands are refused,
+	// as ioquake3 and Quake3e do; its server level commands above still
+	// run, which is all a connecting or downloading client needs.  A bot
+	// is exempt: SV_DropClient makes it CS_ZOMBIE before the game
+	// disconnects it, and its exit chat comes through here
+	if (clientOK && (cl->state >= CS_PRIMED || cl->netchan.remoteAddress.type == NA_BOT)) {
 		// pass unknown strings to the game
 		if (!u->name && sv.state == SS_GAME) {
 			Cmd_Args_Sanitize();

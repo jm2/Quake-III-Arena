@@ -3,7 +3,8 @@
    Issue #341: it must throttle a network client that has not entered the world as well, while the
    commands of a retail client's connect sequence, downloads included, still all run.
    Issue #378: the game must never take a command from a client below CS_PRIMED, which has not loaded the
-   map (retail's team would spawn it with ClientBegin), while that client's server commands still run. */
+   map (retail's team would spawn it with ClientBegin), while that client's server commands still run.  A
+   bot's exit chat, which it sends as a CS_ZOMBIE while the game disconnects it, still reaches the game. */
 #include "../code/server/sv_client.c"
 #include <stdarg.h>
 #include <stdlib.h>
@@ -34,6 +35,7 @@ static char lastSay[CLIENTS][MAX_STRING_CHARS];
 static int queuedSequence[CLIENTS], moveTime[CLIENTS], thinks[CLIENTS], says[CLIENTS], userinfoChanges[CLIENTS];
 static int moving[CLIENTS], begins[CLIENTS], teams[CLIENTS], serverIds[CLIENTS];
 static int gamestatesDue, gamestateFor;	/* gamestates the connect sequence asks for with donedl, and its client */
+static int dropping = -1, exitChatState;	/* the bot SV_DropClient is dropping, and its state when it chatted */
 static sharedEntity_t entities[CLIENTS];
 static char emptyConfigstring[1];
 static const char *config;
@@ -70,10 +72,18 @@ void QDECL SV_SendServerCommand( client_t *cl, const char *fmt, ... ) { (void)cl
 int FS_FileIsInPAK( const char *filename, int *pChecksum ) { (void)filename; (void)pChecksum; Check( 0, "FS_FileIsInPAK" ); return -1; }
 const char *FS_LoadedPakPureChecksums( void ) { Check( 0, "FS_LoadedPakPureChecksums" ); return ""; }
 void FS_FCloseFile( fileHandle_t f ) { (void)f; Check( 0, "FS_FCloseFile" ); }
-void SV_Netchan_FreeQueue( client_t *client ) { (void)client; Check( 0, "SV_Netchan_FreeQueue" ); }
+void SV_Netchan_FreeQueue( client_t *client ) { Check( dropping >= 0 && client == &svs.clients[dropping], "SV_Netchan_FreeQueue" ); }
 qboolean NET_CompareAdr( netadr_t a, netadr_t b ) { (void)a; (void)b; Check( 0, "NET_CompareAdr" ); return qfalse; }
 void SV_Heartbeat_f( void ) { Check( 0, "SV_Heartbeat_f" ); }
-void SV_BotFreeClient( int clientNum ) { (void)clientNum; Check( 0, "SV_BotFreeClient" ); }
+/** Same as sv_bot.c; only the bot being dropped may be freed. */
+void SV_BotFreeClient( int clientNum ) {
+	client_t *cl;
+	Check( clientNum == dropping, "SV_BotFreeClient" );
+	cl = &svs.clients[clientNum];
+	cl->state = CS_FREE;
+	cl->name[0] = 0;
+	if ( cl->gentity ) cl->gentity->r.svFlags &= ~SVF_BOT;
+}
 void SV_SendClientSnapshot( client_t *client ) { (void)client; Check( 0, "SV_SendClientSnapshot" ); }
 /** SV_SendClientGameState's output; only the donedl of a connect sequence may ask for a gamestate. */
 void SV_UpdateServerCommandsToClient( client_t *client, msg_t *msg ) { (void)msg; Check( gamestatesDue > 0 && client == &svs.clients[gamestateFor], "gamestate resent" ); }
@@ -89,6 +99,13 @@ int VM_CallArgs( vm_t *vm, int callNum, const int *args, int argCount ) {
 	if ( callNum == GAME_CLIENT_THINK ) thinks[n]++;
 	else if ( callNum == GAME_CLIENT_BEGIN ) begins[n]++;
 	else if ( callNum == GAME_CLIENT_USERINFO_CHANGED ) userinfoChanges[n]++;
+	else if ( callNum == GAME_CLIENT_DISCONNECT ) {
+		/* retail ClientDisconnect -> BotAIShutdownClient -> BotChat_ExitGame: the bot says goodbye, and
+		   EA_Command runs it through sv_bot.c BotClientCommand */
+		Check( n == dropping, "client dropped" );
+		exitChatState = svs.clients[n].state;
+		SV_ExecuteClientCommand( &svs.clients[n], "say goodbye", qtrue );
+	}
 	else if ( callNum == GAME_CLIENT_COMMAND && !strcmp( Cmd_Argv( 0 ), "team" ) ) {
 		/* retail g_cmds.c Cmd_Team_f: SetTeam spawns the client with ClientBegin */
 		teams[n]++;
@@ -229,6 +246,30 @@ static void BotUnthrottled( void ) {
 	for ( i = 0; i < BURST; i++ ) SV_ExecuteClientCommand( &svs.clients[BOT], va( "say bot%i", i ), qtrue );
 	Check( says[BOT] == BURST, "bot commands throttled" );
 }
+/** SV_DropClient makes a bot CS_ZOMBIE before the game disconnects it, as retail does, and the game has
+    it say goodbye then (kick, bot_minplayers).  Its exit chat reaches the game. */
+static void BotExitChat( void ) {
+	client_t *cl = &svs.clients[BOT];
+	int before = says[BOT];
+	entities[BOT].r.svFlags = SVF_BOT;
+	cl->gentity = &entities[BOT];
+	dropping = BOT;
+	SV_DropClient( cl, "was kicked" );
+	dropping = -1;
+	Check( exitChatState == CS_ZOMBIE && cl->state == CS_FREE, "bot not dropped" );
+	Check( says[BOT] == before + 1 && !strcmp( lastSay[BOT], "goodbye" ), "bot exit chat refused" );
+}
+/** An active client's server command starts the window, as in retail: a say right after a userinfo is
+    ignored.  Before the client is active only its game commands do (see Connect). */
+static void ServerCommandStartsWindow( int n, int throttled ) {
+	int before = says[n];
+	svs.time += 10 * WINDOW;
+	Queue( n, "userinfo \"\\name\\windowed\"" );
+	Queue( n, "say after" );
+	SendPacket( n );
+	Check( !strcmp( svs.clients[n].name, "windowed" ), "userinfo not applied" );
+	Check( says[n] - before == !throttled, throttled ? "server command of an active client did not start the window" : "say after userinfo throttled" );
+}
 /** A retail client's connect sequence, from CL_InitDownloads to its first usercmd: it downloads a pak,
     acknowledging every block with a nextdl, while its player says something twice, a full window apart;
     donedl asks for the gamestate again; after loading, cp and the userinfo its cgame registered; then
@@ -321,10 +362,13 @@ static void Run( const char *name, int listen, int protect, int remoteThrottled,
 	if ( remoteThrottled ) Throttled( PRIMED ); else Unthrottled( PRIMED );
 	Refused( CONNECTED );
 	BotUnthrottled();
+	BotExitChat();
 	svs.time += 10 * WINDOW;
 	UserinfoInWindow( REMOTE, remoteThrottled );
 	UserinfoInWindow( LOCAL, localThrottled );
 	UserinfoInWindow( PRIMED, remoteThrottled );
+	ServerCommandStartsWindow( REMOTE, remoteThrottled );
+	ServerCommandStartsWindow( LOCAL, localThrottled );
 	Check( svs.clients[PRIMED].state == CS_PRIMED && svs.clients[CONNECTED].state == CS_CONNECTED, "client state changed" );
 	Connect( JOINING );
 	Reload( RELOADING );
