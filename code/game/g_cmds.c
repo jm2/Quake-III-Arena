@@ -757,6 +757,7 @@ Cmd_FollowCycle_f
 void Cmd_FollowCycle_f( gentity_t *ent, int dir ) {
 	int		clientnum;
 	int		original;
+	int		count;
 
 	// if they are playing a tournement game, count as a loss
 	if ( (g_gametype.integer == GT_TOURNAMENT )
@@ -774,7 +775,12 @@ void Cmd_FollowCycle_f( gentity_t *ent, int dir ) {
 
 	clientnum = ent->client->sess.spectatorClient;
 	original = clientnum;
+	// check each slot at most once: clientnum never comes back to the -1 or
+	// -2 of team follow1 or follow2, or to a spectatorClient restored from
+	// session data at or past a lowered level.maxclients
+	count = 0;
 	do {
+		count++;
 		clientnum += dir;
 		if ( clientnum >= level.maxclients ) {
 			clientnum = 0;
@@ -797,7 +803,7 @@ void Cmd_FollowCycle_f( gentity_t *ent, int dir ) {
 		ent->client->sess.spectatorClient = clientnum;
 		ent->client->sess.spectatorState = SPECTATOR_FOLLOW;
 		return;
-	} while ( clientnum != original );
+	} while ( clientnum != original && count < level.maxclients );
 
 	// leave it where it was
 }
