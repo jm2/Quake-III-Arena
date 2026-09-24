@@ -16,7 +16,48 @@ Write-Host "=========================================="
 
 $INSTALL_DIR = Join-Path (Get-Location) "tools\Retro68-build"
 $SOURCE_DIR = Join-Path (Get-Location) "tools\Retro68-src"
-$RETRO68_URL = "https://github.com/autc04/Retro68.git"
+
+# The Retro68 commit, its submodules and the SDK archive digests are pinned
+# in retro68-versions.txt, which setup_retro68.sh reads too (issue #227).
+function Read-Retro68Versions {
+    param([string]$Path)
+
+    $Patterns = @{
+        RETRO68_URL = "."; RETRO68_COMMIT = "^[0-9a-f]{40}$"
+        RETRO68_SUBMODULE = "^\S+ [0-9a-f]{40}$"
+        MPW_FILE = "."; MPW_URL = "."; MPW_SHA256 = "^[0-9a-f]{64}$"
+        OPENGL_FILE = "."; OPENGL_URL = "."; OPENGL_SHA256 = "^[0-9a-f]{64}$"
+    }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "$Path is missing; it pins the Retro68 commit and the SDK archives."
+    }
+    $Pins = @{ RETRO68_SUBMODULE = @() }
+    foreach ($Line in @(Get-Content -LiteralPath $Path)) {
+        if ($Line -eq "" -or $Line.StartsWith("#")) {
+            continue
+        }
+        $Key, $Value = $Line -split "=", 2
+        if ($null -eq $Value -or $Key -cnotmatch "^[A-Z0-9_]+$" -or -not $Patterns.ContainsKey($Key)) {
+            throw "${Path}: unknown line: $Line"
+        }
+        if ($Value -cnotmatch $Patterns[$Key]) {
+            throw "${Path}: $Key has an invalid value: $Value"
+        }
+        if ($Key -ceq "RETRO68_SUBMODULE") {
+            $Pins.RETRO68_SUBMODULE += $Value
+        }
+        else {
+            $Pins[$Key] = $Value
+        }
+    }
+    foreach ($Key in $Patterns.Keys) {
+        if (-not $Pins[$Key]) {
+            throw "${Path}: $Key is missing."
+        }
+    }
+    return $Pins
+}
+$Pins = Read-Retro68Versions (Join-Path (Get-Location) "retro68-versions.txt")
 
 # Check for unar, build if missing
 if (-not (Get-Command "unar" -ErrorAction SilentlyContinue)) {
@@ -165,16 +206,45 @@ if (-not (Get-Command "unar" -ErrorAction SilentlyContinue)) {
 
 # A compiler alone is not a complete install for this project. The renderer
 # also requires prepared OpenGL headers and the generated import library.
+# The tools must also run: after a host OS upgrade they can remain installed
+# but fail to load a DLL (issue #269), and only a full rebuild repairs them.
+# check_retro68.ps1 exits 1 only for tools that cannot run. Any other status
+# means the check itself could not run (for example no usable TEMP
+# directory), which says nothing about the toolchain: stop and change nothing.
 $PreparedOpenGLDir = Join-Path $INSTALL_DIR "powerpc-apple-macos\include"
 $PreparedGl = Join-Path $PreparedOpenGLDir "gl.h"
 $PreparedAgl = Join-Path $PreparedOpenGLDir "agl.h"
 $OpenGLStubLib = Join-Path $SOURCE_DIR "InterfacesAndLibraries\SharedLibraries\libOpenGLLibraryStub.a"
+$MoveBrokenToolchain = $false
 if ((Test-Path "$INSTALL_DIR\bin\powerpc-apple-macos-gcc.exe") -and
     (Test-Path $PreparedGl) -and
     (Test-Path $PreparedAgl) -and
     (Test-Path $OpenGLStubLib)) {
-    Write-Host "Retro68 appears to be installed in $INSTALL_DIR."
-    exit 0
+    $CheckScript = Join-Path (Get-Location) "check_retro68.ps1"
+    $CheckStatus = 3
+    if (Test-Path $CheckScript -PathType Leaf) {
+        try {
+            & $CheckScript -InstallDir $INSTALL_DIR
+            $CheckStatus = $LASTEXITCODE
+        }
+        catch {
+            Write-Host "check_retro68.ps1 failed: $_"
+        }
+    }
+    else {
+        Write-Host "check_retro68.ps1 was not found at $CheckScript."
+    }
+    if ($CheckStatus -eq 0) {
+        Write-Host "Retro68 appears to be installed in $INSTALL_DIR."
+        exit 0
+    }
+    if ($CheckStatus -ne 1) {
+        Write-Host "Error: could not check the installed Retro68 toolchain (exit status $CheckStatus)." -ForegroundColor Red
+        Write-Host "Nothing was changed; fix the problem above and run setup_retro68.ps1 again."
+        exit 1
+    }
+    Write-Host "The installed Retro68 toolchain cannot run (see above); rebuilding it." -ForegroundColor Yellow
+    $MoveBrokenToolchain = $true
 }
 
 Write-Host "Retro68 not found locally."
@@ -205,41 +275,125 @@ if ($MissingDeps) {
 }
 
 
-Write-Host "Cloning Retro68..." -ForegroundColor Green
+# Retro68 at the pinned commit, as in setup_retro68.sh. An existing checkout
+# is never pulled or switched: one at another commit stops setup before
+# anything changes.
+Write-Host "Checking out Retro68 $($Pins.RETRO68_COMMIT)..." -ForegroundColor Green
 New-Item -ItemType Directory -Force -Path "tools" | Out-Null
 
+function Invoke-Git {
+    param([string[]]$Arguments)
+
+    & git @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "git $($Arguments -join ' ') failed (exit status $LASTEXITCODE)."
+    }
+}
+
 if (-not (Test-Path $SOURCE_DIR)) {
-    git clone --recursive "$RETRO68_URL" "$SOURCE_DIR"
+    Invoke-Git @("clone", "--no-checkout", $Pins.RETRO68_URL, $SOURCE_DIR)
+    Invoke-Git @("-C", $SOURCE_DIR, "-c", "advice.detachedHead=false",
+        "checkout", "--detach", $Pins.RETRO68_COMMIT)
 }
 else {
-    Write-Host "Source directory exists, pulling updates..."
-    Push-Location "$SOURCE_DIR"
-    git pull
-    git submodule update --init --recursive
-    Pop-Location
+    Write-Host "Retro68 source already present at $SOURCE_DIR (not pulling)."
+}
+$SourceCommit = "not a git checkout"
+if (Test-Path (Join-Path $SOURCE_DIR ".git")) {
+    $SourceCommit = "$(& git -C $SOURCE_DIR rev-parse --verify HEAD)"
+    if ($LASTEXITCODE -ne 0) {
+        $SourceCommit = "unknown"
+    }
+}
+if ($SourceCommit -cne $Pins.RETRO68_COMMIT) {
+    Write-Host "Error: $SOURCE_DIR is at $SourceCommit, but" -ForegroundColor Red
+    Write-Host "retro68-versions.txt pins Retro68 $($Pins.RETRO68_COMMIT). Nothing was changed."
+    Write-Host "To build the pinned toolchain, move tools\Retro68-src and tools\Retro68-build"
+    Write-Host "aside and run setup_retro68.ps1 again."
+    exit 1
+}
+Invoke-Git @("-C", $SOURCE_DIR, "submodule", "update", "--init", "--recursive")
+# " <commit> <path>" for every submodule, as `git submodule status` flags it.
+$CheckedOutSubmodules = @(& git -C $SOURCE_DIR submodule status --recursive | ForEach-Object {
+    $_.Substring(0, 41) + " " + ($_.Substring(42) -replace " \(.*\)$", "")
+} | Sort-Object -CaseSensitive)
+$PinnedSubmodules = @($Pins.RETRO68_SUBMODULE | ForEach-Object {
+    $SubmodulePath, $SubmoduleCommit = $_ -split " ", 2
+    " $SubmoduleCommit $SubmodulePath"
+} | Sort-Object -CaseSensitive)
+if (($CheckedOutSubmodules -join "`n") -cne ($PinnedSubmodules -join "`n")) {
+    Write-Host "Error: the submodules of $SOURCE_DIR are not the ones retro68-versions.txt pins." -ForegroundColor Red
+    Write-Host "  Checked out (git submodule status --recursive):"
+    $CheckedOutSubmodules | ForEach-Object { Write-Host "    $_" }
+    Write-Host "  Pinned:"
+    $PinnedSubmodules | ForEach-Object { Write-Host "    $_" }
+    exit 1
 }
 
 # 2. Prepare InterfacesAndLibraries
 Write-Host "Step 2: Preparing SDKs..." -ForegroundColor Green
 $SDK_DEST = Join-Path $SOURCE_DIR "InterfacesAndLibraries"
+
+# True when the file's SHA-256 is the pinned one; otherwise says why.
+function Test-SitArchive {
+    param([string]$Path, [string]$Sha256)
+
+    try {
+        $Found = (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+    }
+    catch {
+        $Found = "(could not read it)"
+    }
+    if ($Found -ceq $Sha256) {
+        return $true
+    }
+    Write-Host "  $Path does not match the SHA-256 pinned in retro68-versions.txt"
+    Write-Host "  (truncated, damaged or another file); it is not used."
+    Write-Host "    pinned: $Sha256"
+    Write-Host "    found:  $Found, $((Get-Item -LiteralPath $Path).Length) bytes"
+    return $false
+}
+
+# Resolve an SDK archive whose SHA-256 matches the pin, as setup_retro68.sh
+# does: tools\<name>, then <name> at the repository root, else a download to
+# tools\<name>.part that becomes tools\<name> only once it matches. Nothing is
+# extracted from a copy that does not match, and no local copy is deleted or
+# overwritten.
+function Resolve-SitArchive {
+    param([string]$Name, [string]$Url, [string]$Sha256)
+
+    $Cached = Join-Path "tools" $Name
+    foreach ($Candidate in @($Cached, $Name)) {
+        if ((Test-Path -LiteralPath $Candidate -PathType Leaf) -and (Test-SitArchive $Candidate $Sha256)) {
+            Write-Host "  Using $Candidate (SHA-256 matches retro68-versions.txt)"
+            return $Candidate
+        }
+    }
+    if (Test-Path -LiteralPath $Cached) {
+        Write-Host "Error: no copy of $Name matches its pinned SHA-256." -ForegroundColor Red
+        Write-Host "Replace $Cached with a good copy, or move it away so setup can download one."
+        exit 1
+    }
+    $Partial = "$Cached.part"
+    Remove-Item -LiteralPath $Partial -Force -ErrorAction SilentlyContinue
+    Write-Host "Downloading $Name..."
+    Invoke-WebRequest -Uri $Url -OutFile $Partial
+    if (-not (Test-SitArchive $Partial $Sha256)) {
+        Remove-Item -LiteralPath $Partial -Force
+        Write-Host "Error: the download of $Name from $Url was discarded." -ForegroundColor Red
+        Write-Host "Place a copy that matches at the repository root or in tools and run setup again."
+        exit 1
+    }
+    Move-Item -LiteralPath $Partial -Destination $Cached
+    return $Cached
+}
+
+# Check both archives before extracting either.
+$MpwSit = Resolve-SitArchive $Pins.MPW_FILE $Pins.MPW_URL $Pins.MPW_SHA256
+$OpenGLSit = Resolve-SitArchive $Pins.OPENGL_FILE $Pins.OPENGL_URL $Pins.OPENGL_SHA256
 if (-not (Test-Path $SDK_DEST)) {
     New-Item -ItemType Directory -Path $SDK_DEST | Out-Null
 }
-
-$MPW_URL = "https://download.macintoshgarden.org/apps/MPW_fully_updated.sit"
-$OPENGL_URL = "https://download.macintoshgarden.org/apps/OpenGL_SDK_1.2.sit"
-
-# Helper for download
-function Download-FileIfMissing {
-    param($Url, $Dest)
-    if (-not (Test-Path $Dest)) {
-        Write-Host "Downloading $dest..."
-        Invoke-WebRequest -Uri $Url -OutFile $Dest
-    }
-}
-
-Download-FileIfMissing -Url $MPW_URL -Dest "tools\MPW_fully_updated.sit"
-Download-FileIfMissing -Url $OPENGL_URL -Dest "tools\OpenGL_SDK_1.2.sit"
 
 # Extract function using unar (assuming available as checked)
 function Extract-Site {
@@ -252,7 +406,7 @@ function Extract-Site {
 }
 
 # Process MPW
-Extract-Site -File "tools\MPW_fully_updated.sit" -DestDir "tools\temp_mpw"
+Extract-Site -File $MpwSit -DestDir "tools\temp_mpw"
 $MPW_I_AND_L = Get-ChildItem -Path "tools\temp_mpw" -Recurse -Directory -Filter "Interfaces&Libraries" | Select-Object -First 1
 if ($MPW_I_AND_L) {
     Write-Host "Injecting MPW Interfaces&Libraries..."
@@ -264,7 +418,7 @@ else {
 }
 
 # Process OpenGL
-Extract-Site -File "tools\OpenGL_SDK_1.2.sit" -DestDir "tools\temp_opengl"
+Extract-Site -File $OpenGLSit -DestDir "tools\temp_opengl"
 $OGL_LIBS = Get-ChildItem -Path "tools\temp_opengl" -Recurse -Directory -Filter "Libraries" | Select-Object -First 1
 $OGL_HEADERS = Get-ChildItem -Path "tools\temp_opengl" -Recurse -Directory -Filter "Headers" | Select-Object -First 1
 
@@ -305,6 +459,17 @@ Get-ChildItem -Path "$SOURCE_DIR" -Recurse -Filter "CMakeLists.txt" | ForEach-Ob
 }
 
 Write-Host "Building Retro68 Toolchain..." -ForegroundColor Green
+# build-toolchain.bash refuses to install a full build into a non-empty
+# prefix. Never delete the old toolchain: move it aside so it can be restored.
+if ($MoveBrokenToolchain) {
+    $Stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
+    $AsideName = "Retro68-build.broken-$Stamp"
+    $AsidePath = Join-Path (Split-Path $INSTALL_DIR -Parent) $AsideName
+    Rename-Item -Path $INSTALL_DIR -NewName $AsideName
+    Write-Host "Moved the toolchain that cannot run to $AsidePath."
+    Write-Host "To restore it, delete $INSTALL_DIR and rename $AsideName back to Retro68-build."
+    Write-Host "Delete it once the new toolchain works."
+}
 Write-Host "Invoking build-toolchain.bash via bash..."
 
 # Convert paths to Unix style for bash

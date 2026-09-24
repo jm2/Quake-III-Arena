@@ -141,6 +141,19 @@ if (-not (Install-PreparedOpenGLSupport)) {
     }
 }
 
+# All of those files can exist while the tools cannot run, for example after a
+# host OS upgrade removed a DLL they need (issue #269). Run them now: CMake
+# would only report that the compiler identification is unknown. Status 1
+# means the toolchain is broken; any other status means the check itself could
+# not run (for example no usable TEMP directory).
+& .\check_retro68.ps1 -InstallDir (Join-Path (Get-Location) "tools\Retro68-build")
+if ($LASTEXITCODE -eq 1) {
+    throw "Stopping before CMake: the Retro68 toolchain cannot build Quake3."
+}
+elseif ($LASTEXITCODE -ne 0) {
+    throw "Stopping before CMake: check_retro68.ps1 could not check the Retro68 toolchain (exit status $LASTEXITCODE)."
+}
+
 # Add tools dir to PATH for this session
 $env:PATH = "$ToolsDir;$env:PATH"
 
@@ -233,12 +246,20 @@ if ($LASTEXITCODE -eq 0) {
         if ($LASTEXITCODE -ne 0) {
             throw "$App is not a complete Classic application."
         }
+        # The PEF's SHA-256 and the toolchain that built it (issue #227).
+        if (-not (Test-Path "$App.manifest.txt")) {
+            throw "The build did not write $App.manifest.txt next to $Pef."
+        }
     }
 
     Write-Host "Build complete. Launchable Classic application(s) in build_mac:" -ForegroundColor Green
     foreach ($App in $Applications) {
         Write-Host "  $App.bin (MacBinary), $App.dsk (HFS disk image),"
         Write-Host "  $App.ad + %$App.ad (AppleDouble)"
+        Write-Host "  $App.manifest.txt (PEF SHA-256 and Retro68 toolchain):"
+        Get-Content "$App.manifest.txt" |
+            Where-Object { $_ -match "^(pef_sha256|gcc_version|retro68_commit|retro68_pinned)=" } |
+            ForEach-Object { Write-Host "    $_" }
     }
 }
 else {

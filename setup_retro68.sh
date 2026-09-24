@@ -9,28 +9,80 @@ if [ "$OS_NAME" = "Darwin" ]; then
     export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 fi
 
-RETRO68_URL="https://github.com/autc04/Retro68.git"
 INSTALL_DIR="$(pwd)/tools/Retro68-build"
 SOURCE_DIR="$(pwd)/tools/Retro68-src"
 BUILD_WORK_DIR="$(pwd)/tools/Retro68-work"
 
+# The Retro68 commit, its submodules and the SDK archive digests are pinned
+# in retro68-versions.txt, which setup_retro68.ps1 reads too (issue #227).
 # macintoshgarden.org has been intermittently unreachable; if you can't fetch
 # fresh copies you can drop the originals at the repo root or in tools/ and
-# this script will pick them up. URLs are kept for reference but only used as
-# a last resort.
-MPW_URL="https://download.macintoshgarden.org/apps/MPW_fully_updated.sit"
-MPW_FILE="MPW_fully_updated.sit"
-OPENGL_URL="https://download.macintoshgarden.org/apps/OpenGL_SDK_1.2.sit"
-OPENGL_FILE="OpenGL_SDK_1.2.sit"
+# this script will pick them up. The URLs are only used as a last resort.
+VERSIONS_FILE="$(pwd)/retro68-versions.txt"
+RETRO68_URL=""
+RETRO68_COMMIT=""
+RETRO68_SUBMODULES=()
+MPW_FILE=""
+MPW_URL=""
+MPW_SHA256=""
+OPENGL_FILE=""
+OPENGL_URL=""
+OPENGL_SHA256=""
+
+versions_error() {
+    echo "Error: $VERSIONS_FILE: $1"
+    exit 1
+}
+
+read_versions() {
+    local line key value
+
+    [ -f "$VERSIONS_FILE" ] || versions_error "missing; it pins the Retro68 commit and the SDK archives."
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
+        case "$line" in
+            ''|'#'*) continue ;;
+            *=*) ;;
+            *) versions_error "unknown line: $line" ;;
+        esac
+        key="${line%%=*}"
+        value="${line#*=}"
+        case "$key" in
+            RETRO68_URL|MPW_FILE|MPW_URL|OPENGL_FILE|OPENGL_URL)
+                [ -n "$value" ] || versions_error "$key is empty."
+                ;;
+            RETRO68_COMMIT)
+                [[ $value =~ ^[0-9a-f]{40}$ ]] || versions_error "$key is not a full commit hash: $value"
+                ;;
+            RETRO68_SUBMODULE)
+                [[ $value =~ ^[^[:space:]]+\ [0-9a-f]{40}$ ]] ||
+                    versions_error "$key is not \"<path> <commit>\": $value"
+                RETRO68_SUBMODULES+=("$value")
+                continue
+                ;;
+            MPW_SHA256|OPENGL_SHA256)
+                [[ $value =~ ^[0-9a-f]{64}$ ]] || versions_error "$key is not a SHA-256: $value"
+                ;;
+            *) versions_error "unknown line: $line" ;;
+        esac
+        printf -v "$key" '%s' "$value"
+    done < "$VERSIONS_FILE"
+    for key in RETRO68_URL RETRO68_COMMIT MPW_FILE MPW_URL MPW_SHA256 \
+               OPENGL_FILE OPENGL_URL OPENGL_SHA256; do
+        [ -n "${!key}" ] || versions_error "$key is missing."
+    done
+    [ "${#RETRO68_SUBMODULES[@]}" -gt 0 ] || versions_error "RETRO68_SUBMODULE is missing."
+}
+read_versions
 
 echo "=========================================="
 echo "Retro68 Setup Script"
 echo "=========================================="
 echo "This will:"
-echo "1. Clone/Update Retro68"
-echo "2. Locate or download MPW & OpenGL SDKs (.sit)"
+echo "1. Clone Retro68 at the commit pinned in retro68-versions.txt"
+echo "2. Locate or download MPW & OpenGL SDKs (.sit) and check their SHA-256"
 echo "3. Inject them into Retro68-src/InterfacesAndLibraries"
-echo "4. CLEAN build directories"
+echo "4. Move old build directories aside (unless resuming)"
 echo "5. Rebuild Retro68 completely"
 echo "=========================================="
 echo "Press Ctrl+C to cancel in 5 seconds..."
@@ -50,6 +102,11 @@ for cmd in $REQUIRED_CMDS; do
         MISSING_DEPS=1
     fi
 done
+# The SDK archives are checked against their pinned SHA-256.
+if ! command -v sha256sum &> /dev/null && ! command -v shasum &> /dev/null; then
+    echo "Error: Required command 'sha256sum' (or 'shasum') not found."
+    MISSING_DEPS=1
+fi
 
 if [ $MISSING_DEPS -eq 1 ]; then
     echo "--------------------------------------------------------"
@@ -59,40 +116,133 @@ fi
 
 mkdir -p tools
 
-# 1. Clone Retro68 if missing. We do NOT auto-pull here: this script makes
-# in-tree edits (Boost patch, InterfacesAndLibraries population) that block
-# rebases, and the user can `git pull` manually if they want fresh upstream.
-echo "Step 1: Ensuring Retro68 source is present..."
+# Decide before changing anything whether step 4 can resume an existing
+# toolchain. A full Retro68 build takes 30+ minutes; if we already have the
+# host tools (ConvertDiskImage is the last one built and installed), step 4
+# keeps the existing binutils/gcc/host-tool artifacts and passes
+# --skip-thirdparty to build-toolchain.bash so it just runs the I&L +
+# multiversal + target-lib steps. The installed tools must also run: after a
+# host OS upgrade they can fail to load their shared libraries, and
+# --skip-thirdparty never rebuilds gcc or binutils (issue #269).
+# check_retro68.sh exits 1 only for tools that cannot run. Any other status
+# means the check itself could not run (for example a missing, read-only or
+# full TMPDIR), which says nothing about the toolchain: stop and change nothing.
+SKIP_FLAGS=()
+ASIDE_SUFFIX=previous
+if [ -x "$INSTALL_DIR/bin/ConvertDiskImage" ] && [ -d "$BUILD_WORK_DIR" ]; then
+    CHECK_STATUS=0
+    bash ./check_retro68.sh --tools-only "$INSTALL_DIR" || CHECK_STATUS=$?
+    case "$CHECK_STATUS" in
+        0) SKIP_FLAGS=(--skip-thirdparty) ;;
+        1) ASIDE_SUFFIX=broken ;;
+        *)
+            echo "Error: check_retro68.sh could not check the existing toolchain"
+            echo "(exit status $CHECK_STATUS). Nothing was changed; fix the problem"
+            echo "above and run setup_retro68.sh again."
+            exit 1
+            ;;
+    esac
+fi
+
+# 1. Retro68 at the pinned commit. A fresh clone checks out RETRO68_COMMIT and
+# its submodules. An existing checkout is never pulled or switched: this
+# script makes in-tree edits (Boost patch, InterfacesAndLibraries population)
+# that block a checkout, and the toolchain was built from that commit. So a
+# checkout at another commit stops setup before anything changes.
+echo "Step 1: Ensuring Retro68 source is at commit $RETRO68_COMMIT..."
 if [ ! -d "$SOURCE_DIR" ]; then
-    git clone --recursive "$RETRO68_URL" "$SOURCE_DIR"
+    git clone --no-checkout "$RETRO68_URL" "$SOURCE_DIR"
+    git -C "$SOURCE_DIR" -c advice.detachedHead=false checkout --detach "$RETRO68_COMMIT"
 else
     echo "Retro68 source already present at $SOURCE_DIR (not pulling)."
+fi
+SOURCE_COMMIT="not a git checkout"
+if [ -e "$SOURCE_DIR/.git" ]; then
+    SOURCE_COMMIT=$(git -C "$SOURCE_DIR" rev-parse --verify HEAD) || SOURCE_COMMIT="unknown"
+fi
+if [ "$SOURCE_COMMIT" != "$RETRO68_COMMIT" ]; then
+    echo "Error: $SOURCE_DIR is at $SOURCE_COMMIT, but"
+    echo "retro68-versions.txt pins Retro68 $RETRO68_COMMIT. Nothing was changed."
+    echo "To build the pinned toolchain, move tools/Retro68-src, tools/Retro68-build"
+    echo "and tools/Retro68-work aside and run setup_retro68.sh again."
+    exit 1
+fi
+git -C "$SOURCE_DIR" submodule update --init --recursive
+
+# " <commit> <path>" for every submodule, as `git submodule status` flags it:
+# ' ' checked out at the commit Retro68 records, '-' not checked out, '+' at
+# another commit.
+checked_out_submodules() {
+    git -C "$SOURCE_DIR" submodule status --recursive |
+        awk '{ path = substr($0, 43); sub(/ \(.*\)$/, "", path); print substr($0, 1, 41), path }' |
+        LC_ALL=C sort
+}
+pinned_submodules() {
+    local pin
+    for pin in "${RETRO68_SUBMODULES[@]}"; do
+        echo " ${pin#* } ${pin%% *}"
+    done | LC_ALL=C sort
+}
+if [ "$(checked_out_submodules)" != "$(pinned_submodules)" ]; then
+    echo "Error: the submodules of $SOURCE_DIR are not the ones retro68-versions.txt pins."
+    echo "  Checked out (git submodule status --recursive):"
+    checked_out_submodules | sed 's/^/    /'
+    echo "  Pinned:"
+    pinned_submodules | sed 's/^/    /'
+    exit 1
 fi
 
 # 2. Prepare InterfacesAndLibraries
 echo "Step 2: Preparing SDKs..."
 SDK_DEST="$SOURCE_DIR/InterfacesAndLibraries"
-mkdir -p "$SDK_DEST"
 
-# Resolve a SIT file: prefer tools/<name>, fall back to repo-root <name>, else
-# download. The repo-root fallback is the friendly path for offline setups
-# when macintoshgarden is down — drop the file alongside the script and re-run.
+# Prints the SHA-256 of a file.
+sha256_of() {
+    if command -v sha256sum &> /dev/null; then
+        sha256sum < "$1" | cut -d ' ' -f 1
+    else
+        shasum -a 256 < "$1" | cut -d ' ' -f 1
+    fi
+}
+
+# Succeeds when FILE's SHA-256 is WANT; otherwise says why on stderr.
+sit_matches() {
+    local file="$1" want="$2" got
+    got=$(sha256_of "$file" 2> /dev/null) || got=""
+    [ "$got" = "$want" ] && return 0
+    echo "  $file does not match the SHA-256 pinned in retro68-versions.txt" >&2
+    echo "  (truncated, damaged or another file); it is not used." >&2
+    echo "    pinned: $want" >&2
+    echo "    found:  ${got:-(could not read it)}, $(wc -c 2> /dev/null < "$file" | tr -d ' ') bytes" >&2
+    return 1
+}
+
+# Resolve a SIT file whose SHA-256 matches the pin: tools/<name>, then
+# repo-root <name>, else download. The repo-root fallback is the friendly path
+# for offline setups when macintoshgarden is down — drop the file alongside
+# the script and re-run. Nothing is extracted from a copy that does not match,
+# and no local copy is deleted or overwritten. A download is written to
+# tools/<name>.part and renamed to tools/<name> only once it matches.
 locate_or_fetch_sit() {
     # Status messages go to stderr; only the resolved path goes to stdout, so
     # `VAR=$(locate_or_fetch_sit ...)` captures just the path.
     local fname="$1"
     local url="$2"
+    local want="$3"
+    local candidate
 
-    if [ -s "tools/$fname" ]; then
-        echo "  Using cached tools/$fname" >&2
-        echo "tools/$fname"
-        return 0
-    fi
-    if [ -s "$fname" ]; then
-        echo "  Found local $fname at repo root; copying to tools/" >&2
-        cp "$fname" "tools/$fname"
-        echo "tools/$fname"
-        return 0
+    for candidate in "tools/$fname" "$fname"; do
+        [ -e "$candidate" ] || continue
+        if sit_matches "$candidate" "$want"; then
+            echo "  Using $candidate (SHA-256 matches retro68-versions.txt)" >&2
+            echo "$candidate"
+            return 0
+        fi
+    done
+    if [ -e "tools/$fname" ]; then
+        echo "Error: no copy of $fname matches its pinned SHA-256." >&2
+        echo "Replace tools/$fname with a good copy, or move it away so setup can download one." >&2
+        return 1
     fi
     echo "  No local copy of $fname; attempting download..." >&2
     if ! command -v wget &> /dev/null; then
@@ -100,20 +250,30 @@ locate_or_fetch_sit() {
         echo "Place it at the repo root or in tools/, or install wget." >&2
         return 1
     fi
-    if wget --quiet --show-progress -O "tools/$fname" "$url"; then
-        echo "tools/$fname"
-        return 0
+    rm -f "tools/$fname.part"
+    if ! wget --quiet --show-progress -O "tools/$fname.part" "$url"; then
+        rm -f "tools/$fname.part"
+        echo "Error: could not obtain $fname (and download failed)." >&2
+        echo "Place it at the repo root or in tools/ and re-run." >&2
+        return 1
     fi
-    echo "Error: could not obtain $fname (and download failed)." >&2
-    echo "Place it at the repo root or in tools/ and re-run." >&2
-    return 1
+    if ! sit_matches "tools/$fname.part" "$want"; then
+        rm -f "tools/$fname.part"
+        echo "Error: the download of $fname from $url was discarded." >&2
+        echo "Place a copy that matches at the repo root or in tools/ and re-run." >&2
+        return 1
+    fi
+    mv "tools/$fname.part" "tools/$fname"
+    echo "tools/$fname"
 }
 
 # Drop the legacy 0-byte placeholder so locate_or_fetch_sit picks the real one.
 [ -f "tools/MPW_fully_updated.sit" ] && [ ! -s "tools/MPW_fully_updated.sit" ] && rm -f "tools/MPW_fully_updated.sit"
 
-MPW_SIT=$(locate_or_fetch_sit "$MPW_FILE" "$MPW_URL")
-OPENGL_SIT=$(locate_or_fetch_sit "$OPENGL_FILE" "$OPENGL_URL")
+# Check both archives before extracting either.
+MPW_SIT=$(locate_or_fetch_sit "$MPW_FILE" "$MPW_URL" "$MPW_SHA256") || exit 1
+OPENGL_SIT=$(locate_or_fetch_sit "$OPENGL_FILE" "$OPENGL_URL" "$OPENGL_SHA256") || exit 1
+mkdir -p "$SDK_DEST"
 
 # Extract MPW
 echo "Extracting MPW..."
@@ -182,21 +342,42 @@ else
     find "$SOURCE_DIR" -name "CMakeLists.txt" -exec sed -i '/find_package(Boost/s/ system//g' {} +
 fi
 
-# 4. Clean / resume.
-#
-# A full Retro68 build takes 30+ minutes; if we already have the host tools
-# (ConvertDiskImage is the last one built and installed), keep the existing
-# binutils/gcc/host-tool artifacts and pass --skip-thirdparty to
-# build-toolchain.bash so it just runs the I&L + multiversal + target-lib
-# steps. To force a full rebuild, delete tools/Retro68-build manually.
-SKIP_FLAGS=()
-if [ -x "$INSTALL_DIR/bin/ConvertDiskImage" ] && [ -d "$BUILD_WORK_DIR" ]; then
+# 4. Clean / resume (decided above). A full build needs an empty prefix and a
+# fresh work tree. Never delete the toolchain: move it aside every time, so
+# one that only lacks a host library, or was set aside by mistake, can be
+# restored. The work tree holds only build intermediates (several GB), so keep
+# a single moved-aside copy of it: an older one is removed when a newer one is
+# moved aside. To force a full rebuild, move tools/Retro68-build away yourself.
+if [ "${#SKIP_FLAGS[@]}" -ne 0 ]; then
     echo "Step 4: Existing toolchain detected — resuming with --skip-thirdparty."
-    SKIP_FLAGS=(--skip-thirdparty)
 else
-    echo "Step 4: Cleaning previous builds..."
-    [ -d "$INSTALL_DIR" ]    && rm -rf "$INSTALL_DIR"
-    [ -d "$BUILD_WORK_DIR" ] && rm -rf "$BUILD_WORK_DIR"
+    if [ "$ASIDE_SUFFIX" = broken ]; then
+        echo "Step 4: The existing toolchain cannot run (see above); rebuilding it all."
+    fi
+    echo "Step 4: Moving previous builds aside..."
+    ASIDE_STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+    MOVED_ASIDE=0
+    for previous in "$INSTALL_DIR" "$BUILD_WORK_DIR"; do
+        [ -e "$previous" ] || continue
+        aside="$previous.$ASIDE_SUFFIX-$ASIDE_STAMP"
+        [ -e "$aside" ] && aside="$aside-$$"
+        if [ "$previous" = "$BUILD_WORK_DIR" ]; then
+            for older in "$BUILD_WORK_DIR".broken-* "$BUILD_WORK_DIR".previous-*; do
+                [ -d "$older" ] || continue
+                echo "  Removing the older moved-aside work tree $older"
+                echo "  (build intermediates only; one moved-aside work tree is kept)."
+                rm -rf "$older"
+            done
+        fi
+        mv "$previous" "$aside"
+        MOVED_ASIDE=1
+        echo "  Moved $previous"
+        echo "     to $aside"
+        echo "  To restore it: rm -rf \"$previous\" && mv \"$aside\" \"$previous\""
+    done
+    if [ "$MOVED_ASIDE" -eq 1 ]; then
+        echo "  Delete the moved directories once the new toolchain works."
+    fi
 fi
 
 # 5. Build
