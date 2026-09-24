@@ -144,6 +144,7 @@ static void UI_TeamOrdersMenu_SetList( int id ) {
 	}
 
 	teamOrdersMenuInfo.list.generic.bottom = teamOrdersMenuInfo.list.generic.top + teamOrdersMenuInfo.list.numitems * PROP_HEIGHT;
+	teamOrdersMenuInfo.list.height = teamOrdersMenuInfo.list.numitems;	// one page: page up/down stop at the first/last row
 
 	// the selected bot's row may be past the end of the orders
 	if( teamOrdersMenuInfo.list.curvalue >= teamOrdersMenuInfo.list.numitems ) {
@@ -270,7 +271,7 @@ static void UI_TeamOrdersMenu_ListEvent( void *ptr, int event ) {
 	id = ((menulist_s *)ptr)->generic.id;
 	selection = ((menulist_s *)ptr)->curvalue;
 	if( selection < 0 || selection >= ((menulist_s *)ptr)->numitems ) {
-		return;	// page up/down move a zero-height list's cursor off it
+		return;	// only a row the list has
 	}
 
 	if( id == ID_LIST_BOTS ) {

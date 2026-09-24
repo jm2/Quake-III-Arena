@@ -1,7 +1,8 @@
 /* Issue #382: a click or key in the base q3_ui Team Orders menu selects only a row
  * that the shown list has. UI_CursorInRect includes the bottom edge of the list, and
- * page up/down move the cursor of the zero-height list off it, so a row one past the
- * end read botNames[9] from a full bot list, or a NULL or out-of-bounds order format.
+ * page up/down moved the cursor of the zero-height list off it, so a row one past the
+ * end read botNames[9] from a full bot list, or a NULL or out-of-bounds order format,
+ * and the list's letter search read a row before the first.
  * The fixture drives the real menu (ui_teamorders.c included here, ui_qmenu.c and
  * ui_atoms.c linked) through UI_MouseEvent and the menu's key handler. */
 #include "../code/q3_ui/ui_teamorders.c"
@@ -284,10 +285,57 @@ static void ChooseBot( int bot ) {
 	Check( Press( K_ENTER ) == menu_move_sound, "enter chooses the bot" );
 }
 
+/** The shown list has the selected row. */
+static void CheckRow( void ) {
+	Check( teamOrdersMenuInfo.list.curvalue >= 0 && teamOrdersMenuInfo.list.curvalue < teamOrdersMenuInfo.list.numitems,
+		"the selected row stays on the list" );
+}
+
+/** Type a letter no row starts with, so the list's search looks at every row, and
+ * then letter, which some rows start with. */
+static void Type( int letter ) {
+	Press( 'z' );
+	CheckRow();
+	Press( letter );
+	CheckRow();
+}
+
 /** The keyboard: every bot row opens its orders on a row they have, the bot row if
- * there is one; page up/down past either end of a list and enter choose nothing. */
+ * there is one. Page up/down stop at the first and last rows of each list, so the
+ * arrow keys, the list's letter search and enter only see rows the list has. */
 static void TestKeys( void ) {
-	int rows, id, bot;
+	int rows, id, bot, row;
+
+	/* bots: page down twice on the new list, type, and go up */
+	OpenMenu();
+	Press( K_PGDN );
+	Press( K_PGDN );
+	Press( 'z' );
+	Check( teamOrdersMenuInfo.list.curvalue == BOT_ROWS - 1, "page down stops at the last bot row" );
+	Press( K_UPARROW );
+	Type( 'b' );
+	/* page up twice from the last row, type, and go up, which wraps */
+	Press( K_END );
+	Press( K_PGUP );
+	Press( K_PGUP );
+	Press( 'z' );
+	Check( teamOrdersMenuInfo.list.curvalue == 0, "page up stops at the first bot row" );
+	Press( K_UPARROW );
+	Press( 'z' );
+	Check( teamOrdersMenuInfo.list.curvalue == BOT_ROWS - 1 && commands == 0, "the up arrow wraps to the last bot row" );
+	Press( K_ENTER );
+	CheckOrders( BOT_ROWS - 1, 0 );
+	Click( LIST_X, RowY( 1 ) );
+	CheckOrder( 1, BOT_ROWS - 1 );
+
+	/* page down once, go up twice, and type letters that match */
+	OpenMenu();
+	Press( K_HOME );
+	Press( K_PGDN );
+	Press( K_UPARROW );
+	Press( K_UPARROW );
+	Type( 'b' );
+	Check( teamOrdersMenuInfo.list.generic.id == ID_LIST_BOTS && commands == 0, "the bot list stays" );
 
 	for ( bot = 0; bot < BOT_ROWS; bot++ ) {
 		ChooseBot( bot );
@@ -296,36 +344,44 @@ static void TestKeys( void ) {
 		Check( Press( K_ENTER ) == menu_move_sound, "enter sends the order" );
 		CheckOrder( bot < rows ? bot : 0, bot );
 
-		/* orders: page down from the first row and page up from the last */
+		/* orders: page down twice from the first row, type, and go up */
 		ChooseBot( bot );
 		Press( K_HOME );
-		Press( K_PGDN );	/* a zero-height list's page down goes to row -1 */
+		Press( K_PGDN );
+		Press( K_PGDN );
+		Press( 'z' );
+		CheckOrders( bot, rows - 1 );
+		Press( K_UPARROW );
+		Press( 'z' );
+		CheckOrders( bot, rows - 2 );
 		Press( K_ENTER );
-		CheckOrders( bot, teamOrdersMenuInfo.list.curvalue );
+		CheckOrder( rows - 2, bot );
+
+		/* page up twice from the last row, type, and go up, which wraps */
+		ChooseBot( bot );
 		Press( K_END );
-		Press( K_PGUP );	/* and page up to one past the last row */
-		Press( K_ENTER );
-		CheckOrders( bot, teamOrdersMenuInfo.list.curvalue );
-		Press( K_END );
+		Press( K_PGUP );
+		Press( K_PGUP );
+		Press( 'z' );
+		CheckOrders( bot, 0 );
+		Press( K_UPARROW );
+		Press( 'z' );
+		CheckOrders( bot, rows - 1 );
 		Press( K_ENTER );
 		CheckOrder( rows - 1, bot );
-	}
 
-	/* bots: page down from the first row and page up from the last */
-	OpenMenu();
-	Press( K_HOME );
-	Press( K_PGDN );
-	Press( K_ENTER );
-	Check( teamOrdersMenuInfo.list.generic.id == ID_LIST_BOTS && commands == 0, "enter off the bot rows" );
-	Press( K_END );
-	Press( K_PGUP );
-	Press( K_ENTER );
-	Check( teamOrdersMenuInfo.list.generic.id == ID_LIST_BOTS && commands == 0, "enter off the bot rows" );
-	Press( K_END );
-	Press( K_ENTER );
-	CheckOrders( BOT_ROWS - 1, 0 );
-	Click( LIST_X, RowY( 1 ) );
-	CheckOrder( 1, BOT_ROWS - 1 );
+		/* page down once, go up twice, and type letters that match */
+		ChooseBot( bot );
+		Press( K_HOME );
+		Press( K_PGDN );
+		Press( K_UPARROW );
+		Press( K_UPARROW );
+		Type( 'r' );
+		row = teamOrdersMenuInfo.list.curvalue;
+		CheckOrders( bot, row );
+		Press( K_ENTER );
+		CheckOrder( row, bot );
+	}
 }
 
 /** Run one input and game type per process, so a sanitizer report names the case. */
