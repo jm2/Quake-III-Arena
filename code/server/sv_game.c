@@ -483,19 +483,11 @@ static char *SV_GameBotChatMessage( int value ) {
 	return message;
 }
 
-/** Check nullable chat variables and their combined size before native concatenation. */
-static void SV_GameBotChatVariables( int *args, int start, char **variables, int used ) {
+/** Require each nullable chat variable to be a terminated VM string; botlib leaves any that do not fit unset (#306). */
+static void SV_GameBotChatVariables( int *args, int start, char **variables ) {
 	int i;
 	for ( i = 0; i < MAX_MATCHVARIABLES; i++ ) {
-		size_t length;
 		variables[i] = VM_CheckedArgString( args[start+i], qtrue );
-		if ( !variables[i] ) continue;
-		length = strlen(variables[i]);
-		if ( length >= (size_t)(MAX_MESSAGE_SIZE - used) ) {
-			VM_Error( "Bot chat variables are too long" );
-			return;
-		}
-		used += length;
 	}
 }
 
@@ -576,7 +568,7 @@ static int SV_BotLibChatCalls( int *args ) {
 		return botlib_export->ai.BotNumConsoleMessages( args[1] );
 	case BOTLIB_AI_INITIAL_CHAT: {
 		char *type = VMAS(2), *variables[MAX_MATCHVARIABLES];
-		SV_GameBotChatVariables( args, 4, variables, 0 );
+		SV_GameBotChatVariables( args, 4, variables );
 		botlib_export->ai.BotInitialChat( args[1], type, args[3], variables[0], variables[1], variables[2], variables[3], variables[4], variables[5], variables[6], variables[7] );
 		return 0;
 	}
@@ -585,7 +577,7 @@ static int SV_BotLibChatCalls( int *args ) {
 	case BOTLIB_AI_REPLY_CHAT: {
 		char *message = SV_GameBotChatMessage( args[2] );
 		char *variables[MAX_MATCHVARIABLES];
-		SV_GameBotChatVariables( args, 5, variables, strlen(message) );
+		SV_GameBotChatVariables( args, 5, variables );
 		return botlib_export->ai.BotReplyChat( args[1], message, args[3], args[4], variables[0], variables[1], variables[2], variables[3], variables[4], variables[5], variables[6], variables[7] );
 	}
 	case BOTLIB_AI_CHAT_LENGTH:
