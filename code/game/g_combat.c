@@ -90,6 +90,12 @@ void TossClientItems( gentity_t *self ) {
 	if ( weapon == WP_MACHINEGUN || weapon == WP_GRAPPLING_HOOK ) {
 		if ( self->client->ps.weaponstate == WEAPON_DROPPING ) {
 			weapon = self->client->pers.cmd.weapon;
+			// weapon is the raw usercmd byte (0-255) and is otherwise
+			// unbounded here; an out-of-range value would shift and index
+			// out of bounds below, so clamp it as PM_FinishWeaponChange does
+			if ( weapon < WP_NONE || weapon >= WP_NUM_WEAPONS ) {
+				weapon = WP_NONE;
+			}
 		}
 		if ( !( self->client->ps.stats[STAT_WEAPONS] & ( 1 << weapon ) ) ) {
 			weapon = WP_NONE;
