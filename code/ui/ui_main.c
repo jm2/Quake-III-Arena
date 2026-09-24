@@ -3219,6 +3219,47 @@ static void UI_Update(const char *name) {
 	}
 }
 
+/*
+===============
+UI_SendOrders
+
+The orders and voiceOrders scripts format their menu string with a client
+number, as in "cmd vtell %d offense". A pk3, even a downloaded one, can replace
+the menus, and a width, %s or %n in the string would overflow the buffer or
+read or write through the client number. So the string must have exactly one
+conversion, a plain %d or %i (%% is a literal percent sign); anything else is
+refused and nothing is sent.
+===============
+*/
+static qboolean UI_SendOrders( const char *script, const char *orders, int clientNum ) {
+	char command[MAX_STRING_CHARS];
+	const char *s;
+	int conversions = 0;
+
+	for ( s = orders; *s; s++ ) {
+		if ( *s != '%' ) {
+			continue;
+		}
+		s++;
+		if ( *s == 'd' || *s == 'i' ) {
+			conversions++;
+		} else if ( *s != '%' ) {
+			conversions = 0;	// flags, a width, a precision, a length, another conversion or a trailing %
+			break;
+		}
+	}
+	if ( conversions != 1 ) {
+		if ( trap_Cvar_VariableValue( "developer" ) ) {
+			Com_Printf( S_COLOR_YELLOW "WARNING: %s refused \"%.64s\": it needs exactly one plain %%d or %%i\n", script, orders );
+		}
+		return qfalse;
+	}
+	Com_sprintf( command, sizeof( command ), orders, clientNum );
+	trap_Cmd_ExecuteText( EXEC_APPEND, command );
+	trap_Cmd_ExecuteText( EXEC_APPEND, "\n" );
+	return qtrue;
+}
+
 static void UI_RunMenuScript(char **args) {
 	const char *name, *name2;
 	char buff[1024];
@@ -3539,18 +3580,16 @@ static void UI_RunMenuScript(char **args) {
 			if (String_Parse(args, &orders)) {
 				int selectedPlayer = UI_SelectedPlayer();
 				if (selectedPlayer >= 0 && selectedPlayer < uiInfo.myTeamCount) {
-					strcpy(buff, orders);
-					trap_Cmd_ExecuteText( EXEC_APPEND, va(buff, uiInfo.teamClientNums[selectedPlayer]) );
-					trap_Cmd_ExecuteText( EXEC_APPEND, "\n" );
+					UI_SendOrders(name, orders, uiInfo.teamClientNums[selectedPlayer]);
 				} else {
 					int i;
 					for (i = 0; i < uiInfo.myTeamCount; i++) {
 						if (uiInfo.playerNumber == uiInfo.teamClientNums[i]) {
 							continue;
 						}
-						strcpy(buff, orders);
-						trap_Cmd_ExecuteText( EXEC_APPEND, va(buff, uiInfo.teamClientNums[i]) );
-						trap_Cmd_ExecuteText( EXEC_APPEND, "\n" );
+						if (!UI_SendOrders(name, orders, uiInfo.teamClientNums[i])) {
+							break;	// refused, and it would be for every teammate
+						}
 					}
 				}
 				trap_Key_SetCatcher( trap_Key_GetCatcher() & ~KEYCATCH_UI );
@@ -3576,9 +3615,7 @@ static void UI_RunMenuScript(char **args) {
 			if (String_Parse(args, &orders)) {
 				int selectedPlayer = UI_SelectedPlayer();
 				if (selectedPlayer >= 0 && selectedPlayer < uiInfo.myTeamCount) {
-					strcpy(buff, orders);
-					trap_Cmd_ExecuteText( EXEC_APPEND, va(buff, uiInfo.teamClientNums[selectedPlayer]) );
-					trap_Cmd_ExecuteText( EXEC_APPEND, "\n" );
+					UI_SendOrders(name, orders, uiInfo.teamClientNums[selectedPlayer]);
 				}
 				trap_Key_SetCatcher( trap_Key_GetCatcher() & ~KEYCATCH_UI );
 				trap_Key_ClearStates();

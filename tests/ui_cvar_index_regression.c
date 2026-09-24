@@ -2,7 +2,8 @@
  * UI must bound cg_selectedPlayer before it indexes the teammate lists, and
  * color1 before it indexes gamecodetoui. Issue #390: the orders script formats
  * the menu's string with a client number for Everyone too, and skips the local
- * player by client number. */
+ * player by client number. Issue #401: the orders and voiceOrders scripts only
+ * format a menu string whose one conversion is a plain %i or %d. */
 #include "../code/ui/ui_local.h"
 #include <fcntl.h>
 #include <stdarg.h>
@@ -33,27 +34,28 @@ static const char *checkedFormat;	/* the orders string under test */
 static int formattedClients[MAX_CLIENTS];	/* its argument in each call */
 static int formattedCount;
 
-/** A call that formats the orders string under test: its one conversion must be
- * %i or %d and be passed an int, which is recorded. Other calls pass through. */
+/** A call that formats the orders string under test: it must have exactly one
+ * conversion, a plain %i or %d with no flags, width, precision or length, and
+ * pass it an int, which is recorded. A string that is anything else, such as
+ * %s, %n, %40000d or two conversions, must never reach a formatter (issue #401).
+ * Other calls pass through. */
 static void CheckFormat( formatArg_t arg, const char *fmt, va_list ap ) {
 	const char *c;
 	int conversions = 0;
-	char conversion = 0;
 
 	if ( !checkedFormat || strcmp( fmt, checkedFormat ) ) {
 		return;
 	}
 	for ( c = strchr( fmt, '%' ); c; c = strchr( c + 1, '%' ) ) {
-		c += 1 + strspn( c + 1, "-+ #0123456789." );
-		if ( !*c ) {
+		c++;
+		if ( *c == 'i' || *c == 'd' ) {
+			conversions++;
+		} else if ( *c != '%' ) {
+			conversions = 0;	// anything else, or a trailing %
 			break;
 		}
-		if ( *c != '%' ) {
-			conversion = *c;
-			conversions++;
-		}
 	}
-	Check( conversions == 1 && ( conversion == 'i' || conversion == 'd' ), "the orders string has one %i or %d" );
+	Check( conversions == 1, "only an orders string with exactly one plain %i or %d is formatted" );
 	Check( arg == FORMAT_INT, "the orders string's %i or %d is passed an int" );
 	Check( formattedCount < MAX_CLIENTS, "at most MAX_CLIENTS orders" );
 	formattedClients[formattedCount++] = va_arg( ap, int );
@@ -100,8 +102,12 @@ static void CheckedSprintf( char *dest, int size, formatArg_t arg, const char *f
 static const int teammateClients[TEAMMATES] = { 1, LOCAL_CLIENT, 4 };
 static const char *teammateNames[TEAMMATES] = { "P1", LOCAL_NAME, "P4" };
 static const int otherTeammateClients[] = { 1, 4 };	/* the teammates but LOCAL_CLIENT */
-/* a vtell like the fixture's, and the voiceOrders string of Team Arena's ingame_orders.menu */
-static const char *ordersStrings[] = { "vtell %i attack", "cmd vtell %d offense; +button7; wait; -button7" };
+/* a vtell like the fixture's, one with a literal %%, and the seven voiceOrders
+ * strings of Team Arena's ingame_orders.menu */
+static const char *ordersStrings[] = { "vtell %i attack", "say_team %%%i %%i 100%%",
+	"cmd vtell %d offense; +button7; wait; -button7", "cmd vtell %d defend; +button8; wait; -button8",
+	"cmd vtell %d patrol; +button9; wait; -button9", "cmd vtell %d followme; +button10; wait; -button10",
+	"cmd vtell %d camp", "cmd vtell %d followflagcarrier", "cmd vtell %d returnflag" };
 static const int uiColors[7] = { 4, 2, 3, 0, 5, 1, 6 };	/* game colors 1-7 in the UI's order */
 static const char *mode, *value;
 
@@ -140,12 +146,12 @@ static void Serve( void ) {
 	}
 }
 
-/** Let the server select the value, then let the UI pick it up as a frame does. */
-static void Select( void ) {
-	SystemInfo_Set( "cg_selectedPlayer", value );
+/** Let the server select a value, then let the UI pick it up as a frame does. */
+static void Select( const char *selected ) {
+	SystemInfo_Set( "cg_selectedPlayer", selected );
 	Cvar_Set( "cg_selectedPlayerName", UNTOUCHED );
 	UI_UpdateCvars();
-	Check( !strcmp( ui_selectedPlayer.string, value ), "systeminfo reached ui_selectedPlayer" );
+	Check( !strcmp( ui_selectedPlayer.string, selected ), "systeminfo reached ui_selectedPlayer" );
 }
 
 /** Run one menu script, collecting the commands it appends. */
@@ -179,11 +185,39 @@ static void RunOrders( const char *script, const char *orders, const int *client
 	Check( !strcmp( executed, expected ), va( "%s commands", script ) );
 }
 
+/** A menu string that is not exactly one plain %i or %d (issue #401): orders,
+ * for a teammate and for Everyone, and voiceOrders, for a teammate, refuse it,
+ * format and send nothing, and warn developers. voiceOrdersTeam never formats
+ * its string: it sends it as it is, for Everyone only. */
+static void TestRefused( void ) {
+	static const char *selections[] = { "0", "3" };	/* client 1, and EVERYONE */
+	int i;
+
+	Cvar_Set( "developer", "1" );
+	for ( i = 0; i < ARRAY_LEN( selections ); i++ ) {
+		Select( selections[i] );
+		UI_BuildPlayerList();
+		Check( uiInfo.myTeamCount == TEAMMATES, "blue team list" );
+		printed[0] = 0;
+		RunOrders( "orders", value, NULL, 0 );
+		Check( strstr( printed, "WARNING: orders refused" ) != NULL, "orders warns developers" );
+		printed[0] = 0;
+		RunOrders( "voiceOrders", value, NULL, 0 );
+		Check( i ? !printed[0] : strstr( printed, "WARNING: voiceOrders refused" ) != NULL,
+			"voiceOrders warns developers when it has a teammate to order" );
+		checkedFormat = value;
+		formattedCount = 0;
+		RunScript( va( "voiceOrdersTeam \"%s\"", value ) );
+		checkedFormat = NULL;
+		Check( formattedCount == 0 && !strcmp( executed, i ? va( "%s\n", value ) : "" ), "voiceOrdersTeam" );
+	}
+}
+
 /** The selected player cvars after a key on the selected player item. */
 static void HandleKey( int key, int expected ) {
 	char name[MAX_CVAR_VALUE_STRING];
 
-	Select();
+	Select( value );
 	UI_SelectedPlayer_HandleKey( 0, NULL, key );
 	Cvar_VariableStringBuffer( "cg_selectedPlayerName", name, sizeof( name ) );
 	Check( Cvar_VariableValue( "cg_selectedPlayer" ) == expected, "selected player after a key" );
@@ -200,7 +234,7 @@ static void TestSelection( int selected ) {
 
 	// the team leader keeps the server's value; the name follows a teammate, the
 	// first one when the value names nobody
-	Select();
+	Select( value );
 	UI_BuildPlayerList();
 	Check( uiInfo.teamLeader && uiInfo.myTeamCount == TEAMMATES, "blue team list" );
 	Check( !memcmp( uiInfo.teamClientNums, teammateClients, sizeof( teammateClients ) ), "teammate clients" );
@@ -255,14 +289,14 @@ int main( int argc, char **argv ) {
 	char *end;
 	long number;
 
-	if ( argc != 3 || ( strcmp( argv[1], "selected" ) && strcmp( argv[1], "color1" ) ) ) {
-		fprintf( stderr, "usage: %s selected|color1 <value>\n", argv[0] );
+	if ( argc != 3 || ( strcmp( argv[1], "selected" ) && strcmp( argv[1], "color1" ) && strcmp( argv[1], "refused" ) ) ) {
+		fprintf( stderr, "usage: %s selected|color1 <value>, or refused <orders string>\n", argv[0] );
 		return 2;
 	}
 	mode = argv[1];
 	value = argv[2];
 	number = strtol( value, &end, 10 );
-	Check( *value && !*end, "a decimal value" );
+	Check( !strcmp( mode, "refused" ) || ( *value && !*end ), "a decimal value" );
 
 	dllEntry( FakeSyscall );
 	// the userinfo cvars CL_Init creates
@@ -271,6 +305,11 @@ int main( int argc, char **argv ) {
 	if ( !strcmp( mode, "color1" ) ) {
 		TestEffectsColor( number >= 1 && number <= 7 ? (int)number : 0 );
 		printf( "Team Arena UI bounds color1 %s from systeminfo (issue #379)\n", value );
+	} else if ( !strcmp( mode, "refused" ) ) {
+		Init();
+		Serve();
+		TestRefused();
+		printf( "Team Arena UI refuses the orders string %s (issue #401)\n", value );
 	} else {
 		Init();
 		Serve();
