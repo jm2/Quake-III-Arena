@@ -48,3 +48,14 @@ for Q3_TEST_ROWS in 0 3 2048; do
         done
     done
 done
+# Find-player lists of 0 rows, 3 rows (two servers found and the row that
+# counts them) and a full MAX_FOUNDPLAYER_SERVERS (16), with the browser's
+# selection one past its list. An empty list selects row -1 too.
+for Q3_TEST_ROWS in 0 3 16; do
+    for Q3_TEST_ROW in 0 1 $((Q3_TEST_ROWS - 2)) $((Q3_TEST_ROWS - 1)) "$Q3_TEST_ROWS" -1 2147483647 -2147483648; do
+        for Q3_TEST_WHAT in select FoundPlayerServerStatus FoundPlayerJoinServer; do
+            "${Q3_TEST_RUN[@]}" "$Q3_TEST_DIR/ui_selection_index" findplayer \
+                "$Q3_TEST_WHAT" "$Q3_TEST_ROWS" "$Q3_TEST_ROW"
+        done
+    done
+done

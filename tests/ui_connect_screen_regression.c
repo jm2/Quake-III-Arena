@@ -49,9 +49,9 @@ void QDECL Com_Error( int level, const char *error, ... ) {
 	exit( 1 );
 }
 
-/** Com_sprintf warns when it cuts a string short; nothing else prints here. */
+/** Nothing prints while the screen draws, not even for a name cut short. */
 void QDECL Com_Printf( const char *msg, ... ) {
-	(void)msg;
+	Check( 0, va( "nothing is printed: %s", msg ) );
 }
 
 /** No menus are loaded, so the screen draws only its own text. */

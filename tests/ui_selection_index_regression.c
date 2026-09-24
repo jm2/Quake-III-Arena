@@ -6,7 +6,12 @@
  * - an empty server list selects row -1, and a click below the last row selects
  *   row numDisplayServers, one past a full list of MAX_DISPLAY_SERVERS; the
  *   FEEDER_SERVERS selection and the ServerStatus, addFavorite and
- *   deleteFavorite scripts read displayServers at the selected row.
+ *   deleteFavorite scripts read displayServers at the selected row;
+ * - an empty find-player list selects row -1 too, and the FEEDER_FINDPLAYER
+ *   selection and FoundPlayerServerStatus script read foundPlayerServerAddresses
+ *   at the selected row.
+ * A row that names no server leaves an empty status address, and no status is
+ * requested for it, which the engine would try to resolve.
  * The fixture includes the real ui_main.c and links the rest of the UI behind
  * the real syscall layer; the fake engine below answers as cl_ui.c does. */
 #include "../code/ui/ui_main.c"
@@ -27,6 +32,8 @@ void dllEntry( int (QDECL *syscallptr)( int arg, ... ) );	/* ui_syscalls.c */
 #define PREVIEW 7	/* the handle of a levelshot the engine has */
 #define BOTS 3
 #define NOTHING "(nothing)"	/* no status request, or no favorite added or removed */
+#define UNTOUCHED "(untouched)"	/* the status address before a find-player selection */
+#define FOUND_STALE "203.0.113.99:27960"	/* a find-player slot past the list */
 
 static const char botsText[] =
 	"{ name Grunt funname Grunt }\n{ name Major funname Major }\n{ name Visor funname Visor }\n";
@@ -214,6 +221,58 @@ static void List( int rows, int source ) {
 	Reset();
 }
 
+/** A find-player list of rows rows: the servers found, then the row that
+ * counts them, whose address was never written, and stale slots past the list.
+ * The browser's selection is one past its list of 3, which retail still lets
+ * the find-player status through for. */
+static void FindPlayerList( int rows ) {
+	int i;
+
+	Check( rows >= 0 && rows <= MAX_FOUNDPLAYER_SERVERS, "a find-player list" );
+	List( 3, AS_GLOBAL );
+	uiInfo.serverStatus.currentServer = 3;
+	for ( i = 0; i < MAX_FOUNDPLAYER_SERVERS; i++ ) {
+		Q_strncpyz( uiInfo.foundPlayerServerAddresses[i], i < rows - 1 ? va( "198.51.100.%d:27960", i ) :
+			i == rows - 1 ? "" : FOUND_STALE, sizeof( uiInfo.foundPlayerServerAddresses[i] ) );
+	}
+	uiInfo.numFoundPlayerServers = rows;
+	Q_strncpyz( uiInfo.serverStatusAddress, UNTOUCHED, sizeof( uiInfo.serverStatusAddress ) );
+}
+
+/** Selecting a found server shows its status, even while the browser's
+ * selection is one past its list; the row that counts them, and a row past
+ * the list, show nothing. FoundPlayerServerStatus shows the status of any row
+ * in the list, and none for a row past it or for an empty address.
+ * FoundPlayerJoinServer joins any row in the list, as it did. */
+static void TestFindPlayer( const char *what, int rows, int row ) {
+	char address[MAX_ADDRESSLENGTH];
+	int listed = row >= 0 && row < rows;
+
+	FindPlayerList( rows );
+	Q_strncpyz( address, listed ? uiInfo.foundPlayerServerAddresses[row] : "", sizeof( address ) );
+	if ( !strcmp( what, "select" ) ) {
+		UI_FeederSelection( FEEDER_FINDPLAYER, row );
+		Check( uiInfo.currentFoundPlayerServer == row, "the selected row" );
+		if ( row >= 0 && row < rows - 1 ) {
+			Check( !strcmp( uiInfo.serverStatusAddress, address ) && statusResets == 1, "the status list is rebuilt" );
+			Check( !strcmp( queriedStatus, address ), "the found server's status is requested" );
+		} else {
+			Check( !strcmp( uiInfo.serverStatusAddress, UNTOUCHED ) && statusResets == 0, "the status list is kept" );
+			Check( !strcmp( queriedStatus, NOTHING ), "no status is requested" );
+		}
+		return;
+	}
+	uiInfo.currentFoundPlayerServer = row;
+	RunScript( what );
+	if ( !strcmp( what, "FoundPlayerJoinServer" ) ) {
+		Check( !strcmp( executed, listed ? va( "connect %s\n", address ) : "" ), "the found server is joined" );
+		return;
+	}
+	Check( !strcmp( what, "FoundPlayerServerStatus" ), "a script under test" );
+	Check( !strcmp( uiInfo.serverStatusAddress, address ) && statusResets == 1, "the status list is rebuilt" );
+	Check( !strcmp( queriedStatus, address[0] ? address : NOTHING ), "the status of a found server only is requested" );
+}
+
 /** The server a row shows, or NO_SERVER. */
 static int RowServer( int rows, int row ) {
 	return row >= 0 && row < rows ? LISTED_SERVERS - 1 - row : NO_SERVER;
@@ -329,9 +388,11 @@ int main( int argc, char **argv ) {
 		TestSelect( Number( argv[2] ), Number( argv[3] ) );
 	} else if ( argc == 5 && !strcmp( argv[1], "script" ) ) {
 		TestScript( argv[2], Number( argv[3] ), Number( argv[4] ) );
+	} else if ( argc == 5 && !strcmp( argv[1], "findplayer" ) ) {
+		TestFindPlayer( argv[2], Number( argv[3] ), Number( argv[4] ) );
 	} else {
-		fprintf( stderr, "usage: %s addbot <gametype> <heads> <botIndex> | select <rows> <row> | script <name> <rows> <row>\n",
-			argv[0] );
+		fprintf( stderr, "usage: %s addbot <gametype> <heads> <botIndex> | select <rows> <row> | script <name> <rows> <row>"
+			" | findplayer select|<script> <rows> <row>\n", argv[0] );
 		return 2;
 	}
 	printf( "Team Arena UI %s stays inside its tables (issue #419)\n", testCase );

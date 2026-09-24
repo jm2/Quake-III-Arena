@@ -3459,7 +3459,12 @@ static void UI_RunMenuScript(char **args) {
 			trap_LAN_GetServerAddressString(ui_netSource.integer, UI_DisplayServer(uiInfo.serverStatus.currentServer), uiInfo.serverStatusAddress, sizeof(uiInfo.serverStatusAddress));
 			UI_BuildServerStatus(qtrue);
 		} else if (Q_stricmp(name, "FoundPlayerServerStatus") == 0) {
-			Q_strncpyz(uiInfo.serverStatusAddress, uiInfo.foundPlayerServerAddresses[uiInfo.currentFoundPlayerServer], sizeof(uiInfo.serverStatusAddress));
+			// an empty list selects row -1, which names no server
+			if (uiInfo.currentFoundPlayerServer >= 0 && uiInfo.currentFoundPlayerServer < uiInfo.numFoundPlayerServers) {
+				Q_strncpyz(uiInfo.serverStatusAddress, uiInfo.foundPlayerServerAddresses[uiInfo.currentFoundPlayerServer], sizeof(uiInfo.serverStatusAddress));
+			} else {
+				uiInfo.serverStatusAddress[0] = '\0';
+			}
 			UI_BuildServerStatus(qtrue);
 			Menu_SetFeederSelection(NULL, FEEDER_FINDPLAYER, 0, NULL);
 		} else if (Q_stricmp(name, "FindPlayer") == 0) {
@@ -4310,7 +4315,11 @@ static void UI_BuildServerStatus(qboolean force) {
 		// reset all server status requests
 		trap_LAN_ServerStatus( NULL, NULL, 0);
 	}
-	if (uiInfo.serverStatus.currentServer < 0 || uiInfo.serverStatus.currentServer >= uiInfo.serverStatus.numDisplayServers || uiInfo.serverStatus.numDisplayServers == 0) {
+	// no server is selected: the engine would try to resolve an empty address
+	if (!uiInfo.serverStatusAddress[0]) {
+		return;
+	}
+	if (uiInfo.serverStatus.currentServer < 0 || uiInfo.serverStatus.currentServer > uiInfo.serverStatus.numDisplayServers || uiInfo.serverStatus.numDisplayServers == 0) {
 		return;
 	}
 	if (UI_GetServerStatusInfo( uiInfo.serverStatusAddress, &uiInfo.serverStatusInfo ) ) {
@@ -4624,7 +4633,7 @@ static void UI_FeederSelection(float feederID, int index) {
   } else if (feederID == FEEDER_FINDPLAYER) {
 	  uiInfo.currentFoundPlayerServer = index;
 	  //
-	  if ( index < uiInfo.numFoundPlayerServers-1) {
+	  if ( index >= 0 && index < uiInfo.numFoundPlayerServers-1) {
 			// build a new server status for this server
 			Q_strncpyz(uiInfo.serverStatusAddress, uiInfo.foundPlayerServerAddresses[uiInfo.currentFoundPlayerServer], sizeof(uiInfo.serverStatusAddress));
 			Menu_SetFeederSelection(NULL, FEEDER_SERVERSTATUS, 0, NULL);
@@ -5750,7 +5759,7 @@ void UI_DrawConnectScreen( qboolean overlay ) {
 	if (!Q_stricmp(cstate.servername,"localhost")) {
 		Text_PaintCenter(centerPoint, yStart + 48, scale, colorWhite, va("Starting up..."), ITEM_TEXTSTYLE_SHADOWEDMORE);
 	} else {
-		Com_sprintf(text, sizeof(text), "Connecting to %s", cstate.servername);
+		Q_strncpyz(text, va("Connecting to %s", cstate.servername), sizeof(text));
 		Text_PaintCenter(centerPoint, yStart + 48, scale, colorWhite,text , ITEM_TEXTSTYLE_SHADOWEDMORE);
 	}
 
