@@ -144,6 +144,11 @@ static void UI_TeamOrdersMenu_SetList( int id ) {
 	}
 
 	teamOrdersMenuInfo.list.generic.bottom = teamOrdersMenuInfo.list.generic.top + teamOrdersMenuInfo.list.numitems * PROP_HEIGHT;
+
+	// the selected bot's row may be past the end of the orders
+	if( teamOrdersMenuInfo.list.curvalue >= teamOrdersMenuInfo.list.numitems ) {
+		teamOrdersMenuInfo.list.curvalue = 0;
+	}
 }
 
 
@@ -169,6 +174,9 @@ sfxHandle_t UI_TeamOrdersMenu_Key( int key ) {
 			y = l->generic.top;
 			if( UI_CursorInRect( x, y, l->generic.right - x, l->generic.bottom - y ) ) {
 				index = (uis.cursory - y) / PROP_HEIGHT;
+				if( index >= l->numitems ) {
+					return menu_null_sound;	// the rect includes the bottom edge
+				}
 				l->oldvalue = l->curvalue;
 				l->curvalue = index;
 
@@ -261,6 +269,9 @@ static void UI_TeamOrdersMenu_ListEvent( void *ptr, int event ) {
 
 	id = ((menulist_s *)ptr)->generic.id;
 	selection = ((menulist_s *)ptr)->curvalue;
+	if( selection < 0 || selection >= ((menulist_s *)ptr)->numitems ) {
+		return;	// page up/down move a zero-height list's cursor off it
+	}
 
 	if( id == ID_LIST_BOTS ) {
 		teamOrdersMenuInfo.selectedBot = selection;
