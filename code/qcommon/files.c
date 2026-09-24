@@ -3378,7 +3378,7 @@ static void FS_SetRestrictions( void ) {
 				if ( ( fs_scrambledProductId[i] ^ (seed&255) ) != productId[i] ) {
 					break;
 				}
-				seed = (69069 * seed + 1);
+				seed = (int)(69069U * (unsigned)seed + 1U);	// Q_rand's wrap, no signed overflow
 			}
 
 			FS_FreeFile( productId );

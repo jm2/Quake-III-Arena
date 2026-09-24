@@ -4,7 +4,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 /* The retail product-ID gate in FS_SetRestrictions is unrelated to config and
- * pak precedence, and its id-era LCG overflows a signed int under UBSan. */
+ * pak precedence (tests/run_fs_product_id_tests.sh covers it). */
 #define PRE_RELEASE_DEMO
 #define Q3_ZIP_ZONE_CAPACITY 64
 #define main FixtureZipMain
