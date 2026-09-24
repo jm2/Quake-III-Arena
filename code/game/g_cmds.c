@@ -770,22 +770,10 @@ void Cmd_FollowCycle_f( gentity_t *ent, int dir ) {
 		G_Error( "Cmd_FollowCycle_f: bad dir %i", dir );
 	}
 
-	// if dedicated follow client, just switch between the two auto clients
-	// (a free spectator that StopFollowing left with -1 or -2 cycles through
-	// the players as before)
-	if (ent->client->sess.spectatorState == SPECTATOR_FOLLOW && ent->client->sess.spectatorClient < 0) {
-		if (ent->client->sess.spectatorClient == -1) {
-			ent->client->sess.spectatorClient = -2;
-		} else if (ent->client->sess.spectatorClient == -2) {
-			ent->client->sess.spectatorClient = -1;
-		}
-		return;
-	}
-
 	clientnum = ent->client->sess.spectatorClient;
 	original = clientnum;
 	// check each slot at most once: clientnum never comes back to the -1 or
-	// -2 of such a free spectator, or to a spectatorClient restored from
+	// -2 of team follow1 or follow2, or to a spectatorClient restored from
 	// session data at or past a lowered level.maxclients
 	count = 0;
 	do {

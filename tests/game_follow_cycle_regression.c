@@ -16,10 +16,11 @@
  * lowered (a slot at or past the new level.maxclients) never comes back
  * around either.
  *
- * ioquake3 (02f3664b) switches a follow1/follow2 spectator between the two
- * dedicated follow modes instead of entering the loop. This port does that
- * for spectators in follow mode, and bounds the loop to one pass over the
- * slots so every other start keeps its retail 1.32c choice and returns.
+ * The fix bounds the walk to one pass over the slots. Wherever the retail
+ * 1.32c loop ends, it ends at the same slot with the same choice; where the
+ * retail loop spins, the command now returns and leaves the spectator as it
+ * was. (ioquake3's 02f3664b instead switches a follow1/follow2 spectator
+ * between the two modes; that changes retail behaviour and is not used.)
  *
  * The test links the real g_cmds.c and sends the commands through the real
  * ClientCommand() entry, the way the engine hands client commands to the
@@ -28,10 +29,10 @@
  * seconds instead of stalling CI. It covers:
  *  - follow1/follow2 with nobody to follow (only the sender, spectators,
  *    connecting and disconnected slots, one slot, MAX_CLIENTS slots): the
- *    command returns and switches follow1 <-> follow2, touching nothing else;
- *  - follow1/follow2 with players: the same switch;
- *  - a free spectator left with -1 or -2, and "team follow1", "follow",
- *    "follownext" end to end;
+ *    command returns and changes nothing;
+ *  - follow1/follow2, and a free spectator left with -1 or -2, with players:
+ *    the retail choice; and "team follow1", "follow", "follownext" end to
+ *    end;
  *  - normal cycling forward and back across mixed spectators, players,
  *    connecting and disconnected slots in free for all, team and tournament
  *    games, hand-checked, and against the retail rule for every layout of a
@@ -327,12 +328,12 @@ static void ExpectFollow( const char *what, int sender, const char *command, int
 	ExpectSpectator( what, sender, command, startClient, startState, wantClient, SPECTATOR_FOLLOW );
 }
 
-/* follownext and followprev from follow1 and follow2: switch to the other one */
-static void ExpectDedicatedSwitch( const char *what, int sender ) {
-	ExpectSpectator( what, sender, "follownext", FOLLOW1, SPECTATOR_FOLLOW, FOLLOW2, SPECTATOR_FOLLOW );
-	ExpectSpectator( what, sender, "followprev", FOLLOW1, SPECTATOR_FOLLOW, FOLLOW2, SPECTATOR_FOLLOW );
-	ExpectSpectator( what, sender, "follownext", FOLLOW2, SPECTATOR_FOLLOW, FOLLOW1, SPECTATOR_FOLLOW );
-	ExpectSpectator( what, sender, "followprev", FOLLOW2, SPECTATOR_FOLLOW, FOLLOW1, SPECTATOR_FOLLOW );
+/* follownext and followprev from follow1 and follow2 with nobody to follow */
+static void ExpectDedicatedUnchanged( const char *what, int sender ) {
+	ExpectUnchanged( what, sender, "follownext", FOLLOW1, SPECTATOR_FOLLOW );
+	ExpectUnchanged( what, sender, "followprev", FOLLOW1, SPECTATOR_FOLLOW );
+	ExpectUnchanged( what, sender, "follownext", FOLLOW2, SPECTATOR_FOLLOW );
+	ExpectUnchanged( what, sender, "followprev", FOLLOW2, SPECTATOR_FOLLOW );
 }
 
 /*
@@ -379,6 +380,12 @@ static void ExpectRetail( const char *what, int sender, int startClient, int sta
 	}
 }
 
+/* follownext and followprev from follow1 and follow2: the retail choice */
+static void ExpectDedicated( const char *what, int sender ) {
+	ExpectRetail( what, sender, FOLLOW1, SPECTATOR_FOLLOW );
+	ExpectRetail( what, sender, FOLLOW2, SPECTATOR_FOLLOW );
+}
+
 /* issue #361: follow1/follow2 with nobody to follow */
 static void Test_NobodyToFollow( void ) {
 	static const int	alone[MAX_CLIENTS] = { SPECTATOR };
@@ -390,15 +397,15 @@ static void Test_NobodyToFollow( void ) {
 
 	for ( g = 0 ; g < 3 ; g++ ) {
 		SetupServer( gametypes[g], 8, alone );
-		ExpectDedicatedSwitch( "only the sender on the server", 0 );
+		ExpectDedicatedUnchanged( "only the sender on the server", 0 );
 		for ( start = 0 ; start < 8 ; start++ ) {
 			ExpectUnchanged( "only the sender on the server", 0, "follownext", start, SPECTATOR_FREE );
 			ExpectUnchanged( "only the sender on the server", 0, "followprev", start, SPECTATOR_FREE );
 		}
 
 		SetupServer( gametypes[g], 8, spectators );
-		ExpectDedicatedSwitch( "spectators, connecting and disconnected slots", 1 );
-		ExpectDedicatedSwitch( "spectators, connecting and disconnected slots", 7 );
+		ExpectDedicatedUnchanged( "spectators, connecting and disconnected slots", 1 );
+		ExpectDedicatedUnchanged( "spectators, connecting and disconnected slots", 7 );
 		for ( start = 0 ; start < 8 ; start++ ) {
 			ExpectUnchanged( "spectators, connecting and disconnected slots", 4, "follownext", start, SPECTATOR_FREE );
 			ExpectUnchanged( "spectators, connecting and disconnected slots", 4, "followprev", start, SPECTATOR_FOLLOW );
@@ -406,18 +413,24 @@ static void Test_NobodyToFollow( void ) {
 	}
 
 	SetupServer( GT_FFA, 1, alone );
-	ExpectDedicatedSwitch( "a one-slot server", 0 );
+	ExpectDedicatedUnchanged( "a one-slot server", 0 );
 	ExpectUnchanged( "a one-slot server", 0, "follownext", 0, SPECTATOR_FREE );
 	ExpectUnchanged( "a one-slot server", 0, "followprev", 0, SPECTATOR_FREE );
 
 	SetupServer( GT_FFA, MAX_CLIENTS, alone );
-	ExpectDedicatedSwitch( "a MAX_CLIENTS server with only the sender", 0 );
+	ExpectDedicatedUnchanged( "a MAX_CLIENTS server with only the sender", 0 );
 	ExpectUnchanged( "a MAX_CLIENTS server with only the sender", 0, "follownext", MAX_CLIENTS - 1, SPECTATOR_FREE );
 	ExpectUnchanged( "a MAX_CLIENTS server with only the sender", 0, "followprev", 0, SPECTATOR_FREE );
 }
 
-/* a free spectator that StopFollowing left with follow1's -1 or follow2's -2 */
-static void Test_FreeAfterDedicated( void ) {
+/*
+ * "team follow1" and "team follow2" (-1 and -2 in follow mode), and a free
+ * spectator that StopFollowing (a bare "follow", or the intermission) left
+ * with the -1 or -2: the retail choice, which steps from -1 forward to slot
+ * 0 and from every other start below 0 to the last slot first.
+ */
+static void Test_Dedicated( void ) {
+	static const int	states[2] = { SPECTATOR_FOLLOW, SPECTATOR_FREE };
 	static const int	alone[8] = { SPECTATOR };
 	static const int	mixed[8] = {
 		PLAYER, SPECTATOR, EMPTY, PLAYER, CONNECTING, SPECTATOR, PLAYER, EMPTY
@@ -425,27 +438,29 @@ static void Test_FreeAfterDedicated( void ) {
 	static const int	edges[8] = {
 		SPECTATOR, PLAYER, EMPTY, EMPTY, CONNECTING, SPECTATOR, EMPTY, PLAYER
 	};
+	int					i;
 
-	/* nobody to follow: the command returns and keeps it */
-	SetupServer( GT_FFA, 8, alone );
-	ExpectUnchanged( "free after follow1, nobody to follow", 0, "follownext", FOLLOW1, SPECTATOR_FREE );
-	ExpectUnchanged( "free after follow1, nobody to follow", 0, "followprev", FOLLOW1, SPECTATOR_FREE );
-	ExpectUnchanged( "free after follow2, nobody to follow", 0, "follownext", FOLLOW2, SPECTATOR_FREE );
-	ExpectUnchanged( "free after follow2, nobody to follow", 0, "followprev", FOLLOW2, SPECTATOR_FREE );
+	for ( i = 0 ; i < 2 ; i++ ) {
+		/* nobody to follow: the command returns and keeps it */
+		SetupServer( GT_FFA, 8, alone );
+		ExpectUnchanged( "follow1, nobody to follow", 0, "follownext", FOLLOW1, states[i] );
+		ExpectUnchanged( "follow1, nobody to follow", 0, "followprev", FOLLOW1, states[i] );
+		ExpectUnchanged( "follow2, nobody to follow", 0, "follownext", FOLLOW2, states[i] );
+		ExpectUnchanged( "follow2, nobody to follow", 0, "followprev", FOLLOW2, states[i] );
 
-	/* players: the retail choice, which steps from -1 up to slot 0 and
-	 * from anywhere else below 0 to the last slot first */
-	SetupServer( GT_FFA, 8, mixed );
-	ExpectFollow( "free after follow1", 1, "follownext", FOLLOW1, SPECTATOR_FREE, 0 );
-	ExpectFollow( "free after follow1", 1, "followprev", FOLLOW1, SPECTATOR_FREE, 6 );
-	ExpectFollow( "free after follow2", 1, "follownext", FOLLOW2, SPECTATOR_FREE, 0 );
-	ExpectFollow( "free after follow2", 1, "followprev", FOLLOW2, SPECTATOR_FREE, 6 );
+		/* players at 0, 3 and 6 */
+		SetupServer( GT_FFA, 8, mixed );
+		ExpectFollow( "follow1", 1, "follownext", FOLLOW1, states[i], 0 );
+		ExpectFollow( "follow1", 1, "followprev", FOLLOW1, states[i], 6 );
+		ExpectFollow( "follow2", 1, "follownext", FOLLOW2, states[i], 0 );
+		ExpectFollow( "follow2", 1, "followprev", FOLLOW2, states[i], 6 );
 
-	SetupServer( GT_CTF, 8, edges );
-	ExpectFollow( "free after follow1, players in the first and last slots", 0, "follownext", FOLLOW1, SPECTATOR_FREE, 1 );
-	ExpectFollow( "free after follow1, players in the first and last slots", 0, "followprev", FOLLOW1, SPECTATOR_FREE, 7 );
-	ExpectFollow( "free after follow2, players in the first and last slots", 5, "follownext", FOLLOW2, SPECTATOR_FREE, 7 );
-	ExpectFollow( "free after follow2, players in the first and last slots", 5, "followprev", FOLLOW2, SPECTATOR_FREE, 7 );
+		SetupServer( GT_CTF, 8, edges );
+		ExpectFollow( "follow1, players in the first and last slots", 0, "follownext", FOLLOW1, states[i], 1 );
+		ExpectFollow( "follow1, players in the first and last slots", 0, "followprev", FOLLOW1, states[i], 7 );
+		ExpectFollow( "follow2, players in the first and last slots", 5, "follownext", FOLLOW2, states[i], 7 );
+		ExpectFollow( "follow2, players in the first and last slots", 5, "followprev", FOLLOW2, states[i], 7 );
+	}
 }
 
 static void ExpectState( gclient_t *cl, int wantState, int wantClient ) {
@@ -485,7 +500,7 @@ static void Test_TeamFollowSequence( void ) {
 	/* the reported hang: "team follow1" on a server nobody plays on */
 	SetupServer( GT_FFA, 8, alone );
 	SequenceStep( 2, "team", "follow1", SPECTATOR_FOLLOW, FOLLOW1 );
-	SequenceStep( 2, "follownext", NULL, SPECTATOR_FOLLOW, FOLLOW2 );
+	SequenceStep( 2, "follownext", NULL, SPECTATOR_FOLLOW, FOLLOW1 );
 	SequenceStep( 2, "followprev", NULL, SPECTATOR_FOLLOW, FOLLOW1 );
 	SequenceStep( 2, "follow", NULL, SPECTATOR_FREE, FOLLOW1 );
 	SequenceStep( 2, "follownext", NULL, SPECTATOR_FREE, FOLLOW1 );
@@ -493,12 +508,16 @@ static void Test_TeamFollowSequence( void ) {
 
 	SetupServer( GT_FFA, 8, mixed );
 	SequenceStep( 1, "team", "follow2", SPECTATOR_FOLLOW, FOLLOW2 );
-	SequenceStep( 1, "follownext", NULL, SPECTATOR_FOLLOW, FOLLOW1 );
-	SequenceStep( 1, "follow", NULL, SPECTATOR_FREE, FOLLOW1 );
 	SequenceStep( 1, "follownext", NULL, SPECTATOR_FOLLOW, 0 );
 	SequenceStep( 1, "follownext", NULL, SPECTATOR_FOLLOW, 3 );
 	SequenceStep( 1, "followprev", NULL, SPECTATOR_FOLLOW, 0 );
 	SequenceStep( 1, "followprev", NULL, SPECTATOR_FOLLOW, 6 );
+	SequenceStep( 1, "follow", NULL, SPECTATOR_FREE, 6 );
+	SequenceStep( 1, "follownext", NULL, SPECTATOR_FOLLOW, 0 );
+
+	SetupServer( GT_FFA, 8, mixed );
+	SequenceStep( 5, "team", "follow1", SPECTATOR_FOLLOW, FOLLOW1 );
+	SequenceStep( 5, "followprev", NULL, SPECTATOR_FOLLOW, 6 );
 }
 
 /* issue #361 (the same loop): a spectatorClient from before sv_maxclients was lowered */
@@ -554,9 +573,9 @@ static void Test_NormalCycling( void ) {
 		ExpectFollow( "mixed slots", 5, "followprev", 1, SPECTATOR_FREE, 0 );
 		ExpectFollow( "mixed slots", 5, "followprev", 4, SPECTATOR_SCOREBOARD, 3 );
 
-		/* dedicated follow modes with players switch too (as ioquake3) */
-		ExpectDedicatedSwitch( "mixed slots", 1 );
-		ExpectDedicatedSwitch( "mixed slots", 5 );
+		/* follow1 and follow2 go to a player as a free spectator would */
+		ExpectDedicated( "mixed slots", 1 );
+		ExpectDedicated( "mixed slots", 5 );
 	}
 }
 
@@ -575,7 +594,12 @@ static void Test_SinglePlayer( void ) {
 		ExpectFollow( "one player", 0, "follownext", start, SPECTATOR_FREE, 3 );
 		ExpectFollow( "one player", 6, "followprev", start, SPECTATOR_FREE, 3 );
 	}
-	ExpectDedicatedSwitch( "one player", 2 );
+	/* follow1 and follow2 go to the one player and stay there */
+	ExpectFollow( "one player", 2, "follownext", FOLLOW1, SPECTATOR_FOLLOW, 3 );
+	ExpectFollow( "one player", 2, "followprev", FOLLOW1, SPECTATOR_FOLLOW, 3 );
+	ExpectFollow( "one player", 2, "follownext", FOLLOW2, SPECTATOR_FOLLOW, 3 );
+	ExpectFollow( "one player", 2, "followprev", FOLLOW2, SPECTATOR_FOLLOW, 3 );
+	ExpectFollow( "one player", 2, "follownext", 3, SPECTATOR_FOLLOW, 3 );
 
 	/*
 	 * The player itself sends follownext: SetTeam makes it a free spectator
@@ -622,8 +646,8 @@ static void Test_PlayerToSpectator( void ) {
 
 /*
  * Every layout of a five-slot server against the retail rule: each other
- * slot empty, connecting, playing or spectating; starts from -2 to two past
- * the last slot for a free spectator and from 0 for a following one.
+ * slot empty, connecting, playing or spectating; starts from -2 (follow2)
+ * to two past the last slot, free and following, in both directions.
  */
 static void Test_AllLayouts( void ) {
 	int		layout[5];
@@ -646,11 +670,8 @@ static void Test_AllLayouts( void ) {
 			SetupServer( ( sender & 1 ) ? GT_TEAM : GT_FFA, 5, layout );
 			for ( start = -2 ; start < 5 + 2 ; start++ ) {
 				ExpectRetail( "five-slot layout", sender, start, SPECTATOR_FREE );
-				if ( start >= 0 ) {
-					ExpectRetail( "five-slot layout", sender, start, SPECTATOR_FOLLOW );
-				}
+				ExpectRetail( "five-slot layout", sender, start, SPECTATOR_FOLLOW );
 			}
-			ExpectDedicatedSwitch( "five-slot layout", sender );
 			layouts++;
 		}
 	}
@@ -663,7 +684,7 @@ int main( void ) {
 	signal( SIGALRM, Timeout );
 
 	Test_NobodyToFollow();
-	Test_FreeAfterDedicated();
+	Test_Dedicated();
 	Test_TeamFollowSequence();
 	Test_StaleSlot();
 	Test_NormalCycling();
