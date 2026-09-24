@@ -32,6 +32,8 @@ cvar_t *com_dedicated, *com_cl_running;
 static cvar_t maxclients, floodProtect, pure, lanForceRate, dedicated, clRunning;
 static char queued[CLIENTS][QUEUE][MAX_STRING_CHARS];
 static char lastSay[CLIENTS][MAX_STRING_CHARS];
+static char lastGameCommand[CLIENTS][MAX_STRING_CHARS];	/* another spelling of a server command (see OddSpellings) */
+static int gameCommands[CLIENTS];
 static int queuedSequence[CLIENTS], moveTime[CLIENTS], thinks[CLIENTS], says[CLIENTS], userinfoChanges[CLIENTS];
 static int moving[CLIENTS], begins[CLIENTS], teams[CLIENTS], serverIds[CLIENTS];
 static int gamestatesDue, gamestateFor;	/* gamestates the connect sequence asks for with donedl, and its client */
@@ -111,6 +113,11 @@ int VM_CallArgs( vm_t *vm, int callNum, const int *args, int argCount ) {
 		teams[n]++;
 		begins[n]++;
 	}
+	else if ( callNum == GAME_CLIENT_COMMAND && ( !strcmp( Cmd_Argv( 0 ), "DOWNLOAD" ) || !strcmp( Cmd_Argv( 0 ), "userinfox" ) ) ) {
+		/* not the exact name of a server command, so the game's (see OddSpellings) */
+		Q_strncpyz( lastGameCommand[n], Cmd_Argv( 0 ), sizeof( lastGameCommand[n] ) );
+		gameCommands[n]++;
+	}
 	else if ( callNum == GAME_CLIENT_COMMAND ) {
 		Check( !strcmp( Cmd_Argv( 0 ), "say" ), "unexpected game command" );
 		Q_strncpyz( lastSay[n], Cmd_Argv( 1 ), sizeof( lastSay[n] ) );
@@ -173,7 +180,8 @@ static void Reset( int listen, int protect ) {
 	memset( queuedSequence, 0, sizeof( queuedSequence ) ); memset( moveTime, 0, sizeof( moveTime ) );
 	memset( thinks, 0, sizeof( thinks ) ); memset( says, 0, sizeof( says ) ); memset( begins, 0, sizeof( begins ) );
 	memset( userinfoChanges, 0, sizeof( userinfoChanges ) ); memset( lastSay, 0, sizeof( lastSay ) );
-	memset( teams, 0, sizeof( teams ) );
+	memset( teams, 0, sizeof( teams ) ); memset( gameCommands, 0, sizeof( gameCommands ) );
+	memset( lastGameCommand, 0, sizeof( lastGameCommand ) );
 	svs.time = 100000; sv.state = SS_GAME; sv.serverId = sv.restartedServerId = 4242; sv.checksumFeed = 0x5eed;
 	dedicated.integer = !listen; clRunning.integer = listen; floodProtect.integer = protect;
 	for ( i = 0, cl = svs.clients; i < CLIENTS; i++, cl++ ) {
@@ -260,7 +268,8 @@ static void BotExitChat( void ) {
 	Check( says[BOT] == before + 1 && !strcmp( lastSay[BOT], "goodbye" ), "bot exit chat refused" );
 }
 /** An active client's server command starts the window, as in retail: a say right after a userinfo is
-    ignored.  Before the client is active only its game commands do (see Connect). */
+    ignored, in the same packet or half a window later.  Before the client is active only its game commands
+    do (see Connect). */
 static void ServerCommandStartsWindow( int n, int throttled ) {
 	int before = says[n];
 	svs.time += 10 * WINDOW;
@@ -269,6 +278,56 @@ static void ServerCommandStartsWindow( int n, int throttled ) {
 	SendPacket( n );
 	Check( !strcmp( svs.clients[n].name, "windowed" ), "userinfo not applied" );
 	Check( says[n] - before == !throttled, throttled ? "server command of an active client did not start the window" : "say after userinfo throttled" );
+	svs.time += 10 * WINDOW;
+	Queue( n, "userinfo \"\\name\\later\"" );
+	SendPacket( n );
+	svs.time += WINDOW / 2;
+	Queue( n, "say later" );
+	SendPacket( n );
+	Check( !strcmp( svs.clients[n].name, "later" ), "userinfo not applied" );
+	Check( says[n] - before == 2 * !throttled, throttled ? "server command of an active client did not start the window for its next packet" : "say after userinfo throttled" );
+}
+/** SV_ExecuteClientCommand runs a command itself only by the exact name of a server command, after
+    Cmd_TokenizeString has skipped any leading space; the window of a client that is not active yet
+    follows it.  DOWNLOAD and userinfox go to the game and start the window, so the say after each is
+    ignored; a userinfo after a space is the server's and does not, so the say after it gets through. */
+static void OddSpellings( int n, int throttled ) {
+	static const char *spellings[] = { "DOWNLOAD x", "userinfox" };
+	int i, before = says[n];
+	for ( i = 0; i < 2; i++ ) {
+		svs.time += 10 * WINDOW;
+		Queue( n, spellings[i] );
+		Queue( n, "say after" );
+		SendPacket( n );
+		Check( gameCommands[n] == i + 1 && !strncmp( spellings[i], lastGameCommand[n], strlen( lastGameCommand[n] ) ),
+			"another spelling of a server command did not reach the game" );
+		Check( says[n] - before == ( i + 1 ) * !throttled,
+			throttled ? "another spelling of a server command did not start the window" : "say after a game command throttled" );
+	}
+	svs.time += 10 * WINDOW;
+	Queue( n, " userinfo \"\\name\\spaced\"" );
+	Queue( n, "say spaced" );
+	SendPacket( n );
+	Check( !strcmp( svs.clients[n].name, "spaced" ) && gameCommands[n] == 2, "userinfo after a space not run by the server" );
+	Check( says[n] - before == 2 * !throttled + 1 && !strcmp( lastSay[n], "spaced" ), "userinfo after a space started the window" );
+}
+/** A connected client's nextdl, and the say refused with it, start no window: the say it sends with the
+    donedl that gets it the gamestate reaches the game. */
+static void ConnectedStartsNoWindow( int n ) {
+	client_t *cl = &svs.clients[n];
+	int before = says[n];
+	svs.time += 10 * WINDOW;
+	Queue( n, "nextdl 0" );	/* no download in progress: nothing to acknowledge */
+	Queue( n, "say downloading" );
+	SendPacket( n );
+	Check( says[n] == before && cl->state == CS_CONNECTED, "game command from a client without its gamestate reached the game" );
+	gamestatesDue = 1; gamestateFor = n;
+	svs.time += FRAME;
+	Queue( n, "donedl" );
+	Queue( n, "say loaded" );
+	SendPacket( n );
+	Check( !gamestatesDue && cl->state == CS_PRIMED, "donedl did not send the gamestate" );
+	Check( says[n] == before + 1 && !strcmp( lastSay[n], "loaded" ), "nextdl or a refused say of a connected client started the window" );
 }
 /** A retail client's connect sequence, from CL_InitDownloads to its first usercmd: it downloads a pak,
     acknowledging every block with a nextdl, while its player says something twice, a full window apart;
@@ -369,7 +428,9 @@ static void Run( const char *name, int listen, int protect, int remoteThrottled,
 	UserinfoInWindow( PRIMED, remoteThrottled );
 	ServerCommandStartsWindow( REMOTE, remoteThrottled );
 	ServerCommandStartsWindow( LOCAL, localThrottled );
+	OddSpellings( PRIMED, remoteThrottled );
 	Check( svs.clients[PRIMED].state == CS_PRIMED && svs.clients[CONNECTED].state == CS_CONNECTED, "client state changed" );
+	ConnectedStartsNoWindow( CONNECTED );
 	Connect( JOINING );
 	Reload( RELOADING );
 	/* The listen server's own client is not throttled while it loads a map either. */

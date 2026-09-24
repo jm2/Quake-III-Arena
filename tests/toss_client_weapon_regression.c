@@ -146,19 +146,36 @@ static void Test_UntrustedWeaponByte( void ) {
 }
 
 /* Defence in depth: even a bogus high STAT_WEAPONS bit must not let the raw
- * index run past ps.ammo[]. Uses a defined shift (w < 31) so this exercises
- * the array-index / BG_FindItemForWeapon guard independently of the UB shift. */
+ * index run past the clamp. Every weapon from WP_NUM_WEAPONS up to 30 (a
+ * defined shift, so this exercises the array-index / BG_FindItemForWeapon
+ * guard independently of the UB shift) has its bit set and a non-zero ammo
+ * word, so an upper bound off by one (> WP_NUM_WEAPONS, or >= MAX_WEAPONS)
+ * reaches ERR_DROP. Below MAX_WEAPONS the ammo is set here; past ps.ammo[] the
+ * index reaches the playerState_t and gclient_t words after it, which
+ * SetupDroppingMachinegun leaves non-zero the way real memory would be. */
 static void Test_HighStatBitIndex( void ) {
-	SetupDroppingMachinegun( 20 );
-	client.ps.stats[STAT_WEAPONS] |= ( 1 << 20 );
-	/* make the out-of-bounds ammo word non-zero the way real memory would be */
-	client.ps.generic1 = 0x7fffffff;
-	client.ps.loopSound = 0x7fffffff;
-	if ( RunToss() ) {
-		Fail( "weapon 20 with a high STAT_WEAPONS bit reached ERR_DROP" );
-	}
-	if ( dropCount != 0 ) {
-		Fail( "weapon 20 dropped a nonexistent weapon item" );
+	int	w;
+	int	word;
+
+	for ( w = WP_NUM_WEAPONS ; w <= 30 ; w++ ) {
+		SetupDroppingMachinegun( w );
+		client.ps.stats[STAT_WEAPONS] |= ( 1 << w );
+		if ( w < MAX_WEAPONS ) {
+			client.ps.ammo[w] = 10;
+		}
+		memcpy( &word, (byte *)client.ps.ammo + w * sizeof( int ), sizeof( word ) );
+		if ( !word ) {
+			fprintf( stderr, "weapon %d\n", w );
+			Fail( "the ammo word a high weapon index reaches is zero" );
+		}
+		if ( RunToss() ) {
+			fprintf( stderr, "weapon %d with its STAT_WEAPONS bit raised ERR_DROP: %s\n", w, errorText );
+			Fail( "a high weapon with its STAT_WEAPONS bit reached ERR_DROP" );
+		}
+		if ( dropCount != 0 ) {
+			fprintf( stderr, "weapon %d produced %d drop(s), tag %d\n", w, dropCount, lastDropTag );
+			Fail( "a high weapon with its STAT_WEAPONS bit dropped a nonexistent weapon item" );
+		}
 	}
 }
 

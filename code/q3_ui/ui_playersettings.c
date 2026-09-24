@@ -294,12 +294,13 @@ static void PlayerSettings_SetMenuItems( void ) {
 	// name
 	Q_strncpyz( s_playersettings.name.field.buffer, UI_Cvar_VariableString("name"), sizeof(s_playersettings.name.field.buffer) );
 
-	// effects color
-	c = trap_Cvar_VariableValue( "color1" ) - 1;
-	if( c < 0 || c > 6 ) {
-		c = 6;
+	// effects color, read with atoi as the cgame does (CG_ColorFromString),
+	// so the menu shows the color a spelling such as "0.5" or "1e1" is drawn in
+	c = atoi( UI_Cvar_VariableString( "color1" ) );
+	if( c < 1 || c > 7 ) {
+		c = 7;
 	}
-	s_playersettings.effects.curvalue = gamecodetoui[c];
+	s_playersettings.effects.curvalue = gamecodetoui[c - 1];
 
 	// model/skin
 	memset( &s_playersettings.playerinfo, 0, sizeof(playerInfo_t) );
