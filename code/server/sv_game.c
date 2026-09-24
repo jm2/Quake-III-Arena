@@ -909,6 +909,10 @@ int SV_GameSystemCalls( int *args ) {
 		Cmd_ArgvBuffer( args[1], VMAB(2, args[3]), args[3] );
 		return 0;
 	case G_SEND_CONSOLE_COMMAND:
+		if ( args[1] < EXEC_NOW || args[1] > EXEC_APPEND ) {
+			VM_Error( "Game console command exec_when out of range" );
+			return 0;
+		}
 		Cbuf_ExecuteText( args[1], VMAS(2) );
 		return 0;
 

@@ -973,6 +973,10 @@ int CL_UISystemCalls( int *args ) {
 		return 0;
 
 	case UI_CMD_EXECUTETEXT:
+		if ( args[1] < EXEC_NOW || args[1] > EXEC_APPEND ) {
+			VM_Error( "UI command exec_when out of range" );
+			return 0;
+		}
 		Cbuf_ExecuteText( args[1], VMAS(2) );
 		return 0;
 
