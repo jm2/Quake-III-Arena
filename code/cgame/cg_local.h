@@ -1436,6 +1436,7 @@ void CG_DrawInformation( void );
 //
 qboolean CG_DrawOldScoreboard( void );
 void CG_DrawOldTourneyScoreboard( void );
+qboolean CG_ClientReadyToExit( int clientNum );
 
 //
 // cg_consolecmds.c

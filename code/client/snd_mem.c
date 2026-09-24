@@ -128,7 +128,7 @@ static int GetLittleLong(void)
 	val = *data_p;
 	val = val + (*(data_p+1)<<8);
 	val = val + (*(data_p+2)<<16);
-	val = val + (*(data_p+3)<<24);
+	val = val + (int)((unsigned int)*(data_p+3)<<24);
 	data_p += 4;
 	return val;
 }

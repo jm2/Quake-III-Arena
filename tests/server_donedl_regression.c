@@ -1,6 +1,7 @@
 /* Issue #271: repeated donedl commands must not queue unbounded gamestate copies.
    Issue #314: reconnecting into a slot must release its download.
-   Issue #326: slots that fill the server-wide queue budget must not get an honest client dropped. */
+   Issue #326: slots that fill the server-wide queue budget must not get an honest client dropped.
+   Issue #337: shutting the server down must release downloads in progress. */
 #include "../code/server/server.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -14,6 +15,7 @@
 #define SERVER_ID 4242
 #define DOWNLOAD_PAK "baseq3/mapdl"
 #define DOWNLOAD_BYTES ( 64 << 10 )	/* more than the block window, so the download stays in progress */
+#define DOWNLOADERS 4
 
 serverStatic_t svs;
 server_t sv;
@@ -399,6 +401,29 @@ static void Shutdown( void ) {
 	Check( queueAllocs == 2 && !zoneBytes, "shutdown frees the final messages" );
 	puts( "shutdown releases queued final messages" );
 }
+/** Shutting down with several downloads in progress, over more server runs than there are file
+    handles, must close every download file and free every block window with the client array. */
+static void ShutdownDuringDownload( void ) {
+	client_t *cl; entityState_t *snapshots; int cycle, i, base;
+	allowDownload.integer = 1; referencedPaks = DOWNLOAD_PAK;
+	for ( cycle = 0; cycle < MAX_FILE_HANDLES; cycle++ ) {
+		if ( cycle ) Setup();	// the next server run
+		base = zoneBytes;
+		for ( i = 1; i <= DOWNLOADERS; i++ ) {
+			cl = Connect( i, i ); InitialGamestate( cl ); Drain( cl );
+			Packet( cl, SERVER_ID, cl->netchan.outgoingSequence - 1, "download " DOWNLOAD_PAK ".pk3", 1, qfalse );
+			SV_SendClientSnapshot( cl );
+			Check( openFiles == i && cl->downloadXmitBlock > 0, "download in progress: file open, first block sent" );
+		}
+		Check( zoneBytes - base >= DOWNLOADERS * MAX_DOWNLOAD_WINDOW * MAX_DOWNLOAD_BLKSIZE, "every block window read" );
+		snapshots = svs.snapshotEntities;
+		SV_Shutdown( "test" );
+		free( snapshots );
+		Check( !openFiles, "shutdown closes every download file" );
+		Check( !zoneBytes, "shutdown frees every download block window" );
+	}
+	puts( "shutdown during downloads releases their file handles and blocks" );
+}
 int main( int argc, char **argv ) {
 	int test = argc > 1 ? atoi( argv[1] ) : -1;
 	Setup();
@@ -412,9 +437,10 @@ int main( int argc, char **argv ) {
 	case 6: MapRestartDuringDownload(); break;
 	case 7: ManyClients(); break;
 	case 8: ReconnectDuringDownload(); break;
-	case 9: PinnedBudgetMapChange(); break;
-	case 10: PinnedBudgetDonedl(); break;
-	default: Check( 0, "usage: server-donedl-tests <0-10>" );
+	case 9: ShutdownDuringDownload(); break;
+	case 10: PinnedBudgetMapChange(); break;
+	case 11: PinnedBudgetDonedl(); break;
+	default: Check( 0, "usage: server-donedl-tests <0-11>" );
 	}
 	return 0;
 }

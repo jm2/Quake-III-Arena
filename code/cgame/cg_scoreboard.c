@@ -72,6 +72,24 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 static qboolean localClient; // true if local client has been displayed
 
+/*
+=================
+CG_ClientReadyToExit
+
+STAT_CLIENTS_READY holds the intermission ready bits of clients 0-15 and
+arrives as a signed short, so bits 16-31 repeat bit 15, as in retail.  The
+retail cgame tested stats & ( 1 << client ).  PowerPC slw, used by retail Mac
+clients and by the QVM interpreter since #248, gives 0 for 1 << 32 through
+1 << 63, so clients 32 and above are never ready.  Those shifts are undefined
+in C, so they are not evaluated here.
+=================
+*/
+qboolean CG_ClientReadyToExit( int clientNum ) {
+	if ( clientNum < 0 || clientNum >= 32 ) {
+		return qfalse;
+	}
+	return ( ( (unsigned)cg.snap->ps.stats[ STAT_CLIENTS_READY ] >> clientNum ) & 1 ) ? qtrue : qfalse;
+}
 
 							 /*
 =================
@@ -219,7 +237,7 @@ static void CG_DrawClientScore( int y, score_t *score, float *color, float fade,
 	CG_DrawBigString( SB_SCORELINE_X + (SB_RATING_WIDTH / 2), y, string, fade );
 
 	// add the "ready" marker for intermission exiting
-	if ( cg.snap->ps.stats[ STAT_CLIENTS_READY ] & ( 1 << score->client ) ) {
+	if ( CG_ClientReadyToExit( score->client ) ) {
 		CG_DrawBigStringColor( iconx, y, "READY", color );
 	}
 }
