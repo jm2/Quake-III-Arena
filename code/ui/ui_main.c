@@ -2929,7 +2929,7 @@ static void UI_LoadMovies() {
 		moviename = movielist;
 		for ( i = 0; i < uiInfo.movieCount; i++ ) {
 			len = strlen( moviename );
-			if (!Q_stricmp(moviename +  len - 4,".roq")) {
+			if (len >= 4 && !Q_stricmp(moviename +  len - 4,".roq")) {
 				moviename[len-4] = '\0';
 			}
 			Q_strupr(moviename);
@@ -2966,7 +2966,7 @@ static void UI_LoadDemos() {
 		demoname = demolist;
 		for ( i = 0; i < uiInfo.demoCount; i++ ) {
 			len = strlen( demoname );
-			if (!Q_stricmp(demoname +  len - strlen(demoExt), demoExt)) {
+			if (len >= (int)strlen(demoExt) && !Q_stricmp(demoname +  len - strlen(demoExt), demoExt)) {
 				demoname[len-strlen(demoExt)] = '\0';
 			}
 			Q_strupr(demoname);
