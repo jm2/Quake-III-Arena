@@ -27,7 +27,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // normal play queues at most a resent gamestate and the two final
 // messages sent on shutdown behind a fragmented message
 #define MAX_QUEUED_MESSAGES	4
-// all clients together, so that holding many slots cannot exhaust the zone
+// all clients together, so that holding many slots cannot exhaust the zone;
+// each client's first queued message is outside it (see SV_Netchan_Transmit)
 #define MAX_QUEUED_BYTES	( 2 * 1024 * 1024 )
 
 /*
@@ -218,7 +219,11 @@ void SV_Netchan_Transmit( client_t *client, msg_t *msg) {	//int length, const by
 			SV_DropClient( client, "Netchan queue overflow" );
 			return;
 		}
-		if ( ( total + 1 ) * (int)sizeof( netchan_buffer_t ) > MAX_QUEUED_BYTES ) {
+		// outside shutdown an honest client never queues more than one message,
+		// so the first one is exempt: slots that fill the budget cannot get an
+		// honest client dropped at a map change or donedl.  The budget plus one
+		// message per slot still bounds the zone use.
+		if ( queued && ( total + 1 ) * (int)sizeof( netchan_buffer_t ) > MAX_QUEUED_BYTES ) {
 			SV_DropClient( client, "Server netchan queue full" );
 			return;
 		}
