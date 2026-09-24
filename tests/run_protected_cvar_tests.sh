@@ -9,15 +9,20 @@ trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 # engine commands. The fixtures drive the real game, cgame and UI dispatchers
 # (as a QVM and through VM_DllSyscall as a native module) and the real
 # CL_SystemInfoChanged against the real cvar.c and cmd.c. The filesystem cvars
-# come from FS_Startup itself, so the fixtures see the flags files.c gives them.
-python3 - "$Q3_TEST_ROOT/code/qcommon/files.c" "$Q3_TEST_DIR/fs_startup_cvars.c" <<'PY_SOURCE'
+# come from FS_Startup itself, so the fixtures see the flags files.c gives
+# them, and the command line goes through the real Com_StartupVariable.
+python3 - "$Q3_TEST_ROOT/code/qcommon" "$Q3_TEST_DIR" <<'PY_SOURCE'
 import re, sys
 from pathlib import Path
-matches = re.findall(r'^\tfs_debug = Cvar_Get\(.*?^\tfs_restrict = Cvar_Get [^\n]*\n',
-                     Path(sys.argv[1]).read_text(), re.M | re.S)
-if len(matches) != 1:
-    raise SystemExit("FS_Startup cvar extraction seam no longer matches")
-Path(sys.argv[2]).write_text(matches[0])
+seams = (
+    ("files.c", r'^\tfs_debug = Cvar_Get\(.*?^\tfs_restrict = Cvar_Get [^\n]*\n', "fs_startup_cvars.c"),
+    ("common.c", r'^void Com_StartupVariable\( const char \*match \) \{\n.*?^\}\n', "com_startup_variable.c"),
+)
+for source, pattern, output in seams:
+    matches = re.findall(pattern, Path(sys.argv[1], source).read_text(encoding="latin-1"), re.M | re.S)
+    if len(matches) != 1:
+        raise SystemExit(source + " extraction seam no longer matches")
+    Path(sys.argv[2], output).write_text(matches[0], encoding="latin-1")
 PY_SOURCE
 
 for Q3_TEST_FIXTURE in client game; do
@@ -29,6 +34,7 @@ for Q3_TEST_FIXTURE in client game; do
         -std=gnu99 -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
         -fsanitize=address,undefined \
         "-DQ3_FS_STARTUP_CVARS=\"$Q3_TEST_DIR/fs_startup_cvars.c\"" \
+        "-DQ3_COM_STARTUP_VARIABLE=\"$Q3_TEST_DIR/com_startup_variable.c\"" \
         "$Q3_TEST_ROOT/tests/protected_cvar_${Q3_TEST_FIXTURE}_regression.c" "${Q3_TEST_EXTRA[@]}" \
         "$Q3_TEST_ROOT/code/qcommon/cvar.c" "$Q3_TEST_ROOT/code/qcommon/cmd.c" \
         "$Q3_TEST_ROOT/code/qcommon/vm.c" "$Q3_TEST_ROOT/code/game/q_shared.c" \

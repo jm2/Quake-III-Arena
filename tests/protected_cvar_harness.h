@@ -104,28 +104,36 @@ static void FS_StartupCvars( void ) {
 	const char *homePath;
 #include Q3_FS_STARTUP_CVARS
 }
-/** The player's "+set fs_cdpath" and "+set fs_basegame" on the command line,
- * as Com_StartupVariable applies them: each is marked CVAR_USER_CREATED. */
-static void CommandLineSets( void ) {
-	static const char *sets[][2] = { { "fs_cdpath", CD_PATH }, { "fs_basegame", BASE_GAME } };
-	cvar_t *cv;
-	int i;
-
-	for ( i = 0; i < COUNT( sets ); i++ ) {
-		Cvar_Set( sets[i][0], sets[i][1] );
-		cv = Cvar_Get( sets[i][0], "", 0 );
-		cv->flags |= CVAR_USER_CREATED;
-	}
-}
+/* The player's command line, as Com_ParseCommandLine splits it, and
+ * Com_StartupVariable from common.c itself (the runner extracts it). */
+static char *commandLine[] = {
+	"set fs_cdpath \"" CD_PATH "\"", "set fs_basegame " BASE_GAME, "set fs_copyfiles 0",
+	"set rconPassword secret", "set activeAction \"demo intro\""
+};
+int com_numConsoleLines;
+char *com_consoleLines[COUNT( commandLine )];
+#include Q3_COM_STARTUP_VARIABLE
 /** The start-up Com_Init runs before any module or server: the cvar and
  * command subsystems with their engine commands, the command line, the
- * filesystem cvars, and the command line again after the configs. */
+ * filesystem cvars, q3config.cfg, the command line again, then the cvars
+ * SV_Init and CL_Init register (empty defaults over the player's values). */
 static void StartEngine( void ) {
+	int i;
+
+	for ( i = 0; i < COUNT( commandLine ); i++ ) {
+		com_consoleLines[i] = commandLine[i];
+	}
+	com_numConsoleLines = COUNT( commandLine );
 	Cvar_Init();
 	Cmd_Init();
-	CommandLineSets();
+	Com_StartupVariable( NULL );
 	FS_StartupCvars();
-	CommandLineSets();
+	Cmd_ExecuteString( "seta sv_master2 master.example.com" );
+	Com_StartupVariable( NULL );
+	Cvar_Get( "sv_master2", "", CVAR_ARCHIVE );	/* SV_Init */
+	Cvar_Get( "rconPassword", "", CVAR_TEMP );
+	Cvar_Get( "activeAction", "", CVAR_TEMP );	/* CL_Init */
+	Cvar_Get( "cl_allowDownload", "0", CVAR_ARCHIVE );
 }
 
 /** The cvar, or NULL: Cvar_Get would create a missing one. */

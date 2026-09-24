@@ -230,21 +230,23 @@ static void TestSystemInfo( void ) {
 	module = "systeminfo";
 	native = 0;
 	for ( i = 0; i < COUNT( protectedCvars ); i++ ) {
-		Check( SystemInfo( va( "\\sv_serverid\\7\\%s\\%s", protectedCvars[i], HOSTILE ), qtrue ) ||
-			Warned( protectedCvars[i] ), "a server change to a protected path was not refused" );
+		SystemInfo( va( "\\sv_serverid\\7\\%s\\%s", protectedCvars[i], HOSTILE ), qfalse );
+		Check( Warned( protectedCvars[i] ), "a server change to a protected path was not refused" );
 		CheckPaths( "a server moved a protected path" );
 	}
-	// the player's +set leaves fs_cdpath user-created, which a server may
-	// otherwise set; Cvar_SetSafe refuses it by dropping the connection
-	Check( SystemInfo( "\\fs_cdpath\\" HOSTILE, qtrue ), "a server change to a +set path did not drop" );
-	CheckPaths( "a server moved a +set path" );
 
-	// engine cvars are not the server's, even when a module registers them as user-created
-	Cvar_Get( "cl_allowDownload", "0", CVAR_ARCHIVE );	/* CL_Init */
+	// Engine cvars are not the server's, even when the player's command line
+	// or config set them first (activeAction runs as commands at the first
+	// snapshot) or a module registers them as user-created.
 	Check( LoadModule( "cgame", CL_CgameSystemCalls, 0 ), "cgame" );
 	Register( CG_CVAR_REGISTER, "cl_allowDownload", "0", CVAR_ARCHIVE | CVAR_USER_CREATED );
 	module = "systeminfo";
-	SystemInfo( "\\cl_allowDownload\\1", qfalse );
+	SystemInfo( "\\fs_copyfiles\\1\\rconPassword\\x\\activeAction\\quit\\sv_master2\\evil\\cl_allowDownload\\1", qfalse );
+	Check( Is( "fs_copyfiles", "0" ) && Warned( "fs_copyfiles" ), "a server set a +set engine cvar" );
+	Check( Is( "rconPassword", "secret" ) && Warned( "rconPassword" ) && Is( "activeAction", "demo intro" ) &&
+		Warned( "activeAction" ), "a server set a +set cvar the engine registered later" );
+	Check( Is( "sv_master2", "master.example.com" ) && Warned( "sv_master2" ),
+		"a server set a config cvar the engine registered later" );
 	Check( Is( "cl_allowDownload", "0" ) && Warned( "cl_allowDownload" ), "a server set an engine cvar" );
 
 	// the systeminfo cvars still follow the server
@@ -285,6 +287,12 @@ static void TestSystemInfo( void ) {
 	SystemInfo( "\\g_synchronousClients\\1\\pmove_fixed\\1\\pmove_msec\\11", qfalse );
 	Check( Is( "g_synchronousClients", "1" ) && Is( "pmove_fixed", "1" ) && Is( "pmove_msec", "11" ),
 		"the cgame predicts with the server's movement cvars" );
+
+	// behind the filter, Cvar_SetSafe: a protected path the server could
+	// otherwise set (were one ever a systeminfo cvar too) drops the connection
+	Cvar_Get( "fs_basegame", "", CVAR_SYSTEMINFO );
+	Check( SystemInfo( "\\fs_basegame\\" HOSTILE, qtrue ), "a server change to a systeminfo protected path did not drop" );
+	CheckPaths( "a server moved a systeminfo protected path" );
 }
 
 int main( void ) {
