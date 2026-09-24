@@ -247,6 +247,7 @@ cvar_t *Cvar_Get( const char *var_name, const char *value, int flags ) { Unexpec
 char *Cvar_InfoString( int bit ) { Unexpected( __func__ ); return NULL; }
 void Cvar_Register( vmCvar_t *vmCvar, const char *varName, const char *defaultValue, int flags ) { Unexpected( __func__ ); }
 void Cvar_Set( const char *var_name, const char *value ) { Unexpected( __func__ ); }
+void Cvar_SetSafe( const char *var_name, const char *value ) { Unexpected( __func__ ); }
 void Cvar_Update( vmCvar_t *vmCvar ) { Unexpected( __func__ ); }
 int Cvar_VariableIntegerValue( const char *var_name ) { Unexpected( __func__ ); return 0; }
 void Cvar_VariableStringBuffer( const char *var_name, char *buffer, int bufsize ) { Unexpected( __func__ ); }

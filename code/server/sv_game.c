@@ -888,7 +888,7 @@ int SV_GameSystemCalls( int *args ) {
 		Cvar_Update( VMAP(1, vmCvar_t) );
 		return 0;
 	case G_CVAR_SET:
-		Cvar_Set( (const char *)VMAS(1), (const char *)VMASN(2) );
+		Cvar_SetSafe( (const char *)VMAS(1), (const char *)VMASN(2) );
 		return 0;
 	case G_CVAR_VARIABLE_INTEGER_VALUE:
 		return Cvar_VariableIntegerValue( (const char *)VMAS(1) );

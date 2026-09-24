@@ -29,10 +29,19 @@ void Z_Free( void *ptr ) {
 void SystemInfo_Set( const char *name, const char *value ) {
 	// clear the cvar first, so an unchanged value is still a modification the
 	// modules' next cvar update copies
-	Cvar_Set( name, "" );
+	if ( Cvar_Flags( name ) != CVAR_NONEXISTENT ) {
+		Cvar_Set( name, "" );
+	}
 	memset( &cl, 0, sizeof( cl ) );
 	Com_sprintf( cl.gameState.stringData, sizeof( cl.gameState.stringData ),
 		"\\sv_serverid\\7\\sv_pure\\0\\%s\\%s", name, value );
 	cl.gameState.stringOffsets[CS_SYSTEMINFO] = 0;
 	CL_SystemInfoChanged();
+
+	// Issue #39: a server may no longer set a cvar the engine or a module
+	// already registered, but the player's console and configs (a default.cfg
+	// in a downloaded pk3 too) and the modules' own sets still reach it
+	if ( strcmp( Cvar_VariableString( name ), value ) ) {
+		Cvar_Set( name, value );
+	}
 }
