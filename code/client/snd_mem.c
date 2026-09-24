@@ -221,6 +221,12 @@ static wavinfo_t GetWavinfo (char *name, byte *wav, int wavlength)
 		return info;
 	}
 
+	if (info.width < 1)
+	{	// fewer than 8 bits per sample, which ioquake3 also rejects: the sample count divides by the width
+		Com_Printf("Less than 8 bit sound is not supported\n");
+		return info;
+	}
+
 
 // find data chunk
 	FindChunk("data");
@@ -378,7 +384,10 @@ qboolean S_LoadSound( sfx_t *sfx )
 	// manager to do the right thing for us and page
 	// sound in as needed
 
-	if( sfx->soundCompressed == qtrue) {
+	// ResampleSfxRaw fills the temp buffer, which holds 2x upsampling
+	// (info.rate * 2 >= dma.speed), so a sound the mixer stretches further
+	// stays uncompressed, which does not use the temp buffer
+	if( sfx->soundCompressed == qtrue && info.rate >= ( dma.speed + 1 ) / 2 ) {
 		sfx->soundCompressionMethod = 1;
 		sfx->soundData = NULL;
 		sfx->soundLength = ResampleSfxRaw( samples, info.rate, info.width, info.samples, (data + info.dataofs) );

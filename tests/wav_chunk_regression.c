@@ -1,11 +1,13 @@
-/* Issue #347: the real WAV chunk walker bounds every chunk length by the bytes left in the file. */
+/* Issue #347: the real WAV chunk walker bounds every chunk length by the bytes left in the file.
+   Issue #352: GetWavinfo rejects samples narrower than 8 bits, and an ADPCM load never outgrows S_LoadSound's temp buffer. */
 #include "../code/client/snd_mem.c"
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define WAV_BYTES	256
+#define WAV_BYTES	16384
+#define MAX_LOADED	( WAV_BYTES * 2 )	// 4x upsampling of the most 16-bit samples a fixture holds
 
 typedef struct {
 	unsigned char	bytes[WAV_BYTES];
@@ -16,6 +18,7 @@ typedef struct {
 	const char	*message;	// GetWavinfo's diagnostic, "" when it accepts the file
 	int			format, channels, rate, width, samples, dataofs;
 	qboolean	loads;		// S_LoadSound's result
+	const short	*loaded;	// the loaded samples; NULL for sampleValues repeated
 } wavExpect_t;
 
 /* Chunk lengths that end past the file: the issue's INT_MAX, an even length that needs no pad
@@ -29,6 +32,9 @@ dma_t dma;
 
 static char lastMessage[256];
 static const wavFixture_t *servedWav;
+static qboolean adpcmAllowed;			// the ADPCM encoder may be called
+static short adpcmSamples[MAX_LOADED];	// the resampled sound S_LoadSound handed it
+static int adpcmLength;
 
 /** Fail with the fixture that produced the wrong result. */
 static void Check( int ok, const char *fixture, const char *message ) {
@@ -57,7 +63,17 @@ cvar_t *Cvar_Get( const char *name, const char *value, int flags ) {
 	return &soundMegs;
 }
 void S_FreeOldestSound( void ) { Check( 0, "S_FreeOldestSound", "the sound buffer pool ran out" ); }
-void S_AdpcmEncodeSound( sfx_t *sfx, short *samples ) { (void)sfx; (void)samples; Check( 0, sfx->soundName, "unexpected ADPCM encode" ); }
+/** Keep the resampled sound, reading every sample: AddressSanitizer reports one past the temp buffer. */
+void S_AdpcmEncodeSound( sfx_t *sfx, short *samples ) {
+	int i;
+
+	Check( adpcmAllowed, sfx->soundName, "unexpected ADPCM encode" );
+	Check( sfx->soundLength >= 0 && sfx->soundLength <= MAX_LOADED, sfx->soundName, "wrong ADPCM sample count" );
+	for ( i = 0; i < sfx->soundLength; i++ ) {
+		adpcmSamples[i] = samples[i];
+	}
+	adpcmLength = sfx->soundLength;
+}
 void *Hunk_AllocateTempMemory( int size ) {
 	Check( size >= 0, "Hunk_AllocateTempMemory", "negative temp allocation" );
 	return malloc( size ? size : 1 );
@@ -113,16 +129,20 @@ static void StartWav( wavFixture_t *wav ) {
 	Put( wav, "WAVE", 4 );
 }
 static void Finish( wavFixture_t *wav ) { PatchLength( wav, 0, (uint32_t)( wav->length - 8 ) ); }
-/** A 16-bit mono 22050 Hz PCM fmt chunk. */
-static void PutFmt( wavFixture_t *wav ) {
+/** A fmt chunk; 'bits' is stored as the unsigned 16-bit field. */
+static void PutFmtWith( wavFixture_t *wav, int format, int channels, int rate, int bits ) {
+	int align = channels * ( ( ( bits & 0xffff ) + 7 ) / 8 );
+
 	PutHeader( wav, "fmt ", 16 );
-	PutShort( wav, 1 );
-	PutShort( wav, 1 );
-	PutLong( wav, 22050 );
-	PutLong( wav, 44100 );
-	PutShort( wav, 2 );
-	PutShort( wav, 16 );
+	PutShort( wav, format );
+	PutShort( wav, channels );
+	PutLong( wav, rate );
+	PutLong( wav, (uint32_t)rate * (uint32_t)align );
+	PutShort( wav, align );
+	PutShort( wav, bits );
 }
+/** A 16-bit mono 22050 Hz PCM fmt chunk. */
+static void PutFmt( wavFixture_t *wav ) { PutFmtWith( wav, 1, 1, 22050, 16 ); }
 static void PutSamples( wavFixture_t *wav, int count ) {
 	int i;
 
@@ -141,10 +161,11 @@ static uint32_t OverLength( const wavFixture_t *wav, int offset, int kind ) {
 	return (uint32_t)( wav->length - offset - 8 + 1 );
 }
 
-static const wavExpect_t acceptFour = { "", 1, 1, 22050, 2, 4, 44, qtrue };
-static const wavExpect_t missingRiff = { "Missing RIFF/WAVE chunks\n", 0, 0, 0, 0, 0, 0, qfalse };
-static const wavExpect_t missingFmt = { "Missing fmt chunk\n", 0, 0, 0, 0, 0, 0, qfalse };
-static const wavExpect_t missingData = { "Missing data chunk\n", 1, 1, 22050, 2, 0, 0, qtrue };
+static const wavExpect_t acceptFour = { "", 1, 1, 22050, 2, 4, 44, qtrue, NULL };
+static const wavExpect_t missingRiff = { "Missing RIFF/WAVE chunks\n", 0, 0, 0, 0, 0, 0, qfalse, NULL };
+static const wavExpect_t missingFmt = { "Missing fmt chunk\n", 0, 0, 0, 0, 0, 0, qfalse, NULL };
+static const wavExpect_t missingData = { "Missing data chunk\n", 1, 1, 22050, 2, 0, 0, qtrue, NULL };
+static const wavExpect_t narrowSamples = { "Less than 8 bit sound is not supported\n", 1, 1, 22050, 0, 0, 0, qtrue, NULL };
 
 /**
  * Parse one fixture with the real GetWavinfo from an exact-size heap copy, require the walker to
@@ -178,7 +199,8 @@ static void Load( const char *fixture, const wavFixture_t *wav, const wavExpect_
 		Check( sfx.soundLength == expect->samples, fixture, "wrong loaded sample count" );
 		chunk = sfx.soundData;
 		for ( i = 0; i < sfx.soundLength; i++ ) {
-			Check( chunk->sndChunk[i] == sampleValues[i % ( sizeof(sampleValues) / sizeof(sampleValues[0]) )], fixture, "wrong loaded sample" );
+			Check( chunk->sndChunk[i] == ( expect->loaded ? expect->loaded[i] : sampleValues[i % ( sizeof(sampleValues) / sizeof(sampleValues[0]) )] ),
+				fixture, "wrong loaded sample" );
 		}
 		for ( chunk = sfx.soundData; chunk; chunk = next ) {
 			next = chunk->next;
@@ -316,12 +338,141 @@ static void TestTruncated( void ) {
 	Load( "RIFF/WAVE header only", &wav, &missingFmt );
 }
 
+/**
+ * A fmt chunk with fewer than 8 bits per sample has a sample width of 0 (or less, for a field of 0x8000 and above)
+ * that the sample count divided by. GetWavinfo rejects it after the format check, as ioquake3 does; like a non-PCM
+ * mono file, S_LoadSound then keeps it as an empty sound.
+ */
+static void TestWidth( void ) {
+	static const int rejectedBits[] = { 4, 0, 7, 0xfff9, 0xfff8 };	// 0xfff9 is -7 (width 0), 0xfff8 is -8 (width -1)
+	static const unsigned char bytes8[] = { 0x80, 0xff, 0x81, 0xc0 };	// 0x80 and up, clear of the shift in #344
+	static const short loaded8[] = { 0, 0x7f00, 0x0100, 0x4000 };
+	char fixture[96];
+	wavFixture_t wav;
+	wavExpect_t expect;
+	int i;
+
+	for ( i = 0; i < (int)( sizeof(rejectedBits) / sizeof(rejectedBits[0]) ); i++ ) {
+		expect = narrowSamples;
+		expect.width = (short)rejectedBits[i] / 8;
+		StartWav( &wav ); PutFmtWith( &wav, 1, 1, 22050, rejectedBits[i] ); PutHeader( &wav, "data", 8 ); PutSamples( &wav, 4 ); Finish( &wav );
+		snprintf( fixture, sizeof(fixture), "%d bits per sample", (short)rejectedBits[i] );
+		Load( fixture, &wav, &expect );
+	}
+
+	expect = narrowSamples;
+	expect.channels = 2;
+	expect.loads = qfalse;
+	StartWav( &wav ); PutFmtWith( &wav, 1, 2, 22050, 4 ); PutHeader( &wav, "data", 8 ); PutSamples( &wav, 4 ); Finish( &wav );
+	Load( "4 bits per sample, stereo", &wav, &expect );
+
+	// 4-bit Microsoft ADPCM keeps the format diagnostic it had before
+	expect = narrowSamples;
+	expect.message = "Microsoft PCM format only\n";
+	expect.format = 2;
+	StartWav( &wav ); PutFmtWith( &wav, 2, 1, 22050, 4 ); PutHeader( &wav, "data", 8 ); PutSamples( &wav, 4 ); Finish( &wav );
+	Load( "4-bit Microsoft ADPCM", &wav, &expect );
+
+	// 8 bits, the narrowest width accepted, loads as before
+	expect = acceptFour;
+	expect.width = 1;
+	expect.loaded = loaded8;
+	StartWav( &wav ); PutFmtWith( &wav, 1, 1, 22050, 8 ); PutHeader( &wav, "data", 4 ); Put( &wav, bytes8, 4 ); Finish( &wav );
+	Load( "8 bits per sample", &wav, &expect );
+}
+
+/** Copy a loaded sound out of its sound buffers, then free them. */
+static int TakeLoaded( const char *fixture, sfx_t *sfx, short *out ) {
+	sndBuffer *chunk, *next;
+	int i;
+
+	Check( sfx->soundLength >= 0 && sfx->soundLength <= MAX_LOADED, fixture, "wrong loaded sample count" );
+	chunk = sfx->soundData;
+	for ( i = 0; i < sfx->soundLength; i++ ) {
+		if ( i && !( i & ( SND_CHUNK_SIZE - 1 ) ) ) {
+			chunk = chunk->next;
+		}
+		out[i] = chunk->sndChunk[i & ( SND_CHUNK_SIZE - 1 )];
+	}
+	for ( chunk = sfx->soundData; chunk; chunk = next ) {
+		next = chunk->next;
+		SND_free( chunk );
+	}
+	return sfx->soundLength;
+}
+
+/**
+ * Load a 16-bit mono file of 'count' samples at 'rate' with the mixer at 'speed', uncompressed and then as ADPCM.
+ * S_LoadSound's temp buffer holds twice the file's samples: up to 2x upsampling the ADPCM encoder gets the same
+ * resampled sound the uncompressed load keeps, and a sound that needs more stays uncompressed and loads exactly
+ * as the uncompressed load does. 'step' > 0 also requires output sample i to be input sample i / step.
+ */
+static void LoadResampled( int rate, int count, int speed, qboolean adpcm, int expectLength, int step ) {
+	static short reference[MAX_LOADED], loaded[MAX_LOADED];
+	char fixture[MAX_QPATH];	// fits sfx_t.soundName
+	wavFixture_t wav;
+	sfx_t sfx;
+	int i, length;
+
+	snprintf( fixture, sizeof(fixture), "%d samples at %d Hz with the mixer at %d Hz", count, rate, speed );
+	StartWav( &wav ); PutFmtWith( &wav, 1, 1, rate, 16 ); PutHeader( &wav, "data", count * 2 ); PutSamples( &wav, count ); Finish( &wav );
+	servedWav = &wav;
+	dma.speed = speed;
+
+	memset( &sfx, 0, sizeof(sfx) );
+	snprintf( sfx.soundName, sizeof(sfx.soundName), "%s", fixture );
+	Check( S_LoadSound( &sfx ) && sfx.soundCompressionMethod == 0, fixture, "the uncompressed load failed" );
+	length = TakeLoaded( fixture, &sfx, reference );
+	Check( length == expectLength, fixture, "wrong uncompressed sample count" );
+	for ( i = 0; step > 0 && i < length; i++ ) {
+		Check( reference[i] == sampleValues[( i / step ) % ( sizeof(sampleValues) / sizeof(sampleValues[0]) )], fixture, "wrong uncompressed sample" );
+	}
+
+	memset( &sfx, 0, sizeof(sfx) );
+	snprintf( sfx.soundName, sizeof(sfx.soundName), "%s", fixture );
+	sfx.soundCompressed = qtrue;
+	adpcmAllowed = qtrue;
+	adpcmLength = -1;
+	Check( S_LoadSound( &sfx ), fixture, "the compressed load failed" );
+	adpcmAllowed = qfalse;
+	if ( adpcm ) {
+		Check( sfx.soundCompressionMethod == 1 && adpcmLength == expectLength, fixture, "the sound was not ADPCM encoded" );
+		Check( !memcmp( adpcmSamples, reference, length * sizeof(short) ), fixture, "the ADPCM encoder got other samples" );
+	} else {
+		Check( sfx.soundCompressionMethod == 0 && adpcmLength == -1, fixture, "the sound was ADPCM encoded past 2x upsampling" );
+		Check( TakeLoaded( fixture, &sfx, loaded ) == length, fixture, "wrong fallback sample count" );
+		Check( !memcmp( loaded, reference, length * sizeof(short) ), fixture, "the fallback loaded other samples" );
+	}
+	dma.speed = 22050;
+}
+
+/** ADPCM loads that upsample up to 2x are unchanged; the issue's 4x and anything past 2x stay uncompressed. */
+static void TestAdpcm( void ) {
+	// the sounds the retail data has, at the Mac's 22050 Hz and the other mixer rates
+	LoadResampled( 22050, 4, 22050, qtrue, 4, 1 );
+	LoadResampled( 11025, 4, 22050, qtrue, 8, 2 );
+	LoadResampled( 22050, 4, 44100, qtrue, 8, 2 );
+	LoadResampled( 22050, 4, 11025, qtrue, 2, 0 );
+	LoadResampled( 11025, 4, 11025, qtrue, 4, 1 );
+	// the issue's 11 kHz sound with the mixer at 44.1 kHz needs 4x
+	LoadResampled( 11025, 4, 44100, qfalse, 16, 4 );
+	LoadResampled( 11025, 4096, 44100, qfalse, 16384, 4 );
+	// past 2x at the Mac's own mixer rate: 8 kHz, and one below the bound, where 6000 samples resample to 12001
+	LoadResampled( 8000, 4, 22050, qfalse, 11, 0 );
+	LoadResampled( 11024, 6000, 22050, qfalse, 12001, 0 );
+	// the bound at the odd 11025 Hz mixer rate is half of it rounded up, 5513 Hz
+	LoadResampled( 5513, 6000, 11025, qtrue, 11998, 0 );
+	LoadResampled( 5512, 6000, 11025, qfalse, 12001, 0 );
+	// the bound does not overflow on a rate near INT_MAX, which downsamples to nothing
+	LoadResampled( 0x7fffffff, 4, 22050, qtrue, 0, 0 );
+}
+
 int main( int argc, char **argv ) {
 	const char *mode = argc > 1 ? argv[1] : "all";
 	int all = !strcmp( mode, "all" );
 
 	Check( all || !strcmp( mode, "valid" ) || !strcmp( mode, "riff" ) || !strcmp( mode, "list-fmt" ) || !strcmp( mode, "list-data" )
-		|| !strcmp( mode, "data" ) || !strcmp( mode, "truncated" ), mode, "unknown mode" );
+		|| !strcmp( mode, "data" ) || !strcmp( mode, "truncated" ) || !strcmp( mode, "width" ) || !strcmp( mode, "adpcm" ), mode, "unknown mode" );
 	dma.speed = 22050;
 	SND_setup();
 	if ( all || !strcmp( mode, "valid" ) ) { TestValid(); puts( "Well-formed WAV layouts parse and load unchanged" ); }
@@ -330,5 +481,7 @@ int main( int argc, char **argv ) {
 	if ( all || !strcmp( mode, "list-data" ) ) { TestListBeforeData(); puts( "An over-long LIST before data is rejected inside the file (issue #347)" ); }
 	if ( all || !strcmp( mode, "data" ) ) { TestData(); puts( "An over-long data chunk loads only the samples in the file (issue #347)" ); }
 	if ( all || !strcmp( mode, "truncated" ) ) { TestTruncated(); puts( "Truncated headers and fmt fields are rejected at their exact bounds (issue #347)" ); }
+	if ( all || !strcmp( mode, "width" ) ) { TestWidth(); puts( "Fewer than 8 bits per sample is rejected before the sample count divides by the width (issue #352)" ); }
+	if ( all || !strcmp( mode, "adpcm" ) ) { TestAdpcm(); puts( "ADPCM loads past 2x upsampling stay uncompressed instead of overflowing the temp buffer (issue #352)" ); }
 	return 0;
 }
