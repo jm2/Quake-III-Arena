@@ -165,16 +165,45 @@ if (-not (Get-Command "unar" -ErrorAction SilentlyContinue)) {
 
 # A compiler alone is not a complete install for this project. The renderer
 # also requires prepared OpenGL headers and the generated import library.
+# The tools must also run: after a host OS upgrade they can remain installed
+# but fail to load a DLL (issue #269), and only a full rebuild repairs them.
+# check_retro68.ps1 exits 1 only for tools that cannot run. Any other status
+# means the check itself could not run (for example no usable TEMP
+# directory), which says nothing about the toolchain: stop and change nothing.
 $PreparedOpenGLDir = Join-Path $INSTALL_DIR "powerpc-apple-macos\include"
 $PreparedGl = Join-Path $PreparedOpenGLDir "gl.h"
 $PreparedAgl = Join-Path $PreparedOpenGLDir "agl.h"
 $OpenGLStubLib = Join-Path $SOURCE_DIR "InterfacesAndLibraries\SharedLibraries\libOpenGLLibraryStub.a"
+$MoveBrokenToolchain = $false
 if ((Test-Path "$INSTALL_DIR\bin\powerpc-apple-macos-gcc.exe") -and
     (Test-Path $PreparedGl) -and
     (Test-Path $PreparedAgl) -and
     (Test-Path $OpenGLStubLib)) {
-    Write-Host "Retro68 appears to be installed in $INSTALL_DIR."
-    exit 0
+    $CheckScript = Join-Path (Get-Location) "check_retro68.ps1"
+    $CheckStatus = 3
+    if (Test-Path $CheckScript -PathType Leaf) {
+        try {
+            & $CheckScript -InstallDir $INSTALL_DIR
+            $CheckStatus = $LASTEXITCODE
+        }
+        catch {
+            Write-Host "check_retro68.ps1 failed: $_"
+        }
+    }
+    else {
+        Write-Host "check_retro68.ps1 was not found at $CheckScript."
+    }
+    if ($CheckStatus -eq 0) {
+        Write-Host "Retro68 appears to be installed in $INSTALL_DIR."
+        exit 0
+    }
+    if ($CheckStatus -ne 1) {
+        Write-Host "Error: could not check the installed Retro68 toolchain (exit status $CheckStatus)." -ForegroundColor Red
+        Write-Host "Nothing was changed; fix the problem above and run setup_retro68.ps1 again."
+        exit 1
+    }
+    Write-Host "The installed Retro68 toolchain cannot run (see above); rebuilding it." -ForegroundColor Yellow
+    $MoveBrokenToolchain = $true
 }
 
 Write-Host "Retro68 not found locally."
@@ -305,6 +334,17 @@ Get-ChildItem -Path "$SOURCE_DIR" -Recurse -Filter "CMakeLists.txt" | ForEach-Ob
 }
 
 Write-Host "Building Retro68 Toolchain..." -ForegroundColor Green
+# build-toolchain.bash refuses to install a full build into a non-empty
+# prefix. Never delete the old toolchain: move it aside so it can be restored.
+if ($MoveBrokenToolchain) {
+    $Stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
+    $AsideName = "Retro68-build.broken-$Stamp"
+    $AsidePath = Join-Path (Split-Path $INSTALL_DIR -Parent) $AsideName
+    Rename-Item -Path $INSTALL_DIR -NewName $AsideName
+    Write-Host "Moved the toolchain that cannot run to $AsidePath."
+    Write-Host "To restore it, delete $INSTALL_DIR and rename $AsideName back to Retro68-build."
+    Write-Host "Delete it once the new toolchain works."
+}
 Write-Host "Invoking build-toolchain.bash via bash..."
 
 # Convert paths to Unix style for bash
