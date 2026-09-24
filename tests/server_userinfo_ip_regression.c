@@ -1,5 +1,6 @@
 /* Issue #273: clients must not remove or forge the server-maintained "ip" userinfo key.
- * Issue #348: a client the game drops while connecting is refused once per challenge, without a misleading reason. */
+ * Issue #348: a client dropped while connecting is sent its real reason once, then refused silently until it asks for
+ * a new challenge. */
 #include "../code/server/sv_client.c"
 #include <stdarg.h>
 #include <stdlib.h>
@@ -7,6 +8,7 @@
 
 #define CHALLENGE 1234
 #define BANNED_HANDLE 1
+#define REJECT_HANDLE 2
 #define UPSTREAM_REJECT "print\nUserinfo string length exceeded.  Try removing setu cvars from your config.\n"
 #define BANNED_REPLY "print\nYou are banned from this server.\n"
 
@@ -25,7 +27,7 @@ static client_t clients[4];
 static sharedEntity_t entities[4];
 static const char *argument, *addipArgument;
 static char reply[MAX_MSGLEN], gameIP[MAX_INFO_STRING], dropCommand[MAX_STRING_CHARS];
-static int connects, userinfoChanges, disconnects, gameFillsUserinfo, gameDropsClient;
+static int connects, userinfoChanges, disconnects, replies, gameFillsUserinfo, gameDropsClient;
 
 /** Fail with the violated "ip" key property. */
 static void Check( int ok, const char *message ) {
@@ -58,10 +60,10 @@ void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport ) {
 }
 /* With PR #312, SV_DropClient and reconnects free the client's netchan queue; nothing is queued here. */
 void SV_Netchan_FreeQueue( client_t *client ) { (void)client; }
-/** Capture the connectionless reply text. */
+/** Capture and count the connectionless replies. */
 void QDECL NET_OutOfBandPrint( netsrc_t sock, netadr_t adr, const char *format, ... ) {
 	va_list argptr;
-	(void)sock; (void)adr;
+	(void)sock; (void)adr; replies++;
 	va_start( argptr, format ); Q_vsnprintf( reply, sizeof( reply ), format, argptr ); va_end( argptr );
 }
 /** Record the reliable disconnect command SV_DropClient queues. */
@@ -110,7 +112,8 @@ int VM_CallArgs( vm_t *vm, int callNum, const int *args, int argCount ) {
 		if ( G_FilterPacket( ip ) ) return BANNED_HANDLE;
 		if ( gameDropsClient ) {	/* a mod's trap_DropClient (SV_GameDropClient) inside ClientConnect */
 			SV_DropClient( &svs.clients[args[0]], "Cheater detected" );
-			return 0;
+			if ( gameDropsClient == 3 ) SV_DropClient( &svs.clients[0], "was kicked" );	/* 3: and kicks client 0 */
+			return gameDropsClient == 2 ? REJECT_HANDLE : 0;	/* 2: and returns a reason too */
 		}
 		if ( gameFillsUserinfo ) {	/* a mod's trap_SetUserinfo leaving no room for "ip" */
 			memset( svs.clients[args[0]].userinfo, 'u', MAX_INFO_STRING - 1 );
@@ -126,6 +129,7 @@ int VM_CallArgs( vm_t *vm, int callNum, const int *args, int argCount ) {
 }
 char *VM_CheckedExplicitString( vm_t *vm, int value, qboolean nullable ) {
 	(void)vm; Check( nullable, "nullable connect result" );
+	if ( value == REJECT_HANDLE ) return "Cheaters are not welcome.";
 	return value == BANNED_HANDLE ? "You are banned from this server." : NULL;
 }
 static void AddIP( const char *mask ) { addipArgument = mask; Svcmd_AddIP_f(); }
@@ -152,13 +156,13 @@ static const char *Userinfo( const char *prefix, size_t length ) {
 static void Connect( netadr_t from, const char *userinfo ) {
 	memset( clients, 0, sizeof( clients ) ); memset( &svs.challenges, 0, sizeof( svs.challenges ) );
 	svs.challenges[0].adr = from; svs.challenges[0].challenge = CHALLENGE; svs.challenges[0].pingTime = svs.time;
-	argument = userinfo; reply[0] = 0; gameIP[0] = 0; dropCommand[0] = 0; connects = userinfoChanges = disconnects = 0;
+	argument = userinfo; reply[0] = 0; gameIP[0] = 0; dropCommand[0] = 0; connects = userinfoChanges = disconnects = replies = 0;
 	SV_DirectConnect( from );
 }
 /** Deliver another "connect" packet to the running server, as the client resends it every 3 s with the same challenge. */
-static void Send( netadr_t from, const char *userinfo ) { argument = userinfo; reply[0] = 0; SV_DirectConnect( from ); }
+static void Send( netadr_t from, const char *userinfo ) { argument = userinfo; reply[0] = 0; replies = 0; SV_DirectConnect( from ); }
 /** Deliver a "getchallenge" packet, as a client's /connect or /reconnect does. */
-static void GetChallenge( netadr_t from ) { reply[0] = 0; SV_GetChallenge( from ); }
+static void GetChallenge( netadr_t from ) { reply[0] = 0; replies = 0; SV_GetChallenge( from ); }
 /** Run a server frame `msec` later; free zombies like SV_CheckTimeouts in sv_main.c (sv_zombietime 2). */
 static void Frame( int msec ) {
 	int i;
@@ -243,7 +247,7 @@ int main( void ) {
 	gameFillsUserinfo = 1;
 	Connect( other, Userinfo( "", 0 ) );
 	Check( clients[0].state == CS_ZOMBIE && disconnects == 1, "connected without an ip key" );
-	Check( !strcmp( reply, "print\nUserinfo string length exceeded.\n" ), "client dropped at connect not told why" );
+	Check( replies == 1 && !strcmp( reply, "print\nUserinfo string length exceeded.\n" ), "client dropped at connect not told why" );
 	/* Its resent connects must not rerun ClientConnect and the drop (two broadcasts) every 3 s, even once the zombie is
 	 * freed; they stay silent so the client keeps showing the reason. */
 	for ( i = 0; i < 3; i++ ) {
@@ -262,27 +266,49 @@ int main( void ) {
 	Check( !strcmp( reply, "connectResponse" ) && connects == 3 && clients[0].state == CS_CONNECTED && !strcmp( StoredIP(), real ),
 	       "fitting connect after a new challenge" );
 
-	/* A game that drops the client in ClientConnect already told everyone why: the client is not sent the overflow
-	 * reason or a connectResponse, and its slot and challenge are released like any other drop. */
+	/* A game that drops the client in ClientConnect told the other clients why. The connecting client, which gets
+	 * neither that broadcast nor its disconnect command, is sent the game's reason once instead of the overflow reason
+	 * or a connectResponse, and its slot and challenge are released like any other drop. */
 	Q_strncpyz( real, NET_AdrToString( newcomer ), sizeof( real ) );
 	gameDropsClient = 1;
 	Connect( newcomer, Userinfo( "", 0 ) );
 	Check( connects == 1 && disconnects == 1 && !strcmp( dropCommand, "disconnect \"Cheater detected\"" ), "game drop at connect" );
-	Check( !reply[0], "game drop at connect misreported to the client" );
+	Check( replies == 1 && !strcmp( reply, "print\nCheater detected\n" ), "game drop at connect not told the game's reason once" );
 	Check( clients[0].state == CS_ZOMBIE && !clients[0].lastPacketTime && !clients[0].userinfo[0] && !svs.challenges[0].connected,
 	       "game drop at connect left the slot or its challenge in use" );
 	Frame( 50 );
 	Check( clients[0].state == CS_FREE, "slot dropped at connect not freed on the next frame" );
 	Frame( 3000 ); Send( newcomer, Userinfo( "", 0 ) );
-	Check( !reply[0] && connects == 1 && disconnects == 1 && clients[0].state == CS_FREE, "game drop retried by a resent connect" );
+	Check( !replies && connects == 1 && disconnects == 1 && clients[0].state == CS_FREE, "game drop retried by a resent connect" );
 	gameDropsClient = 0;
 	GetChallenge( newcomer ); Send( newcomer, Userinfo( "", 0 ) );
 	Check( !strcmp( reply, "connectResponse" ) && connects == 2 && clients[0].state == CS_CONNECTED && !strcmp( StoredIP(), real ),
 	       "freed slot not reused after a new challenge" );
-	/* No challenge to record the refusal on for the local client; the drop itself is still handled. */
+	/* No challenge to record the refusal on for the local client; the drop itself is still handled and reported. */
 	gameDropsClient = 1;
 	Connect( local, Userinfo( "", 0 ) );
-	Check( !reply[0] && clients[0].state == CS_ZOMBIE && disconnects == 1, "local game drop at connect" );
+	Check( replies == 1 && !strcmp( reply, "print\nCheater detected\n" ) && clients[0].state == CS_ZOMBIE && disconnects == 1,
+	       "local game drop at connect" );
+	/* The connecting client is sent its own drop reason, not that of another client the game drops meanwhile. */
+	gameDropsClient = 0;
+	Connect( other, Userinfo( "", 0 ) );
+	Check( clients[0].state == CS_CONNECTED, "client to kick not connected" );
+	svs.challenges[1].adr = newcomer; svs.challenges[1].challenge = CHALLENGE;
+	gameDropsClient = 3;
+	Send( newcomer, Userinfo( "", 0 ) );
+	Check( replies == 1 && !strcmp( reply, "print\nCheater detected\n" ) && clients[0].state == CS_ZOMBIE && clients[1].state == CS_ZOMBIE,
+	       "connecting client sent another client's drop reason" );
+	/* A game that drops the client and also returns a reason: only that reason is sent, as in retail, and the drop is
+	 * not rerun on every resend either. */
+	gameDropsClient = 2;
+	Connect( newcomer, Userinfo( "", 0 ) );
+	Check( replies == 1 && !strcmp( reply, "print\nCheaters are not welcome.\n" ) && clients[0].state == CS_ZOMBIE
+	       && connects == 1 && disconnects == 1, "game drop with a returned reason at connect" );
+	Frame( 3000 ); Send( newcomer, Userinfo( "", 0 ) );
+	Check( !replies && connects == 1 && disconnects == 1, "game drop with a returned reason retried by a resent connect" );
+	GetChallenge( newcomer ); Send( newcomer, Userinfo( "", 0 ) );
+	Check( !strcmp( reply, "print\nCheaters are not welcome.\n" ) && connects == 2 && disconnects == 2,
+	       "game drop with a returned reason not tried again after a new challenge" );
 	gameDropsClient = 0;
 
 	/* The normal connect path is unchanged, and sv_reconnectlimit (3 s) still holds back a connected client's resends. */

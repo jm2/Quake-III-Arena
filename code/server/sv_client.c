@@ -226,6 +226,12 @@ A "connect" OOB command has been received
 				"and Enabled in order to join this server. An updated game patch can be downloaded from " \
 				"www.idsoftware.com"
 
+// the client SV_DirectConnect is passing to the game's ClientConnect, and the
+// reason SV_DropClient got if the game drops it there: a client that is still
+// connecting gets neither the drop's broadcast nor its disconnect command
+static client_t	*connectingClient;
+static char		connectDropReason[MAX_STRING_CHARS];
+
 void SV_DirectConnect( netadr_t from ) {
 	char		userinfo[MAX_INFO_STRING];
 	int			i;
@@ -441,16 +447,25 @@ gotnewcl:
 	Q_strncpyz( newcl->userinfo, userinfo, sizeof(newcl->userinfo) );
 
 	// get the game a chance to reject this connection or modify the userinfo
+	connectingClient = newcl;
+	connectDropReason[0] = '\0';
 	denied = VM_CheckedExplicitString( gvm,
 	        VM_Call( gvm, GAME_CLIENT_CONNECT, clientNum, qtrue, qfalse ), qtrue ); // firstTime = qtrue
+	connectingClient = NULL;
 	if ( denied ) {
 		NET_OutOfBandPrint( NS_SERVER, from, "print\n%s\n", denied );
 		Com_DPrintf ("Game rejected a connection: %s.\n", denied);
+		if ( newcl->state == CS_ZOMBIE && challengeptr ) {
+			// the game dropped the client as well, don't repeat that on every resend
+			challengeptr->wasrefused = qtrue;
+		}
 		return;
 	}
 
-	// the game dropped the client in ClientConnect and already told everyone why
+	// the game dropped the client in ClientConnect and told the other clients
+	// why; tell this one, which never gets its disconnect command
 	if ( newcl->state == CS_ZOMBIE ) {
+		NET_OutOfBandPrint( NS_SERVER, from, "print\n%s\n", connectDropReason );
 		if ( challengeptr ) {
 			challengeptr->wasrefused = qtrue;
 		}
@@ -511,6 +526,11 @@ void SV_DropClient( client_t *drop, const char *reason ) {
 
 	if ( drop->state == CS_ZOMBIE ) {
 		return;		// already dropped
+	}
+
+	if ( drop == connectingClient ) {
+		// SV_DirectConnect sends the reason to the connecting client
+		Q_strncpyz( connectDropReason, reason, sizeof( connectDropReason ) );
 	}
 
 	if ( !drop->gentity || !(drop->gentity->r.svFlags & SVF_BOT) ) {
