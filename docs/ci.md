@@ -198,8 +198,6 @@ merging several PRs in a row never cancels or drops a master run.
     AddressSanitizer and UndefinedBehaviorSanitizer included, and adds the
     Retro68 target's `-fsigned-char` and 64-bit `long double`
     (`-mlong-double-64`) plus `-latomic` for the ppc32 sanitizer runtimes;
-  - `shift-base` checks stay off until LongSwap stops shifting a byte into the
-    `int` sign bit on every big-endian swap (issue #333);
   - ppc32 has no LeakSanitizer, so the job sets `Q3_TEST_DETECT_LEAKS=0`, which
     the leak-checking runners pass as `detect_leaks`. Leaks are still checked
     by the x86-64 jobs;

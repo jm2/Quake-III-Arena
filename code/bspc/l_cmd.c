@@ -951,7 +951,7 @@ int    LittleLong (int l)
 	b3 = (l>>16)&255;
 	b4 = (l>>24)&255;
 
-	return ((int)b1<<24) + ((int)b2<<16) + ((int)b3<<8) + b4;
+	return (int)(((unsigned)b1<<24) + ((unsigned)b2<<16) + ((unsigned)b3<<8) + b4);
 }
 
 int    BigLong (int l)
@@ -1041,7 +1041,7 @@ int    BigLong (int l)
 	b3 = (l>>16)&255;
 	b4 = (l>>24)&255;
 
-	return ((int)b1<<24) + ((int)b2<<16) + ((int)b3<<8) + b4;
+	return (int)(((unsigned)b1<<24) + ((unsigned)b2<<16) + ((unsigned)b3<<8) + b4);
 }
 
 int    LittleLong (int l)
