@@ -50,7 +50,7 @@ static void NativeNodes(void) {
         #ifdef Q3_AAS_POINT_BODY
         {vec3_t front={4,4,16},back={4,4,-16};Check(AAS_PointAreaNum(front)==1&&AAS_PointAreaNum(back)==0,"actual native point query retains area/solid results on accepted graphs");}
 #endif
-        Check(!memcmp(aasworld.nodes,source+geometryOffsets[AASLUMP_NODES],count*12),"node validation retains every native literal node byte");
+        Check(WireBytes(aasworld.nodes,source+geometryOffsets[AASLUMP_NODES],count*12),"node validation retains every native literal node byte");
     }
 }
 int main(int argc,char **argv) {

@@ -1,0 +1,10 @@
+# Host regression runners left out of the 32-bit big-endian CI job
+# ("Host C regressions (ppc32 BE)"; see tests/be32_cc.sh and docs/ci.md).
+#
+# One runner name without .sh per line; '#' starts a comment. List a runner
+# here only while it hits a big-endian or ILP32 engine defect that has its own
+# issue, name that issue next to the entry, and remove the entry when the
+# issue is fixed. Fix test-only byte-order or LP64 assumptions in the test
+# instead of listing the runner.
+#
+# Every runner currently passes on ppc32, so none is listed.

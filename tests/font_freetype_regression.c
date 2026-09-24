@@ -75,7 +75,11 @@ static void Metrics(void) {
 		if(scenario==1)slot.metrics.height=LONG_MAX;
 		if(scenario==2)slot.metrics.horiBearingX=LONG_MIN;
 		if(scenario==3)slot.metrics.horiBearingY=LONG_MIN;
+#if LONG_MAX > INT_MAX
 		if(scenario==4)slot.metrics.horiAdvance=LONG_MAX;
+#else
+		if(scenario==4)continue; /* ILP32 (the PPC target): every FT_Pos advance is an int. */
+#endif
 		if(scenario==5) { slot.metrics.horiBearingX=INT_MAX;slot.metrics.width=64; }
 		if(scenario==6)slot.metrics.horiBearingX=INT_MIN;
 		if(scenario==7) { slot.metrics.horiBearingY=INT_MIN;slot.metrics.height=64; }

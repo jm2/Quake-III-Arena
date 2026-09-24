@@ -19,12 +19,12 @@ static void ValidReachability(void) {
     for(version=4;version<=5;version++)for(type=0;type<MAX_TRAVELTYPES;type++)for(signedRef=0;signedRef<2;signedRef++) {
         ReachBuild(version,type|TRAVELFLAG_NOTTEAM1|TRAVELFLAG_NOTTEAM2,signedRef?-1:1,signedRef?-3:3);Counters();OldWorld();
         Check(AAS_LoadAASFile("fixture.aas")==BLERR_NOERROR&&aasworld.loaded&&closes==1&&!opened,"all native travel slots/team flags and signed references retain acceptance");
-        Check(!memcmp(aasworld.reachability,source+reachOffset,88)&&aasworld.reachability[1].traveltime==65535,"all reachability bytes and uint16 time retain literal native payload");
+        Check(WireBytes(aasworld.reachability,source+reachOffset,88)&&aasworld.reachability[1].traveltime==65535,"all reachability bytes and uint16 time retain literal native payload");
     }
     for(version=4;version<=5;version++)for(i=0;i<sizeof(special)/sizeof(special[0]);i++) {
         ReachBuild(version,special[i]|TRAVELFLAG_NOTTEAM1,(int)0x81230123u,(int)0x8abc4567u);Counters();OldWorld();
         Check(AAS_LoadAASFile("fixture.aas")==BLERR_NOERROR&&aasworld.loaded,"mover/velocity packed fields retain full signed bits without geometry-index reinterpretation");
-        Check(!memcmp(aasworld.reachability,source+reachOffset,88),"packed travel fields retain every native byte");
+        Check(WireBytes(aasworld.reachability,source+reachOffset,88),"packed travel fields retain every native byte");
     }
 }
 static void DuplicateSpanFailure(int version) {
@@ -63,7 +63,7 @@ static void SpanOwnership(void) {
         for(kind=2;kind<4;kind++){
             SpanBuild(version,kind);Counters();OldWorld();
             Check(AAS_LoadAASFile("fixture.aas")==BLERR_NOERROR&&aasworld.loaded,"adjacent and reordered disjoint spans remain accepted");
-            Check(!memcmp(aasworld.areasettings,source+geometryOffsets[8],84)&&!memcmp(aasworld.reachability,source+reachOffset,132),"disjoint span ordering retains every serialized owner byte");
+            Check(WireBytes(aasworld.areasettings,source+geometryOffsets[8],84)&&WireBytes(aasworld.reachability,source+reachOffset,132),"disjoint span ordering retains every serialized owner byte");
             Check(workspaceRequests==2&&workspaceFrees==2&&!workspacePointer,"both validation workspaces physically release");
         }
         ReachBuild(version,TRAVEL_WALK,1,3);Counters();OldWorld();failWorkspace=2;GeometryReject();

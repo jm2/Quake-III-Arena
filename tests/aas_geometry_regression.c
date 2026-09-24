@@ -34,6 +34,10 @@ static int Read(void *buffer,int length,fileHandle_t file) {int n;Check(opened&&
 static int Seek(fileHandle_t file,long offset,int origin) {Check(opened&&file==39&&origin==FS_SEEK_SET&&offset>=0&&offset<=readable,"native bounded seek contract");seeks++;if(failSeek==seeks)return -1;position=(int)offset;return 0;}
 static void Close(fileHandle_t file) {Check(opened&&file==39,"native file close once");opened=0;closes++;}
 static void Word(int offset,uint32_t value) {int i;for(i=0;i<4;i++)source[offset+i]=(unsigned char)(value>>(8*i));}
+/* The loader swaps little-endian wire fields to host order in place. Swapping
+   back (the native swap is its own inverse) lets literal wire-byte comparisons
+   hold on big-endian hosts; on little-endian hosts both swaps change nothing. */
+static int WireBytes(const void *loaded,const unsigned char *wire,int size) {int same;AAS_SwapAASData();same=!memcmp(loaded,wire,size);AAS_SwapAASData();return same;}
 static const int sizes[AAS_LUMPS]={sizeof(aas_bbox_t),sizeof(aas_vertex_t),sizeof(aas_plane_t),sizeof(aas_edge_t),sizeof(aas_edgeindex_t),sizeof(aas_face_t),sizeof(aas_faceindex_t),sizeof(aas_area_t),sizeof(aas_areasettings_t),sizeof(aas_reachability_t),sizeof(aas_node_t),sizeof(aas_portal_t),sizeof(aas_portalindex_t),sizeof(aas_cluster_t)};
 static void Encode(int version) {int i;if(version==AASVERSION)for(i=0;i<(int)sizeof(aas_header_t)-8;i++)source[8+i]^=(unsigned char)(i*119);}
 static void Build(int version,int empty) {int lump,offset=sizeof(aas_header_t);memset(source,0,sizeof(source));Word(0,AASID);Word(4,version);Word(8,12345);for(lump=0;lump<AAS_LUMPS;lump++){int n=empty?0:sizes[lump];Word(12+lump*8,offset);Word(16+lump*8,n);offset+=n;}sourceSize=advertised=readable=offset;Encode(version);}
@@ -88,7 +92,7 @@ static void ValidGeometry(void) {
         if(signedIndexes){Word(geometryOffsets[4],0xffffffffu);Word(geometryOffsets[6],0xffffffffu);}Encode(version);
         Check(AAS_LoadAASFile("fixture.aas")==BLERR_NOERROR&&aasworld.loaded&&!opened&&closes==1,"native finite geometry, paired planes, all six plane types and signed orientations remain accepted");
         data[0]=aasworld.bboxes;data[1]=aasworld.vertexes;data[2]=aasworld.planes;data[3]=aasworld.edges;data[4]=aasworld.edgeindex;data[5]=aasworld.faces;data[6]=aasworld.faceindex;data[7]=aasworld.areas;data[8]=aasworld.areasettings;data[9]=aasworld.reachability;data[10]=aasworld.nodes;data[11]=aasworld.portals;data[12]=aasworld.portalindex;data[13]=aasworld.clusters;
-        for(lump=0;lump<AAS_LUMPS;lump++)Check(!memcmp(data[lump],source+geometryOffsets[lump],sizes[lump]*geometryCounts[lump]),"accepted native typed geometry retains every literal wire byte");
+        for(lump=0;lump<AAS_LUMPS;lump++)Check(WireBytes(data[lump],source+geometryOffsets[lump],sizes[lump]*geometryCounts[lump]),"accepted native typed geometry retains every literal wire byte");
     }
 }
 static void NonfiniteGeometry(void) {
