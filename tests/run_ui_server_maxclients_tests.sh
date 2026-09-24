@@ -24,7 +24,8 @@ trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 # One process per server layout and sv_maxclients value. A sparse server has
 # empty and red slots, a full one has every slot taken by the local client's
 # team (or by bots), and both fill every string past the player slots.
-# 8, 16 and 64 are real servers and must list what they always did; 65, 1024
+# 8, 16 and 64 are real servers and must list what they always did (except
+# that Team Orders now lists the local team's bots, issue #375); 65, 1024
 # and INT_MAX would read past CS_PLAYERS + MAX_CLIENTS (and, past
 # MAX_CONFIGSTRINGS, keep the last string) and write past the player lists;
 # negative values list nobody.

@@ -90,7 +90,13 @@ static const char *teamoverlay_names[] =
 };
 
 static void Preferences_SetMenuItems( void ) {
-	s_preferences.crosshair.curvalue		= (int)trap_Cvar_VariableValue( "cg_drawCrosshair" ) % NUM_CROSSHAIRS;
+	int		crosshair;
+
+	// a server can set cg_drawCrosshair through systeminfo, and Crosshair_Draw
+	// indexes crosshairShader with the item: take the integer the cgame draws
+	// with, which also clamps a negative value to 0
+	crosshair = atoi( UI_Cvar_VariableString( "cg_drawCrosshair" ) );
+	s_preferences.crosshair.curvalue		= ( crosshair < 0 ? 0 : crosshair ) % NUM_CROSSHAIRS;
 	s_preferences.simpleitems.curvalue		= trap_Cvar_VariableValue( "cg_simpleItems" ) != 0;
 	s_preferences.brass.curvalue			= trap_Cvar_VariableValue( "cg_brassTime" ) != 0;
 	s_preferences.wallmarks.curvalue		= trap_Cvar_VariableValue( "cg_marks" ) != 0;

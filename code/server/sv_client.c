@@ -1398,7 +1398,15 @@ void SV_ExecuteClientCommand( client_t *cl, const char *s, qboolean clientOK ) {
 		}
 	}
 
-	if (clientOK) {
+	// the game only takes commands from a network client that has its
+	// gamestate.  Below CS_PRIMED the client has not loaded the map, yet
+	// retail's team command would spawn it with ClientBegin while the
+	// server still has it CS_CONNECTED.  So its game commands are refused,
+	// as ioquake3 and Quake3e do; its server level commands above still
+	// run, which is all a connecting or downloading client needs.  A bot
+	// is exempt: SV_DropClient makes it CS_ZOMBIE before the game
+	// disconnects it, and its exit chat comes through here
+	if (clientOK && (cl->state >= CS_PRIMED || cl->netchan.remoteAddress.type == NA_BOT)) {
 		// pass unknown strings to the game
 		if (!u->name && sv.state == SS_GAME) {
 			Cmd_Args_Sanitize();
@@ -1468,11 +1476,11 @@ static qboolean SV_ClientCommand( client_t *cl, msg_t *msg ) {
 	// dedicated server has no loopback client, so it is unchanged
 	// A client that is not active yet is limited too, on either kind of
 	// server.  Retail skipped it, since a download sends a nextdl for every
-	// block, but a client that never sends a usercmd stays CS_PRIMED (or
-	// CS_CONNECTED, if it never asks for the gamestate) and the game still
-	// takes its commands.  The server level commands always run, and until
-	// the client is active they do not start the window, so a say typed
-	// while downloading is not held back by the nextdl sent around it
+	// block, but a client that never sends a usercmd stays CS_PRIMED and
+	// the game still takes its commands.  The server level commands always
+	// run, and until the client is active they do not start the window, so
+	// a say typed while downloading is not held back by the nextdl sent
+	// around it
 	if ( cl->netchan.remoteAddress.type != NA_LOOPBACK &&
 		sv_floodProtect->integer && 
 		svs.time < cl->nextReliableTime ) {
@@ -1481,8 +1489,10 @@ static qboolean SV_ClientCommand( client_t *cl, msg_t *msg ) {
 		clientOk = qfalse;
 	} 
 
-	// don't allow another command for one second
-	if ( cl->state >= CS_ACTIVE || !SV_IsServerCommand( s ) ) {
+	// don't allow another command for one second.  Nothing a client below
+	// CS_PRIMED sends starts the window, since the game never takes its
+	// commands (see SV_ExecuteClientCommand)
+	if ( cl->state >= CS_ACTIVE || ( cl->state == CS_PRIMED && !SV_IsServerCommand( s ) ) ) {
 		cl->nextReliableTime = svs.time + 1000;
 	}
 

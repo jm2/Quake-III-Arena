@@ -253,8 +253,11 @@ static void CG_PrevTeamMember_f( void ) {
 //
 static void CG_NextOrder_f( void ) {
 	clientInfo_t *ci = cgs.clientinfo + cg.snap->ps.clientNum;
+	int selected = cg_currentSelectedPlayer.integer;
 	if (ci) {
-		if (!ci->teamLeader && sortedTeamPlayers[cg_currentSelectedPlayer.integer] != cg.snap->ps.clientNum) {
+		// only a leader orders others; Everyone and values a server set through
+		// systeminfo select no teammate
+		if (!ci->teamLeader && (selected < 0 || selected >= numSortedTeamPlayers || sortedTeamPlayers[selected] != cg.snap->ps.clientNum)) {
 			return;
 		}
 	}
