@@ -2,7 +2,9 @@
  * native cgame uses to index cgs.clientinfo with no VM sandbox around it.
  * Drives the real CL_ParseGamestate (cl_parse.c) over messages written with
  * the real msg.c/huffman.c encoders, then fuzzes everything after a valid
- * header. The rest of the client is discarded at link time. */
+ * header. The rest of the client is discarded at link time.
+ * Issue #435: a systeminfo that fills MSG_ReadBigString's buffer is read to
+ * its terminator, so the configstring after it still parses. */
 #include "../code/client/cl_parse.c"
 #include <limits.h>
 #include <setjmp.h>
@@ -266,10 +268,69 @@ static void TestFuzz( void ) {
 	printf( "Gamestate fuzz: %d accepted, %d dropped (%d for clientNum)\n", accepted, rejected, clientNumDrops );
 }
 
+/**
+ * Issue #435: a systeminfo of BIG_INFO_STRING - 1 chars, which MSG_WriteBigString
+ * sends and an ioquake3, Quake3e or retail server can build, is read up to and
+ * past its terminator: the configstring after it and the rest of the gamestate
+ * parse. A longer one, which no server writes, keeps what fits and still ends
+ * at its terminator.
+ */
+static void TestBigSystemInfo( void ) {
+	static const int lengths[] = { BIG_INFO_STRING - 2, BIG_INFO_STRING - 1, BIG_INFO_STRING, BIG_INFO_STRING + 1, BIG_INFO_STRING + 40 };
+	static byte buffer[MAX_MSGLEN];
+	static char systemInfo[BIG_INFO_STRING + 64];
+	entityState_t nullstate, base;
+	msg_t msg;
+	int i, length, prefix;
+
+	memset( &nullstate, 0, sizeof( nullstate ) );
+	for ( i = 0; i < (int)( sizeof( lengths ) / sizeof( lengths[0] ) ); i++ ) {
+		/* the short keys, then a pk3 name list that fills the string */
+		length = lengths[i];
+		Q_strncpyz( systemInfo, "\\sv_serverid\\435\\sv_pure\\1\\sv_paks\\1234 \\sv_pakNames\\", sizeof( systemInfo ) );
+		prefix = strlen( systemInfo );
+		memset( systemInfo + prefix, 'p', length - prefix );
+		systemInfo[length] = 0;
+
+		MSG_Init( &msg, buffer, sizeof( buffer ) );
+		MSG_WriteLong( &msg, 5 );	// reliable command sequence
+		MSG_WriteByte( &msg, svc_configstring );
+		MSG_WriteShort( &msg, CS_SYSTEMINFO );
+		if ( length < BIG_INFO_STRING ) {
+			MSG_WriteBigString( &msg, systemInfo );
+		} else {
+			MSG_WriteData( &msg, systemInfo, length + 1 );	// MSG_WriteBigString sends these empty
+		}
+		MSG_WriteByte( &msg, svc_configstring );
+		MSG_WriteShort( &msg, CS_SERVERINFO );
+		MSG_WriteBigString( &msg, "\\sv_maxclients\\8\\mapname\\q3dm17" );
+		memset( &base, 0, sizeof( base ) );
+		base.number = 435;
+		base.eType = ET_GENERAL;
+		base.modelindex = 7;
+		MSG_WriteByte( &msg, svc_baseline );
+		MSG_WriteDeltaEntity( &msg, &nullstate, &base, qtrue );
+		WriteTrailer( &msg, 3 );
+
+		Check( !Parse( &msg, 0 ), "gamestate with a systeminfo that fills the buffer accepted" );
+		systemInfo[BIG_INFO_STRING - 1] = 0;	// all that fits
+		Check( !strcmp( cl.gameState.stringData + cl.gameState.stringOffsets[CS_SYSTEMINFO], systemInfo ),
+			"systeminfo kept up to BIG_INFO_STRING - 1 chars" );
+		Check( !strcmp( cl.gameState.stringData + cl.gameState.stringOffsets[CS_SERVERINFO],
+			"\\sv_maxclients\\8\\mapname\\q3dm17" ), "configstring after the systeminfo" );
+		Check( cl.entityBaselines[435].number == 435 && cl.entityBaselines[435].modelindex == 7, "baseline after the systeminfo" );
+		Check( clc.clientNum == 3 && downloads == 1 && clc.checksumFeed == 0x1234, "rest of the gamestate read" );
+		Check( cl.serverId == 435, "systeminfo parsed" );
+		CheckGameState();
+	}
+	puts( "Systeminfo of BIG_INFO_STRING - 2 to BIG_INFO_STRING + 40 chars parsed (issue #435)" );
+}
+
 int main( void ) {
 	memset( &shownet, 0, sizeof( shownet ) );
 	cl_shownet = &shownet;
 	TestClientNums();
+	TestBigSystemInfo();
 	TestFuzz();
 	puts( "Client gamestate regressions passed (issue #40)" );
 	return 0;

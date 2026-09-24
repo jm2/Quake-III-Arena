@@ -1260,7 +1260,9 @@ void Info_SetValueForKey( char *s, const char *key, const char *value ) {
 ==================
 Info_SetValueForKey_Big
 
-Changes or adds a key/value pair
+Changes or adds a key/value pair. The string stays one char short of
+BIG_INFO_STRING - 1: retail 1.32c's MSG_ReadBigString can't read the
+terminator of a string that long, and misreads the rest of the gamestate
 ==================
 */
 void Info_SetValueForKey_Big( char *s, const char *key, const char *value ) {
@@ -1286,7 +1288,7 @@ void Info_SetValueForKey_Big( char *s, const char *key, const char *value ) {
 
 	Com_sprintf (newi, sizeof(newi), "\\%s\\%s", key, value);
 
-	if (strlen(newi) + strlen(s) >= BIG_INFO_STRING)
+	if (strlen(newi) + strlen(s) >= BIG_INFO_STRING - 1)
 	{
 		Com_Printf ("BIG Info string length exceeded\n");
 		return;

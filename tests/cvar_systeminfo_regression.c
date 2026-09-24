@@ -1,5 +1,7 @@
 /* Issue #303: pak lists that fill CS_SYSTEMINFO must not push sv_serverid and the other short keys out,
-   names never go without their checksums, and referenced checksums never go without their names. */
+   names never go without their checksums, and referenced checksums never go without their names.
+   Issue #435: systeminfo stops short of BIG_INFO_STRING - 1 chars, whose terminator retail's
+   MSG_ReadBigString leaves unread; a value that would reach it is left out whole. */
 #include "q_shared.h"
 #include "qcommon.h"
 
@@ -252,7 +254,7 @@ static int SweepPakCounts( const char *name, const char *gamename, const char *p
 		printedLength = 0;
 		printed[0] = 0;
 		built = Cvar_InfoString_Big( CVAR_SYSTEMINFO );
-		Check( strlen( built ) < BIG_INFO_STRING, "systeminfo stays inside BIG_INFO_STRING" );
+		Check( strlen( built ) <= BIG_INFO_STRING - 2, "systeminfo stays inside BIG_INFO_STRING - 2 chars" );
 		Q_strncpyz( info, built, sizeof( info ) );
 		infoLength = strlen( info );
 
@@ -310,11 +312,11 @@ static int SweepPakCounts( const char *name, const char *gamename, const char *p
 			/* and a list is only left out when it can't fit next to everything else */
 			if ( out[0] ) {
 				Com_sprintf( message, sizeof( message ), "%s is left out only when it cannot fit", keys[0] );
-				Check( infoLength + length[0] + ( pakListPairs[i].strict ? length[1] : 0 ) >= BIG_INFO_STRING
+				Check( infoLength + length[0] + ( pakListPairs[i].strict ? length[1] : 0 ) > BIG_INFO_STRING - 2
 					&& roomGiven, message );
 			} else if ( out[1] ) {
 				Com_sprintf( message, sizeof( message ), "%s is left out only when it cannot fit", keys[1] );
-				Check( infoLength + length[1] >= BIG_INFO_STRING && roomGiven, message );
+				Check( infoLength + length[1] > BIG_INFO_STRING - 2 && roomGiven, message );
 			}
 		}
 
@@ -371,33 +373,92 @@ static void TestRejectedValue( void ) {
 	Check( Sent( info, "sv_paks" ) && Sent( info, "sv_pakNames" ), "the loaded pair is still sent" );
 }
 
-/* A pair that takes systeminfo to exactly BIG_INFO_STRING - 1 chars still fits, so it goes whole and in cvar order. */
+/* Issue #435: a pair that takes systeminfo to exactly BIG_INFO_STRING - 2 chars still fits, so it goes
+   whole and in cvar order. One char more and retail clients could not read systeminfo, so the names are
+   left out whole with a warning, and the referenced checksums with them; nothing is cut short. */
 static void TestExactFit( void ) {
 	static char names[BIG_INFO_STRING];
-	const char *info;
-	int length;
+	const char *info, *keys[2];
+	char message[256];
+	int i, j, over, length;
 
 	scenario = "exact fit";
-	numPaks = 300;
-	Cvar_Set( "fs_game", "" );
-	SetPakLists( BASEGAME, "mappack-", numPaks );
-	/* lengthen the last pk3 name until sv_pakNames ends on the last char */
-	Q_strncpyz( names, Cvar_VariableString( "sv_pakNames" ), sizeof( names ) );
-	Cvar_Set( "sv_pakNames", "" );
-	length = BIG_INFO_STRING - 1 - (int)strlen( Cvar_InfoString_Big( CVAR_SYSTEMINFO ) ) - (int)strlen( "\\sv_pakNames\\" );
-	Check( length > (int)strlen( names ) && length < BIG_INFO_VALUE, "exact-fit sv_pakNames length" );
-	memset( names + strlen( names ), 'x', length - strlen( names ) );
-	names[length] = 0;
-	Cvar_Set( "sv_pakNames", names );
+	numPaks = 250;
+	Cvar_Set( "fs_game", "mymod" );	/* every pk3 referenced, so both lists of each pair are long */
+	for ( i = 0 ; i < ARRAY_LEN( pakListPairs ) ; i++ ) {
+		keys[0] = pakListPairs[i].sums;
+		keys[1] = pakListPairs[i].names;
+		for ( over = 0 ; over < 2 ; over++ ) {
+			/* only this pair is sent; lengthen its last pk3 name until systeminfo would end on the target char */
+			SetPakLists( "mymod", "mappack-", numPaks );
+			Cvar_Set( pakListPairs[!i].sums, "" );
+			Cvar_Set( pakListPairs[!i].names, "" );
+			Q_strncpyz( names, Cvar_VariableString( keys[1] ), sizeof( names ) );
+			Cvar_Set( keys[1], "" );
+			length = BIG_INFO_STRING - 2 + over - (int)strlen( Cvar_InfoString_Big( CVAR_SYSTEMINFO ) )
+				- (int)strlen( va( "\\%s\\", keys[1] ) );
+			Check( length > (int)strlen( names ) && length < BIG_INFO_VALUE, "exact-fit names length" );
+			memset( names + strlen( names ), 'x', length - strlen( names ) );
+			names[length] = 0;
+			Cvar_Set( keys[1], names );
 
-	printedLength = 0;
-	printed[0] = 0;
-	info = Cvar_InfoString_Big( CVAR_SYSTEMINFO );
-	Check( strlen( info ) == BIG_INFO_STRING - 1 && !strcmp( Info_ValueForKey( info, "sv_pakNames" ), names )
-		&& !strcmp( Info_ValueForKey( info, "sv_paks" ), Cvar_VariableString( "sv_paks" ) ) && !printed[0],
-		"a pair that fills systeminfo exactly is sent whole" );
-	Check( ShortKeysSent( info ) && ShortKeysFirst( info ), "short keys go ahead of the pair that fills systeminfo" );
-	Check( !strcmp( info, UnpairedTwoPassInfo() ), "a pair that fits exactly keeps the cvar order" );
+			printedLength = 0;
+			printed[0] = 0;
+			info = Cvar_InfoString_Big( CVAR_SYSTEMINFO );
+			Check( ShortKeysSent( info ) && ShortKeysFirst( info ), "short keys go ahead of the pair that fills systeminfo" );
+			if ( !over ) {
+				Com_sprintf( message, sizeof( message ), "%s and %s that fill systeminfo to BIG_INFO_STRING - 2 chars are sent whole",
+					keys[0], keys[1] );
+				Check( strlen( info ) == BIG_INFO_STRING - 2 && !strcmp( Info_ValueForKey( info, keys[1] ), names )
+					&& !strcmp( Info_ValueForKey( info, keys[0] ), Cvar_VariableString( keys[0] ) ) && !printed[0], message );
+				Check( !strcmp( info, UnpairedTwoPassInfo() ), "a pair that fits exactly keeps the cvar order" );
+				continue;
+			}
+			Com_sprintf( message, sizeof( message ), "%s that would make systeminfo BIG_INFO_STRING - 1 chars is left out whole", keys[1] );
+			Check( strlen( info ) <= BIG_INFO_STRING - 2 && !Sent( info, keys[1] ) && Warned( keys[1] )
+				&& strstr( printed, va( "WARNING: no room for %s (%i chars)", keys[1], length ) ), message );
+			Com_sprintf( message, sizeof( message ), "%s goes with the pair's rules and is never cut short", keys[0] );
+			Check( pakListPairs[i].strict ? !Sent( info, keys[0] ) && Warned( keys[0] )
+				: !strcmp( Info_ValueForKey( info, keys[0] ), Cvar_VariableString( keys[0] ) ) && !Warned( keys[0] ), message );
+			/* every value that went in, went in whole */
+			for ( j = 0 ; j < ARRAY_LEN( shortKeys ) ; j++ ) {
+				Check( !strcmp( Info_ValueForKey( info, shortKeys[j] ), Cvar_VariableString( shortKeys[j] ) ), "short key sent whole" );
+			}
+		}
+	}
+}
+
+/* Issue #435: Info_SetValueForKey_Big refuses a key that would take the string to BIG_INFO_STRING - 1 chars,
+   and one too long for its own buffer, instead of adding it cut short. */
+static void TestBigInfoCap( void ) {
+	static char info[BIG_INFO_STRING], value[BIG_INFO_STRING], expected[BIG_INFO_STRING];
+	int length;
+
+	scenario = "big info cap";
+	numPaks = 0;
+	/* "\\k\\" and the value: BIG_INFO_STRING - 2 chars go in, one more is refused */
+	for ( length = BIG_INFO_STRING - 8 ; length < BIG_INFO_VALUE ; length++ ) {
+		memset( value, 'v', length );
+		value[length] = 0;
+		info[0] = 0;
+		printedLength = 0;
+		printed[0] = 0;
+		Info_SetValueForKey_Big( info, "k", value );
+		if ( length + 3 <= BIG_INFO_STRING - 2 ) {
+			Com_sprintf( expected, sizeof( expected ), "\\k\\%s", value );
+			Check( !strcmp( info, expected ) && !printed[0], "a key that fits BIG_INFO_STRING - 2 chars goes in whole" );
+		} else {
+			Check( !info[0] && strstr( printed, "BIG Info string length exceeded" ), "a key that does not fit is refused, not cut short" );
+		}
+	}
+	/* with a key already in, the same edge */
+	memset( value, 'v', BIG_INFO_STRING - 2 - 8 - 3 );
+	value[BIG_INFO_STRING - 2 - 8 - 3] = 0;
+	Q_strncpyz( info, "\\a\\12345", sizeof( info ) );
+	Info_SetValueForKey_Big( info, "k", value );
+	Check( strlen( info ) == BIG_INFO_STRING - 2 && !strcmp( Info_ValueForKey( info, "k" ), value ), "the last char retail reads is used" );
+	Info_SetValueForKey_Big( info, "b", "1" );
+	Check( strlen( info ) == BIG_INFO_STRING - 2 && !Info_ValueForKey( info, "b" )[0], "a key past it is refused" );
 }
 
 int main( void ) {
@@ -431,6 +492,7 @@ int main( void ) {
 
 	TestRejectedValue();
 	TestExactFit();
+	TestBigInfoCap();
 
 	printf( "Cvar systeminfo regression passed\n" );
 	return 0;

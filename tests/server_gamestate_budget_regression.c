@@ -248,7 +248,7 @@ static gamestateSize_t Measure( const char *systemInfo ) {
 		s = i == CS_SYSTEMINFO ? systemInfo : sv.configstrings[i];
 		if ( !s[0] ) continue;
 		MSG_WriteByte( &msg, svc_configstring ); MSG_WriteShort( &msg, i ); MSG_WriteBigString( &msg, s );
-		/* retail's MSG_ReadBigString, and this client's, leave a BIG_INFO_STRING - 1 char string's terminator unread */
+		/* retail's MSG_ReadBigString leaves a BIG_INFO_STRING - 1 char string's terminator unread */
 		size.chars += strlen( s ) == BIG_INFO_STRING - 1 ? MAX_GAMESTATE_CHARS : (int)strlen( s ) + 1;
 	}
 	memset( &nullstate, 0, sizeof(nullstate) );
@@ -324,7 +324,7 @@ static qboolean Warned( const char *key ) {
 	return strstr( printed, prefix ) != NULL;
 }
 
-static int unchanged, namesOut, degraded, refused, rescued, charBound, unreadable;
+static int unchanged, namesOut, degraded, refused, rescued, charBound;
 
 /** One level: the pure lists stay, or go names first, exactly when the budget says so, and the gamestate fits. */
 static void RunLevel( void ) {
@@ -374,8 +374,9 @@ static void RunLevel( void ) {
 	else if ( sumsDropped ) degraded++;
 	else if ( namesDropped ) namesOut++;
 	else unchanged++;
-	if ( strlen( full ) == BIG_INFO_STRING - 1 ) unreadable++;
-	else if ( sent && fullSize.chars > MAX_GAMESTATE_CHARS && fullSize.bytes + 1 <= RETAIL_MSGLEN ) charBound++;
+	/* issue #435: Cvar_InfoString_Big never builds one retail's MSG_ReadBigString can't end */
+	Check( strlen( full ) <= BIG_INFO_STRING - 2, "systeminfo stops short of BIG_INFO_STRING - 1 chars" );
+	if ( sent && fullSize.chars > MAX_GAMESTATE_CHARS && fullSize.bytes + 1 <= RETAIL_MSGLEN ) charBound++;
 	if ( sent && !Fits( fullSize ) ) rescued++;
 }
 
@@ -403,17 +404,18 @@ static void Sweep( void ) {
 	}
 	Cvar_Set( "fs_game", "" );
 	printf( "Levels: %d unchanged, %d without sv_pakNames, %d degraded pure, %d refused; %d that master could "
-		"not send (%d over MAX_GAMESTATE_CHARS only, %d with a BIG_INFO_STRING - 1 char systeminfo)\n",
-		unchanged, namesOut, degraded, refused, rescued, charBound, unreadable );
+		"not send (%d over MAX_GAMESTATE_CHARS only)\n",
+		unchanged, namesOut, degraded, refused, rescued, charBound );
 	Check( unchanged > 0 && namesOut > 0 && degraded > 0 && refused > 0 && rescued > 0 && charBound > 0,
 		"the sweep reaches every outcome" );
 }
 
-/** Pure lists that make systeminfo exactly BIG_INFO_STRING - 1 chars: every retail client would drop the gamestate. */
+/** Pure lists that would make systeminfo exactly BIG_INFO_STRING - 1 chars, which every retail client would drop
+    the gamestate for: Cvar_InfoString_Big leaves sv_pakNames out whole and keeps sv_paks (issue #435). */
 static void ExactFit( void ) {
 	static char full[BIG_INFO_STRING];
-	level_t exact = { BASEGAME, "exact BIG_INFO_STRING - 1 systeminfo", 300, 3000, 40, '\0' };
-	int before = unreadable;
+	level_t exact = { BASEGAME, "BIG_INFO_STRING - 1 systeminfo", 300, 3000, 40, '\0' };
+	const char *built;
 
 	level = exact;
 	nameExtra = 0;
@@ -422,9 +424,11 @@ static void ExactFit( void ) {
 	Check( nameExtra > 0 && !strcmp( Info_ValueForKey( full, "sv_pakNames" ), loadedNames ), "exact fit padding" );
 	RunLevel();
 	nameExtra = 0;
-	Check( unreadable == before + 1, "master's systeminfo is BIG_INFO_STRING - 1 chars" );
-	Check( !Cvar_VariableString( "sv_pakNames" )[0] && !strcmp( Cvar_VariableString( "sv_paks" ), loadedSums ),
-		"sv_pakNames left out of it, sv_paks kept" );
+	built = sv.configstrings[CS_SYSTEMINFO];
+	Check( strlen( built ) <= BIG_INFO_STRING - 2 && !Info_ValueForKey( built, "sv_pakNames" )[0]
+		&& !strcmp( Info_ValueForKey( built, "sv_paks" ), loadedSums ), "sv_pakNames left out of it, sv_paks kept" );
+	Check( strstr( printed, va( "WARNING: no room for sv_pakNames (%i chars)", (int)strlen( loadedNames ) ) ) != NULL,
+		"leaving sv_pakNames out is reported" );
 	puts( "a systeminfo no retail client can read loses sv_pakNames" );
 }
 
@@ -489,7 +493,7 @@ static void Overflow( void ) {
 	Pad( BIG_INFO_STRING - 2, 0, 'h', qtrue );
 	Check( SendGameState( NA_IP ), "configstring of BIG_INFO_STRING - 2 chars sent" );
 	Pad( BIG_INFO_STRING - 1, 0, 'h', qtrue );
-	Check( !SendGameState( NA_IP ), "configstring of BIG_INFO_STRING - 1 chars, which no client reads, refused" );
+	Check( !SendGameState( NA_IP ), "configstring of BIG_INFO_STRING - 1 chars, which no retail client reads, refused" );
 
 	level.pad = 'K';	/* ten bits a char: the message fills before the chars do */
 	level.fill = 9000;
