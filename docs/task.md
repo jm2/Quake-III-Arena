@@ -49,14 +49,14 @@ and its evidence links, is archived unchanged in
 
 - Last Mac OS 9 run: 2026-04-27, which stopped at `Couldn't load default.cfg`
   after demo data was packaged as `baseq3` (#8). No target run since.
-- `master` at `a945853` cross-builds with Retro68 (GCC 12.2.0, Retro68 `83b9c8d2c5`)
+- `master` at `a7b4e47` cross-builds with Retro68 (GCC 12.2.0, Retro68 `83b9c8d2c5`)
   as launchable Classic applications (#226): `Quake3.pef` 3,809,245 bytes and
   `Quake3_TeamArena.pef` 3,966,307 bytes, both `Joy!peff`/`pwpc`, 0 compiler
   warnings (2026-09-24). The maintainer's toolchain was rebuilt natively for
   Fedora 44 on 2026-09-23 and needs no library shim; #269 (readiness accepting
   a toolchain that cannot run) is still open.
-- All 161 host regression runners pass with GCC 16.2.1 and Clang 22.1.8 at
-  `a945853` (2026-09-24). CI runs them in four shards per compiler (#279), and
+- All 162 host regression runners pass with GCC 16.2.1 and Clang 22.1.8 at
+  `a7b4e47` (2026-09-24). CI runs them in four shards per compiler (#279), and
   since #335 (#224) it also runs every runner on 32-bit big-endian PowerPC
   Linux under qemu-user with AddressSanitizer and UndefinedBehaviorSanitizer.
 - Emulators cannot pass the accelerated-renderer check (#268); rendering,
@@ -74,7 +74,7 @@ Land these first: every later PR depends on a CI run that finishes and a ledger 
 
 ## B1 — Regressions and runtime bugs to clear before the first target run
 
-Each original entry blocked or corrupted a normal base-game session. Their host-side fixes are merged; the entries still open wait on the first target run, except #375, which was filed later and does not block a normal session.
+Each original entry blocked or corrupted a normal base-game session. Their host-side fixes are merged; the entries still open wait on the first target run, except #375 and #382, which were filed later and do not block a normal session.
 
 - [ ] [#270 — SV_GentityNum bound faults the server on botlib passent -1 traces during map load](https://github.com/jm2/Quake-III-Arena/issues/270) — **critical**; server faults on botlib passent -1 traces while loading maps with suspended items; PR #285 merged; needs target test.
 - [x] [#243 — BSP reference preflight rejects retail q3dm17 (flare surfaces with fogNum 0 and no fogs)](https://github.com/jm2/Quake-III-Arena/issues/243) — **critical**; retail q3dm17 rejected by both BSP loaders; PR #284 merged.
@@ -94,8 +94,9 @@ Each original entry blocked or corrupted a normal base-game session. Their host-
 - [x] [#241 — Monolithic cgame compiles the non-retail cg_particles.c instead of the 1.32 particle code](https://github.com/jm2/Quake-III-Arena/issues/241) — **low**; non-retail particle code compiled into cgame; PR #292 merged.
 - [x] [#301 — Native cgame scoreboard shifts 1 << client for clients 32-63 (undefined behavior)](https://github.com/jm2/Quake-III-Arena/issues/301) — **low**; scoreboard ready markers shift 1 << client for clients 32–63 (undefined behavior); PR #349 merged.
 - [x] [#303 — Large pure pak lists push sv_serverid out of systeminfo, leaving clients stuck reloading the gamestate](https://github.com/jm2/Quake-III-Arena/issues/303) — **medium**; large pure pak lists push sv_serverid out of systeminfo now that #240 allows long values; PRs #338 and #354 merged.
-- [x] [#363 — vote/teamvote check 'Y' and '1' in the wrong character: 'vote Y', 'vote Yes' and 'vote 1' count as no](https://github.com/jm2/Quake-III-Arena/issues/363) — **low**; `vote Y` and `vote 1` counted as no; a retail 1.32c behavior bug whose reads stay in bounds; PR #365 merged.
+- [x] [#363 — vote/teamvote test msg[1] instead of msg[0]: 'vote Y', 'vote Yes' and 'vote 1' count as no](https://github.com/jm2/Quake-III-Arena/issues/363) — **low**; `vote Y` and `vote 1` counted as no; a retail 1.32c behavior bug whose reads stay in bounds; PR #365 merged.
 - [ ] [#375 — q3_ui Team Orders menu never lists bots (bk001204 resets playerTeam in the loop)](https://github.com/jm2/Quake-III-Arena/issues/375) — **low**; the base q3_ui Team Orders menu lists no bot teammates; ioquake3 has the fix.
+- [ ] [#382 — q3_ui Team Orders: clicking a list's last pixel row selects one past the end (NULL format / botNames overrun)](https://github.com/jm2/Quake-III-Arena/issues/382) — **low**; a click on a Team Orders list's last pixel row selects one past the end (`NULL` format string; `botNames` overrun once #375 is fixed).
 
 ## B2 — Build, toolchain and packaging
 
@@ -119,6 +120,7 @@ A launchable application must come out of every build, from a pinned toolchain, 
 - [ ] [#232 — Remove stale build inputs: MacGamma.cpp, empty q3.rsrc, unused ui_obj and CMake variables](https://github.com/jm2/Quake-III-Arena/issues/232) — **low**; stale build inputs.
 - [ ] [#299 — Packaging mapping file leaves pk3 type/creator codes unquoted, giving garbage HFS codes](https://github.com/jm2/Quake-III-Arena/issues/299) — **medium**; packaging mapping leaves pk3 type/creator codes unquoted.
 - [ ] [#296 — Legacy non-QVM build recipes lack the particle code since cg_marks.c was trimmed](https://github.com/jm2/Quake-III-Arena/issues/296) — **low**; legacy non-QVM build recipes still lack cg_particles.c.
+- [ ] [#387 — Toolchain setup fails on GCC 16 hosts and setup_retro68.ps1 cannot run a fresh build](https://github.com/jm2/Quake-III-Arena/issues/387) — **medium**; a fresh toolchain setup fails on GCC 16 hosts, and `setup_retro68.ps1` cannot run a fresh build (#269 follow-up).
 
 ## B3 — Test and CI coverage
 
@@ -163,8 +165,8 @@ Remote memory corruption and denial of service reachable from the network come b
 - [x] [#326 — Global netchan queue budget lets 32+ attacker slots drop honest clients at map changes](https://github.com/jm2/Quake-III-Arena/issues/326) — **low**; global netchan queue budget lets 32+ attacker slots drop honest clients (#271 follow-up); PR #355 merged.
 - [x] [#340 — A player's long chat line can ERR_DROP the server through SV_GameBotChatVariables](https://github.com/jm2/Quake-III-Arena/issues/340) — **critical**; one player's long chat line dropped the whole server through the bot reply-chat guard; PRs #346 and #354 merged.
 - [x] [#356 — Client-chosen weapon number in TossClientItems shifts and indexes out of range and can ERR_DROP the server](https://github.com/jm2/Quake-III-Arena/issues/356) — **high**; a client-chosen weapon number in `TossClientItems` shifted and indexed out of range and could drop the map; PR #358 merged.
-- [x] [#359 — gc command accepts order 7 and reads past gc_orders (remote OOB pointer read)](https://github.com/jm2/Quake-III-Arena/issues/359) — **high**; `gc` order 7 read a pointer past `gc_orders[]` and used it as a string (any client); PR #360 merged.
-- [ ] [#361 — follownext/followprev in follow1/follow2 mode hangs the server when nobody can be followed](https://github.com/jm2/Quake-III-Arena/issues/361) — **high**; `follownext`/`followprev` in follow1/follow2 mode hangs the server when nobody can be followed (any client); PR #364 open.
+- [x] [#359 — gc command accepts order 7 and reads past gc_orders[] (remote OOB pointer read)](https://github.com/jm2/Quake-III-Arena/issues/359) — **high**; `gc` order 7 read a pointer past `gc_orders[]` and used it as a string (any client); PR #360 merged.
+- [x] [#361 — follownext/followprev in follow1/follow2 mode hangs the server when nobody can be followed](https://github.com/jm2/Quake-III-Arena/issues/361) — **high**; `follownext`/`followprev` in follow1/follow2 mode hangs the server when nobody can be followed (any client); PR #364 merged.
 - [x] [#368 — Team Arena UI_BuildPlayerList trusts server sv_maxclients and writes past its player arrays](https://github.com/jm2/Quake-III-Arena/issues/368) — **high**; a hostile server's `sv_maxclients` made the Team Arena UI write past its player arrays; PR #374 merged.
 - [x] [#337 — SV_Shutdown leaks in-progress download file handles and buffers](https://github.com/jm2/Quake-III-Arena/issues/337) — **medium**; `SV_Shutdown` left in-progress downloads' file handles and buffers open; PR #351 merged.
 - [x] [#341 — Clients held in CS_PRIMED bypass sv_floodProtect for game commands](https://github.com/jm2/Quake-III-Arena/issues/341) — **medium**; clients held in `CS_PRIMED` bypassed `sv_floodProtect` for game commands; PR #371 merged.
@@ -234,6 +236,7 @@ The paused September queue. Resume only after B1–B4, and fix false positives a
 - [ ] [#370 — Remaining sound edge cases: music divide by zero, zero sample rate, resample accumulator overflow](https://github.com/jm2/Quake-III-Arena/issues/370) — **medium**; remaining sound edge cases: music divide by zero, zero sample rate, resample accumulator overflow.
 - [x] [#344 — Undefined left shifts of negative or oversized values in g_mover.c constantLight and snd_mem.c resampling](https://github.com/jm2/Quake-III-Arena/issues/344) — **low**; undefined left shifts in `g_mover.c` constantLight and 8-bit WAV resampling; PRs #367 and #372 merged.
 - [ ] [#373 — InitMover float-to-int conversion of out-of-range light/color keys is undefined](https://github.com/jm2/Quake-III-Arena/issues/373) — **low**; `InitMover` float-to-int conversion of out-of-range light/color keys is undefined.
+- [ ] [#384 — FS_ListFilteredFiles reads before an empty path; CL_PlayDemo_f forms a pointer before short arguments](https://github.com/jm2/Quake-III-Arena/issues/384) — **low**; `FS_ListFilteredFiles` reads one byte before an empty path (menu listings reach it); `CL_PlayDemo_f` forms a pointer before short arguments.
 
 ## B7 — Performance
 
@@ -254,7 +257,7 @@ Team Arena cannot reach its menu today; keep it building (BUILD_TEAM_ARENA=ON) a
 - [ ] [#12 — Team Arena skips model and bot discovery](https://github.com/jm2/Quake-III-Arena/issues/12) — **high**; model and bot discovery skipped.
 - [ ] [#49 — Make Team Arena UI menu and reload failures allocation-safe](https://github.com/jm2/Quake-III-Arena/issues/49) — **moderate-high**; UI allocation and reload failures.
 - [ ] [#325 — Base and Team Arena executables accept a mismatched server game and fail later in cgame](https://github.com/jm2/Quake-III-Arena/issues/325) — **medium**; base and Team Arena executables accept a mismatched server game and fail in cgame.
-- [x] [#357 — Team Arena UI_ParseTeamInfo writes past teamList with more than 64 teams](https://github.com/jm2/Quake-III-Arena/issues/357) — **medium**; Team Arena list parsers wrote past their arrays, e.g. `teamList[]` with more than 64 teams; PR #367 merged.
+- [x] [#357 — Team Arena UI_ParseTeamInfo writes past teamList[] with more than 64 teams](https://github.com/jm2/Quake-III-Arena/issues/357) — **medium**; Team Arena list parsers wrote past their arrays, e.g. `teamList[]` with more than 64 teams; PR #367 merged.
 - [ ] [#377 — UI_LoadMovies/UI_LoadDemos read one byte before short file names](https://github.com/jm2/Quake-III-Arena/issues/377) — **low**; Team Arena `UI_LoadMovies`/`UI_LoadDemos` read one byte before names shorter than the extension.
 
 ## B9 — Low-risk metadata
@@ -267,13 +270,15 @@ Team Arena cannot reach its menu today; keep it building (BUILD_TEAM_ARENA=ON) a
 
 - B0 is done, and every B1 entry from the review has a merged fix. #270,
   #233, #237, #256, #236, #248 and #247 wait only on the first target run;
-  #375 is an open host fix.
-- B2 toolchain and build: #269 (readiness), #227 (pin toolchain inputs), #231,
-  #232, #299, #296.
+  #375 and #382 are open host fixes.
+- B2 toolchain and build: #269 and #1 (readiness), #387 (setup on GCC 16
+  hosts and from PowerShell), #227 (pin toolchain inputs), #27, #51, #231,
+  #232, #296. The packaging entries, #299 first, follow before release
+  packaging.
 - B3: real-content tests (#253) before resuming any B6 hardening, and a
   Retro68 PPC product build in CI (#334).
-- B4 by severity: high #361 (remote server hang; PR #364 open), #37, #36;
-  medium #378, #379, #38, #39, #40; low #265, #277, #318, #345, #348, #376.
+- B4 by severity: high #37, #36; medium #378, #379, #38, #39, #40; low #265,
+  #277, #318, #345, #348, #376.
   #257 and #271 wait on the target run.
 - First target run (base game, retail data, real hardware): main menu, a bot
   match on q3dm1, disconnect, normal quit, fatal-exit status. Record results

@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 TASK_PATH = ROOT / "docs" / "task.md"
 ISSUE_URL = r"https://github\.com/jm2/Quake-III-Arena/issues/(\d+)"
 ISSUE_PATTERN = re.compile(ISSUE_URL)
-ENTRY_PATTERN = re.compile(r"^- \[([ x])\] \[#(\d+) [^\]]*\]\(" + ISSUE_URL + r"\)(.*)$")
+ENTRY_PATTERN = re.compile(
+    r"^- \[([ x])\] \[#(\d+) (?:[^\[\]]|\[[^\[\]]*\])*\]\(" + ISSUE_URL + r"\)(.*)$")
 SECTION_PATTERN = re.compile(r"^## B(\d+) — \S")
 SEVERITY_PATTERN = re.compile(
     r"\*\*(?:assurance gate|critical|high|moderate-high|medium-low|medium|low|"
@@ -24,7 +25,7 @@ CHECKBOX_PATTERN = re.compile(r"^\s*[-*+]\s*\[[^\]]?\]")
 TRACKED_FLOOR = frozenset(range(1, 53)) | frozenset(range(220, 278)) | frozenset(
     {290, 291, 296, 299, 300, 301, 302, 303, 306, 307, 313, 314, 318, 319, 320, 325, 326, 327,
      333, 334, 337, 340, 341, 342, 344, 345, 347, 348, 352, 356, 357, 359, 361, 362, 363, 368,
-     370, 373, 375, 376, 377, 378, 379})
+     370, 373, 375, 376, 377, 378, 379, 382, 384, 387})
 
 
 class ReviewLedgerTests(unittest.TestCase):
