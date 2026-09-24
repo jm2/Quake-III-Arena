@@ -158,6 +158,7 @@ char *Cmd_ArgsFrom( int arg ) { Unexpected( __func__ ); return NULL; }
 char *Cmd_Argv( int arg ) { Unexpected( __func__ ); return NULL; }
 void Cmd_ArgvBuffer( int arg, char *buffer, int bufferLength ) { Unexpected( __func__ ); }
 void Cmd_RemoveCommand( const char *cmd_name ) { Unexpected( __func__ ); }
+void Cmd_RemoveCommandSafe( const char *cmd_name ) { Unexpected( __func__ ); }
 void Cmd_TokenizeString( const char *text ) { Unexpected( __func__ ); }
 int Com_RealTime( qtime_t *qtime ) { Unexpected( __func__ ); return 0; }
 void Con_ClearNotify( void ) { Unexpected( __func__ ); }
@@ -167,7 +168,9 @@ void Cvar_InfoStringBuffer( int bit, char *buff, int buffsize ) { Unexpected( __
 void Cvar_Register( vmCvar_t *vmCvar, const char *varName, const char *defaultValue, int flags ) { Unexpected( __func__ ); }
 void Cvar_Reset( const char *var_name ) { Unexpected( __func__ ); }
 void Cvar_Set( const char *var_name, const char *value ) { Unexpected( __func__ ); }
+void Cvar_SetSafe( const char *var_name, const char *value ) { Unexpected( __func__ ); }
 void Cvar_SetValue( const char *var_name, float value ) { Unexpected( __func__ ); }
+void Cvar_SetValueSafe( const char *var_name, float value ) { Unexpected( __func__ ); }
 void Cvar_Update( vmCvar_t *vmCvar ) { Unexpected( __func__ ); }
 void Cvar_VariableStringBuffer( const char *var_name, char *buffer, int bufsize ) { Unexpected( __func__ ); }
 float Cvar_VariableValue( const char *var_name ) { Unexpected( __func__ ); return 0; }
