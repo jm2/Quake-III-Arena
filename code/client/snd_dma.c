@@ -441,6 +441,11 @@ void S_memoryLoad(sfx_t	*sfx) {
 	if ( !S_LoadSound ( sfx ) ) {
 //		Com_Printf( S_COLOR_YELLOW "WARNING: couldn't load sound: %s\n", sfx->soundName );
 		sfx->defaultSound = qtrue;
+		// a sound paged out by S_FreeOldestSound kept its length, which the
+		// refusals in S_LoadSound leave: the mixer would read that many
+		// samples from no data
+		sfx->soundData = NULL;
+		sfx->soundLength = 0;
 	}
 	sfx->inMemory = qtrue;
 }
@@ -1635,6 +1640,37 @@ void S_UpdateBackgroundTrack( void ) {
 
 /*
 ======================
+S_SoundPlaying
+
+Returns qtrue if a channel or a looping sound still plays sfx: the mixer
+reads its buffers until it ends or stops
+======================
+*/
+static qboolean S_SoundPlaying( const sfx_t *sfx ) {
+	int		i;
+
+	for (i=0 ; i < MAX_CHANNELS ; i++) {
+		if (s_channels[i].thesfx == sfx) {
+			return qtrue;
+		}
+	}
+	// a loop channel is painted until the next S_AddLoopSounds, and an
+	// active looping sound is painted from then on
+	for (i=0 ; i < numLoopChannels ; i++) {
+		if (loop_channels[i].thesfx == sfx) {
+			return qtrue;
+		}
+	}
+	for (i=0 ; i < MAX_GENTITIES ; i++) {
+		if (loopSounds[i].active && loopSounds[i].sfx == sfx) {
+			return qtrue;
+		}
+	}
+	return qfalse;
+}
+
+/*
+======================
 S_FreeOldestSound
 
 Returns qfalse if no sound is left in memory to free
@@ -1649,9 +1685,11 @@ qboolean S_FreeOldestSound() {
 	oldest = Com_Milliseconds();
 	used = 0;
 
+	// a sound still playing is not freed: the mixer would read its length
+	// of samples from a buffer chain that is gone
 	for (i=1 ; i < s_numSfx ; i++) {
 		sfx = &s_knownSfx[i];
-		if (sfx->inMemory && sfx->lastTimeUsed<oldest) {
+		if (sfx->inMemory && sfx->lastTimeUsed<oldest && !S_SoundPlaying(sfx)) {
 			used = i;
 			oldest = sfx->lastTimeUsed;
 		}
@@ -1659,12 +1697,14 @@ qboolean S_FreeOldestSound() {
 
 	sfx = &s_knownSfx[used];
 
-	if (!sfx->inMemory) {
+	if (!sfx->inMemory || (!used && S_SoundPlaying(sfx))) {
 		// the default sound is not in memory, and may be the sound being
-		// loaded, whose buffers must stay; a sound in memory that was used
-		// too recently to free yet can be freed once the clock moves on
+		// loaded, whose buffers must stay, or it is playing; a sound in
+		// memory that was used too recently to free yet can be freed once
+		// the clock moves on, but a playing one cannot end while this
+		// load waits
 		for (i=1 ; i < s_numSfx ; i++) {
-			if (s_knownSfx[i].inMemory) {
+			if (s_knownSfx[i].inMemory && !S_SoundPlaying(&s_knownSfx[i])) {
 				return qtrue;
 			}
 		}
