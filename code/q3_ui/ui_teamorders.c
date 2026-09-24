@@ -310,6 +310,9 @@ static void UI_TeamOrdersMenu_BuildBotList( void ) {
 
 	trap_GetConfigString( CS_SERVERINFO, info, sizeof(info) );
 	numPlayers = atoi( Info_ValueForKey( info, "sv_maxclients" ) );
+	if ( numPlayers > MAX_CLIENTS ) {
+		numPlayers = MAX_CLIENTS;	// CS_PLAYERS holds MAX_CLIENTS
+	}
 	teamOrdersMenuInfo.gametype = atoi( Info_ValueForKey( info, "g_gametype" ) );
 
 	for( n = 0; n < numPlayers && teamOrdersMenuInfo.numBots < 9; n++ ) {
