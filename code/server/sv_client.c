@@ -1432,7 +1432,12 @@ static qboolean SV_ClientCommand( client_t *cl, msg_t *msg ) {
 	// but not other people
 	// We don't do this when the client hasn't been active yet since its
 	// normal to spam a lot of commands when downloading
-	if ( !com_cl_running->integer && 
+	// Only a listen server's own local client is exempt, so the host's
+	// menus and binds are never throttled.  Retail (and ioquake3/Quake3e)
+	// skipped the check for every client whenever cl_running was set,
+	// leaving the remote clients of a listen server unlimited.  A
+	// dedicated server has no loopback client, so it is unchanged
+	if ( cl->netchan.remoteAddress.type != NA_LOOPBACK &&
 		cl->state >= CS_ACTIVE &&
 		sv_floodProtect->integer && 
 		svs.time < cl->nextReliableTime ) {
