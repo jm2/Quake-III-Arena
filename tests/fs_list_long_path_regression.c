@@ -13,7 +13,9 @@
  * directory holds hit.cfg. 255 characters still lists it. 256 and longer list
  * nothing and never reach the directory scan; through a trap they never reach
  * FS_GetFileList. The pk3 has names of up to 255 characters, and listings of
- * normal and long legal paths stay as before. */
+ * normal and long legal paths stay as before. The default build also calls
+ * FS_ReturnPath itself with those paths: its copy stays inside zpath even
+ * without the refusal in front of it. */
 #if defined(Q3_TEST_UI)
 #include "../code/client/cl_ui.c"
 #elif defined(Q3_TEST_GAME)
@@ -420,6 +422,32 @@ static void Dir( const char *path, const char *extension, const char *names, con
 	free( want );
 }
 
+/** FS_ReturnPath on its own, for pk3 names and list paths: it returns the offset of the
+ *  last separator and the separator count, and writes only the directory part, bounded
+ *  to zpath and with nothing after its terminator (it runs once per pk3 entry). */
+static void ReturnPath( const char *name ) {
+	char *zpath = malloc( MAX_ZPATH );	/* exact size, so ASan sees any write past it */
+	const char *s;
+	int len = 0, depth = 0, got, gotDepth = -1, copied;
+
+	Expect( zpath != NULL, "zpath allocation" );
+	for ( s = name; *s; s++ ) {
+		if ( *s == '/' || *s == '\\' ) {
+			len = s - name;
+			depth++;
+		}
+	}
+	copied = len < MAX_ZPATH ? len : MAX_ZPATH - 1;
+	memset( zpath, 0x5a, MAX_ZPATH );
+	got = FS_ReturnPath( name, zpath, &gotDepth );
+	Expect( got == len && gotDepth == depth, "FS_ReturnPath returns the last separator and the depth" );
+	Expect( !strncmp( zpath, name, copied ) && zpath[copied] == 0, "FS_ReturnPath keeps the directory part" );
+	for ( s = zpath + copied + 1; s < zpath + MAX_ZPATH; s++ ) {
+		Expect( *s == 0x5a, "FS_ReturnPath writes nothing after the directory part" );
+	}
+	free( zpath );
+}
+
 /** Normal listings, then each long path through every listing entry point. */
 static void Run( void ) {
 	char **list, *path;
@@ -458,6 +486,15 @@ static void Run( void ) {
 		free( path );
 	}
 	Serve( NULL );
+
+	ReturnPath( "scripts/base_wall.shader" );
+	ReturnPath( "levelshots/" );
+	ReturnPath( "default.cfg" );
+	ReturnPath( "" );
+	ReturnPath( edgeDir );
+	for ( i = 0; i < NUM_LENGTHS; i++ ) {
+		ReturnPath( longPaths[i] );
+	}
 	puts( "FS listings refuse paths of 256, 400 and 4096 characters and list as before (issue #398)" );
 }
 #endif
