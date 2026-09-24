@@ -300,6 +300,312 @@ CONNECTIONLESS COMMANDS
 ==============================================================================
 */
 
+// ioquake3's leaky buckets.  getstatus, getinfo, getchallenge and rcon are
+// rate limited for each source, so one source can't use up another's quota,
+// and the queries and bad rcon passwords are also limited for all sources
+// together, so a spoofed flood can't make the server an amplifier.  Addresses
+// that NET_CompareBaseAdr treats as one source share a bucket.
+typedef struct leakyBucket_s leakyBucket_t;
+struct leakyBucket_s {
+	netadrtype_t	type;
+
+	union {
+		byte	_4[4];
+		byte	_x[10];		// IPX
+	} ipv;
+
+	signed char		burst;
+	int				lastTime;
+
+	long			hash;
+
+	leakyBucket_t	*prev, *next;
+};
+
+// Unlike ioquake3, a source only gets a bucket once a request of its has
+// passed the limit for all sources, and a bucket is reused as soon as it
+// has leaked empty, so a flood from spoofed addresses holds few buckets.
+// Whatever a flood does, a request looks at a bounded number of buckets: a
+// hash chain never holds more than MAX_BUCKET_CHAIN live buckets, and a new
+// source looks at no more than MAX_BUCKET_SCAN slots for a free one.
+#define MAX_BUCKETS			1024
+#define MAX_HASHES			256
+#define MAX_BUCKET_CHAIN	16
+#define MAX_BUCKET_SCAN		64
+
+// lets the regression test count the buckets a request looks at
+#ifndef SVC_BUCKET_VISITED
+#define SVC_BUCKET_VISITED()
+#endif
+
+static leakyBucket_t buckets[ MAX_BUCKETS ];
+static leakyBucket_t *bucketHashes[ MAX_HASHES ];
+static int bucketCursor;
+static unsigned int bucketHashKey;
+static qboolean bucketHashKeyed;
+static leakyBucket_t outboundLeakyBucket;
+
+/*
+================
+SVC_TimeDelta
+
+a - b on the millisecond clock.  Sys_Milliseconds wraps past INT_MAX, so
+subtract without signed overflow: across the wrap this is still the time
+that passed, and a clock that went backwards gives a negative interval.
+================
+*/
+static int SVC_TimeDelta( int a, int b ) {
+	return (int)( (unsigned int)a - (unsigned int)b );
+}
+
+/*
+================
+SVC_HashForAddress
+
+ioquake3 adds up the address bytes with fixed weights, so a flood can pick
+addresses that all land in one chain, such as a.b.c.d and a.b+1.c-2.d+1.
+Mix them with a key chosen once per run instead.
+================
+*/
+static long SVC_HashForAddress( netadr_t address ) {
+	byte			*ip = NULL;
+	int				size = 0;
+	int				i;
+	unsigned int	hash;
+
+	switch ( address.type ) {
+		case NA_IP:  ip = address.ip;  size = 4; break;
+		case NA_IPX: ip = address.ipx; size = 10; break;
+		default: break;
+	}
+
+	if ( !bucketHashKeyed ) {
+		// the time of the first request and the random seed of the map
+		bucketHashKey = (unsigned int)rand() ^ ( (unsigned int)Sys_Milliseconds() * 0x9e3779b1u );
+		bucketHashKeyed = qtrue;
+	}
+
+	hash = bucketHashKey;
+	for ( i = 0; i < size; i++ ) {
+		hash = ( hash ^ ip[ i ] ) * 0x9e3779b1u;
+		hash ^= hash >> 15;
+	}
+
+	return (long)( hash & ( MAX_HASHES - 1 ) );
+}
+
+/*
+================
+SVC_ReleaseBucket
+================
+*/
+static void SVC_ReleaseBucket( leakyBucket_t *bucket ) {
+	if ( bucket->prev != NULL ) {
+		bucket->prev->next = bucket->next;
+	} else {
+		bucketHashes[ bucket->hash ] = bucket->next;
+	}
+
+	if ( bucket->next != NULL ) {
+		bucket->next->prev = bucket->prev;
+	}
+
+	Com_Memset( bucket, 0, sizeof( leakyBucket_t ) );
+}
+
+/*
+================
+SVC_BucketDrained
+
+Whether a bucket has leaked empty, or the clock has gone back past it.
+SVC_RateLimit would start either one over, so, as Quake3e does, it can be
+given to another source without losing anything.
+================
+*/
+static qboolean SVC_BucketDrained( leakyBucket_t *bucket, int now, int period ) {
+	int interval = SVC_TimeDelta( now, bucket->lastTime );
+
+	return interval < 0 || interval > bucket->burst * period;
+}
+
+/*
+================
+SVC_BucketForAddress
+
+Find the bucket for an address, or with allocate, give it one
+================
+*/
+static leakyBucket_t *SVC_BucketForAddress( netadr_t address, int period, qboolean allocate ) {
+	leakyBucket_t	*bucket, *next;
+	int				i, live;
+	long			hash;
+	int				now = Sys_Milliseconds();
+
+	// A free bucket is zeroed, which is NA_BOT here (ioquake3 moved NA_BAD
+	// to 0), so only the source types NET_CompareBaseAdr knows get one
+	if ( address.type != NA_IP && address.type != NA_IPX && address.type != NA_LOOPBACK ) {
+		return NULL;
+	}
+
+	hash = SVC_HashForAddress( address );
+
+	// Drained buckets are released on the way
+	live = 0;
+	for ( bucket = bucketHashes[ hash ]; bucket; bucket = next ) {
+		next = bucket->next;
+		SVC_BUCKET_VISITED();
+
+		if ( bucket->type == address.type ) {
+			switch ( bucket->type ) {
+				case NA_IP:
+					if ( memcmp( bucket->ipv._4, address.ip, 4 ) == 0 ) {
+						return bucket;
+					}
+					break;
+
+				case NA_IPX:
+					if ( memcmp( bucket->ipv._x, address.ipx, 10 ) == 0 ) {
+						return bucket;
+					}
+					break;
+
+				default:
+					// every loopback packet is from the local client
+					return bucket;
+			}
+		}
+
+		if ( SVC_BucketDrained( bucket, now, period ) ) {
+			SVC_ReleaseBucket( bucket );
+		} else {
+			live++;
+		}
+	}
+
+	if ( !allocate || live >= MAX_BUCKET_CHAIN ) {
+		return NULL;
+	}
+
+	// Carry on from where the last search for a free slot stopped
+	for ( i = 0; i < MAX_BUCKET_SCAN; i++ ) {
+		bucket = &buckets[ bucketCursor ];
+		bucketCursor = ( bucketCursor + 1 ) & ( MAX_BUCKETS - 1 );
+		SVC_BUCKET_VISITED();
+
+		if ( bucket->type != NA_BOT && SVC_BucketDrained( bucket, now, period ) ) {
+			SVC_ReleaseBucket( bucket );
+		}
+
+		if ( bucket->type == NA_BOT ) {
+			bucket->type = address.type;
+			switch ( address.type ) {
+				case NA_IP:  Com_Memcpy( bucket->ipv._4, address.ip, 4 );   break;
+				case NA_IPX: Com_Memcpy( bucket->ipv._x, address.ipx, 10 ); break;
+				default: break;
+			}
+
+			bucket->lastTime = now;
+			bucket->burst = 0;
+			bucket->hash = hash;
+
+			// Add to the head of the relevant hash chain
+			bucket->next = bucketHashes[ hash ];
+			if ( bucketHashes[ hash ] != NULL ) {
+				bucketHashes[ hash ]->prev = bucket;
+			}
+
+			bucket->prev = NULL;
+			bucketHashes[ hash ] = bucket;
+
+			return bucket;
+		}
+	}
+
+	// Couldn't allocate a bucket for this address
+	return NULL;
+}
+
+/*
+================
+SVC_RateLimit
+================
+*/
+static qboolean SVC_RateLimit( leakyBucket_t *bucket, int burst, int period ) {
+	if ( bucket != NULL ) {
+		int now = Sys_Milliseconds();
+		int interval = SVC_TimeDelta( now, bucket->lastTime );
+		int expired = interval / period;
+		int expiredRemainder = interval % period;
+
+		if ( expired > bucket->burst || interval < 0 ) {
+			bucket->burst = 0;
+			bucket->lastTime = now;
+		} else {
+			bucket->burst -= expired;
+			bucket->lastTime = SVC_TimeDelta( now, expiredRemainder );
+		}
+
+		if ( bucket->burst < burst ) {
+			bucket->burst++;
+
+			return qfalse;
+		}
+	}
+
+	return qtrue;
+}
+
+/*
+================
+SVC_RateLimitNewAddress
+
+Give a source that has no bucket one, and charge its request to it.  Only
+called once the request has passed the limit for all sources.  No bucket
+to be had counts as over the limit.
+================
+*/
+static qboolean SVC_RateLimitNewAddress( netadr_t from ) {
+	leakyBucket_t *bucket = SVC_BucketForAddress( from, 1000, qtrue );
+
+	return SVC_RateLimit( bucket, 10, 1000 );
+}
+
+/*
+================
+SVC_RateLimitQuery
+
+getstatus, getinfo and getchallenge can be spoofed to send replies to a
+victim, so limit them for the address they came from and for all addresses
+================
+*/
+static qboolean SVC_RateLimitQuery( netadr_t from, const char *command ) {
+	leakyBucket_t *bucket = SVC_BucketForAddress( from, 1000, qfalse );
+
+	// Prevent using the query as an amplifier
+	if ( bucket != NULL && SVC_RateLimit( bucket, 10, 1000 ) ) {
+		Com_DPrintf( "%s: rate limit from %s exceeded, dropping request\n",
+			command, NET_AdrToString( from ) );
+		return qtrue;
+	}
+
+	// Allow the query to be DoSed relatively easily, but prevent
+	// excess outbound bandwidth usage when being flooded inbound
+	if ( SVC_RateLimit( &outboundLeakyBucket, 10, 100 ) ) {
+		Com_DPrintf( "%s: rate limit exceeded, dropping request\n", command );
+		return qtrue;
+	}
+
+	// Only now does a new source get a bucket, so a spoofed flood gets no
+	// more buckets than replies
+	if ( bucket == NULL && SVC_RateLimitNewAddress( from ) ) {
+		Com_DPrintf( "%s: no rate limit bucket for %s, dropping request\n",
+			command, NET_AdrToString( from ) );
+		return qtrue;
+	}
+
+	return qfalse;
+}
+
 // A maximum challenge length of 128 should be more than plenty.  Longer
 // getstatus/getinfo challenges are ignored, as ioquake3 and Quake3e do,
 // instead of being echoed into a reply that a spoofed query can inflate.
@@ -450,28 +756,56 @@ Redirect all printfs
 ===============
 */
 void SVC_RemoteCommand( netadr_t from, msg_t *msg ) {
-	qboolean	valid;
-	unsigned int time;
+	qboolean	valid, limited;
+	leakyBucket_t	*bucket;
 	char		remaining[1024];
 	// TTimo - scaled down to accumulate, but not overflow anything network wise, print wise etc.
 	// (OOB messages are the bottleneck here)
 #define SV_OUTPUTBUF_LENGTH (1024 - 16)
 	char		sv_outputbuf[SV_OUTPUTBUF_LENGTH];
-	static unsigned int lasttime = 0;
 	char *cmd_aux;
 
-	// TTimo - https://zerowing.idsoftware.com/bugzilla/show_bug.cgi?id=534
-	time = Com_Milliseconds();
-	if (time<(lasttime+500)) {
-		return;
-	}
-	lasttime = time;
+	// Prevent using rcon as an amplifier and make dictionary attacks impractical
+	bucket = SVC_BucketForAddress( from, 1000, qfalse );
+	limited = bucket != NULL && SVC_RateLimit( bucket, 10, 1000 );
 
 	if ( !strlen( sv_rconPassword->string ) ||
 		strcmp (Cmd_Argv(1), sv_rconPassword->string) ) {
+		static leakyBucket_t badRconBucket;
+
+		if ( limited ) {
+			Com_DPrintf( "SVC_RemoteCommand: rate limit from %s exceeded, dropping request\n",
+				NET_AdrToString( from ) );
+			return;
+		}
+
+		// Make DoS via rcon impractical
+		if ( SVC_RateLimit( &badRconBucket, 10, 1000 ) ) {
+			Com_DPrintf( "SVC_RemoteCommand: rate limit exceeded, dropping request\n" );
+			return;
+		}
+
+		if ( bucket == NULL && SVC_RateLimitNewAddress( from ) ) {
+			Com_DPrintf( "SVC_RemoteCommand: no rate limit bucket for %s, dropping request\n",
+				NET_AdrToString( from ) );
+			return;
+		}
+
 		valid = qfalse;
 		Com_Printf ("Bad rcon from %s:\n%s\n", NET_AdrToString (from), Cmd_Argv(2) );
 	} else {
+		static leakyBucket_t adminBucket;
+
+		// The password is right: if the address has used up its quota (a
+		// flood may spoof it) or a flood has left no bucket to be had, share
+		// a small allowance that only the right password can use instead, so
+		// the admin is never locked out
+		if ( ( limited || ( bucket == NULL && SVC_RateLimitNewAddress( from ) ) ) &&
+			SVC_RateLimit( &adminBucket, 10, 1000 ) ) {
+			Com_DPrintf( "SVC_RemoteCommand: rate limit exceeded, dropping request\n" );
+			return;
+		}
+
 		valid = qtrue;
 		Com_Printf ("Rcon from %s:\n%s\n", NET_AdrToString (from), Cmd_Argv(2) );
 	}
@@ -519,14 +853,9 @@ Clients that are in the game can still send
 connectionless packets.
 =================
 */
-#define MAX_BUCKET_COUNT 10
-static int burstCount = 0;
-static int burstTime = 0;
-
 void SV_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 	char	*s;
 	char	*c;
-	int		currentTime;
 
 	MSG_BeginReadingOOB( msg );
 	MSG_ReadLong( msg );		// skip the -1 marker
@@ -541,15 +870,11 @@ void SV_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 	c = Cmd_Argv(0);
 	Com_DPrintf ("SV packet %s : %s\n", NET_AdrToString(from), c);
 
-	// Rate limiting for amplification attacks (CVE-2010-5077)
-	currentTime = Sys_Milliseconds();
-	if ( (currentTime - burstTime) > 1000 ) {
-		burstTime = currentTime;
-		burstCount = 0;
-	}
-	
-	if ( !Q_stricmp(c, "getstatus") || !Q_stricmp(c, "rcon") ) {
-		if ( ++burstCount > MAX_BUCKET_COUNT ) {
+	// Rate limiting for amplification attacks (CVE-2010-5077); rcon is
+	// limited in SVC_RemoteCommand
+	if ( !Q_stricmp(c, "getstatus") || !Q_stricmp(c, "getinfo") ||
+		!Q_stricmp(c, "getchallenge") ) {
+		if ( SVC_RateLimitQuery( from, c ) ) {
 			return; // Drop packet
 		}
 	}
