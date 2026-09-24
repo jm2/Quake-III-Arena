@@ -30,7 +30,7 @@ static void ValidPortals(void) {
         PortalBuild(version);Counters();OldWorld();
         if(swapped){PortalWord(version,portalOffset+24,2);PortalWord(version,portalOffset+28,1);PortalWord(version,portalOffset+32,0);PortalWord(version,portalOffset+36,1);}
         Check(AAS_LoadAASFile("fixture.aas")==BLERR_NOERROR&&aasworld.loaded&&!opened&&closes==1,"native portal sides and cluster-local slots remain accepted");
-        Check(!memcmp(aasworld.portals,source+portalOffset,40)&&!memcmp(aasworld.portalindex,source+indexOffset,8)&&!memcmp(aasworld.clusters,source+clusterOffset,48)&&!memcmp(aasworld.areasettings,source+settingsOffset,84),"every independent portal/index/cluster/settings byte unchanged");
+        Check(WireBytes(aasworld.portals,source+portalOffset,40)&&WireBytes(aasworld.portalindex,source+indexOffset,8)&&WireBytes(aasworld.clusters,source+clusterOffset,48)&&WireBytes(aasworld.areasettings,source+settingsOffset,84),"every independent portal/index/cluster/settings byte unchanged");
     }
 }
 static void UnclusteredBuild(int version,int dummyOnly) {
@@ -43,7 +43,7 @@ static void UnclusteredPortals(void) {
     for(version=4;version<=5;version++){
         UnclusteredBuild(version,0);Counters();OldWorld();
         Check(AAS_LoadAASFile("fixture.aas")==BLERR_NOERROR&&aasworld.loaded&&!opened&&closes==1,"zero-cluster roots remain eligible for native clustering initialization");
-        Check(!aasworld.numclusters&&!aasworld.numportals&&!aasworld.portalindexsize&&!memcmp(aasworld.areasettings,source+settingsOffset,84),"unclustered settings remain unchanged");
+        Check(!aasworld.numclusters&&!aasworld.numportals&&!aasworld.portalindexsize&&WireBytes(aasworld.areasettings,source+settingsOffset,84),"unclustered settings remain unchanged");
         UnclusteredBuild(version,1);Counters();OldWorld();GeometryReject();
         Check(workspaceRequests==2&&workspaceFrees==2&&!workspacePointer,"dummy-only reachable root rejects before portal workspaces");
     }
@@ -69,7 +69,7 @@ static void PortalSpanOwnership(void) {
         }
         PortalBuild(version);Counters();OldWorld();PortalWord(version,clusterOffset+28,1);PortalWord(version,clusterOffset+44,0);
         Check(AAS_LoadAASFile("fixture.aas")==BLERR_NOERROR&&aasworld.loaded,"reordered disjoint cluster spans remain accepted");
-        Check(!memcmp(aasworld.clusters,source+clusterOffset,48)&&!memcmp(aasworld.portalindex,source+indexOffset,8),"reordered cluster spans retain native bytes");
+        Check(WireBytes(aasworld.clusters,source+clusterOffset,48)&&WireBytes(aasworld.portalindex,source+indexOffset,8),"reordered cluster spans retain native bytes");
         Check(workspaceRequests==4&&workspaceFrees==4&&!workspacePointer,"portal ownership heaps physically release");
         PortalBuild(version);Counters();OldWorld();failWorkspace=3;GeometryReject();
         Check(workspaceRequests==3&&workspaceFrees==2&&!workspacePointer,"portal bitmap failure leaves no temporary owner");
@@ -131,7 +131,7 @@ static void DummyTables(void) {
     for(version=4;version<=5;version++) {
         EmptyDummyBuild(version);Counters();OldWorld();
         Check(AAS_LoadAASFile("fixture.aas")==BLERR_NOERROR&&aasworld.loaded,"native empty dummy-only table remains accepted");
-        Check(aasworld.numclusters==1&&!memcmp(aasworld.clusters,source+clusterOffset,16)&&!memcmp(aasworld.areasettings,source+settingsOffset,84),"empty dummy-only world retains bytes");
+        Check(aasworld.numclusters==1&&WireBytes(aasworld.clusters,source+clusterOffset,16)&&WireBytes(aasworld.areasettings,source+settingsOffset,84),"empty dummy-only world retains bytes");
         DummyPortalBuild(version);Counters();OldWorld();GeometryReject();
         for(field=0;field<3;field++) {
             EmptyDummyBuild(version);Counters();OldWorld();Encode(version);
@@ -153,7 +153,7 @@ static void ClusterMapping(void) {
             if(kind==0)NormalSlotsBuild(version);else if(kind==1)ReachablePortalBuild(version);else TwoPortalsBuild(version);
             Counters();OldWorld();
             Check(AAS_LoadAASFile("fixture.aas")==BLERR_NOERROR&&aasworld.loaded,"native reachable-prefix and multi-area/portal mappings remain accepted");
-            Check(!memcmp(aasworld.areasettings,source+settingsOffset,kind==1?84:112)&&!memcmp(aasworld.clusters,source+clusterOffset,48)&&!memcmp(aasworld.portals,source+portalOffset,kind==2?60:40),"native full mapping retains settings/cluster/portal bytes");
+            Check(WireBytes(aasworld.areasettings,source+settingsOffset,kind==1?84:112)&&WireBytes(aasworld.clusters,source+clusterOffset,48)&&WireBytes(aasworld.portals,source+portalOffset,kind==2?60:40),"native full mapping retains settings/cluster/portal bytes");
             Check(workspaceRequests==4&&workspaceFrees==4&&!workspacePointer,"all native mapping workspaces physically release");
         }
         NormalSlotsBuild(version);Counters();OldWorld();PortalWord(version,settingsOffset+84+16,0);GeometryReject();
@@ -177,7 +177,7 @@ static void NativeIsolatedAreas(void) {
         ReachableOrphanBuild(version);Counters();OldWorld();
         PortalWord(version,settingsOffset+84+20,0);PortalWord(version,16+8*AASLUMP_REACHABILITY,88);
         Check(AAS_LoadAASFile("fixture.aas")==BLERR_NOERROR&&aasworld.loaded,"isolated nonreachable areas produced by native clustering remain accepted");
-        Check(!memcmp(aasworld.areasettings,source+settingsOffset,112)&&!memcmp(aasworld.clusters,source+clusterOffset,48),"native isolated areas retain bytes and complete slots");
+        Check(WireBytes(aasworld.areasettings,source+settingsOffset,112)&&WireBytes(aasworld.clusters,source+clusterOffset,48),"native isolated areas retain bytes and complete slots");
         Check(workspaceRequests==4&&workspaceFrees==4&&!workspacePointer,"isolated-area acceptance releases every validation heap");
     }
 }

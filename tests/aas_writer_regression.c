@@ -81,7 +81,7 @@ static void InvalidWorlds(void) {
         Check(!AAS_WriteAASFile("fixture.aas")&&!opens&&!writes,"individually representable lump rejected on aggregate signed offset overflow");Preserved(&world);
     }
 }
-static void StoreWord(unsigned char *out,uint32_t value) {int byte;if(swapModel)value=Reverse32(value);for(byte=0;byte<4;byte++)out[byte]=(unsigned char)(value>>(byte*8));}
+static void StoreWord(unsigned char *out,uint32_t value) {if(swapModel)value=Reverse32(value);memcpy(out,&value,4);}
 static void Expected(int empty) {
     unsigned char expected[4096];int lump,byte,offset=124;memset(expected,0,sizeof(expected));
     StoreWord(expected,AASID);StoreWord(expected+4,5);StoreWord(expected+8,12345);

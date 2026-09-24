@@ -201,8 +201,12 @@ static void ConstantVectors(int proof) {
     }
     Release();tr.whiteImage=&white;
 }
+/* Every fingerprinted structure holds 4-byte ints, enums or floats. Hashing each
+   field's bytes in little-endian order keeps the captured goldens host-neutral. */
 static unsigned int NumericFingerprint(const void *data,size_t size) {
-    const unsigned char *p=data;unsigned int hash=2166136261u;while(size--) {hash^=*p++;hash*=16777619u;}return hash;
+    const unsigned char *p=data;unsigned int hash=2166136261u,word;int i;
+    for(;size>=4;size-=4,p+=4) {memcpy(&word,p,4);for(i=0;i<4;i++) {hash^=(word>>(8*i))&255u;hash*=16777619u;}}
+    while(size--) {hash^=*p++;hash*=16777619u;}return hash;
 }
 static void WaveModifiers(int proof) {
     int i,mode,count;char body[4096],*text;shader_t *registered;

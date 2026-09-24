@@ -5,6 +5,7 @@
 extern int PC_UnreadSourceToken(source_t *source,token_t *token);
 extern qboolean ReadNumber(source_t *source,fielddef_t *field,void *out);
 static unsigned int FloatBits(float value){unsigned int bits;memcpy(&bits,&value,sizeof(bits));return bits;}
+static unsigned int CharBits(unsigned char value){unsigned int bits=0xa5a5a5a5U;memcpy(&bits,&value,1);return bits;}
 static void NumberCase(const char *text,int type,float low,float high,int success,unsigned int expected,int historical)
 {
     source_t *source;fielddef_t field={"native",0,0,0,0,0,NULL};
@@ -22,11 +23,11 @@ static void NumericGolden(void)
     int value,type,j,n=0;char text[64];float values[]={-64,-1.5f,0,0.125f,1.25f,64,32767};
     for(type=FT_CHAR;type<=FT_INT;type++)for(value=-128;value<=127;value++) {
         snprintf(text,sizeof(text),"%d",value);
-        NumberCase(text,type,0,0,1,type==FT_CHAR?(0xa5a5a500U|(unsigned char)value):(unsigned int)value,0);n++;
+        NumberCase(text,type,0,0,1,type==FT_CHAR?CharBits((unsigned char)value):(unsigned int)value,0);n++;
     }
     for(j=0;j<7;j++) {snprintf(text,sizeof(text),"%.9f",values[j]);NumberCase(text,FT_FLOAT,0,0,1,FloatBits(values[j]),0);n++;}
     NumberCase("32767",FT_INT,0,0,1,32767,0);NumberCase("-32768",FT_INT,0,0,1,(unsigned int)-32768,0);
-    NumberCase("65535",FT_INT|FT_UNSIGNED,0,0,1,65535,0);NumberCase("255",FT_CHAR|FT_UNSIGNED,0,0,1,0xa5a5a5ffU,0);
+    NumberCase("65535",FT_INT|FT_UNSIGNED,0,0,1,65535,0);NumberCase("255",FT_CHAR|FT_UNSIGNED,0,0,1,CharBits(255),0);
     NumberCase("42",FT_INT|FT_BOUNDED,-1.5f,42.75f,1,42,0);NumberCase("-1",FT_INT|FT_BOUNDED,-1.5f,42.75f,1,(unsigned int)-1,0);
     NumberCase("1.25",FT_FLOAT|FT_BOUNDED,0,2,1,FloatBits(1.25f),0);NumberCase("42",FT_INT,0,0,1,42,1);
     printf("%d ordinary native numeric bits and boundary/historical goldens passed\n",n+8);
