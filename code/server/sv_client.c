@@ -599,8 +599,9 @@ SV_ConfigstringChars
 Chars a client's gameState_t takes for configstring s, as
 MSG_WriteBigString sends it (empty, if it is too long). One of
 BIG_INFO_STRING - 1 chars is one too many for the MSG_ReadBigString
-of retail 1.32c and this client: it stops before the terminator, and
-the rest of the gamestate is garbage, so it counts as too big.
+of retail 1.32c: it stops before the terminator, and the rest of the
+gamestate is garbage, so it counts as too big. Cvar_InfoString_Big
+stops short of it, but a game module's configstring may not.
 ================
 */
 static int SV_ConfigstringChars( const char *s ) {
