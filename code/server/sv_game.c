@@ -923,8 +923,15 @@ int SV_GameSystemCalls( int *args ) {
 	case G_FS_FCLOSE_FILE:
 		FS_FCloseFile( args[1] );
 		return 0;
-	case G_FS_GETFILELIST:
-		return FS_GetFileList( VMAS(1), VMAS(2), VMAB(3, args[4]), args[4] );
+	case G_FS_GETFILELIST: {
+		char *path = VMAS(1), *extension = VMAS(2), *listbuf = VMAB(3, args[4]);
+		// a list path is a qpath: a longer one lists nothing and never reaches the filesystem (#398)
+		if ( strlen( path ) >= MAX_ZPATH ) {
+			*listbuf = 0;
+			return 0;
+		}
+		return FS_GetFileList( path, extension, listbuf, args[4] );
+	}
 	case G_FS_SEEK:
 		return FS_Seek( args[1], args[2], args[3] );
 

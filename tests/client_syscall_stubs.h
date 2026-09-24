@@ -174,6 +174,7 @@ void Cvar_SetValueSafe( const char *var_name, float value ) { Unexpected( __func
 void Cvar_Update( vmCvar_t *vmCvar ) { Unexpected( __func__ ); }
 void Cvar_VariableStringBuffer( const char *var_name, char *buffer, int bufsize ) { Unexpected( __func__ ); }
 float Cvar_VariableValue( const char *var_name ) { Unexpected( __func__ ); return 0; }
+#ifndef Q3_CLIENT_SYSCALL_REAL_FS	/* fixtures linking the real files.c bring these */
 void FS_FCloseFile( fileHandle_t f ) { Unexpected( __func__ ); }
 int FS_FOpenFileByMode( const char *qpath, fileHandle_t *f, fsMode_t mode ) { Unexpected( __func__ ); return 0; }
 int FS_GetFileList( const char *path, const char *extension, char *listbuf, int bufsize ) { Unexpected( __func__ ); return 0; }
@@ -183,6 +184,7 @@ int FS_Seek( fileHandle_t f, long offset, int origin ) { Unexpected( __func__ );
 int FS_SV_FOpenFileRead( const char *filename, fileHandle_t *fp ) { Unexpected( __func__ ); return 0; }
 fileHandle_t FS_SV_FOpenFileWrite( const char *filename ) { Unexpected( __func__ ); return 0; }
 int FS_Write( const void *buffer, int len, fileHandle_t f ) { Unexpected( __func__ ); return 0; }
+#endif
 int Hunk_MemoryRemaining( void ) { Unexpected( __func__ ); return 0; }
 void Key_ClearStates( void ) { Unexpected( __func__ ); }
 int Key_GetKey( const char *binding ) { Unexpected( __func__ ); return -1; }
@@ -204,6 +206,8 @@ int Sys_Milliseconds( void ) { Unexpected( __func__ ); return 0; }
 void Sys_SnapVector( float *v ) { Unexpected( __func__ ); }
 int VM_CallCompiled( vm_t *target, int *args ) { Unexpected( __func__ ); return 0; }
 int VM_CallInterpreted( vm_t *target, int *args ) { Unexpected( __func__ ); return 0; }
+#ifndef Q3_CLIENT_SYSCALL_REAL_FS
 void Z_Free( void *ptr ) { Unexpected( __func__ ); }
 void *Z_Malloc( int size ) { Unexpected( __func__ ); return NULL; }
+#endif
 #endif
