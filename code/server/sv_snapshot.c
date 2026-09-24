@@ -634,11 +634,15 @@ void SV_SendClientSnapshot( client_t *client ) {
 	// and the playerState_t
 	SV_WriteSnapshotToClient( client, &msg );
 
-	// Add any download data if the client is downloading
+	// Add any download data if the client is downloading, as many
+	// blocks as leave the message short enough for the client
 	SV_WriteDownloadToClient( client, &msg );
 
-	// check for overflow
-	if ( msg.overflowed ) {
+	// check for overflow, and that the client takes the message whole.
+	// The reliable commands and entities are never split: a message too
+	// long for the client is dropped like one that overflowed, as retail
+	// and Quake3e drop those
+	if ( msg.overflowed || !SV_MessageFitsClient( &msg ) ) {
 		Com_Printf ("WARNING: msg overflowed for %s\n", client->name);
 		MSG_Clear (&msg);
 	}

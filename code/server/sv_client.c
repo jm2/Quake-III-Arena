@@ -618,12 +618,6 @@ static int SV_ConfigstringChars( const char *s ) {
 
 #define	GAMESTATE_RESERVE	512
 
-// The longest message a retail 1.32c or ioquake3 client takes whole.
-// Its Netchan_Process only checks a reassembled message against
-// MAX_MSGLEN, then copies it behind the 4 byte sequence number into
-// Com_EventLoop's MAX_MSGLEN buffer, so a longer one overruns the stack
-#define	MAX_CLIENT_MSGLEN	( MAX_MSGLEN - 4 )
-
 /*
 ================
 SV_RemainingGameState
@@ -947,10 +941,46 @@ void SV_BeginDownload_f( client_t *cl ) {
 
 /*
 ==================
+SV_RewindMessage
+
+Takes back what was written to msg since mark, a copy of it made then.
+The Huffman writer only clears a byte as it enters it, so the bits
+written past mark into its last byte are cleared here
+==================
+*/
+static void SV_RewindMessage( msg_t *msg, const msg_t *mark ) {
+	if ( !mark->overflowed && ( mark->bit & 7 ) ) {
+		msg->data[mark->bit >> 3] &= ( 1 << ( mark->bit & 7 ) ) - 1;
+	}
+	*msg = *mark;
+}
+
+/*
+==================
+SV_MessageFitsClient
+
+True if a client takes msg whole with the svc_EOF the netchan adds:
+MAX_CLIENT_MSGLEN at most
+==================
+*/
+qboolean SV_MessageFitsClient( msg_t *msg ) {
+	msg_t		mark;
+	qboolean	fits;
+
+	mark = *msg;
+	MSG_WriteByte( msg, svc_EOF );
+	fits = !msg->overflowed && msg->cursize <= MAX_CLIENT_MSGLEN;
+	SV_RewindMessage( msg, &mark );
+	return fits;
+}
+
+/*
+==================
 SV_WriteDownloadToClient
 
 Check to see if the client wants a file, open it if needed and start pumping the client
 Fill up msg with data 
+Blocks that would make msg too long for a client wait for later snapshots
 ==================
 */
 void SV_WriteDownloadToClient( client_t *cl , msg_t *msg )
@@ -1108,6 +1138,7 @@ void SV_WriteDownloadToClient( client_t *cl , msg_t *msg )
 		blockspersnap = 1;
 
 	while (blockspersnap--) {
+		msg_t	mark;
 
 		// Write out the next section of the file, if we have already reached our window,
 		// automatically start retransmitting
@@ -1129,6 +1160,7 @@ void SV_WriteDownloadToClient( client_t *cl , msg_t *msg )
 		// Send current block
 		curindex = (cl->downloadXmitBlock % MAX_DOWNLOAD_WINDOW);
 
+		mark = *msg;
 		MSG_WriteByte( msg, svc_download );
 		MSG_WriteShort( msg, cl->downloadXmitBlock );
 
@@ -1141,6 +1173,13 @@ void SV_WriteDownloadToClient( client_t *cl , msg_t *msg )
 		// Write the block
 		if ( cl->downloadBlockSize[curindex] ) {
 			MSG_WriteData( msg, cl->downloadBlocks[curindex], cl->downloadBlockSize[curindex] );
+		}
+
+		// the snapshot must still fit a client: a block that doesn't
+		// goes with a later one
+		if ( !SV_MessageFitsClient( msg ) ) {
+			SV_RewindMessage( msg, &mark );
+			return;
 		}
 
 		Com_DPrintf( "clientDownload: %d : writing block %d\n", cl - svs.clients, cl->downloadXmitBlock );
