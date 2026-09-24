@@ -613,7 +613,8 @@ void UI_DrawProportionalString_AutoWrapped( int x, int y, int xmax, int ystep, c
         // we could start a new loop, but that wouldn't be much use
         // even if the word is too long, we would overflow it (see above)
         // so just print it now if needed
-        s2++;
+        if (s2 != s3) // s2 == s3 is the terminator: nothing follows an overflowing line
+          s2++;
         if (*s2 != '\0') // if we are printing an overflowing line we have s2 == s3
           UI_DrawProportionalString(x, y, s2, style, color);
 				break; 
@@ -621,6 +622,8 @@ void UI_DrawProportionalString_AutoWrapped( int x, int y, int xmax, int ystep, c
 			s2++;
 			s1 = s2;
 			s3 = s2;
+			if (*s1 == '\0') // the text ended with the space we cut at
+				break;
 		}
 		else
 		{
