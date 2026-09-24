@@ -17,8 +17,8 @@ trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 # and the checkers check the menus' orders strings at run time. ui_main.c passes
 # one extra argument, which printf ignores.
 # Issue #401: a pk3, even a downloaded one, can replace the menus, so the orders
-# and voiceOrders scripts must refuse a string that is not exactly one plain %i
-# or %d before it reaches a formatter.
+# and voiceOrders scripts must refuse a string with more than one conversion,
+# or one that is not a plain %i or %d, before it reaches a formatter.
 Q3_TEST_ENGINE=(
     "$Q3_TEST_ROOT/tests/systeminfo_cvar_harness.c" "$Q3_TEST_ROOT/code/qcommon/cvar.c"
     "$Q3_TEST_ROOT/code/game/q_shared.c" "$Q3_TEST_ROOT/code/game/q_math.c"
@@ -76,11 +76,12 @@ for Q3_TEST_TEAM in 3 32; do
     done
 done
 # Each is refused by orders and voiceOrders without formatting or sending
-# anything; voiceOrdersTeam sends its string as it is. The formatted strings,
-# the menus' seven voiceOrders among them, are the selected cases' above.
+# anything; voiceOrdersTeam sends its string as it is. The strings they send,
+# the menus' seven voiceOrders and ones with no conversion among them, are the
+# selected cases' above.
 for Q3_TEST_ORDERS in 'cmd vtell %s offense' 'cmd vtell %n offense' 'cmd vtell %40000d offense' \
-    'cmd vtell %d %d offense' 'cmd vtell %5d offense' 'cmd vtell %ld offense' 'cmd vtell %%d offense' \
-    'cmd vtell %-d offense' 'cmd vtell %.1d offense' 'cmd vtell %d offense %' 'cmd vsay_team offense'; do
+    'cmd vtell %d %d offense' 'cmd vtell %5d offense' 'cmd vtell %ld offense' 'cmd vtell %-d offense' \
+    'cmd vtell %.1d offense' 'cmd vtell %d offense %' 'cmd vtell %s %d' 'cmd vtell %d %s'; do
     "${Q3_TEST_RUN[@]}" "$Q3_TEST_DIR/ui" refused "$Q3_TEST_ORDERS"
 done
 # color1 is a game color, 1 to 7 (gamecodetoui has seven entries)

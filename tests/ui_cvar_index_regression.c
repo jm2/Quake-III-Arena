@@ -3,7 +3,7 @@
  * color1 before it indexes gamecodetoui. Issue #390: the orders script formats
  * the menu's string with a client number for Everyone too, and skips the local
  * player by client number. Issue #401: the orders and voiceOrders scripts only
- * format a menu string whose one conversion is a plain %i or %d. */
+ * format a menu string with at most one conversion, a plain %i or %d. */
 #include "../code/ui/ui_local.h"
 #include <fcntl.h>
 #include <stdarg.h>
@@ -34,14 +34,15 @@ static const char *checkedFormat;	/* the orders string under test */
 static int formattedClients[MAX_CLIENTS];	/* its argument in each call */
 static int formattedCount;
 
-/** A call that formats the orders string under test: it must have exactly one
+/** A call that formats the orders string under test: it must have at most one
  * conversion, a plain %i or %d with no flags, width, precision or length, and
- * pass it an int, which is recorded. A string that is anything else, such as
- * %s, %n, %40000d or two conversions, must never reach a formatter (issue #401).
+ * pass an int, which is recorded. A string that is anything else, such as %s,
+ * %n, %40000d or two conversions, must never reach a formatter (issue #401).
  * Other calls pass through. */
 static void CheckFormat( formatArg_t arg, const char *fmt, va_list ap ) {
 	const char *c;
 	int conversions = 0;
+	int bad = 0;
 
 	if ( !checkedFormat || strcmp( fmt, checkedFormat ) ) {
 		return;
@@ -51,11 +52,11 @@ static void CheckFormat( formatArg_t arg, const char *fmt, va_list ap ) {
 		if ( *c == 'i' || *c == 'd' ) {
 			conversions++;
 		} else if ( *c != '%' ) {
-			conversions = 0;	// anything else, or a trailing %
+			bad = 1;	// anything else, or a trailing %
 			break;
 		}
 	}
-	Check( conversions == 1, "only an orders string with exactly one plain %i or %d is formatted" );
+	Check( !bad && conversions <= 1, "only an orders string with at most one plain %i or %d is formatted" );
 	Check( arg == FORMAT_INT, "the orders string's %i or %d is passed an int" );
 	Check( formattedCount < MAX_CLIENTS, "at most MAX_CLIENTS orders" );
 	formattedClients[formattedCount++] = va_arg( ap, int );
@@ -102,12 +103,24 @@ static void CheckedSprintf( char *dest, int size, formatArg_t arg, const char *f
 static const int teammateClients[TEAMMATES] = { 1, LOCAL_CLIENT, 4 };
 static const char *teammateNames[TEAMMATES] = { "P1", LOCAL_NAME, "P4" };
 static const int otherTeammateClients[] = { 1, 4 };	/* the teammates but LOCAL_CLIENT */
-/* a vtell like the fixture's, one with a literal %%, and the seven voiceOrders
- * strings of Team Arena's ingame_orders.menu */
-static const char *ordersStrings[] = { "vtell %i attack", "say_team %%%i %%i 100%%",
-	"cmd vtell %d offense; +button7; wait; -button7", "cmd vtell %d defend; +button8; wait; -button8",
-	"cmd vtell %d patrol; +button9; wait; -button9", "cmd vtell %d followme; +button10; wait; -button10",
-	"cmd vtell %d camp", "cmd vtell %d followflagcarrier", "cmd vtell %d returnflag" };
+/* orders strings with the command each sends client 1: a vtell like the
+ * fixture's, one with %% literals, two that retail sends as they are (with %%
+ * as %), and the seven voiceOrders strings of Team Arena's ingame_orders.menu */
+static const struct {
+	const char *orders, *client1;
+} ordersStrings[] = {
+	{ "vtell %i attack", "vtell 1 attack" },
+	{ "say_team %%%i %%i 100%%", "say_team %1 %i 100%" },
+	{ "cmd vsay_team offense", "cmd vsay_team offense" },
+	{ "cmd vtell %%d offense", "cmd vtell %d offense" },
+	{ "cmd vtell %d offense; +button7; wait; -button7", "cmd vtell 1 offense; +button7; wait; -button7" },
+	{ "cmd vtell %d defend; +button8; wait; -button8", "cmd vtell 1 defend; +button8; wait; -button8" },
+	{ "cmd vtell %d patrol; +button9; wait; -button9", "cmd vtell 1 patrol; +button9; wait; -button9" },
+	{ "cmd vtell %d followme; +button10; wait; -button10", "cmd vtell 1 followme; +button10; wait; -button10" },
+	{ "cmd vtell %d camp", "cmd vtell 1 camp" },
+	{ "cmd vtell %d followflagcarrier", "cmd vtell 1 followflagcarrier" },
+	{ "cmd vtell %d returnflag", "cmd vtell 1 returnflag" },
+};
 static const int uiColors[7] = { 4, 2, 3, 0, 5, 1, 6 };	/* game colors 1-7 in the UI's order */
 static const char *mode, *value;
 
@@ -185,10 +198,11 @@ static void RunOrders( const char *script, const char *orders, const int *client
 	Check( !strcmp( executed, expected ), va( "%s commands", script ) );
 }
 
-/** A menu string that is not exactly one plain %i or %d (issue #401): orders,
- * for a teammate and for Everyone, and voiceOrders, for a teammate, refuse it,
- * format and send nothing, and warn developers. voiceOrdersTeam never formats
- * its string: it sends it as it is, for Everyone only. */
+/** A menu string with more than one conversion, or one that is not a plain %i
+ * or %d (issue #401): orders, for a teammate and for Everyone, and voiceOrders,
+ * for a teammate, refuse it, format and send nothing, and warn developers.
+ * voiceOrdersTeam never formats its string: it sends it as it is, for Everyone
+ * only. */
 static void TestRefused( void ) {
 	static const char *selections[] = { "0", "3" };	/* client 1, and EVERYONE */
 	int i;
@@ -230,6 +244,7 @@ static void HandleKey( int key, int expected ) {
 static void TestSelection( int selected ) {
 	int self = selected == 1;
 	char name[MAX_CVAR_VALUE_STRING];
+	char client1[MAX_STRING_CHARS];
 	int i;
 
 	// the team leader keeps the server's value; the name follows a teammate, the
@@ -248,14 +263,21 @@ static void TestSelection( int selected ) {
 
 	// orders go to the selected teammate, else to every teammate but the local
 	// client, which only its client number identifies (its name has a color code
-	// that the team list cleans off); voiceOrders only go to a selected teammate
+	// that the team list cleans off); voiceOrders only go to a selected teammate.
+	// Client 1 is first whenever it is ordered, and gets the command byte for byte.
 	for ( i = 0; i < ARRAY_LEN( ordersStrings ); i++ ) {
+		const char *orders = ordersStrings[i].orders;
+
+		Com_sprintf( client1, sizeof( client1 ), "%s\n", ordersStrings[i].client1 );
 		if ( selected >= 0 && selected < TEAMMATES ) {
-			RunOrders( "orders", ordersStrings[i], &teammateClients[selected], 1 );
-			RunOrders( "voiceOrders", ordersStrings[i], &teammateClients[selected], 1 );
+			RunOrders( "orders", orders, &teammateClients[selected], 1 );
+			Check( selected || !strcmp( executed, client1 ), "orders sends client 1 the command" );
+			RunOrders( "voiceOrders", orders, &teammateClients[selected], 1 );
+			Check( selected || !strcmp( executed, client1 ), "voiceOrders sends client 1 the command" );
 		} else {
-			RunOrders( "orders", ordersStrings[i], otherTeammateClients, ARRAY_LEN( otherTeammateClients ) );
-			RunOrders( "voiceOrders", ordersStrings[i], NULL, 0 );
+			RunOrders( "orders", orders, otherTeammateClients, ARRAY_LEN( otherTeammateClients ) );
+			Check( !strncmp( executed, client1, strlen( client1 ) ), "orders sends client 1 the command" );
+			RunOrders( "voiceOrders", orders, NULL, 0 );
 		}
 	}
 	RunScript( "voiceOrdersTeam \"vsay_team hello\"" );

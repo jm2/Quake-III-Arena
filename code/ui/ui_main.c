@@ -3226,15 +3226,17 @@ UI_SendOrders
 The orders and voiceOrders scripts format their menu string with a client
 number, as in "cmd vtell %d offense". A pk3, even a downloaded one, can replace
 the menus, and a width, %s or %n in the string would overflow the buffer or
-read or write through the client number. So the string must have exactly one
+read or write through the client number. So the string may have at most one
 conversion, a plain %d or %i (%% is a literal percent sign); anything else is
-refused and nothing is sent.
+refused and nothing is sent. A string with no conversion is sent as it is, with
+each %% as %, as retail does.
 ===============
 */
 static qboolean UI_SendOrders( const char *script, const char *orders, int clientNum ) {
 	char command[MAX_STRING_CHARS];
 	const char *s;
 	int conversions = 0;
+	qboolean bad = qfalse;
 
 	for ( s = orders; *s; s++ ) {
 		if ( *s != '%' ) {
@@ -3244,13 +3246,13 @@ static qboolean UI_SendOrders( const char *script, const char *orders, int clien
 		if ( *s == 'd' || *s == 'i' ) {
 			conversions++;
 		} else if ( *s != '%' ) {
-			conversions = 0;	// flags, a width, a precision, a length, another conversion or a trailing %
+			bad = qtrue;	// flags, a width, a precision, a length, another conversion or a trailing %
 			break;
 		}
 	}
-	if ( conversions != 1 ) {
+	if ( bad || conversions > 1 ) {
 		if ( trap_Cvar_VariableValue( "developer" ) ) {
-			Com_Printf( S_COLOR_YELLOW "WARNING: %s refused \"%.64s\": it needs exactly one plain %%d or %%i\n", script, orders );
+			Com_Printf( S_COLOR_YELLOW "WARNING: %s refused \"%.64s\": only one plain %%d or %%i is allowed\n", script, orders );
 		}
 		return qfalse;
 	}
