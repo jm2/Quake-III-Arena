@@ -1,5 +1,5 @@
 /* Issue #303: pak lists that fill CS_SYSTEMINFO must not push sv_serverid and the other short keys out,
-   and each checksum/name list pair is sent whole or not at all. */
+   names never go without their checksums, and referenced checksums never go without their names. */
 #include "q_shared.h"
 #include "qcommon.h"
 
@@ -13,10 +13,15 @@ extern cvar_t *cvar_vars;	/* cvar.c */
 cvar_t *sv_serverid;	/* assigned by SV_Init's systeminfo block */
 cvar_t *sv_pure;
 
-/* The lists SV_SpawnServer fills from the filesystem, as the checksum/name pairs clients read. */
-static const char *pakListPairs[][2] = {
-	{ "sv_paks", "sv_pakNames" },
-	{ "sv_referencedPaks", "sv_referencedPakNames" }
+/* The lists SV_SpawnServer fills from the filesystem, as the checksum/name pairs clients read.
+   Names without checksums leak on the client; referenced checksums without names crash a retail
+   client (strict), while the loaded names are never read, so sv_paks may go alone. */
+static const struct {
+	const char *sums, *names;
+	qboolean strict;
+} pakListPairs[] = {
+	{ "sv_paks", "sv_pakNames", qfalse },
+	{ "sv_referencedPaks", "sv_referencedPakNames", qtrue }
 };
 
 /* Short keys clients act on; without sv_serverid a client reloads the gamestate forever. */
@@ -159,7 +164,40 @@ static void SetPakLists( const char *gamename, int count ) {
 	Cvar_Set( "sv_referencedPakNames", refNames );
 }
 
-/* The old single newest-first pass (retail 1.32c's key order), for the unchanged-output check. */
+static qboolean Sent( const char *info, const char *key ) {
+	return Info_ValueForKey( info, key )[0] != 0;
+}
+
+/* True if info carries every short key that has a value. */
+static qboolean ShortKeysSent( const char *info ) {
+	int i;
+
+	for ( i = 0 ; i < ARRAY_LEN( shortKeys ) ; i++ ) {
+		if ( Cvar_VariableString( shortKeys[i] )[0] && !Sent( info, shortKeys[i] ) ) {
+			return qfalse;
+		}
+	}
+	return qtrue;
+}
+
+/* 202cda0: short values first, then each long value on its own, for the pure-mode check. */
+static const char *UnpairedTwoPassInfo( void ) {
+	static char info[BIG_INFO_STRING];
+	cvar_t *var;
+	int pass;
+
+	info[0] = 0;
+	for ( pass = 0 ; pass < 2 ; pass++ ) {
+		for ( var = cvar_vars ; var ; var = var->next ) {
+			if ( ( var->flags & CVAR_SYSTEMINFO ) && ( strlen( var->string ) >= MAX_INFO_VALUE ) == pass ) {
+				Info_SetValueForKey_Big( info, var->name, var->string );
+			}
+		}
+	}
+	return info;
+}
+
+/* The old single newest-first pass (master and retail 1.32c), for the unchanged-output and pure-mode checks. */
 static const char *SinglePassInfo( void ) {
 	static char info[BIG_INFO_STRING];
 	cvar_t *var;
@@ -179,9 +217,9 @@ static int SweepPakCounts( const char *name, const char *gamename, int maxPaks, 
 	char sent[BIG_INFO_VALUE];
 	char message[256];
 	char warning[128];
-	const char *built, *key, *value;
-	int i, j, infoLength, pairLength, listed, leftOut, firstDrop = -1;
-	qboolean allShort, roomGiven;
+	const char *built, *keys[2], *value;
+	int i, j, infoLength, length[2], firstDrop = -1;
+	qboolean allShort, roomGiven, in[2], out[2];
 
 	scenario = name;
 	Cvar_Set( "fs_game", Q_stricmp( gamename, BASEGAME ) ? gamename : "" );
@@ -207,44 +245,58 @@ static int SweepPakCounts( const char *name, const char *gamename, int maxPaks, 
 
 		allShort = qtrue;
 		for ( i = 0 ; i < ARRAY_LEN( pakListPairs ) ; i++ ) {
-			pairLength = listed = leftOut = 0;
+			keys[0] = pakListPairs[i].sums;
+			keys[1] = pakListPairs[i].names;
 			roomGiven = qfalse;
 			for ( j = 0 ; j < 2 ; j++ ) {
-				key = pakListPairs[i][j];
-				value = Cvar_VariableString( key );
+				value = Cvar_VariableString( keys[j] );
 				if ( strlen( value ) >= MAX_INFO_VALUE ) {
 					allShort = qfalse;
 				}
-				Q_strncpyz( sent, Info_ValueForKey( info, key ), sizeof( sent ) );
-				if ( !value[0] || sent[0] ) {
-					Com_sprintf( message, sizeof( message ), "%s is sent whole and not reported", key );
-					Check( !strcmp( sent, value ) && !Warned( key ), message );
-					listed += value[0] != 0;
+				Q_strncpyz( sent, Info_ValueForKey( info, keys[j] ), sizeof( sent ) );
+				length[j] = value[0] ? (int)( strlen( keys[j] ) + strlen( value ) + 2 ) : 0;
+				in[j] = sent[0] != 0;
+				out[j] = value[0] && !sent[0];
+				if ( !out[j] ) {
+					Com_sprintf( message, sizeof( message ), "%s is sent whole and not reported", keys[j] );
+					Check( !strcmp( sent, value ) && !Warned( keys[j] ), message );
 					continue;
 				}
-				Com_sprintf( message, sizeof( message ), "left-out %s is reported", key );
-				Check( Warned( key ), message );
-				Com_sprintf( warning, sizeof( warning ), "WARNING: no room for %s (%i chars)", key, (int)strlen( value ) );
+				Com_sprintf( message, sizeof( message ), "left-out %s is reported", keys[j] );
+				Check( Warned( keys[j] ), message );
+				Com_sprintf( warning, sizeof( warning ), "WARNING: no room for %s (%i chars)", keys[j], (int)strlen( value ) );
 				roomGiven |= strstr( printed, warning ) != NULL;
-				pairLength += strlen( key ) + strlen( value ) + 2;
-				leftOut++;
 				if ( firstDrop < 0 ) {
 					firstDrop = numPaks;
 				}
 				if ( firstDrop == numPaks ) {
-					Q_strcat( dropped, droppedSize, dropped[0] ? va( " %s", key ) : key );
+					Q_strcat( dropped, droppedSize, dropped[0] ? va( " %s", keys[j] ) : keys[j] );
 				}
 			}
-			if ( !leftOut ) {
-				continue;
+
+			/* names never go without their checksums; referenced checksums never without their names */
+			Com_sprintf( message, sizeof( message ), "%s is never sent without %s", keys[1], keys[0] );
+			Check( !in[1] || in[0], message );
+			if ( pakListPairs[i].strict ) {
+				Com_sprintf( message, sizeof( message ), "%s is never sent without %s", keys[0], keys[1] );
+				Check( !in[0] || in[1], message );
 			}
-			/* a pair goes out together, and only when the two lists can't fit next to everything else */
-			Com_sprintf( message, sizeof( message ), "%s and %s are never sent one without the other",
-				pakListPairs[i][0], pakListPairs[i][1] );
-			Check( !listed, message );
-			Com_sprintf( message, sizeof( message ), "%s and %s are left out only when they cannot fit",
-				pakListPairs[i][0], pakListPairs[i][1] );
-			Check( infoLength + pairLength >= BIG_INFO_STRING && roomGiven, message );
+
+			/* and a list is only left out when it can't fit next to everything else */
+			if ( out[0] ) {
+				Com_sprintf( message, sizeof( message ), "%s is left out only when it cannot fit", keys[0] );
+				Check( infoLength + length[0] + ( pakListPairs[i].strict ? length[1] : 0 ) >= BIG_INFO_STRING
+					&& roomGiven, message );
+			} else if ( out[1] ) {
+				Com_sprintf( message, sizeof( message ), "%s is left out only when it cannot fit", keys[1] );
+				Check( infoLength + length[1] >= BIG_INFO_STRING && roomGiven, message );
+			}
+		}
+
+		/* full pure mode stays wherever master or 202cda0 kept sv_paks next to every short key */
+		if ( ( Sent( SinglePassInfo(), "sv_paks" ) && ShortKeysSent( SinglePassInfo() ) )
+			|| ( Sent( UnpairedTwoPassInfo(), "sv_paks" ) && ShortKeysSent( UnpairedTwoPassInfo() ) ) ) {
+			Check( Sent( info, "sv_paks" ), "sv_paks is kept wherever master or 202cda0 kept it" );
 		}
 
 		/* while every value would fit a normal info string the output is the old one, byte for byte */
@@ -255,27 +307,43 @@ static int SweepPakCounts( const char *name, const char *gamename, int maxPaks, 
 	return firstDrop;
 }
 
-/* A value the info string rejects is reported for that reason, and its partner list goes with it. */
+/* Build systeminfo for three pk3s with one list rejected for a ';'. */
+static const char *BuildWithRejected( const char *key, const char *value ) {
+	static char info[BIG_INFO_STRING];
+
+	SetPakLists( BASEGAME, numPaks );
+	Cvar_Set( key, value );
+	printedLength = 0;
+	printed[0] = 0;
+	Q_strncpyz( info, Cvar_InfoString_Big( CVAR_SYSTEMINFO ), sizeof( info ) );
+	Check( Sent( info, "sv_serverid" ), "sv_serverid is still sent" );
+	Check( !strstr( printed, "no room for" ), "a rejected value is not reported as too big" );
+	Check( strstr( printed, va( "WARNING: %s has a \\, \" or ; in it", key ) ) != NULL, "the rejection reason is given" );
+	return info;
+}
+
+/* A value the info string rejects is reported for that reason, and the pairing rules still hold. */
 static void TestRejectedValue( void ) {
-	char info[BIG_INFO_STRING];
+	const char *info;
 
 	scenario = "rejected value";
 	numPaks = 3;
 	Cvar_Set( "fs_game", "" );
-	SetPakLists( BASEGAME, numPaks );
-	Cvar_Set( "sv_pakNames", "mappack-000 map;pack-001 mappack-002" );
-	printedLength = 0;
-	printed[0] = 0;
-	Q_strncpyz( info, Cvar_InfoString_Big( CVAR_SYSTEMINFO ), sizeof( info ) );
 
-	Check( !Info_ValueForKey( info, "sv_pakNames" )[0] && !Info_ValueForKey( info, "sv_paks" )[0],
-		"a rejected list takes its partner out" );
-	Check( Info_ValueForKey( info, "sv_referencedPaks" )[0] && Info_ValueForKey( info, "sv_referencedPakNames" )[0],
-		"the other pair is still sent" );
-	Check( Info_ValueForKey( info, "sv_serverid" )[0] != 0, "sv_serverid is still sent" );
-	Check( strstr( printed, "WARNING: sv_pakNames has a \\, \" or ; in it" ) != NULL, "the rejection reason is given" );
-	Check( !strstr( printed, "no room for" ), "a rejected value is not reported as too big" );
-	Check( Warned( "sv_paks" ), "the partner left out with it is reported" );
+	info = BuildWithRejected( "sv_pakNames", "mappack-000 map;pack-001 mappack-002" );
+	Check( !Sent( info, "sv_pakNames" ) && Sent( info, "sv_paks" ), "sv_paks stays when only its names are rejected" );
+	Check( Sent( info, "sv_referencedPaks" ) && Sent( info, "sv_referencedPakNames" ), "the referenced pair is still sent" );
+	Check( !Warned( "sv_paks" ), "sv_paks is not reported" );
+
+	info = BuildWithRejected( "sv_paks", "12 3;4 56" );
+	Check( !Sent( info, "sv_paks" ) && !Sent( info, "sv_pakNames" ), "rejected checksums take their names out" );
+	Check( Warned( "sv_pakNames" ), "the names left out with them are reported" );
+
+	info = BuildWithRejected( "sv_referencedPakNames", "baseq3/mappack-000 baseq3/map;pack-001" );
+	Check( !Sent( info, "sv_referencedPakNames" ) && !Sent( info, "sv_referencedPaks" ),
+		"rejected referenced names take their checksums out" );
+	Check( Warned( "sv_referencedPaks" ), "the referenced checksums left out with them are reported" );
+	Check( Sent( info, "sv_paks" ) && Sent( info, "sv_pakNames" ), "the loaded pair is still sent" );
 }
 
 int main( void ) {
