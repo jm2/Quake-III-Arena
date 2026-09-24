@@ -306,9 +306,10 @@ static void Type( int letter ) {
 static void TestKeys( void ) {
 	int rows, id, bot, row;
 
-	/* bots: page down twice on the new list, type, and go up */
+	/* bots: page down twice on the new list, type, and go up; one page is the list */
 	OpenMenu();
 	Press( K_PGDN );
+	Check( teamOrdersMenuInfo.list.curvalue == BOT_ROWS - 1, "page down goes to the last bot row" );
 	Press( K_PGDN );
 	Press( 'z' );
 	Check( teamOrdersMenuInfo.list.curvalue == BOT_ROWS - 1, "page down stops at the last bot row" );
@@ -317,6 +318,7 @@ static void TestKeys( void ) {
 	/* page up twice from the last row, type, and go up, which wraps */
 	Press( K_END );
 	Press( K_PGUP );
+	Check( teamOrdersMenuInfo.list.curvalue == 0, "page up goes to the first bot row" );
 	Press( K_PGUP );
 	Press( 'z' );
 	Check( teamOrdersMenuInfo.list.curvalue == 0, "page up stops at the first bot row" );
@@ -348,6 +350,7 @@ static void TestKeys( void ) {
 		ChooseBot( bot );
 		Press( K_HOME );
 		Press( K_PGDN );
+		CheckOrders( bot, rows - 1 );
 		Press( K_PGDN );
 		Press( 'z' );
 		CheckOrders( bot, rows - 1 );
@@ -361,6 +364,7 @@ static void TestKeys( void ) {
 		ChooseBot( bot );
 		Press( K_END );
 		Press( K_PGUP );
+		CheckOrders( bot, 0 );
 		Press( K_PGUP );
 		Press( 'z' );
 		CheckOrders( bot, 0 );

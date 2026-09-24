@@ -387,6 +387,25 @@ static void PinnedBudgetDonedl( void ) {
 	Check( cl->state == CS_ACTIVE && begins == 1 && !disconnects, "client enters the world" );
 	puts( "filled queue budget does not drop a client finishing a download" );
 }
+/** Each slot's first queued message is outside the budget, so the zone holds at most the budget plus one
+    message on each slot that does not hold it: 32 slots pin the budget, the other 32 queue one each. */
+static void BudgetPlusFirstMessages( void ) {
+	client_t *cl = NULL; int host, allocs, base = zoneBytes, budget = QUEUE_BUDGET / (int)sizeof(netchan_buffer_t);
+	PinBudget( 1 );
+	for ( host = 33; host <= MAX_CLIENTS; host++ ) {
+		cl = Connect( host, host ); InitialGamestate( cl );
+		Packet( cl, sv.serverId, 0x7fffff00, "donedl", 1, qfalse );
+		Check( cl->state == CS_PRIMED && Queued( cl ) == 1, "a slot's first queued message is outside the budget" );
+	}
+	Check( budget == 127 && QueuedTotal() == 159, "the budget and one message on each other slot: 159 in all" );
+	Check( zonePeak - base <= QUEUE_BUDGET + 32 * (int)sizeof(netchan_buffer_t), "zone use within the budget plus 32 messages" );
+	allocs = queueAllocs;
+	Packet( cl, sv.serverId, 0x7fffff00, "donedl", 1, qfalse );
+	Check( cl->state == CS_ZOMBIE && !strcmp( dropReason, "\"Server netchan queue full\"" ) && queueAllocs == allocs,
+	       "the 160th message is refused" );
+	Check( QueuedTotal() == 158, "dropping the slot frees its message" );
+	puts( "the queue budget plus each slot's first message is the most the zone holds" );
+}
 /** Final messages queued behind a fragment train are released with the client array. */
 static void Shutdown( void ) {
 	client_t *cl = Connect( 1, 11 ); int gamestate;
@@ -402,7 +421,8 @@ static void Shutdown( void ) {
 	puts( "shutdown releases queued final messages" );
 }
 /** Shutting down with several downloads in progress, over more server runs than there are file
-    handles, must close every download file and free every block window with the client array. */
+    handles, must close every download file and free every block window with the client array.
+    A downloader dropped first leaves a zombie slot, whose file and blocks must not be released twice. */
 static void ShutdownDuringDownload( void ) {
 	client_t *cl; entityState_t *snapshots; int cycle, i, base;
 	allowDownload.integer = 1; referencedPaks = DOWNLOAD_PAK;
@@ -416,6 +436,8 @@ static void ShutdownDuringDownload( void ) {
 			Check( openFiles == i && cl->downloadXmitBlock > 0, "download in progress: file open, first block sent" );
 		}
 		Check( zoneBytes - base >= DOWNLOADERS * MAX_DOWNLOAD_WINDOW * MAX_DOWNLOAD_BLKSIZE, "every block window read" );
+		SV_DropClient( cl, "test" );
+		Check( cl->state == CS_ZOMBIE && openFiles == DOWNLOADERS - 1, "dropping a downloader closes its file" );
 		snapshots = svs.snapshotEntities;
 		SV_Shutdown( "test" );
 		free( snapshots );
@@ -440,7 +462,8 @@ int main( int argc, char **argv ) {
 	case 9: ShutdownDuringDownload(); break;
 	case 10: PinnedBudgetMapChange(); break;
 	case 11: PinnedBudgetDonedl(); break;
-	default: Check( 0, "usage: server-donedl-tests <0-11>" );
+	case 12: BudgetPlusFirstMessages(); break;
+	default: Check( 0, "usage: server-donedl-tests <0-12>" );
 	}
 	return 0;
 }

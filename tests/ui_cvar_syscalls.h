@@ -104,6 +104,9 @@ static int QDECL FakeSyscall( int command, ... ) {
 	case UI_S_REGISTERSOUND:
 		result = 1;
 		break;
+	case UI_R_REGISTERMODEL:	/* no player models */
+	case UI_R_REGISTERSKIN:
+		break;
 	case UI_KEY_GETBINDINGBUF: {
 		char *buffer;
 		va_arg( ap, int );

@@ -238,6 +238,9 @@ static const sanitizeCase_t sanitizeCases[] = {
 	/* control characters are dropped, DEL is kept */
 	{ "B" "\x01" "o" "\x1f" "b", "bob" },
 	{ "Bob" "\x7f", "bob" "\x7f" },
+	/* a byte of 0x80 or more is negative with the target's signed char
+	 * (the runner passes -fsigned-char), so "*in < 32" drops it too */
+	{ "B" "\xe9" "ob", "bob" },
 	/* ESC and the byte after it are dropped */
 	{ "\x1b" "1Bob", "bob" },
 	{ "B" "\x1b" "7oB", "bob" },
@@ -446,6 +449,7 @@ static const lookupCase_t lookupCases[] = {
 	{ "EscName", SLOT_ESCAPED },
 	{ "\x1b" "5escname", SLOT_ESCAPED },
 	{ "P" "\x01" "lain", SLOT_PLAIN },
+	{ "Pl" "\xe9" "ain", SLOT_PLAIN },
 	{ "\x1b" "1Plain", SLOT_PLAIN },
 	/* a trailing ESC in the argument */
 	{ "Plain" "\x1b", SLOT_PLAIN },

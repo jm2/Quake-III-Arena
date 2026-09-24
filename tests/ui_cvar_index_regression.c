@@ -98,7 +98,7 @@ static void CheckedSprintf( char *dest, int size, formatArg_t arg, const char *f
 #define WHITE 6	/* the UI's effects color for game color 7 */
 
 static const int teammateClients[TEAMMATES] = { 1, LOCAL_CLIENT, 4 };
-static const char *teammateNames[TEAMMATES] = { "P1", LOCAL_NAME, "P4" };
+static const char *teammateNames[TEAMMATES] = { "P1", LOCAL_NAME, LOCAL_NAME };
 static const int otherTeammateClients[] = { 1, 4 };	/* the teammates but LOCAL_CLIENT */
 /* a vtell like the fixture's, and the voiceOrders string of Team Arena's ingame_orders.menu */
 static const char *ordersStrings[] = { "vtell %i attack", "cmd vtell %d offense; +button7; wait; -button7" };
@@ -128,15 +128,16 @@ static void Init( void ) {
 	close( saved );
 }
 
-/** The server's player strings: the local client leads the blue team. */
+/** The server's player strings: the local client leads the blue team, and its
+ * teammate 4 has the same name in another color. */
 static void Serve( void ) {
 	int n;
 
 	Q_strncpyz( configStrings[CS_SERVERINFO], "\\sv_maxclients\\8\\g_gametype\\4", MAX_INFO_STRING );
 	for ( n = 0; n < 5; n++ ) {
 		Com_sprintf( configStrings[CS_PLAYERS + n], MAX_INFO_STRING, "\\n\\%s\\t\\%d\\tl\\%d",
-			n == LOCAL_CLIENT ? LOCAL_USERINFO_NAME : va( "P%d", n ), n % 3 ? TEAM_BLUE : TEAM_RED,
-			n == LOCAL_CLIENT );
+			n == LOCAL_CLIENT ? LOCAL_USERINFO_NAME : n == 4 ? "^4" LOCAL_NAME : va( "P%d", n ),
+			n % 3 ? TEAM_BLUE : TEAM_RED, n == LOCAL_CLIENT );
 	}
 }
 
@@ -214,7 +215,8 @@ static void TestSelection( int selected ) {
 
 	// orders go to the selected teammate, else to every teammate but the local
 	// client, which only its client number identifies (its name has a color code
-	// that the team list cleans off); voiceOrders only go to a selected teammate
+	// that the team list cleans off, and teammate 4 has the same name in another
+	// color); voiceOrders only go to a selected teammate
 	for ( i = 0; i < ARRAY_LEN( ordersStrings ); i++ ) {
 		if ( selected >= 0 && selected < TEAMMATES ) {
 			RunOrders( "orders", ordersStrings[i], &teammateClients[selected], 1 );
@@ -234,10 +236,15 @@ static void TestSelection( int selected ) {
 }
 
 /** color1 (game colors 1-7) as the UI starts with it, then drawn and stepped by
- * the effects item: a value outside the seven colors shows white. */
+ * the effects item: a value outside the seven colors shows white. The cgame
+ * reads color1 with atoi (CG_ColorFromString), so the value followed by "e1" or
+ * "x3" shows its color too: "1e1" is drawn blue and "0x3" white, where atof
+ * would read white and cyan. */
 static void TestEffectsColor( int color ) {
+	static const char *suffixes[] = { "e1", "x3" };
 	rectDef_t rect = { 0, 20, 128, 8 };
 	int expected = color >= 1 && color <= 7 ? uiColors[color - 1] : WHITE;
+	int i;
 
 	SystemInfo_Set( "color1", value );
 	Init();
@@ -247,6 +254,11 @@ static void TestEffectsColor( int color ) {
 	Check( drawnShader == uiInfo.uiDC.Assets.fxPic[expected], "effects color drawn" );
 	UI_Effects_HandleKey( 0, NULL, K_MOUSE1 );
 	Check( Cvar_VariableValue( "color1" ) == uitogamecode[( expected + 1 ) % 7], "next effects color" );
+	for ( i = 0; i < ARRAY_LEN( suffixes ); i++ ) {
+		SystemInfo_Set( "color1", va( "%s%s", value, suffixes[i] ) );
+		Init();
+		Check( uiInfo.effectsColor == expected, va( "effects color from color1 %s%s, as the cgame reads it", value, suffixes[i] ) );
+	}
 }
 
 /** One cvar and value per process: cg_selectedPlayer as a teammate index (or
