@@ -2248,7 +2248,7 @@ int Com_EventLoop( void ) {
 			// enough to hold fragment reassembly
 			if ( (unsigned)buf.cursize > buf.maxsize ) {
 				Com_Printf("Com_EventLoop: oversize packet\n");
-				continue;
+				break;		// drop it; its block is freed below
 			}
 			Com_Memcpy( buf.data, (byte *)((netadr_t *)ev.evPtr + 1), buf.cursize );
 			if ( com_sv_running->integer ) {

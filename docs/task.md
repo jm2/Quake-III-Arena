@@ -54,7 +54,7 @@ and its evidence links, is archived unchanged in
   `Quake3_TeamArena.pef` 3,966,307 bytes, both `Joy!peff`/`pwpc`, 0 compiler
   warnings (2026-09-24). The maintainer's toolchain was rebuilt natively for
   Fedora 44 on 2026-09-23 and needs no library shim; #269 (readiness accepting
-  a toolchain that cannot run) is still open.
+  a toolchain that cannot run) was fixed after that build by PR #386.
 - All 162 host regression runners pass with GCC 16.2.1 and Clang 22.1.8 at
   `a7b4e47` (2026-09-24). CI runs them in four shards per compiler (#279), and
   since #335 (#224) it also runs every runner on 32-bit big-endian PowerPC
@@ -74,7 +74,7 @@ Land these first: every later PR depends on a CI run that finishes and a ledger 
 
 ## B1 — Regressions and runtime bugs to clear before the first target run
 
-Each original entry blocked or corrupted a normal base-game session. Their host-side fixes are merged; the entries still open wait on the first target run, except #375 and #382, which were filed later and do not block a normal session.
+Each original entry blocked or corrupted a normal base-game session. Their host-side fixes are merged; the entries still open wait on the first target run.
 
 - [ ] [#270 — SV_GentityNum bound faults the server on botlib passent -1 traces during map load](https://github.com/jm2/Quake-III-Arena/issues/270) — **critical**; server faults on botlib passent -1 traces while loading maps with suspended items; PR #285 merged; needs target test.
 - [x] [#243 — BSP reference preflight rejects retail q3dm17 (flare surfaces with fogNum 0 and no fogs)](https://github.com/jm2/Quake-III-Arena/issues/243) — **critical**; retail q3dm17 rejected by both BSP loaders; PR #284 merged.
@@ -95,8 +95,8 @@ Each original entry blocked or corrupted a normal base-game session. Their host-
 - [x] [#301 — Native cgame scoreboard shifts 1 << client for clients 32-63 (undefined behavior)](https://github.com/jm2/Quake-III-Arena/issues/301) — **low**; scoreboard ready markers shift 1 << client for clients 32–63 (undefined behavior); PR #349 merged.
 - [x] [#303 — Large pure pak lists push sv_serverid out of systeminfo, leaving clients stuck reloading the gamestate](https://github.com/jm2/Quake-III-Arena/issues/303) — **medium**; large pure pak lists push sv_serverid out of systeminfo now that #240 allows long values; PRs #338 and #354 merged.
 - [x] [#363 — vote/teamvote test msg[1] instead of msg[0]: 'vote Y', 'vote Yes' and 'vote 1' count as no](https://github.com/jm2/Quake-III-Arena/issues/363) — **low**; `vote Y` and `vote 1` counted as no; a retail 1.32c behavior bug whose reads stay in bounds; PR #365 merged.
-- [ ] [#375 — q3_ui Team Orders menu never lists bots (bk001204 resets playerTeam in the loop)](https://github.com/jm2/Quake-III-Arena/issues/375) — **low**; the base q3_ui Team Orders menu lists no bot teammates; ioquake3 has the fix.
-- [ ] [#382 — q3_ui Team Orders: clicking a list's last pixel row selects one past the end (NULL format / botNames overrun)](https://github.com/jm2/Quake-III-Arena/issues/382) — **low**; a click on a Team Orders list's last pixel row selects one past the end (`NULL` format string; `botNames` overrun once #375 is fixed).
+- [x] [#375 — q3_ui Team Orders menu never lists bots (bk001204 resets playerTeam in the loop)](https://github.com/jm2/Quake-III-Arena/issues/375) — **low**; the base q3_ui Team Orders menu lists no bot teammates; ioquake3 has the fix; PR #381 merged.
+- [x] [#382 — q3_ui Team Orders: clicking a list's last pixel row selects one past the end (NULL format / botNames overrun)](https://github.com/jm2/Quake-III-Arena/issues/382) — **low**; a click on a Team Orders list's last pixel row selects one past the end (`NULL` format string; `botNames` overrun once #375 is fixed); PR #381 merged.
 
 ## B2 — Build, toolchain and packaging
 
@@ -104,8 +104,8 @@ A launchable application must come out of every build, from a pinned toolchain, 
 
 - [x] [#226 — Default build produces a non-launchable PEF; resources are only compiled in package mode](https://github.com/jm2/Quake-III-Arena/issues/226) — **medium**; default build output is a bare PEF; resources only in package mode; PR #297 merged.
 - [ ] [#225 — Packaging on a macOS host fails because Rez output lives in the resource fork](https://github.com/jm2/Quake-III-Arena/issues/225) — **medium**; macOS-host packaging reads the empty data fork; PR #297 merged; the macOS `hdiutil` packaging run remains.
-- [ ] [#269 — Toolchain readiness accepts binaries that cannot run, and setup cannot repair them](https://github.com/jm2/Quake-III-Arena/issues/269) — **medium**; readiness accepts a toolchain that cannot run.
-- [ ] [#227 — Retro68 toolchain and Apple SDK inputs are unpinned and unverified](https://github.com/jm2/Quake-III-Arena/issues/227) — **medium**; Retro68 and SDK inputs unpinned.
+- [x] [#269 — Toolchain readiness accepts binaries that cannot run, and setup cannot repair them](https://github.com/jm2/Quake-III-Arena/issues/269) — **medium**; readiness accepts a toolchain that cannot run; PR #386 merged.
+- [x] [#227 — Retro68 toolchain and Apple SDK inputs are unpinned and unverified](https://github.com/jm2/Quake-III-Arena/issues/227) — **medium**; Retro68 and SDK inputs unpinned; PR #402 merged.
 - [ ] [#1 — Build scripts accept incomplete Retro68 toolchain and fail on missing prepared OpenGL headers](https://github.com/jm2/Quake-III-Arena/issues/1) — **high**; readiness does not check prepared OpenGL SDK files.
 - [ ] [#230 — Minimum SIZE partition leaves ~5 MB headroom; enabling sound can corrupt memory](https://github.com/jm2/Quake-III-Arena/issues/230) — **medium**; SIZE partition headroom about 5 MB; sound pool unchecked.
 - [ ] [#8 — Demo packaging fallback produces an unusable directory/layout](https://github.com/jm2/Quake-III-Arena/issues/8) — **high**; retail data required; demo fallback removed.
@@ -121,6 +121,8 @@ A launchable application must come out of every build, from a pinned toolchain, 
 - [ ] [#299 — Packaging mapping file leaves pk3 type/creator codes unquoted, giving garbage HFS codes](https://github.com/jm2/Quake-III-Arena/issues/299) — **medium**; packaging mapping leaves pk3 type/creator codes unquoted.
 - [ ] [#296 — Legacy non-QVM build recipes lack the particle code since cg_marks.c was trimmed](https://github.com/jm2/Quake-III-Arena/issues/296) — **low**; legacy non-QVM build recipes still lack cg_particles.c.
 - [ ] [#387 — Toolchain setup fails on GCC 16 hosts and setup_retro68.ps1 cannot run a fresh build](https://github.com/jm2/Quake-III-Arena/issues/387) — **medium**; a fresh toolchain setup fails on GCC 16 hosts, and `setup_retro68.ps1` cannot run a fresh build (#269 follow-up).
+- [ ] [#405 — Build outputs are not byte-reproducible: PEF embeds source paths, Rez ignores SOURCE_DATE_EPOCH](https://github.com/jm2/Quake-III-Arena/issues/405) — **low**; the PEF embeds absolute source paths and Rez ignores `SOURCE_DATE_EPOCH`, so builds are not byte-reproducible (#227 follow-up).
+- [ ] [#406 — Setup and manifest follow-ups from the #402 review](https://github.com/jm2/Quake-III-Arena/issues/406) — **low**; non-blocking setup and manifest findings from the #402 review: silent submodule resets, a shallow manifest check, ps1 step order.
 
 ## B3 — Test and CI coverage
 
@@ -132,6 +134,7 @@ Close the gaps that let the September regressions through.
 - [ ] [#276 — Code comments and plan cite CVE ids that belong to unrelated products or other bugs](https://github.com/jm2/Quake-III-Arena/issues/276) — **informational**; CVE ids in comments that belong to other products.
 - [ ] [#334 — CI never compiles the Retro68 PPC product (follow-up to #224)](https://github.com/jm2/Quake-III-Arena/issues/334) — **medium**; CI never compiles the Retro68 PPC product (base and Team Arena); #224's remaining criterion.
 - [x] [#333 — LongSwap shifts a byte into the int sign bit (undefined behaviour) on every big-endian swap](https://github.com/jm2/Quake-III-Arena/issues/333) — **low**; `LongSwap` shifted a byte into the `int` sign bit (undefined behavior) on every big-endian swap; found by the ppc32 big-endian CI; PR #343 merged.
+- [ ] [#395 — Add printf format attributes to engine and module print/format functions and build with -Werror=format](https://github.com/jm2/Quake-III-Arena/issues/395) — **low**; no printf format attributes, so format/argument mismatches such as #390 and #394 compile silently; build with `-Werror=format`.
 
 ## B4 — Remote and network security
 
@@ -144,24 +147,24 @@ Remote memory corruption and denial of service reachable from the network come b
 - [x] [#239 — Native cgame trusts server tinfo client numbers and entity weapon indices](https://github.com/jm2/Quake-III-Arena/issues/239) — **high**; server-controlled tinfo/weapon indices write native cgame memory; PR #321 merged.
 - [x] [#238 — UI/cgame syscalls pass unchecked key, ping and entity indices to native arrays](https://github.com/jm2/Quake-III-Arena/issues/238) — **high**; QVM key/ping/sound indices write native arrays; PR #316 merged.
 - [ ] [#37 — Bind connection setup and sequenced packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37) — **high**; challenge binding for connection setup and netchan, 1.32c compatible.
-- [ ] [#36 — Reject oversized and truncated PK3 entries before allocation](https://github.com/jm2/Quake-III-Arena/issues/36) — **high**; hostile ZIP fixtures around caps and truncation.
+- [ ] [#36 — Reject oversized and truncated PK3 entries before allocation](https://github.com/jm2/Quake-III-Arena/issues/36) — **high**; hostile ZIP fixtures around caps and truncation; host criteria met once PR #421 (#413) merged; needs target test.
 - [x] [#272 — One client's userinfo burst overflows every other client's reliable-command window](https://github.com/jm2/Quake-III-Arena/issues/272) — **medium**; userinfo bursts overflow other clients; PRs #317 and #354 merged.
 - [x] [#273 — Clients can remove or forge the server-maintained ip userinfo key and evade IP bans](https://github.com/jm2/Quake-III-Arena/issues/273) — **medium**; client-forged ip userinfo evades bans; PRs #323 and #328 merged.
 - [x] [#274 — CVE-2017-6903 only partly ported: configs load from pk3s, VM writes are not extension-restricted](https://github.com/jm2/Quake-III-Arena/issues/274) — **medium**; CVE-2017-6903 partial: configs from pk3s, VM writes; PR #324 merged.
 - [x] [#262 — HFS ':' separators bypass qpath and fs_game traversal checks](https://github.com/jm2/Quake-III-Arena/issues/262) — **medium**; HFS : separators bypass traversal checks; PR #322 merged.
 - [ ] [#38 — Rate-limit all connectionless commands fairly per address and globally](https://github.com/jm2/Quake-III-Arena/issues/38) — **medium**; per-address and global connectionless rate limits.
-- [ ] [#39 — Prevent QVMs from modifying protected cvars and engine commands](https://github.com/jm2/Quake-III-Arena/issues/39) — **medium**; protected cvars and engine commands.
-- [ ] [#40 — Validate server-controlled clientNum before native cgame initialization](https://github.com/jm2/Quake-III-Arena/issues/40) — **medium**; clientNum check present; PR #321 merged (index audit); malformed-gamestate tests (clientNum boundary values, fuzzing) remain.
+- [x] [#39 — Prevent QVMs from modifying protected cvars and engine commands](https://github.com/jm2/Quake-III-Arena/issues/39) — **medium**; protected cvars and engine commands; PR #407 merged.
+- [x] [#40 — Validate server-controlled clientNum before native cgame initialization](https://github.com/jm2/Quake-III-Arena/issues/40) — **medium**; clientNum check present; PRs #321 (index audit) and #418 (clientNum boundary tests and gamestate fuzzing) merged.
 - [x] [#275 — Client echo/print connectionless handlers accept any source address](https://github.com/jm2/Quake-III-Arena/issues/275) — **low**; echo/print accept any sender; PR #315 merged.
-- [ ] [#277 — Mac Sys_StringToAdr copies unbounded hostnames into a 256-byte DNSAddress](https://github.com/jm2/Quake-III-Arena/issues/277) — **low**; unbounded hostnames into a 256-byte DNSAddress.
-- [ ] [#265 — Sys_GetPacket ignores T_MORE, splitting oversize datagrams into two packets](https://github.com/jm2/Quake-III-Arena/issues/265) — **low**; T_MORE datagrams split into two packets.
+- [ ] [#277 — Mac Sys_StringToAdr copies unbounded hostnames into a 256-byte DNSAddress](https://github.com/jm2/Quake-III-Arena/issues/277) — **low**; unbounded hostnames into a 256-byte DNSAddress; PR #427 merged; needs target test.
+- [ ] [#265 — Sys_GetPacket ignores T_MORE, splitting oversize datagrams into two packets](https://github.com/jm2/Quake-III-Arena/issues/265) — **low**; T_MORE datagrams split into two packets; PR #427 merged; needs target test.
 - [x] [#306 — Bot chat appends match variables to the 256-byte match string with unbounded strcat](https://github.com/jm2/Quake-III-Arena/issues/306) — **high**; a long player chat line overflowed the bots' 256-byte match string; PRs #332 and #354 merged.
 - [x] [#302 — Info_Print overflows 512-byte stack buffers with client userinfo (dumpuser)](https://github.com/jm2/Quake-III-Arena/issues/302) — **medium**; Info_Print overflowed 512-byte stack buffers with client userinfo; PR #308 merged.
 - [x] [#313 — SV_ChangeMaxClients leaves netchan queue pointers into the freed client array](https://github.com/jm2/Quake-III-Arena/issues/313) — **medium**; sv_maxclients change leaves netchan queue pointers into the freed client array; PRs #331 and #354 merged.
 - [x] [#314 — Reconnecting into a client slot leaks the in-progress download's buffers and file handle](https://github.com/jm2/Quake-III-Arena/issues/314) — **medium**; reconnecting into a slot leaks the in-progress download's buffers and file handle; PR #336 merged.
 - [x] [#319 — Invalid exec_when from a QVM console-command trap kills the engine with ERR_FATAL](https://github.com/jm2/Quake-III-Arena/issues/319) — **medium**; invalid exec_when from a QVM console-command trap is ERR_FATAL; PRs #330 and #354 merged.
 - [x] [#320 — sv_floodProtect is disabled on listen servers, so remote clients can flood game commands](https://github.com/jm2/Quake-III-Arena/issues/320) — **medium**; sv_floodProtect is off on listen servers; PRs #339 and #354 merged.
-- [ ] [#318 — S_StartSound reads past s_channels and sound handle warnings never print](https://github.com/jm2/Quake-III-Arena/issues/318) — **low**; S_StartSound reads past s_channels; handle warnings never print.
+- [x] [#318 — S_StartSound reads past s_channels and sound handle warnings never print](https://github.com/jm2/Quake-III-Arena/issues/318) — **low**; S_StartSound reads past s_channels; handle warnings never print; PR #391 merged.
 - [x] [#326 — Global netchan queue budget lets 32+ attacker slots drop honest clients at map changes](https://github.com/jm2/Quake-III-Arena/issues/326) — **low**; global netchan queue budget lets 32+ attacker slots drop honest clients (#271 follow-up); PR #355 merged.
 - [x] [#340 — A player's long chat line can ERR_DROP the server through SV_GameBotChatVariables](https://github.com/jm2/Quake-III-Arena/issues/340) — **critical**; one player's long chat line dropped the whole server through the bot reply-chat guard; PRs #346 and #354 merged.
 - [x] [#356 — Client-chosen weapon number in TossClientItems shifts and indexes out of range and can ERR_DROP the server](https://github.com/jm2/Quake-III-Arena/issues/356) — **high**; a client-chosen weapon number in `TossClientItems` shifted and indexed out of range and could drop the map; PR #358 merged.
@@ -171,12 +174,21 @@ Remote memory corruption and denial of service reachable from the network come b
 - [x] [#337 — SV_Shutdown leaks in-progress download file handles and buffers](https://github.com/jm2/Quake-III-Arena/issues/337) — **medium**; `SV_Shutdown` left in-progress downloads' file handles and buffers open; PR #351 merged.
 - [x] [#341 — Clients held in CS_PRIMED bypass sv_floodProtect for game commands](https://github.com/jm2/Quake-III-Arena/issues/341) — **medium**; clients held in `CS_PRIMED` bypassed `sv_floodProtect` for game commands; PR #371 merged.
 - [x] [#342 — Pure pak name lists longer than the checksum list leak zone memory on every gamestate](https://github.com/jm2/Quake-III-Arena/issues/342) — **medium**; pure pak name lists longer than the checksum list leaked zone memory on every gamestate; PR #353 merged.
-- [ ] [#378 — Game commands from CS_CONNECTED clients can spawn a client that never took a gamestate](https://github.com/jm2/Quake-III-Arena/issues/378) — **medium**; game commands from `CS_CONNECTED` clients reach the game and can spawn a client that never took a gamestate.
-- [ ] [#379 — Server-set selected-player cvars index UI/cgame arrays without bounds (OOB reads)](https://github.com/jm2/Quake-III-Arena/issues/379) — **medium**; server-set selected-player cvars index UI/cgame arrays without bounds (out-of-bounds reads).
+- [x] [#378 — Game commands from CS_CONNECTED clients can spawn a client that never took a gamestate](https://github.com/jm2/Quake-III-Arena/issues/378) — **medium**; game commands from `CS_CONNECTED` clients reach the game and can spawn a client that never took a gamestate; PR #385 merged.
+- [x] [#379 — Server-set selected-player cvars index UI/cgame arrays without bounds (OOB reads)](https://github.com/jm2/Quake-III-Arena/issues/379) — **medium**; server-set selected-player cvars index UI/cgame arrays without bounds (out-of-bounds reads); PR #388 merged.
 - [ ] [#345 — Large pure pak lists can exceed the gamestate budget now that systeminfo keeps them](https://github.com/jm2/Quake-III-Arena/issues/345) — **low**; large pure pak lists can push a near-full gamestate over its budget now that systeminfo keeps them (#303 follow-up).
-- [ ] [#348 — Connect-time userinfo-overflow rejection misreports mod drops and bypasses sv_reconnectlimit](https://github.com/jm2/Quake-III-Arena/issues/348) — **low**; a mod's drop in `ClientConnect` is reported as a userinfo overflow, and that rejection skips `sv_reconnectlimit`.
+- [x] [#348 — Connect-time userinfo-overflow rejection misreports mod drops and bypasses sv_reconnectlimit](https://github.com/jm2/Quake-III-Arena/issues/348) — **low**; a mod's drop in `ClientConnect` is reported as a userinfo overflow, and that rejection skips `sv_reconnectlimit`; PR #417 merged.
 - [x] [#362 — SanitizeString reads past a trailing ESC in player-name arguments](https://github.com/jm2/Quake-III-Arena/issues/362) — **low**; `SanitizeString` read one byte past a trailing ESC in player-name arguments; PR #366 merged.
-- [ ] [#376 — Session data is not range-checked; spectatorClient >= 64 reads past level.clients](https://github.com/jm2/Quake-III-Arena/issues/376) — **low**; unchecked session data lets `spectatorClient` >= 64 read past `level.clients` (admin or rcon only).
+- [x] [#376 — Session data is not range-checked; spectatorClient >= 64 reads past level.clients](https://github.com/jm2/Quake-III-Arena/issues/376) — **low**; unchecked session data lets `spectatorClient` >= 64 read past `level.clients` (admin or rcon only); PR #393 merged.
+- [x] [#398 — FS_ReturnPath strcpy overflows a 256-byte stack buffer with a module-supplied list path](https://github.com/jm2/Quake-III-Arena/issues/398) — **high**; a module-supplied file-list path overflowed `FS_ReturnPath`'s 256-byte stack buffer (mod QVMs, `dir`); PR #404 merged.
+- [x] [#408 — Com_Error formats module and server text into a 4096-byte buffer with unbounded vsprintf](https://github.com/jm2/Quake-III-Arena/issues/408) — **high**; `Com_Error` formatted module and server text into its 4096-byte buffer with unbounded `vsprintf`; PR #409 merged.
+- [ ] [#389 — Team Arena and q3_ui list-selection cvars index menu lists without bounds (follow-up to #379)](https://github.com/jm2/Quake-III-Arena/issues/389) — **medium**; list-selection cvars, which a server can set, index Team Arena and q3_ui menu lists without bounds (#379 follow-up).
+- [x] [#411 — Menu word-wrap helpers read past their 1024-byte stack buffer on server-supplied text](https://github.com/jm2/Quake-III-Arena/issues/411) — **medium**; the menu word-wrap helpers read past their 1024-byte stack copy of server-supplied connect and disconnect text; PR #412 merged.
+- [x] [#413 — A truncated stored pk3 entry makes unzReadCurrentFile loop forever](https://github.com/jm2/Quake-III-Arena/issues/413) — **medium**; a truncated stored pk3 entry made `unzReadCurrentFile` loop forever (hostile downloaded pk3; found in the #36 triage); PR #421 merged.
+- [x] [#419 — Team Arena connect screen strcpy overflows a 256-byte stack buffer; addBot and server-list selections index without bounds](https://github.com/jm2/Quake-III-Arena/issues/419) — **medium**; the Team Arena connect screen overflowed a 256-byte stack buffer with a long server name; addBot and server-list selections indexed without bounds; PR #428 merged.
+- [ ] [#414 — VM write-extension check runs on the qpath before FS_BuildOSPath silently truncates it](https://github.com/jm2/Quake-III-Arena/issues/414) — **low**; the VM write-extension check runs on the qpath before `FS_BuildOSPath` truncates it at `MAX_OSPATH` (related to #327).
+- [ ] [#429 — Download progress display divides by zero and overflows on server-announced sizes](https://github.com/jm2/Quake-III-Arena/issues/429) — **low**; the Team Arena download progress display divides by zero and overflows on server-announced sizes.
+- [ ] [#435 — MSG_ReadBigString leaves the terminator of an 8191-char string in the message (client drops with bad command byte)](https://github.com/jm2/Quake-III-Arena/issues/435) — **low**; `MSG_ReadBigString` leaves the terminator of an 8191-character string in the message, so the client drops with a bad command byte (#345 follow-up).
 
 ## B5 — Mac OS 9 platform and target bring-up
 
@@ -229,14 +241,20 @@ The paused September queue. Resume only after B1–B4, and fix false positives a
 - [ ] [#47 — Validate AAS lumps and graph indexes before enabling bot world](https://github.com/jm2/Quake-III-Arena/issues/47) — **high**; AAS: validate the whole file before loaded.
 - [ ] [#48 — Bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48) — **high**; bot parser: work and recursion limits (open PRs #214–#217).
 - [x] [#290 — BotExpandChatMessage accepts match variable index 8 and overflowing digit strings](https://github.com/jm2/Quake-III-Arena/issues/290) — **medium**; out-of-bounds match variable read and stack copy from chat templates; PR #298 merged.
-- [ ] [#300 — BotLoadChatMessage reserves 7 bytes for escape sequences of unbounded length](https://github.com/jm2/Quake-III-Arena/issues/300) — **medium**; BotLoadChatMessage reserves 7 bytes for escapes of unbounded length.
-- [ ] [#307 — Route-cache reader lets zero-time portal entries carry out-of-range reachability numbers](https://github.com/jm2/Quake-III-Arena/issues/307) — **low**; route-cache reader lets zero-time portal entries carry out-of-range reachability numbers.
+- [x] [#300 — BotLoadChatMessage reserves 7 bytes for escape sequences of unbounded length](https://github.com/jm2/Quake-III-Arena/issues/300) — **medium**; BotLoadChatMessage reserves 7 bytes for escapes of unbounded length; PR #422 merged.
+- [x] [#307 — Route-cache reader lets zero-time portal entries carry out-of-range reachability numbers](https://github.com/jm2/Quake-III-Arena/issues/307) — **low**; route-cache reader lets zero-time portal entries carry out-of-range reachability numbers; PR #424 merged.
 - [x] [#347 — WAV chunk walker overflows on chunk lengths near INT_MAX](https://github.com/jm2/Quake-III-Arena/issues/347) — **medium**; WAV chunk walker overflowed on chunk lengths near `INT_MAX` and left the file buffer; PR #350 merged.
 - [x] [#352 — WAV loader divides by zero on sub-8-bit samples; ADPCM temp buffer overflows at 4x upsampling](https://github.com/jm2/Quake-III-Arena/issues/352) — **medium**; WAV loader divided by zero on sub-8-bit samples; ADPCM temp buffer overflowed at 4x upsampling; PR #369 merged.
-- [ ] [#370 — Remaining sound edge cases: music divide by zero, zero sample rate, resample accumulator overflow](https://github.com/jm2/Quake-III-Arena/issues/370) — **medium**; remaining sound edge cases: music divide by zero, zero sample rate, resample accumulator overflow.
+- [x] [#370 — Remaining sound edge cases: music divide by zero, zero sample rate, resample accumulator overflow](https://github.com/jm2/Quake-III-Arena/issues/370) — **medium**; remaining sound edge cases: music divide by zero, zero sample rate, resample accumulator overflow; PR #399 merged.
 - [x] [#344 — Undefined left shifts of negative or oversized values in g_mover.c constantLight and snd_mem.c resampling](https://github.com/jm2/Quake-III-Arena/issues/344) — **low**; undefined left shifts in `g_mover.c` constantLight and 8-bit WAV resampling; PRs #367 and #372 merged.
-- [ ] [#373 — InitMover float-to-int conversion of out-of-range light/color keys is undefined](https://github.com/jm2/Quake-III-Arena/issues/373) — **low**; `InitMover` float-to-int conversion of out-of-range light/color keys is undefined.
-- [ ] [#384 — FS_ListFilteredFiles reads before an empty path; CL_PlayDemo_f forms a pointer before short arguments](https://github.com/jm2/Quake-III-Arena/issues/384) — **low**; `FS_ListFilteredFiles` reads one byte before an empty path (menu listings reach it); `CL_PlayDemo_f` forms a pointer before short arguments.
+- [x] [#373 — InitMover float-to-int conversion of out-of-range light/color keys is undefined](https://github.com/jm2/Quake-III-Arena/issues/373) — **low**; `InitMover` float-to-int conversion of out-of-range light/color keys is undefined; PR #396 merged.
+- [x] [#384 — FS_ListFilteredFiles reads before an empty path; CL_PlayDemo_f forms a pointer before short arguments](https://github.com/jm2/Quake-III-Arena/issues/384) — **low**; `FS_ListFilteredFiles` reads one byte before an empty path (menu listings reach it); `CL_PlayDemo_f` forms a pointer before short arguments; PR #397 merged.
+- [x] [#400 — S_FreeOldestSound can free a sound a channel is still playing; the mixer then dereferences NULL](https://github.com/jm2/Quake-III-Arena/issues/400) — **medium**; sound eviction freed a sound a channel was still playing, and the mixer then dereferenced NULL; PR #416 merged.
+- [x] [#423 — BotLoadReplyChat concatenates key names into a 256-byte stack buffer without a bound](https://github.com/jm2/Quake-III-Arena/issues/423) — **medium**; `BotLoadReplyChat` concatenated reply-chat key names into a 256-byte stack buffer without a bound; PR #432 merged.
+- [ ] [#394 — snd_dma.c: s_show 2 passes ints to %f/%s (crash on PPC), play repeats its first argument](https://github.com/jm2/Quake-III-Arena/issues/394) — **low**; `s_show 2` passes ints to `%f`/`%s` (can crash on PPC), `play` repeats its first argument, and `soundinfo` prints a pointer with `%x`.
+- [x] [#415 — Challenge generation left-shifts rand() into signed overflow](https://github.com/jm2/Quake-III-Arena/issues/415) — **low**; challenge generation left-shifted `rand()` into signed overflow (undefined behavior); PR #425 merged.
+- [ ] [#420 — Sound follow-ups from the #416 review: failed loop page-in drops the player, mixer NULL->sndChunk UB, LRU test gap](https://github.com/jm2/Quake-III-Arena/issues/420) — **low**; #416 review follow-ups: a failed looping-sound page-in drops the player, the mixer forms `NULL->sndChunk`, and the eviction test does not pin LRU order.
+- [x] [#426 — Q_rand multiplies in signed int and overflows (UB in native game/cgame/engine)](https://github.com/jm2/Quake-III-Arena/issues/426) — **low**; `Q_rand` multiplied in signed `int` and overflowed (undefined behavior in the native game, cgame and engine); PR #430 merged.
 
 ## B7 — Performance
 
@@ -258,7 +276,9 @@ Team Arena cannot reach its menu today; keep it building (BUILD_TEAM_ARENA=ON) a
 - [ ] [#49 — Make Team Arena UI menu and reload failures allocation-safe](https://github.com/jm2/Quake-III-Arena/issues/49) — **moderate-high**; UI allocation and reload failures.
 - [ ] [#325 — Base and Team Arena executables accept a mismatched server game and fail later in cgame](https://github.com/jm2/Quake-III-Arena/issues/325) — **medium**; base and Team Arena executables accept a mismatched server game and fail in cgame.
 - [x] [#357 — Team Arena UI_ParseTeamInfo writes past teamList[] with more than 64 teams](https://github.com/jm2/Quake-III-Arena/issues/357) — **medium**; Team Arena list parsers wrote past their arrays, e.g. `teamList[]` with more than 64 teams; PR #367 merged.
-- [ ] [#377 — UI_LoadMovies/UI_LoadDemos read one byte before short file names](https://github.com/jm2/Quake-III-Arena/issues/377) — **low**; Team Arena `UI_LoadMovies`/`UI_LoadDemos` read one byte before names shorter than the extension.
+- [x] [#377 — UI_LoadMovies/UI_LoadDemos read one byte before short file names](https://github.com/jm2/Quake-III-Arena/issues/377) — **low**; Team Arena `UI_LoadMovies`/`UI_LoadDemos` read one byte before names shorter than the extension; PR #383 merged.
+- [x] [#401 — Team Arena menu scripts use menu-file strings as printf formats (va overflow, %n/%s)](https://github.com/jm2/Quake-III-Arena/issues/401) — **high**; Team Arena menu scripts used menu-file strings, which any pk3 can supply, as `va()` formats (`%n`, `%s`, width overflow); PR #403 merged.
+- [x] [#390 — Team Arena 'orders' script passes a player name where its format expects a client number](https://github.com/jm2/Quake-III-Arena/issues/390) — **low**; the Team Arena `orders` script passed a player name where its format expects a client number; PR #392 merged.
 
 ## B9 — Low-risk metadata
 
@@ -269,19 +289,19 @@ Team Arena cannot reach its menu today; keep it building (BUILD_TEAM_ARENA=ON) a
 ## Next steps
 
 - B0 is done, and every B1 entry from the review has a merged fix. #270,
-  #233, #237, #256, #236, #248 and #247 wait only on the first target run;
-  #375 and #382 are open host fixes.
-- B2 toolchain and build: #269 and #1 (readiness), #387 (setup on GCC 16
-  hosts and from PowerShell), #227 (pin toolchain inputs), #27, #51, #231,
-  #232, #296. The packaging entries, #299 first, follow before release
+  #233, #237, #256, #236, #248 and #247 wait only on the first target run.
+- B2 toolchain and build: #1 (readiness), #387 (setup on GCC 16 hosts and
+  from PowerShell), #406 (setup and manifest follow-ups from #402), #405
+  (reproducible outputs), #27, #51, #231, #232, #296, #230 (SIZE partition
+  headroom). The packaging entries, #299 first, follow before release
   packaging.
-- B3: real-content tests (#253) before resuming any B6 hardening, and a
-  Retro68 PPC product build in CI (#334).
-- B4 by severity: high #37, #36; medium #378, #379, #38, #39, #40; low #265,
-  #277, #318, #345, #348, #376.
-  #257 and #271 wait on the target run.
+- B3: real-content tests (#253) before resuming any B6 hardening, a Retro68
+  PPC product build in CI (#334), and printf format checking (#395).
+- B4 by severity: high #37; medium #38 (PR #431 open), #389; low #345
+  (PR #434 open), #414 (PR #433 open), #429, #435. #257, #271, #36, #277 and
+  #265 wait on the target run.
 - First target run (base game, retail data, real hardware): main menu, a bot
   match on q3dm1, disconnect, normal quit, fatal-exit status. Record results
   here and on each `needs target test` issue: #270, #233, #237, #256, #236,
-  #248 and #247 (B1); #257 and #271 (B4); #4, #3, #6, #7, #25, #26, #34 and
-  #327 (B5).
+  #248 and #247 (B1); #257, #271, #36, #277 and #265 (B4); #4, #3, #6, #7,
+  #25, #26, #34 and #327 (B5).
