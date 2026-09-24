@@ -80,6 +80,8 @@ void SV_GetChallenge( netadr_t from ) {
 		challenge->connected = qfalse;
 		i = oldest;
 	}
+	// a new challenge request is a new connection attempt
+	challenge->wasrefused = qfalse;
 
 	// if they are on a lan address, send the challengeResponse immediately
 	if ( Sys_IsLANAddress( from ) ) {
@@ -224,6 +226,12 @@ A "connect" OOB command has been received
 				"and Enabled in order to join this server. An updated game patch can be downloaded from " \
 				"www.idsoftware.com"
 
+// the client SV_DirectConnect is passing to the game's ClientConnect, and the
+// reason SV_DropClient got if the game drops it there: a client that is still
+// connecting gets neither the drop's broadcast nor its disconnect command
+static client_t	*connectingClient;
+static char		connectDropReason[MAX_STRING_CHARS];
+
 void SV_DirectConnect( netadr_t from ) {
 	char		userinfo[MAX_INFO_STRING];
 	int			i;
@@ -239,6 +247,7 @@ void SV_DirectConnect( netadr_t from ) {
 	char		*denied;
 	int			count;
 	const char	*ip;
+	challenge_t	*challengeptr;
 
 	Com_DPrintf ("SVC_DirectConnect ()\n");
 
@@ -286,6 +295,7 @@ void SV_DirectConnect( netadr_t from ) {
 	Info_SetValueForKey( userinfo, "ip", ip );
 
 	// see if the challenge is valid (LAN clients don't need to challenge)
+	challengeptr = NULL;
 	if ( !NET_IsLocalAddress (from) ) {
 		int		ping;
 
@@ -298,6 +308,12 @@ void SV_DirectConnect( netadr_t from ) {
 		}
 		if (i == MAX_CHALLENGES) {
 			NET_OutOfBandPrint( NS_SERVER, from, "print\nNo or bad challenge for address.\n" );
+			return;
+		}
+		challengeptr = &svs.challenges[i];
+		if ( challengeptr->wasrefused ) {
+			// the client resends connect with the same challenge until it
+			// asks for a new one; stay silent so it keeps showing the reason
 			return;
 		}
 
@@ -431,11 +447,28 @@ gotnewcl:
 	Q_strncpyz( newcl->userinfo, userinfo, sizeof(newcl->userinfo) );
 
 	// get the game a chance to reject this connection or modify the userinfo
+	connectingClient = newcl;
+	connectDropReason[0] = '\0';
 	denied = VM_CheckedExplicitString( gvm,
 	        VM_Call( gvm, GAME_CLIENT_CONNECT, clientNum, qtrue, qfalse ), qtrue ); // firstTime = qtrue
+	connectingClient = NULL;
 	if ( denied ) {
 		NET_OutOfBandPrint( NS_SERVER, from, "print\n%s\n", denied );
 		Com_DPrintf ("Game rejected a connection: %s.\n", denied);
+		if ( newcl->state == CS_ZOMBIE && challengeptr ) {
+			// the game dropped the client as well, don't repeat that on every resend
+			challengeptr->wasrefused = qtrue;
+		}
+		return;
+	}
+
+	// the game dropped the client in ClientConnect and told the other clients
+	// why; tell this one, which never gets its disconnect command
+	if ( newcl->state == CS_ZOMBIE ) {
+		NET_OutOfBandPrint( NS_SERVER, from, "print\n%s\n", connectDropReason );
+		if ( challengeptr ) {
+			challengeptr->wasrefused = qtrue;
+		}
 		return;
 	}
 
@@ -443,6 +476,9 @@ gotnewcl:
 	if ( newcl->state == CS_ZOMBIE ) {
 		// the game left no room for the "ip" key
 		NET_OutOfBandPrint( NS_SERVER, from, "print\nUserinfo string length exceeded.\n" );
+		if ( challengeptr ) {
+			challengeptr->wasrefused = qtrue;
+		}
 		return;
 	}
 
@@ -490,6 +526,11 @@ void SV_DropClient( client_t *drop, const char *reason ) {
 
 	if ( drop->state == CS_ZOMBIE ) {
 		return;		// already dropped
+	}
+
+	if ( drop == connectingClient ) {
+		// SV_DirectConnect sends the reason to the connecting client
+		Q_strncpyz( connectDropReason, reason, sizeof( connectDropReason ) );
 	}
 
 	if ( !drop->gentity || !(drop->gentity->r.svFlags & SVF_BOT) ) {
