@@ -1,4 +1,5 @@
 /* Native writer/reader round trips, untrusted dump bytes and loaded-cache ownership. */
+#include <stddef.h>
 #include <stdint.h>
 #define main RoutingFailureFixtureMain
 #include "aas_routing_failure_regression.c"
@@ -47,13 +48,25 @@ static void Generate(void) {
     memcpy(&header,dump,sizeof(header));Check(header.version==2&&header.numportalcache==1&&header.numareacache==3&&dumpLength==(int)sizeof(header)+expectedBytes,"actual native version-two dump size/order");
     Cleanup();
 }
+static void ClearPointers(unsigned char *buffer,int length) {
+    aas_routingcache_t header;int offset;
+    for(offset=sizeof(routecacheheader_t);offset<length;offset+=header.size){
+        memcpy(&header,buffer+offset,sizeof(header));header.prev=header.next=header.time_prev=header.time_next=NULL;header.reachabilities=NULL;memcpy(buffer+offset,&header,sizeof(header));
+    }
+}
+static void SameDump(void) {
+    /* Loaded native caches keep the written bytes: writing them again changes only runtime pointers. */
+    static unsigned char original[8192];int length=dumpLength;
+    memcpy(original,dump,length);AAS_WriteRouteCache();Check(dumpLength==length&&inputLength==length,"loaded dump writes back at its native size");
+    ClearPointers(dump,length);ClearPointers(input,length);Check(!memcmp(dump,input,length),"loaded native caches keep every written byte");memcpy(dump,original,length);
+}
 static void RoundTrip(int poison) {
     int offset,i;aas_routingcache_t header;FileWorld();OriginalInput();
     if(poison)for(offset=sizeof(routecacheheader_t);offset<inputLength;offset+=header.size){
         memcpy(&header,input+offset,sizeof(header));header.prev=header.next=header.time_prev=header.time_next=(aas_routingcache_t *)(uintptr_t)UINTPTR_MAX;
         header.reachabilities=(unsigned char *)(uintptr_t)UINTPTR_MAX;memcpy(input+offset,&header,sizeof(header));
     }
-    Check(AAS_ReadRouteCache()&&opens==1&&closes==1,"actual writer dump loads and closes");
+    Check(AAS_ReadRouteCache()&&opens==1&&closes==1,"actual writer dump loads and closes");SameDump();
     Check(routingcachesize==expectedBytes&&Outstanding()==4,"all loaded caches enter byte accounting");CheckOwnership();
     for(i=0;i<4;i++)Check(owners[i].pointer!=NULL,"loaded native cache owners");
     Route();CheckOwnership();AAS_EnableRoutingArea(4,qfalse);CheckOwnership();
@@ -123,6 +136,20 @@ static void OriginalAccountingProof(void) {
     Check(AAS_ReadRouteCache(),"original reader-compatible dump reaches accounting check");
     Check(routingcachesize==expectedBytes,"original reader must account loaded cache sizes before state-change free");Cleanup();
 }
+static void ForgeEntry(int offset,int count,int index,unsigned short time,unsigned char reach) {
+    memcpy(input+offset+offsetof(aas_routingcache_t,traveltimes)+index*sizeof(time),&time,sizeof(time));input[offset+sizeof(aas_routingcache_t)+count*sizeof(time)+index]=reach;
+}
+static void ForgedZeroTimeReach(int value) {
+    /* Issue #307: a portal start reads its portal entry's reachability byte even at time zero. */
+    static aas_reachabilityareas_t passes[6];aas_predictroute_t route;aas_routingcache_t portal,area;vec3_t origin={0,0,0};int offset=sizeof(routecacheheader_t),accepted,routed;
+    FileWorld();aasworld.reachabilityareas=passes;OriginalInput();memcpy(&portal,input+offset,sizeof(portal));memcpy(&area,input+offset+portal.size,sizeof(area));
+    Check(portal.type==CACHETYPE_PORTAL&&portal.areanum==1&&area.cluster==1&&area.areanum==1,"native dump starts with the goal's portal and cluster caches");
+    /* Zero portal area 3's in-cluster time too, so the route from area 3 falls through to its portal entry. */
+    ForgeEntry(offset+portal.size,3,2,0,0);ForgeEntry(offset,3,2,0,value);
+    accepted=AAS_ReadRouteCache();routed=AAS_PredictRoute(&route,3,origin,1,-1,0,0,RSE_USETRAVELTYPE,0,0,0);
+    Check(!accepted&&routed&&route.stopevent==RSE_NONE&&route.endarea==1,"forged zero-time portal reachability is rejected and prediction keeps the native route");
+    Cleanup();Rejected(1,0);
+}
 static void EmptyDump(void) {
     FileWorld();AAS_WriteRouteCache();OriginalInput();
     Check(dumpLength==(int)sizeof(routecacheheader_t)&&AAS_ReadRouteCache()&&opens==2&&closes==2&&!Outstanding()&&!routingcachesize,"native writer's empty cache dump remains valid");Cleanup();
@@ -132,6 +159,6 @@ static void EmptyDump(void) {
 #endif
 int Q3_AAS_CACHE_FILE_ENTRY(int argc,char **argv) {
     if(argc==1)EmptyDump();Generate();if(argc>1){if(atoi(argv[1]))OriginalAccountingProof();else RoundTrip(0);}
-    else {RoundTrip(0);RoundTrip(1);Malformed();puts("Native AAS cache writer/reader grammar, loaded accounting, links and rollback passed (issue #47)");}
+    else {RoundTrip(0);RoundTrip(1);Malformed();ForgedZeroTimeReach(3);ForgedZeroTimeReach(255);ForgedZeroTimeReach(1);puts("Native AAS cache writer/reader grammar, loaded accounting, links and rollback passed (issue #47)");}
     return 0;
 }
