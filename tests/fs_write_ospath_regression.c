@@ -22,7 +22,10 @@
  * remove and before Com_sprintf ever cuts a path; a planted pk3 of the cut
  * name stays intact.  Ordinary writes, appends and renames, including names
  * that fill exactly MAX_OSPATH - 1 characters, still reach the same OS paths
- * as before. */
+ * as before.  After startup every print (and S_ClearSoundBuffer's) takes one
+ * of FS_BuildOSPath's two rotating buffers, as common.c's qconsole.log retry
+ * does with developer 1, and the ordinary writes run with fs_debug 0 and 1,
+ * so a built write path must survive the prints before it is used. */
 #include <limits.h>
 #ifndef Q3_TEST_HOST_OSPATH
 /* The Retro68 headers have no PATH_MAX, so q_shared.h picks 256. */
@@ -57,7 +60,7 @@ static int FixtureRemove(const char *path);
 
 static char home[MAX_OSPATH];
 static char lastOpen[MAX_OSPATH * 2], lastFrom[MAX_OSPATH * 2], lastTo[MAX_OSPATH * 2];
-static int opens, renames, removes, mkdirs, warnings, overflows, zoneLive;
+static int opens, renames, removes, mkdirs, warnings, overflows, zoneLive, logRetry;
 qboolean com_fullyInitialized;
 cvar_t *com_journal;
 fileHandle_t com_journalDataFile;
@@ -113,6 +116,17 @@ void QDECL Com_Error(int level, const char *format, ...) {
     va_end(args);
     Check(0, "unexpected engine error");
 }
+/* With developer 1 and a qconsole.log that cannot be opened, common.c's
+ * Com_Printf retries FS_FOpenFileWrite( "qconsole.log" ) on every print,
+ * and each retry takes one of FS_BuildOSPath's two rotating buffers. */
+static void LogRetry(void) {
+    static int opening;
+    if (logRetry && !opening) {
+        opening = 1;
+        FS_BuildOSPath(fs_homepath->string, fs_gamedir, "qconsole.log");
+        opening = 0;
+    }
+}
 void QDECL Com_Printf(const char *format, ...) {
     char text[1024];
     va_list args;
@@ -121,8 +135,12 @@ void QDECL Com_Printf(const char *format, ...) {
     va_end(args);
     warnings += strstr(text, "WARNING") != NULL;
     overflows += strstr(text, "Com_sprintf: overflow") != NULL;
+    LogRetry();
 }
-void QDECL Com_DPrintf(const char *format, ...) { (void)format; }
+void QDECL Com_DPrintf(const char *format, ...) {
+    (void)format;
+    LogRetry();
+}
 void QDECL Com_FlightRecord(const char *format, ...) { (void)format; }
 void Com_Memset(void *out, int value, size_t size) { memset(out, value, size); }
 void Com_Memcpy(void *out, const void *in, size_t size) { memcpy(out, in, size); }
@@ -149,7 +167,8 @@ int Com_FilterPath(char *filter, char *name, int casesensitive) {
     (void)filter; (void)name; (void)casesensitive;
     return 0;
 }
-void S_ClearSoundBuffer(void) {}
+/* S_ClearSoundBuffer -> S_ChannelSetup prints "Channel memory manager started". */
+void S_ClearSoundBuffer(void) { Com_DPrintf("Channel memory manager started\n"); }
 void Sys_BeginStreamedFile(fileHandle_t f, int readAhead) { (void)f; (void)readAhead; }
 void Sys_EndStreamedFile(fileHandle_t f) { (void)f; }
 int Sys_StreamedRead(void *buffer, int size, int count, fileHandle_t f) {
@@ -376,7 +395,8 @@ static void Normal(void) {
     FS_FCloseFile(f);
     Check(opens == 3 && !strcmp(lastOpen, OSName(1, svEdge)), "home-path exact-fit OS path is not cut");
     FS_SV_Rename(svEdge, svMoved, qtrue);
-    Check(renames == 2 && !strcmp(lastTo, OSName(1, svMoved)) && !Exists(OSName(1, svEdge)),
+    Check(renames == 2 && !strcmp(lastFrom, OSName(1, svEdge)) && !strcmp(lastTo, OSName(1, svMoved)) &&
+          !Exists(OSName(1, svEdge)),
           "home-path exact-fit rename still works");
     Contains(OSName(1, svMoved), "sv", "home-path exact-fit rename payload");
 
@@ -385,7 +405,8 @@ static void Normal(void) {
     Check(f > 0 && FS_Write("PK\003\004", 4, f) == 4, "download temp file write");
     FS_FCloseFile(f);
     FS_SV_Rename(BASEGAME "/newmap.pk3.tmp", BASEGAME "/newmap.pk3", qfalse);
-    Check(!strcmp(lastTo, OSName(0, "newmap.pk3")) && !Exists(OSName(0, "newmap.pk3.tmp")),
+    Check(renames == 3 && !strcmp(lastFrom, OSName(0, "newmap.pk3.tmp")) &&
+          !strcmp(lastTo, OSName(0, "newmap.pk3")) && !Exists(OSName(0, "newmap.pk3.tmp")),
           "trusted download finalisation still produces the pk3");
     Contains(OSName(0, "newmap.pk3"), "PK\003\004", "download payload");
     Check(!warnings && !overflows, "ordinary edge writes print no warning");
@@ -510,7 +531,14 @@ int main(int argc, char **argv) {
 
     Check(argc == 2 && !chdir(argv[1]), "usage: fs_write_ospath_regression workdir");
     Startup();
+    /* From here on every print reuses an FS_BuildOSPath buffer, as with
+     * developer 1 and an unopenable qconsole.log; fs_debug adds prints
+     * between building a write path and using it. */
+    logRetry = 1;
     Normal();
+    Cvar_Set("fs_debug", "1");
+    Normal();
+    Cvar_Set("fs_debug", "0");
     for (i = 0; i < n; i++) {
         Refused(&refusedNames[i], NULL);
     }
