@@ -193,6 +193,7 @@ static const lightCase_t lightCases[] = {
 	{ "600", "0.2 0.4 0.6", (int)0x96996633 },
 	{ "1020", "0 0 0", (int)0xff000000 },
 	{ "1023", NULL, (int)0xffffffff },
+	{ "1024", NULL, (int)0xffffffff },	// i == 256: the clamp
 	{ "100000", "1 1 1", (int)0xffffffff },
 	// a negative light: the top byte is i's low byte in two's complement
 	{ "-3", NULL, 0x00ffffff },
