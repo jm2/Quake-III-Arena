@@ -3765,12 +3765,15 @@ UI_InsertServerIntoDisplayList
 static void UI_InsertServerIntoDisplayList(int num, int position) {
 	int i;
 
-	if (position < 0 || position > uiInfo.serverStatus.numDisplayServers ) {
+	// a master can list MAX_GLOBAL_SERVERS servers, more than the display list holds
+	if (position < 0 || position > uiInfo.serverStatus.numDisplayServers ||
+		uiInfo.serverStatus.numDisplayServers >= MAX_DISPLAY_SERVERS ) {
 		return;
 	}
 	//
 	uiInfo.serverStatus.numDisplayServers++;
-	for (i = uiInfo.serverStatus.numDisplayServers; i > position; i--) {
+	// shift the entries after position; the last one moves to the new end
+	for (i = uiInfo.serverStatus.numDisplayServers - 1; i > position; i--) {
 		uiInfo.serverStatus.displayServers[i] = uiInfo.serverStatus.displayServers[i-1];
 	}
 	uiInfo.serverStatus.displayServers[position] = num;
@@ -4068,6 +4071,10 @@ static int UI_GetServerStatusInfo( const char *serverAddress, serverStatusInfo_t
 			i = 0;
 			len = 0;
 			while (p && *p) {
+				// pings holds the numbers of MAX_CLIENTS players; a server's
+				// status reply can list more
+				if (i >= MAX_CLIENTS)
+					break;
 				if (*p == '\\')
 					*p++ = '\0';
 				if (!p)
@@ -4424,9 +4431,16 @@ static const char *UI_FeederItemText(float feederID, int index, int column, qhan
 						return Info_ValueForKey(info, "addr");
 					} else {
 						if ( ui_netSource.integer == AS_LOCAL ) {
+							// a LAN server's infoResponse picks the nettype; the
+							// last netnames entry is NULL
+							int nettype = atoi(Info_ValueForKey(info, "nettype"));
+
+							if ( nettype < 0 || nettype >= (int)( sizeof(netnames) / sizeof(netnames[0]) ) - 1 ) {
+								nettype = 0;
+							}
 							Com_sprintf( hostname, sizeof(hostname), "%s [%s]",
 											Info_ValueForKey(info, "hostname"),
-											netnames[atoi(Info_ValueForKey(info, "nettype"))] );
+											netnames[nettype] );
 							return hostname;
 						}
 						else {
