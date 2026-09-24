@@ -161,6 +161,9 @@ Remove case and control characters
 void SanitizeString( char *in, char *out ) {
 	while ( *in ) {
 		if ( *in == 27 ) {
+			if ( !in[1] ) {
+				break;		// a trailing escape has no color code to skip
+			}
 			in += 2;		// skip color code
 			continue;
 		}
