@@ -7,9 +7,10 @@
  * The fake endpoint holds a queue of datagrams and reads them as XTI's
  * t_rcvudata does: a datagram larger than the caller's buffer comes back in
  * pieces with T_MORE set, and only the first piece carries the source
- * address.  The fake resolver returns fakeOTResolvedHost.  OTInitDNSAddress
- * copies the name with no bound, as the target's does.  Every call is
- * counted. */
+ * address.  fakeOTFailCall makes that OTRcvUData call (counting from 1)
+ * fail with fakeOTFailError and read nothing.  The fake resolver returns
+ * fakeOTResolvedHost.  OTInitDNSAddress copies the name with no bound, as
+ * the target's does.  Every call is counted. */
 #ifndef MAC_OT_FAKE_H
 #define MAC_OT_FAKE_H
 
@@ -33,7 +34,7 @@ typedef char		InetDomainName[256];
 
 enum { false = 0, true = 1 };	/* MacTypes.h */
 enum { T_MORE = 0x0001 };
-enum { kOTNoDataErr = -3162 };
+enum { kOTLookErr = -3158, kOTNoDataErr = -3162 };
 enum { AF_DNS = 42 };
 #define AF_INET 2
 
@@ -81,6 +82,8 @@ static int		fakeOTQueued;		/* datagrams queued */
 static int		fakeOTNext;			/* the datagram the next read returns from */
 static int		fakeOTOffset;		/* bytes of it already read */
 static int		fakeOTRcvCalls;
+static int		fakeOTFailCall;		/* 0: no call fails */
+static OSStatus	fakeOTFailError;
 
 static DNSAddress	*fakeOTDNSAddress;	/* the last OTInitDNSAddress call's */
 static OTByteCount	fakeOTDNSLength;
@@ -88,6 +91,11 @@ static int		fakeOTInitDNSCalls;
 static InetHost		fakeOTResolvedHost;
 static char		fakeOTResolvedName[sizeof( InetDomainName )];
 static int		fakeOTResolveCalls;
+
+/* Empty the endpoint and clear its counts and injected failure. */
+static void FakeOT_ResetEndpoint( void ) {
+	fakeOTQueued = fakeOTNext = fakeOTOffset = fakeOTRcvCalls = fakeOTFailCall = 0;
+}
 
 /* Queue a datagram from ip:port (bytes in network order) on the endpoint. */
 static void FakeOT_QueueDatagram( const UInt8 *data, int length, const UInt8 ip[4], const UInt8 port[2] ) {
@@ -106,6 +114,9 @@ OSStatus OTRcvUData( EndpointRef ref, TUnitData *udata, OTFlags *flags ) {
 	int					n;
 
 	fakeOTRcvCalls++;
+	if ( fakeOTRcvCalls == fakeOTFailCall ) {
+		return fakeOTFailError;
+	}
 	if ( ref != FAKE_OT_ENDPOINT || fakeOTNext == fakeOTQueued ) {
 		return kOTNoDataErr;
 	}

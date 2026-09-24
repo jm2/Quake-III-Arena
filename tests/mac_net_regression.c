@@ -11,7 +11,9 @@
  * second "packet" holding the rest, with no source address.  Such a datagram
  * must be read to its end and dropped whole with the "Oversize packet from"
  * message the Unix and Win32 backends print, and, as there, so must one that
- * exactly fills the buffer.  Other packets must come through byte for byte.
+ * exactly fills the buffer.  If a read fails partway through, the rest of the
+ * datagram, which has no source address, must be dropped the same way on the
+ * next call.  Other packets must come through byte for byte.
  * Com_EventLoop's own oversize-packet branch must free its event, as every
  * other branch does.
  *
@@ -147,8 +149,9 @@ static const UInt8 *Datagram( int slot, int length ) {
 }
 
 static void ResetEndpoint( void ) {
-	fakeOTQueued = fakeOTNext = fakeOTOffset = fakeOTRcvCalls = 0;
+	FakeOT_ResetEndpoint();
 	printed[0] = 0;
+	handleOTErrors = 0;
 }
 
 /* Receive into a MAX_MSGLEN buffer as mac_main.c's Sys_GetEvent does. */
@@ -219,6 +222,38 @@ static void OversizeThenNormal( int length ) {
 	ExpectPacket( next, 1400, serverIP, serverPort );
 	ExpectNoPacket();
 	Check( handleOTErrors == 0, "no OT error is reported" );
+}
+
+/* The first continuation read fails, leaving the rest of the datagram (here
+ * a connectionless getstatus) queued.  The next call must drop that tail, not
+ * deliver it as a packet from 0.0.0.0, and the packet after it must arrive
+ * intact. */
+static void DrainError( void ) {
+	static const char tail[] = "\xff\xff\xff\xffgetstatus";
+	const UInt8 *next = Datagram( 1, 1400 );
+	netadr_t from;
+	msg_t msg;
+
+	ResetEndpoint();
+	Datagram( 0, MAX_MSGLEN + 600 );
+	memcpy( datagramData[0] + MAX_MSGLEN, tail, sizeof( tail ) - 1 );
+	FakeOT_QueueDatagram( datagramData[0], MAX_MSGLEN + 600, clientIP, clientPort );
+	FakeOT_QueueDatagram( next, 1400, serverIP, serverPort );
+	fakeOTFailCall = 2;
+	fakeOTFailError = kOTLookErr;
+
+	Check( !GetPacket( &from, &msg ), "an oversize datagram is dropped when its drain fails" );
+	Check( handleOTErrors == 1 && fakeOTNext == 0 && fakeOTOffset == MAX_MSGLEN,
+		"the failed read is reported and leaves the tail queued" );
+	Check( Printed( "Oversize packet from 10.0.0.2:27961\n" ) == 1, "the drop names the sender" );
+
+	Check( !GetPacket( &from, &msg ), "the tail is not delivered as a packet" );
+	Check( fakeOTNext == 1 && fakeOTOffset == 0, "the tail is read from the endpoint" );
+	Check( Printed( "Oversize packet from " ) == 2 && Printed( "\n" ) == 2, "the tail is dropped with the same message" );
+
+	ExpectPacket( next, 1400, serverIP, serverPort );
+	ExpectNoPacket();
+	Check( handleOTErrors == 1, "only the injected error is reported" );
 }
 
 /* ---------- Com_EventLoop's oversize branch ---------- */
@@ -346,6 +381,8 @@ int main( int argc, char **argv ) {
 		OversizeThenNormal( MAX_MSGLEN * 3 + 5 );	/* four pieces */
 	} else if ( !strcmp( currentCase, "packet-full" ) ) {
 		OversizeThenNormal( MAX_MSGLEN );
+	} else if ( !strcmp( currentCase, "packet-drain-error" ) ) {
+		DrainError();
 	} else if ( !strcmp( currentCase, "event-oversize" ) ) {
 		EventLoopOversize();
 	} else {

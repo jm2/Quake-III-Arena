@@ -525,7 +525,10 @@ qboolean	Sys_GetPacket ( netadr_t *net_from, msg_t *net_message ) {
 	// Read the rest, or the next call would return it as a packet of its own
 	// with no source address, and drop the whole datagram as unix_net.c and
 	// win_net.c do; like them, also drop one that exactly fills the buffer.
-	if ( ( flags & T_MORE ) || (int)d.udata.len >= net_message->maxsize ) {
+	// A piece with no source address is the rest of a datagram whose drain
+	// failed on an earlier call: drop it the same way.
+	if ( ( flags & T_MORE ) || (int)d.udata.len >= net_message->maxsize
+		|| d.addr.len == 0 ) {
 		while ( flags & T_MORE ) {
 			err = OTRcvUData( endpoint, &d, &flags );
 			if ( err ) {

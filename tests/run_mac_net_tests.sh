@@ -32,7 +32,7 @@ Q3_TEST_EXTRACT '^int[[:space:]]+Com_EventLoop[[:space:]]*[(]' \
 
 # One process per case: AddressSanitizer stops at the first overflow.
 for Q3_TEST_CASE in host-normal host-255 host-256 host-1023 \
-        packet-normal packet-split packet-full event-oversize; do
+        packet-normal packet-split packet-full packet-drain-error event-oversize; do
     ASAN_OPTIONS=detect_leaks=${Q3_TEST_DETECT_LEAKS:-1}:halt_on_error=1 \
     UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
         "$Q3_TEST_DIR/mac_net" "$Q3_TEST_CASE"
