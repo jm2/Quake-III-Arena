@@ -1843,6 +1843,9 @@ static void UI_BuildPlayerList() {
 	team = atoi(Info_ValueForKey(info, "t"));
 	trap_GetConfigString( CS_SERVERINFO, info, sizeof(info) );
 	count = atoi( Info_ValueForKey( info, "sv_maxclients" ) );
+	if ( count > MAX_CLIENTS ) {
+		count = MAX_CLIENTS;	// the name lists and CS_PLAYERS hold MAX_CLIENTS
+	}
 	uiInfo.playerCount = 0;
 	uiInfo.myTeamCount = 0;
 	playerTeamNumber = 0;
