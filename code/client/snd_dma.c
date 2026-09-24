@@ -773,6 +773,12 @@ void S_AddLoopingSound( int entityNum, const vec3_t origin, const vec3_t velocit
 		S_memoryLoad(sfx);
 	}
 
+	// a sound that failed to load or page back in plays nothing, as on a
+	// channel; one that loaded with no samples still drops, as in retail
+	if ( !sfx->soundLength && sfx->defaultSound ) {
+		return;
+	}
+
 	if ( !sfx->soundLength ) {
 		Com_Error( ERR_DROP, "%s has length 0", sfx->soundName );
 	}
@@ -832,6 +838,11 @@ void S_AddRealLoopingSound( int entityNum, const vec3_t origin, const vec3_t vel
 
 	if (sfx->inMemory == qfalse) {
 		S_memoryLoad(sfx);
+	}
+
+	// a sound that failed to load or page back in plays nothing
+	if ( !sfx->soundLength && sfx->defaultSound ) {
+		return;
 	}
 
 	if ( !sfx->soundLength ) {
@@ -1640,33 +1651,36 @@ void S_UpdateBackgroundTrack( void ) {
 
 /*
 ======================
-S_SoundPlaying
+S_MarkPlayingSounds
 
-Returns qtrue if a channel or a looping sound still plays sfx: the mixer
-reads its buffers until it ends or stops
+Marks each sound a channel or a looping sound still plays: the mixer
+reads its buffers until it ends or stops. One pass serves every sound
+S_FreeOldestSound considers.
 ======================
 */
-static qboolean S_SoundPlaying( const sfx_t *sfx ) {
+static byte		s_soundPlaying[MAX_SFX];
+
+static void S_MarkPlayingSounds( void ) {
 	int		i;
 
+	Com_Memset( s_soundPlaying, 0, sizeof( s_soundPlaying ) );
 	for (i=0 ; i < MAX_CHANNELS ; i++) {
-		if (s_channels[i].thesfx == sfx) {
-			return qtrue;
+		if (s_channels[i].thesfx) {
+			s_soundPlaying[s_channels[i].thesfx - s_knownSfx] = 1;
 		}
 	}
 	// a loop channel is painted until the next S_AddLoopSounds, and an
 	// active looping sound is painted from then on
 	for (i=0 ; i < numLoopChannels ; i++) {
-		if (loop_channels[i].thesfx == sfx) {
-			return qtrue;
+		if (loop_channels[i].thesfx) {
+			s_soundPlaying[loop_channels[i].thesfx - s_knownSfx] = 1;
 		}
 	}
 	for (i=0 ; i < MAX_GENTITIES ; i++) {
-		if (loopSounds[i].active && loopSounds[i].sfx == sfx) {
-			return qtrue;
+		if (loopSounds[i].active && loopSounds[i].sfx) {
+			s_soundPlaying[loopSounds[i].sfx - s_knownSfx] = 1;
 		}
 	}
-	return qfalse;
 }
 
 /*
@@ -1687,9 +1701,10 @@ qboolean S_FreeOldestSound() {
 
 	// a sound still playing is not freed: the mixer would read its length
 	// of samples from a buffer chain that is gone
+	S_MarkPlayingSounds();
 	for (i=1 ; i < s_numSfx ; i++) {
 		sfx = &s_knownSfx[i];
-		if (sfx->inMemory && sfx->lastTimeUsed<oldest && !S_SoundPlaying(sfx)) {
+		if (sfx->inMemory && sfx->lastTimeUsed<oldest && !s_soundPlaying[i]) {
 			used = i;
 			oldest = sfx->lastTimeUsed;
 		}
@@ -1697,14 +1712,14 @@ qboolean S_FreeOldestSound() {
 
 	sfx = &s_knownSfx[used];
 
-	if (!sfx->inMemory || (!used && S_SoundPlaying(sfx))) {
+	if (!sfx->inMemory || (!used && s_soundPlaying[0])) {
 		// the default sound is not in memory, and may be the sound being
 		// loaded, whose buffers must stay, or it is playing; a sound in
 		// memory that was used too recently to free yet can be freed once
 		// the clock moves on, but a playing one cannot end while this
 		// load waits
 		for (i=1 ; i < s_numSfx ; i++) {
-			if (s_knownSfx[i].inMemory && !S_SoundPlaying(&s_knownSfx[i])) {
+			if (s_knownSfx[i].inMemory && !s_soundPlaying[i]) {
 				return qtrue;
 			}
 		}
