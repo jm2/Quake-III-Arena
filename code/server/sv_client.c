@@ -597,7 +597,10 @@ void SV_DropClient( client_t *drop, const char *reason ) {
 SV_ConfigstringChars
 
 Chars a client's gameState_t takes for configstring s, as
-MSG_WriteBigString sends it (empty, if it is too long)
+MSG_WriteBigString sends it (empty, if it is too long). One of
+BIG_INFO_STRING - 1 chars is one too many for the MSG_ReadBigString
+of retail 1.32c and this client: it stops before the terminator, and
+the rest of the gamestate is garbage, so it counts as too big.
 ================
 */
 static int SV_ConfigstringChars( const char *s ) {
@@ -605,7 +608,10 @@ static int SV_ConfigstringChars( const char *s ) {
 
 	len = strlen( s );
 	if ( len >= BIG_INFO_STRING ) {
-		len = 0;
+		return 1;
+	}
+	if ( len == BIG_INFO_STRING - 1 ) {
+		return MAX_GAMESTATE_CHARS + 1;
 	}
 	return len + 1;
 }
