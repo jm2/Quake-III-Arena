@@ -1,4 +1,5 @@
-/* Issue #273: clients must not remove or forge the server-maintained "ip" userinfo key. */
+/* Issue #273: clients must not remove or forge the server-maintained "ip" userinfo key.
+ * Issue #348: a client the game drops while connecting is refused once per challenge, without a misleading reason. */
 #include "../code/server/sv_client.c"
 #include <stdarg.h>
 #include <stdlib.h>
@@ -24,7 +25,7 @@ static client_t clients[4];
 static sharedEntity_t entities[4];
 static const char *argument, *addipArgument;
 static char reply[MAX_MSGLEN], gameIP[MAX_INFO_STRING], dropCommand[MAX_STRING_CHARS];
-static int connects, userinfoChanges, disconnects, gameFillsUserinfo;
+static int connects, userinfoChanges, disconnects, gameFillsUserinfo, gameDropsClient;
 
 /** Fail with the violated "ip" key property. */
 static void Check( int ok, const char *message ) {
@@ -50,6 +51,8 @@ const char *NET_AdrToString( netadr_t a ) {
 	return s;
 }
 qboolean Sys_IsLANAddress( netadr_t adr ) { (void)adr; return qfalse; }
+/* SV_GetChallenge: not single player, and no authorize server (NA_BAD), so it answers once AUTHORIZE_TIMEOUT has passed. */
+float Cvar_VariableValue( const char *name ) { (void)name; return 0; }
 void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport ) {
 	memset( chan, 0, sizeof( *chan ) ); chan->sock = sock; chan->remoteAddress = adr; chan->qport = qport; chan->outgoingSequence = 1;
 }
@@ -81,6 +84,9 @@ static void Unreachable( void ) { Check( 0, "unrelated client command handler re
 int Cmd_Argc( void ) { Unreachable(); return 0; }
 void Cmd_TokenizeString( const char *text ) { (void)text; Unreachable(); }
 int FS_FileIsInPAK( const char *filename, int *pChecksum ) { (void)filename; (void)pChecksum; Unreachable(); return -1; }
+cvar_t *sv_strictAuth;
+qboolean NET_StringToAdr( const char *s, netadr_t *a ) { (void)s; (void)a; Unreachable(); return qfalse; }
+cvar_t *Cvar_Get( const char *name, const char *value, int flags ) { (void)name; (void)value; (void)flags; Unreachable(); return NULL; }
 const char *FS_LoadedPakPureChecksums( void ) { Unreachable(); return ""; }
 void MSG_Init( msg_t *buf, byte *data, int length ) { (void)buf; (void)data; (void)length; Unreachable(); }
 void MSG_WriteByte( msg_t *sb, int c ) { (void)sb; (void)c; Unreachable(); }
@@ -102,6 +108,10 @@ int VM_CallArgs( vm_t *vm, int callNum, const int *args, int argCount ) {
 		ip = Info_ValueForKey( svs.clients[args[0]].userinfo, "ip" );
 		Q_strncpyz( gameIP, ip, sizeof( gameIP ) );
 		if ( G_FilterPacket( ip ) ) return BANNED_HANDLE;
+		if ( gameDropsClient ) {	/* a mod's trap_DropClient (SV_GameDropClient) inside ClientConnect */
+			SV_DropClient( &svs.clients[args[0]], "Cheater detected" );
+			return 0;
+		}
 		if ( gameFillsUserinfo ) {	/* a mod's trap_SetUserinfo leaving no room for "ip" */
 			memset( svs.clients[args[0]].userinfo, 'u', MAX_INFO_STRING - 1 );
 			memcpy( svs.clients[args[0]].userinfo, "\\name\\", 6 );
@@ -145,17 +155,31 @@ static void Connect( netadr_t from, const char *userinfo ) {
 	argument = userinfo; reply[0] = 0; gameIP[0] = 0; dropCommand[0] = 0; connects = userinfoChanges = disconnects = 0;
 	SV_DirectConnect( from );
 }
+/** Deliver another "connect" packet to the running server, as the client resends it every 3 s with the same challenge. */
+static void Send( netadr_t from, const char *userinfo ) { argument = userinfo; reply[0] = 0; SV_DirectConnect( from ); }
+/** Deliver a "getchallenge" packet, as a client's /connect or /reconnect does. */
+static void GetChallenge( netadr_t from ) { reply[0] = 0; SV_GetChallenge( from ); }
+/** Run a server frame `msec` later; free zombies like SV_CheckTimeouts in sv_main.c (sv_zombietime 2). */
+static void Frame( int msec ) {
+	int i;
+	svs.time += msec;
+	for ( i = 0; i < 4; i++ ) {
+		if ( clients[i].state == CS_ZOMBIE && clients[i].lastPacketTime < svs.time - 2000 ) clients[i].state = CS_FREE;
+	}
+}
 /** Deliver a "userinfo" client command to client 0. */
 static void Update( const char *userinfo ) { argument = userinfo; SV_UpdateUserinfo_f( &clients[0] ); }
 static const char *StoredIP( void ) { return Info_ValueForKey( clients[0].userinfo, "ip" ); }
 
 int main( void ) {
 	netadr_t banned = Address( 192, 0, 2, 1 ), player = Address( 198, 51, 100, 23 ), other = Address( 203, 0, 113, 9 ), local;
-	char real[64], update[MAX_INFO_STRING];
+	netadr_t newcomer = Address( 198, 51, 100, 42 );
+	char real[64], update[MAX_INFO_STRING], info[MAX_INFO_STRING];
 	size_t limit;
+	int i;
 
 	maxclients.integer = 4; reconnectlimit.integer = 3; privatePassword.string = ""; dedicated.integer = 1;
-	svs.clients = clients; svs.time = 100000; g_filterBan.integer = 1;
+	svs.clients = clients; svs.time = 100000; g_filterBan.integer = 1; svs.authorizeAddress.type = NA_BAD;
 	memset( &local, 0, sizeof( local ) ); local.type = NA_LOOPBACK;
 
 	/* Bots have no "ip" key; the runner pattern-fills uninitialised locals (0xFE GCC, 0xAA Clang). */
@@ -220,8 +244,76 @@ int main( void ) {
 	Connect( other, Userinfo( "", 0 ) );
 	Check( clients[0].state == CS_ZOMBIE && disconnects == 1, "connected without an ip key" );
 	Check( !strcmp( reply, "print\nUserinfo string length exceeded.\n" ), "client dropped at connect not told why" );
+	/* Its resent connects must not rerun ClientConnect and the drop (two broadcasts) every 3 s, even once the zombie is
+	 * freed; they stay silent so the client keeps showing the reason. */
+	for ( i = 0; i < 3; i++ ) {
+		Frame( 3000 ); Send( other, Userinfo( "", 0 ) );
+		Check( !reply[0] && connects == 1 && disconnects == 1 && clients[0].state == CS_FREE, "overflow refusal retried by a resent connect" );
+	}
+	/* A new challenge request is a new attempt: refused again while the game still overflows, then let in. */
+	GetChallenge( other );
+	Check( !strcmp( reply, "challengeResponse 1234" ), "no challenge after a refusal" );
+	Send( other, Userinfo( "", 0 ) );
+	Check( !strcmp( reply, "print\nUserinfo string length exceeded.\n" ) && connects == 2 && disconnects == 2, "new challenge not tried again" );
 	gameFillsUserinfo = 0;
+	Frame( 50 ); Send( other, Userinfo( "", 0 ) );
+	Check( !reply[0] && connects == 2, "second overflow refusal retried by a resent connect" );
+	GetChallenge( other ); Send( other, Userinfo( "", 0 ) );
+	Check( !strcmp( reply, "connectResponse" ) && connects == 3 && clients[0].state == CS_CONNECTED && !strcmp( StoredIP(), real ),
+	       "fitting connect after a new challenge" );
 
-	puts( "Server userinfo ip regressions passed (issue #273)" );
+	/* A game that drops the client in ClientConnect already told everyone why: the client is not sent the overflow
+	 * reason or a connectResponse, and its slot and challenge are released like any other drop. */
+	Q_strncpyz( real, NET_AdrToString( newcomer ), sizeof( real ) );
+	gameDropsClient = 1;
+	Connect( newcomer, Userinfo( "", 0 ) );
+	Check( connects == 1 && disconnects == 1 && !strcmp( dropCommand, "disconnect \"Cheater detected\"" ), "game drop at connect" );
+	Check( !reply[0], "game drop at connect misreported to the client" );
+	Check( clients[0].state == CS_ZOMBIE && !clients[0].lastPacketTime && !clients[0].userinfo[0] && !svs.challenges[0].connected,
+	       "game drop at connect left the slot or its challenge in use" );
+	Frame( 50 );
+	Check( clients[0].state == CS_FREE, "slot dropped at connect not freed on the next frame" );
+	Frame( 3000 ); Send( newcomer, Userinfo( "", 0 ) );
+	Check( !reply[0] && connects == 1 && disconnects == 1 && clients[0].state == CS_FREE, "game drop retried by a resent connect" );
+	gameDropsClient = 0;
+	GetChallenge( newcomer ); Send( newcomer, Userinfo( "", 0 ) );
+	Check( !strcmp( reply, "connectResponse" ) && connects == 2 && clients[0].state == CS_CONNECTED && !strcmp( StoredIP(), real ),
+	       "freed slot not reused after a new challenge" );
+	/* No challenge to record the refusal on for the local client; the drop itself is still handled. */
+	gameDropsClient = 1;
+	Connect( local, Userinfo( "", 0 ) );
+	Check( !reply[0] && clients[0].state == CS_ZOMBIE && disconnects == 1, "local game drop at connect" );
+	gameDropsClient = 0;
+
+	/* The normal connect path is unchanged, and sv_reconnectlimit (3 s) still holds back a connected client's resends. */
+	Connect( newcomer, Userinfo( "", 0 ) );
+	Check( !strcmp( reply, "connectResponse" ) && clients[0].state == CS_CONNECTED && connects == 1 && !disconnects
+	       && clients[0].lastConnectTime == svs.time && clients[0].lastPacketTime == svs.time && svs.challenges[0].connected,
+	       "normal connect" );
+	Frame( 2999 ); Send( newcomer, Userinfo( "", 0 ) );
+	Check( !reply[0] && connects == 1 && clients[0].state == CS_CONNECTED, "reconnect inside sv_reconnectlimit" );
+	Frame( 1 ); Send( newcomer, Userinfo( "", 0 ) );
+	Check( !strcmp( reply, "connectResponse" ) && connects == 2 && clients[0].state == CS_CONNECTED
+	       && clients[0].lastConnectTime == svs.time, "reconnect after sv_reconnectlimit" );
+
+	/* A game rejection is not a drop: every resend gets the game's own reason again, since a client that fixed
+	 * its userinfo (a password) is let in on a resend, as in retail. */
+	Connect( banned, Userinfo( "", 0 ) );
+	Frame( 3000 ); Send( banned, Userinfo( "", 0 ) );
+	Check( !strcmp( reply, BANNED_REPLY ) && connects == 2 && !disconnects, "game rejection not repeated on a resend" );
+	/* The engine's own refusals a retail client sees are unchanged. */
+	Com_sprintf( info, sizeof( info ), "\\protocol\\67\\challenge\\%i\\qport\\7", CHALLENGE );
+	Connect( newcomer, info );
+	Check( !strcmp( reply, "print\nServer uses protocol version 68.\n" ), "protocol refusal" );
+	Com_sprintf( info, sizeof( info ), "\\protocol\\%i\\challenge\\%i\\qport\\7", PROTOCOL_VERSION, CHALLENGE + 1 );
+	Connect( newcomer, info );
+	Check( !strcmp( reply, "print\nNo or bad challenge for address.\n" ), "challenge refusal" );
+	Connect( newcomer, Userinfo( "", 0 ) );
+	for ( i = 1; i < 4; i++ ) { clients[i].state = CS_CONNECTED; clients[i].netchan.remoteAddress = Address( 10, 0, 0, i ); }
+	svs.challenges[1].adr = other; svs.challenges[1].challenge = CHALLENGE;
+	Send( other, Userinfo( "", 0 ) );
+	Check( !strcmp( reply, "print\nServer is full.\n" ), "full server refusal" );
+
+	puts( "Server userinfo ip regressions passed (issues #273, #348)" );
 	return 0;
 }

@@ -80,6 +80,8 @@ void SV_GetChallenge( netadr_t from ) {
 		challenge->connected = qfalse;
 		i = oldest;
 	}
+	// a new challenge request is a new connection attempt
+	challenge->wasrefused = qfalse;
 
 	// if they are on a lan address, send the challengeResponse immediately
 	if ( Sys_IsLANAddress( from ) ) {
@@ -239,6 +241,7 @@ void SV_DirectConnect( netadr_t from ) {
 	char		*denied;
 	int			count;
 	const char	*ip;
+	challenge_t	*challengeptr;
 
 	Com_DPrintf ("SVC_DirectConnect ()\n");
 
@@ -286,6 +289,7 @@ void SV_DirectConnect( netadr_t from ) {
 	Info_SetValueForKey( userinfo, "ip", ip );
 
 	// see if the challenge is valid (LAN clients don't need to challenge)
+	challengeptr = NULL;
 	if ( !NET_IsLocalAddress (from) ) {
 		int		ping;
 
@@ -298,6 +302,12 @@ void SV_DirectConnect( netadr_t from ) {
 		}
 		if (i == MAX_CHALLENGES) {
 			NET_OutOfBandPrint( NS_SERVER, from, "print\nNo or bad challenge for address.\n" );
+			return;
+		}
+		challengeptr = &svs.challenges[i];
+		if ( challengeptr->wasrefused ) {
+			// the client resends connect with the same challenge until it
+			// asks for a new one; stay silent so it keeps showing the reason
 			return;
 		}
 
@@ -439,10 +449,21 @@ gotnewcl:
 		return;
 	}
 
+	// the game dropped the client in ClientConnect and already told everyone why
+	if ( newcl->state == CS_ZOMBIE ) {
+		if ( challengeptr ) {
+			challengeptr->wasrefused = qtrue;
+		}
+		return;
+	}
+
 	SV_UserinfoChanged( newcl );
 	if ( newcl->state == CS_ZOMBIE ) {
 		// the game left no room for the "ip" key
 		NET_OutOfBandPrint( NS_SERVER, from, "print\nUserinfo string length exceeded.\n" );
+		if ( challengeptr ) {
+			challengeptr->wasrefused = qtrue;
+		}
 		return;
 	}
 
