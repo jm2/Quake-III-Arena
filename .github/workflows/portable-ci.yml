@@ -112,3 +112,63 @@ jobs:
         run: |
           echo "Shard matrix result: $SHARD_RESULT"
           test "$SHARD_RESULT" = success
+
+  host-c-regressions-be32-shard:
+    name: Host C regressions (ppc32 BE ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      QEMU_LD_PREFIX: /usr/powerpc-linux-gnu
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the PowerPC cross compiler and qemu-user
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            gcc-powerpc-linux-gnu libc6-dev-powerpc-cross qemu-user-static
+          if [ ! -e /proc/sys/fs/binfmt_misc/qemu-ppc ]; then
+            sudo systemctl restart systemd-binfmt
+          fi
+
+      - name: Check that sanitized 32-bit big-endian binaries run
+        run: |
+          cat > "$RUNNER_TEMP/be32-probe.c" <<'EOF'
+          #include <stdio.h>
+          int main(void) {
+              unsigned int one = 1;
+              if (*(unsigned char *)&one != 0 || sizeof(long) != 4 || (char)-1 >= 0) return 1;
+              puts("32-bit big-endian PowerPC with signed char");
+              return 0;
+          }
+          EOF
+          tests/be32_cc.sh -fsanitize=address,undefined "$RUNNER_TEMP/be32-probe.c" \
+            -o "$RUNNER_TEMP/be32-probe"
+          "$RUNNER_TEMP/be32-probe"
+
+      - name: Run 32-bit big-endian regressions
+        env:
+          CC: ${{ github.workspace }}/tests/be32_cc.sh
+          Q3_TEST_DETECT_LEAKS: "0"
+        run: >-
+          bash tests/run_host_regressions.sh --shard ${{ matrix.shard }}/4
+          --skip-file tests/be32_skip.txt --deadline 1200
+
+  host-c-regressions-be32:
+    name: Host C regressions (ppc32 BE)
+    if: always()
+    needs: host-c-regressions-be32-shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every shard to pass
+        env:
+          SHARD_RESULT: ${{ needs.host-c-regressions-be32-shard.result }}
+        run: |
+          echo "Shard matrix result: $SHARD_RESULT"
+          test "$SHARD_RESULT" = success

@@ -186,12 +186,14 @@ static void NativeFacePlanes(void) {
 	}
 }
 static void NativeNodraw(void) {
-	dheader_t h;msurface_t surf;int before=patchAllocations;
+	static dshader_t shaders[2];dheader_t h;msurface_t surf;int before=patchAllocations;
 	Build(MST_PATCH,129*3,0,129,3);
 	Word(At(LUMP_SHADERS,0,sizeof(dshader_t))+offsetof(dshader_t,surfaceFlags),SURF_NODRAW);
 	Header(&h);failPatchWorkspace=1;
 	Check(!R_ValidateBSPGeometry(source,&h) && failPatchWorkspace && patchAllocations==before,"unused nodraw controls bypass native renderer refinement capacity/workspace");
-	failPatchWorkspace=0;s_worldData.numShaders=2;s_worldData.shaders=(void *)(source+h.lumps[LUMP_SHADERS].fileofs);memset(&surf,0,sizeof(surf));
+	/* R_LoadShaders hands ParseMesh host-order flags; the lump holds little-endian ones. */
+	memcpy(shaders,source+h.lumps[LUMP_SHADERS].fileofs,sizeof(shaders));shaders[0].surfaceFlags=LittleLong(shaders[0].surfaceFlags);shaders[1].surfaceFlags=LittleLong(shaders[1].surfaceFlags);
+	failPatchWorkspace=0;s_worldData.numShaders=2;s_worldData.shaders=shaders;memset(&surf,0,sizeof(surf));
 	ParseMesh((void *)(source+h.lumps[LUMP_SURFACES].fileofs),(void *)(source+h.lumps[LUMP_DRAWVERTS].fileofs),&surf);
 	Check(surf.data && *surf.data==SF_SKIP && !heapCount && !patchWorkspace,"actual native nodraw skip before control access/allocation");
 }

@@ -11,7 +11,7 @@ for Q3_TEST_MODE in normal fast; do
         -fsanitize=address,undefined "${Q3_TEST_FLAGS[@]}" \
         "$Q3_TEST_ROOT/tests/fs_config_mutable_regression.c" \
         "$Q3_TEST_ROOT/code/qcommon/md4.c" "$Q3_TEST_ROOT/code/game/q_shared.c" \
-        -Wl,--gc-sections -lm -lz -o "$Q3_TEST_DIR/config-mutable-tests"
+        -Wl,--gc-sections -lm -o "$Q3_TEST_DIR/config-mutable-tests"
     # Fresh tree per mode: base holds the retail-style pak0.pk3, home holds the
     # user's loose configs plus pk3s a server could have auto-downloaded.
     Q3_FIXTURE="$Q3_TEST_DIR/$Q3_TEST_MODE"
@@ -33,7 +33,7 @@ pack("/home/evilmod/evil.pk3", [("q3config.cfg", b"// hostile mod q3config\n"),
                                 ("autoexec.cfg", b"// hostile mod autoexec\n"),
                                 ("evil.txt", b"evil pk3 data\n")])
 PY_ZIP
-    ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+    ASAN_OPTIONS=detect_leaks=${Q3_TEST_DETECT_LEAKS:-1}:halt_on_error=1 \
         UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
         "$Q3_TEST_DIR/config-mutable-tests" "$Q3_FIXTURE"
 done

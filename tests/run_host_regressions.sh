@@ -2,9 +2,13 @@
 # Run the host C regression runners (tests/run_*_tests.sh) in parallel.
 #
 #   tests/run_host_regressions.sh [--shard K/N] [--jobs J] [--timeout SECONDS]
-#                                 [--deadline SECONDS]
+#                                 [--deadline SECONDS] [--skip-file FILE]
 #
 # Runners are discovered with git ls-files, so new runners need no CI edits.
+# --skip-file (a path relative to the repository root) leaves out the runners
+# it names before sharding: one runner name without .sh per line, '#' starts
+# a comment. A name that matches no runner is an error, so stale entries are
+# noticed.
 # --shard K/N selects every N-th runner (0-based K) of the sorted list. The
 # compiler comes from $CC as in the individual runners. Each result is printed
 # as soon as its runner finishes. --timeout bounds one runner; --deadline
@@ -19,6 +23,7 @@ shards=1
 jobs="$(nproc 2>/dev/null || echo 2)"
 runner_timeout=600
 deadline=0
+skip_file=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -39,6 +44,10 @@ while [ "$#" -gt 0 ]; do
             deadline="$2"
             shift 2
             ;;
+        --skip-file)
+            skip_file="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown argument: $1" >&2
             exit 2
@@ -52,6 +61,27 @@ if ! [[ "$shard" =~ ^[0-9]+$ && "$shards" =~ ^[1-9][0-9]*$ ]] || [ "$shard" -ge 
 fi
 
 mapfile -t all_runners < <(git ls-files -- 'tests/run_*_tests.sh' | LC_ALL=C sort)
+if [ -n "$skip_file" ]; then
+    if [ ! -f "$skip_file" ]; then
+        echo "Skip file not found: $skip_file" >&2
+        exit 2
+    fi
+    mapfile -t skip_names < <(sed -e 's/#.*//' -e 's/[[:space:]]//g' -e '/^$/d' "$skip_file")
+    for skip_name in "${skip_names[@]}"; do
+        if [[ " ${all_runners[*]} " != *" tests/$skip_name.sh "* ]]; then
+            echo "Unknown runner in $skip_file: $skip_name" >&2
+            exit 2
+        fi
+    done
+    kept=()
+    for runner in "${all_runners[@]}"; do
+        if [[ " ${skip_names[*]} " != *" $(basename "$runner" .sh) "* ]]; then
+            kept+=("$runner")
+        fi
+    done
+    echo "Skipping ${#skip_names[@]} runner(s) listed in $skip_file${skip_names[*]:+: ${skip_names[*]}}"
+    all_runners=("${kept[@]}")
+fi
 selected=()
 for index in "${!all_runners[@]}"; do
     if [ $((index % shards)) -eq "$shard" ]; then

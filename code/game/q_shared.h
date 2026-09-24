@@ -310,7 +310,7 @@ inline static short LittleShort(short l) { return ShortSwap(l); }
 #define BigLong
 inline static int LittleLong (int l) { return LongSwap(l); }
 #define BigFloat
-inline static float LittleFloat (const float *l) { return FloatSwap(l); }
+inline static float LittleFloat (const float l) { return FloatSwap(&l); }
 #endif
 
 #endif

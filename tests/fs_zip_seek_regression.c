@@ -49,10 +49,18 @@ static void SeekCase(char *path, int kind) {
     } else if (kind == 4) {
         Check(FS_Seek(f,3,999)==-1 && !FS_FTell(f), "unknown ZIP seek origin rejects without cursor change");
     } else {
+#if LONG_MAX > INT_MAX
 		Check(FS_Seek(f,LONG_MAX,FS_SEEK_SET)==-1 && FS_FTell(f)==0,
 		      "unrepresentable positive ZIP offset rejects before moving");
 		Check(FS_Seek(f,LONG_MIN,FS_SEEK_CUR)==-1 && FS_FTell(f)==0,
 		      "unrepresentable negative ZIP offset rejects before moving");
+#else
+		/* ILP32 (the PPC target): every long offset is an int and clamps natively. */
+		Check(FS_Seek(f,LONG_MAX,FS_SEEK_SET)==LONG_MAX && FS_FTell(f)==length,
+		      "largest ILP32 ZIP offset clamps to native EOF");
+		Check(FS_Seek(f,LONG_MIN,FS_SEEK_CUR)==LONG_MIN && FS_FTell(f)==0,
+		      "smallest ILP32 ZIP offset clamps to native start");
+#endif
     }
     Close(f);
 }

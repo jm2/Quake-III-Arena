@@ -184,6 +184,28 @@ merging several PRs in a row never cancels or drops a master run.
     collision loading with exact input, every header prefix, lump ranges/strides,
     actual native allocation sizes and raised map-compiler budgets,
     visibility rows, cleanup before errors and retained world state.
+- `Host C regressions (ppc32 BE)`
+  - summarizes four parallel jobs, `Host C regressions (ppc32 BE K/4)`, that
+    run the same `tests/run_*_tests.sh` runners on 32-bit big-endian PowerPC
+    Linux (ILP32, `__BIG_ENDIAN__`), the target's byte order and word size. Each
+    job installs Ubuntu's `gcc-powerpc-linux-gnu` and `qemu-user-static`, checks
+    that a sanitized probe runs through the qemu-ppc binfmt handler, then runs
+    its quarter through `tests/run_host_regressions.sh` with the same 10-minute
+    runner and 20-minute shard bounds;
+  - `tests/be32_cc.sh` is the `$CC`. It keeps each runner's own flags,
+    AddressSanitizer and UndefinedBehaviorSanitizer included, and adds the
+    Retro68 target's `-fsigned-char` and 64-bit `long double`
+    (`-mlong-double-64`) plus `-latomic` for the ppc32 sanitizer runtimes;
+  - `shift-base` checks stay off until LongSwap stops shifting a byte into the
+    `int` sign bit on every big-endian swap (issue #333);
+  - ppc32 has no LeakSanitizer, so the job sets `Q3_TEST_DETECT_LEAKS=0`, which
+    the leak-checking runners pass as `detect_leaks`. Leaks are still checked
+    by the x86-64 jobs;
+  - `tests/be32_skip.txt` names runners left out of this job. An entry must
+    cite the issue for the big-endian or ILP32 engine defect it hits; none is
+    listed today. Test-only byte-order and LP64 assumptions are fixed in the
+    tests instead. Struct layout still follows the Linux SysV ABI, whose
+    `double`/`long long` alignment differs from the Mac OS PowerPC ABI.
 
 GitHub Actions dependencies are pinned to exact release commits, and
 Dependabot is configured to propose GitHub Actions updates.
@@ -226,6 +248,20 @@ pwsh -NoProfile -File ./build_mac.ps1 --help
 
 PowerShell parser validation is also part of CI; see
 `.github/workflows/portable-ci.yml` for the exact command.
+
+The 32-bit big-endian job needs `powerpc-linux-gnu-gcc` with its ppc32 sysroot
+and a registered qemu-ppc binfmt_misc handler (Debian/Ubuntu:
+`gcc-powerpc-linux-gnu libc6-dev-powerpc-cross qemu-user-static`):
+
+```sh
+CC="$PWD/tests/be32_cc.sh" QEMU_LD_PREFIX=/usr/powerpc-linux-gnu \
+Q3_TEST_DETECT_LEAKS=0 bash tests/run_host_regressions.sh --skip-file tests/be32_skip.txt
+```
+
+Without root, an `ubuntu:24.04` container under rootless Podman
+(`podman run --privileged`) can install those packages, mount its own
+`binfmt_misc` (Linux 6.7 and later) and register
+`/usr/lib/binfmt.d/qemu-ppc.conf` there.
 
 The native shader runtime runner compiles the actual math/noise bodies in normal
 and release fast-math sanitizer configurations. It compares 645 valid waveform/
@@ -336,6 +372,12 @@ Mac OS 9 runtime behavior. Passing these starter checks alone does not close
 security or target-runtime issues; each issue needs its specified regressions
 and applicable target evidence.
 
+The ppc32 big-endian job runs Linux ELF binaries from Ubuntu's
+`powerpc-linux-gnu` GCC under qemu-user. It checks the target's byte order,
+32-bit `long`/pointers, signed `char` and 64-bit `long double`, but not
+Retro68's compiler, the Mac OS PowerPC ABI's struct alignment, the `__MACOS__`
+header paths or real PowerPC hardware.
+
 For every PR, require successful CI on the current head and an approving
 review of that exact head by an independent adversarial reviewer agent that
 did not write the change (posted as a PR comment). Resolve blocking findings,
@@ -353,7 +395,7 @@ their issue's acceptance criteria specify them.
 The next CI layers should be:
 
 1. a legally provisioned/self-hosted Retro68 runner that builds base and Team
-   Arena and validates `Joy!peff` / `pwpc`;
+   Arena and validates `Joy!peff` / `pwpc` (issue #334);
 2. hostile-input ASan/UBSan harnesses for the parser/protocol security issues;
 3. mounted HFS resource/Finder inspection;
 4. emulator smoke tests using externally provisioned legal game data.

@@ -14,7 +14,7 @@ for Q3_TEST_MODE in normal fast; do
         "$Q3_TEST_ROOT/code/game/q_shared.c" -Wl,--gc-sections -lm \
         -o "$Q3_TEST_DIR/netchan-fragment-tests"
     for Q3_CASE in {0..7}; do
-        ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+        ASAN_OPTIONS=detect_leaks=${Q3_TEST_DETECT_LEAKS:-1}:halt_on_error=1 \
         UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
             "$Q3_TEST_DIR/netchan-fragment-tests" "$Q3_CASE"
     done
