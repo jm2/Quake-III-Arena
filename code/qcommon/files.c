@@ -210,7 +210,6 @@ q3config.cfg and autoexec.cfg are never loaded from a pak file, so a pak
 // NOW defined in build files
 //#define PRE_RELEASE_TADEMO
 
-#define MAX_ZPATH			256
 #define	MAX_SEARCH_PATHS	4096
 #define MAX_FILEHASH_SIZE	1024
 
@@ -2256,7 +2255,7 @@ DIRECTORY SCANNING FUNCTIONS
 #define	MAX_FOUND_FILES	0x1000
 
 static int FS_ReturnPath( const char *zname, char *zpath, int *depth ) {
-	int len, at, newdep;
+	int len, at, newdep, copied;
 
 	newdep = 0;
 	zpath[0] = 0;
@@ -2271,8 +2270,11 @@ static int FS_ReturnPath( const char *zname, char *zpath, int *depth ) {
 		}
 		at++;
 	}
-	strcpy(zpath, zname);
-	zpath[len] = 0;
+	// zpath is MAX_ZPATH bytes: copy only the directory part, bounded whatever the
+	// caller passed (#398); this runs once per pk3 entry, so write no more than needed
+	copied = len < MAX_ZPATH ? len : MAX_ZPATH - 1;
+	Com_Memcpy( zpath, zname, copied );
+	zpath[copied] = 0;
 	*depth = newdep;
 
 	return len;
@@ -2325,7 +2327,8 @@ char **FS_ListFilteredFiles( const char *path, const char *extension, char *filt
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
 	}
 
-	if ( !path || !FS_CheckQPath( path ) ) {
+	// a list path is a qpath, shorter than MAX_ZPATH; modules and "dir" pass any length (#398)
+	if ( !path || strlen( path ) >= MAX_ZPATH || !FS_CheckQPath( path ) ) {
 		*numfiles = 0;
 		return NULL;
 	}
