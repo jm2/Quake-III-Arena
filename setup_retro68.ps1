@@ -165,16 +165,24 @@ if (-not (Get-Command "unar" -ErrorAction SilentlyContinue)) {
 
 # A compiler alone is not a complete install for this project. The renderer
 # also requires prepared OpenGL headers and the generated import library.
+# The tools must also run: after a host OS upgrade they can remain installed
+# but fail to load a DLL (issue #269), and only a full rebuild repairs them.
 $PreparedOpenGLDir = Join-Path $INSTALL_DIR "powerpc-apple-macos\include"
 $PreparedGl = Join-Path $PreparedOpenGLDir "gl.h"
 $PreparedAgl = Join-Path $PreparedOpenGLDir "agl.h"
 $OpenGLStubLib = Join-Path $SOURCE_DIR "InterfacesAndLibraries\SharedLibraries\libOpenGLLibraryStub.a"
+$RemoveBrokenToolchain = $false
 if ((Test-Path "$INSTALL_DIR\bin\powerpc-apple-macos-gcc.exe") -and
     (Test-Path $PreparedGl) -and
     (Test-Path $PreparedAgl) -and
     (Test-Path $OpenGLStubLib)) {
-    Write-Host "Retro68 appears to be installed in $INSTALL_DIR."
-    exit 0
+    & .\check_retro68.ps1 -InstallDir $INSTALL_DIR
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Retro68 appears to be installed in $INSTALL_DIR."
+        exit 0
+    }
+    Write-Host "The installed Retro68 toolchain cannot run (see above); rebuilding it." -ForegroundColor Yellow
+    $RemoveBrokenToolchain = $true
 }
 
 Write-Host "Retro68 not found locally."
@@ -305,6 +313,11 @@ Get-ChildItem -Path "$SOURCE_DIR" -Recurse -Filter "CMakeLists.txt" | ForEach-Ob
 }
 
 Write-Host "Building Retro68 Toolchain..." -ForegroundColor Green
+# build-toolchain.bash refuses to install a full build into a non-empty prefix.
+if ($RemoveBrokenToolchain) {
+    Write-Host "Removing the toolchain that cannot run from $INSTALL_DIR..."
+    Remove-Item -Recurse -Force $INSTALL_DIR
+}
 Write-Host "Invoking build-toolchain.bash via bash..."
 
 # Convert paths to Unix style for bash

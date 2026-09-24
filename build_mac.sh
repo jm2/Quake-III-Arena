@@ -147,6 +147,14 @@ if ! install_prepared_opengl_support; then
     fi
 fi
 
+# All of those files can exist while the tools cannot run, for example after a
+# host OS upgrade removed a shared library they need (issue #269). Run them
+# now: CMake would only report that the compiler identification is unknown.
+if ! ../check_retro68.sh "$(cd .. && pwd)/tools/Retro68-build"; then
+    echo "Stopping before CMake: the Retro68 toolchain cannot build Quake3."
+    exit 1
+fi
+
 # Add local bin to PATH for this session
 export PATH="$LOCAL_BIN:$PATH"
 

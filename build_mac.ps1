@@ -141,6 +141,14 @@ if (-not (Install-PreparedOpenGLSupport)) {
     }
 }
 
+# All of those files can exist while the tools cannot run, for example after a
+# host OS upgrade removed a DLL they need (issue #269). Run them now: CMake
+# would only report that the compiler identification is unknown.
+& .\check_retro68.ps1 -InstallDir (Join-Path (Get-Location) "tools\Retro68-build")
+if ($LASTEXITCODE -ne 0) {
+    throw "Stopping before CMake: the Retro68 toolchain cannot build Quake3."
+}
+
 # Add tools dir to PATH for this session
 $env:PATH = "$ToolsDir;$env:PATH"
 

@@ -188,12 +188,20 @@ fi
 # (ConvertDiskImage is the last one built and installed), keep the existing
 # binutils/gcc/host-tool artifacts and pass --skip-thirdparty to
 # build-toolchain.bash so it just runs the I&L + multiversal + target-lib
-# steps. To force a full rebuild, delete tools/Retro68-build manually.
+# steps. The installed tools must also run: after a host OS upgrade they can
+# fail to load their shared libraries, and --skip-thirdparty never rebuilds
+# gcc or binutils (issue #269). To force a full rebuild, delete
+# tools/Retro68-build manually.
 SKIP_FLAGS=()
 if [ -x "$INSTALL_DIR/bin/ConvertDiskImage" ] && [ -d "$BUILD_WORK_DIR" ]; then
-    echo "Step 4: Existing toolchain detected — resuming with --skip-thirdparty."
-    SKIP_FLAGS=(--skip-thirdparty)
-else
+    if ./check_retro68.sh --tools-only "$INSTALL_DIR"; then
+        echo "Step 4: Existing toolchain detected — resuming with --skip-thirdparty."
+        SKIP_FLAGS=(--skip-thirdparty)
+    else
+        echo "Step 4: The existing toolchain cannot run (see above); rebuilding it all."
+    fi
+fi
+if [ "${#SKIP_FLAGS[@]}" -eq 0 ]; then
     echo "Step 4: Cleaning previous builds..."
     [ -d "$INSTALL_DIR" ]    && rm -rf "$INSTALL_DIR"
     [ -d "$BUILD_WORK_DIR" ] && rm -rf "$BUILD_WORK_DIR"

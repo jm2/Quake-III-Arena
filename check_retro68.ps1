@@ -1,0 +1,205 @@
+# Check that the Retro68 toolchain runs on this host (issue #269).
+#
+#   .\check_retro68.ps1 [-ToolsOnly] [-InstallDir <dir>]
+#
+# PowerShell counterpart of check_retro68.sh, which describes the steps: run
+# the compiler, archiver, linker, MakePEF, MakeImport and Rez the build uses,
+# and unless -ToolsOnly is given, compile and link a C file with the
+# CMakeLists.txt flags, convert it with MakePEF and build an application with
+# Rez. Exits 0 when the toolchain runs and 1 with a message naming the failed
+# step otherwise. On Windows a missing DLL shows up as exit status 0xC0000135.
+
+param(
+    [string]$InstallDir = "",
+    [switch]$ToolsOnly
+)
+
+if (-not $InstallDir) {
+    $InstallDir = Join-Path (Join-Path $PSScriptRoot "tools") "Retro68-build"
+}
+$Bin = Join-Path $InstallDir "bin"
+$Target = "powerpc-apple-macos"
+
+# Keep in step with CMakeLists.txt and cmake/Retro68.toolchain.cmake.
+$CompileFlags = @("-std=gnu99", "-fgnu89-inline", "-O0", "-g",
+    "-fno-strict-aliasing", "-fsigned-char", "-D__MACOS__", "-D__POWERPC__")
+
+$Work = $null
+$PreviousPath = $env:PATH
+
+function Stop-Check {
+    param([string]$Step, [string]$Output = "")
+
+    Write-Host "Error: Retro68 toolchain check failed in ${InstallDir}:" -ForegroundColor Red
+    Write-Host "  $Step"
+    if ($Output) {
+        $Output -split "`r?`n" | Select-Object -First 20 |
+            ForEach-Object { Write-Host "  | $_" }
+    }
+    Write-Host "If a host shared library or DLL is missing (for example after an OS"
+    Write-Host "upgrade), install it or rebuild the toolchain with setup_retro68.ps1. See"
+    Write-Host "`"Checking and rebuilding the toolchain`" in docs/building-mac-os9.md."
+    Remove-CheckState
+    exit 1
+}
+
+function Remove-CheckState {
+    if ($Work -and (Test-Path $Work)) {
+        Remove-Item -Recurse -Force $Work -ErrorAction SilentlyContinue
+    }
+    $env:PATH = $PreviousPath
+}
+
+function Find-Tool {
+    param([string]$Name)
+
+    foreach ($Candidate in @("$Name.exe", $Name)) {
+        $Path = Join-Path $Bin $Candidate
+        if (Test-Path $Path -PathType Leaf) {
+            return $Path
+        }
+    }
+    Stop-Check "$Name is missing from $Bin."
+}
+
+function Get-ExitStatusText {
+    param([int]$Code)
+
+    switch ($Code) {
+        -1073741515 { return "0xC0000135: a DLL it needs was not found" }
+        -1073741511 { return "0xC0000139: a DLL it loads lacks an entry point" }
+        -1073741701 { return "0xC000007B: a DLL it loads is not a valid image" }
+    }
+    return "$Code"
+}
+
+# Runs a native tool and returns its exit status and combined output. Native
+# stderr must not become a terminating error under a caller's "Stop" setting.
+function Invoke-Tool {
+    param([string]$Path, [string[]]$Arguments)
+
+    $PreviousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $Lines = & $Path @Arguments 2>&1 | ForEach-Object { "$_" }
+        $Code = $LASTEXITCODE
+    }
+    catch {
+        $Lines = @("$_")
+        $Code = 127
+    }
+    finally {
+        $ErrorActionPreference = $PreviousPreference
+    }
+    return @{ Code = $Code; Output = ($Lines -join "`n") }
+}
+
+# A tool that must succeed.
+function Invoke-Step {
+    param([string]$Step, [string]$Path, [string[]]$Arguments)
+
+    $Result = Invoke-Tool $Path $Arguments
+    if ($Result.Code -ne 0) {
+        Stop-Check "$Step failed (exit status $(Get-ExitStatusText $Result.Code)):" $Result.Output
+    }
+}
+
+# A tool run without input: its own usage error is fine, but the loader must
+# not stop it.
+function Invoke-Probe {
+    param([string]$Name, [string]$Path, [string[]]$Arguments)
+
+    $Result = Invoke-Tool $Path $Arguments
+    if ($Result.Code -ge 126 -or $Result.Code -lt 0 -or
+        $Result.Output -match "error while loading shared libraries|symbol lookup error|Library not loaded|not found \(required by") {
+        Stop-Check "$Name could not start (exit status $(Get-ExitStatusText $Result.Code)):" $Result.Output
+    }
+}
+
+$Gcc = Find-Tool "$Target-gcc"
+$Gxx = Find-Tool "$Target-g++"
+$Ar = Find-Tool "$Target-ar"
+$Ranlib = Find-Tool "$Target-ranlib"
+$Ld = Find-Tool "$Target-ld"
+$MakePEF = Find-Tool "MakePEF"
+$MakeImport = Find-Tool "MakeImport"
+$Rez = Find-Tool "Rez"
+
+if ($env:TMPDIR) {
+    $TempRoot = $env:TMPDIR
+}
+elseif ($env:OS -eq "Windows_NT") {
+    $TempRoot = [System.IO.Path]::GetTempPath()
+}
+else {
+    $TempRoot = "/var/tmp"
+}
+$Work = Join-Path $TempRoot ("q3-retro68-check." + [System.Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $Work -Force | Out-Null
+$env:PATH = $Bin + [System.IO.Path]::PathSeparator + $env:PATH
+
+$CheckC = Join-Path $Work "check.c"
+$CheckCxx = Join-Path $Work "check_cxx.cc"
+$CheckObject = Join-Path $Work "check.o"
+$CheckLibrary = Join-Path $Work "libcheck.a"
+if ($ToolsOnly) {
+    $CSource = @("int retro68_check(void)", "{", "`treturn 0;", "}")
+}
+else {
+    $CSource = @("#include <MacTypes.h>", "#include <math.h>", "",
+        "int main(int argc, char **argv)", "{",
+        "`tBoolean ok = argc > 0 && argv != NULL;",
+        "`treturn ok && floor(1.5) == 1.0 ? 0 : 1;", "}")
+}
+Set-Content -Path $CheckC -Value $CSource -Encoding Ascii
+Set-Content -Path $CheckCxx -Value @("int retro68_check_cxx(int value)", "{",
+    "`treturn value + 1;", "}") -Encoding Ascii
+
+Invoke-Step "$Target-gcc --version" $Gcc @("--version")
+Invoke-Step "compiling a C file ($Target-gcc -c)" $Gcc `
+    ($CompileFlags + @("-c", $CheckC, "-o", $CheckObject))
+Invoke-Step "compiling a C++ file ($Target-g++ -c)" $Gxx `
+    @("-fsigned-char", "-c", $CheckCxx, "-o", (Join-Path $Work "check_cxx.o"))
+Invoke-Step "archiving the object ($Target-ar qc)" $Ar @("qc", $CheckLibrary, $CheckObject)
+Invoke-Step "indexing the archive ($Target-ranlib)" $Ranlib @($CheckLibrary)
+Invoke-Step "$Target-ld --version" $Ld @("--version")
+Invoke-Probe "MakePEF" $MakePEF @()
+Invoke-Probe "MakeImport" $MakeImport @()
+Invoke-Probe "Rez" $Rez @("--help")
+
+if (-not $ToolsOnly) {
+    $CheckXcoff = Join-Path $Work "check.xcoff"
+    $CheckPef = Join-Path $Work "check.pef"
+    $CheckRez = Join-Path $Work "check.r"
+    $CheckApplication = Join-Path $Work "check.bin"
+    Invoke-Step "linking an XCOFF image ($Target-gcc)" $Gcc `
+        ($CompileFlags + @("-Wl,--whole-archive", $CheckLibrary,
+            "-Wl,--no-whole-archive", "-lm", "-lInterfaceLib", "-o", $CheckXcoff))
+    Invoke-Step "converting the XCOFF image to PEF (MakePEF)" $MakePEF `
+        @($CheckXcoff, "-o", $CheckPef)
+    $Header = ""
+    if (Test-Path $CheckPef) {
+        $Bytes = [System.IO.File]::ReadAllBytes($CheckPef)
+        if ($Bytes.Length -ge 12) {
+            $Header = [System.Text.Encoding]::ASCII.GetString($Bytes, 0, 12)
+        }
+    }
+    if ($Header -cne "Joy!peffpwpc") {
+        Stop-Check "MakePEF did not write a PowerPC PEF (no Joy!peff/pwpc header)."
+    }
+    Set-Content -Path $CheckRez -Value @("data 'Q3ck' (128) {", "`t`$`"00`"", "};") -Encoding Ascii
+    Invoke-Step "building an application with Rez" $Rez `
+        @($CheckRez, "-t", "APPL", "-c", "IDQ3", "--data", $CheckPef, "-o", $CheckApplication)
+    if (-not (Test-Path $CheckApplication) -or (Get-Item $CheckApplication).Length -eq 0) {
+        Stop-Check "Rez did not write an application."
+    }
+}
+
+Remove-CheckState
+if ($ToolsOnly) {
+    Write-Host "Retro68 tools run: $InstallDir"
+}
+else {
+    Write-Host "Retro68 toolchain check passed: $InstallDir"
+}
+exit 0
