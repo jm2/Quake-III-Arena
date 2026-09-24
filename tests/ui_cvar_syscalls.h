@@ -16,6 +16,7 @@ static void Check( int ok, const char *what );
 
 static char configStrings[MAX_CONFIGSTRINGS][MAX_INFO_STRING];
 static char executed[MAX_STRING_CHARS];	/* EXEC_APPEND text */
+static char printed[MAX_STRING_CHARS];	/* the last UI_PRINT text */
 static qhandle_t lastShader;	/* the last registered shader handle */
 static qhandle_t drawnShader;	/* the last shader drawn */
 
@@ -30,6 +31,8 @@ static int QDECL FakeSyscall( int command, ... ) {
 		Check( 0, va_arg( ap, const char * ) );
 		break;
 	case UI_PRINT:
+		Q_strncpyz( printed, va_arg( ap, const char * ), sizeof( printed ) );
+		break;
 	case UI_MILLISECONDS:
 	case UI_R_SETCOLOR:
 	case UI_KEY_SETCATCHER:
