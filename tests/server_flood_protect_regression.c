@@ -76,6 +76,7 @@ const char *FS_LoadedPakPureChecksums( void ) { Check( 0, "FS_LoadedPakPureCheck
 void FS_FCloseFile( fileHandle_t f ) { (void)f; Check( 0, "FS_FCloseFile" ); }
 void SV_Netchan_FreeQueue( client_t *client ) { Check( dropping >= 0 && client == &svs.clients[dropping], "SV_Netchan_FreeQueue" ); }
 qboolean NET_CompareAdr( netadr_t a, netadr_t b ) { (void)a; (void)b; Check( 0, "NET_CompareAdr" ); return qfalse; }
+void QDECL NET_OutOfBandPrint( netsrc_t sock, netadr_t adr, const char *format, ... ) { (void)sock; (void)adr; (void)format; Check( 0, "NET_OutOfBandPrint" ); }
 void SV_Heartbeat_f( void ) { Check( 0, "SV_Heartbeat_f" ); }
 /** Same as sv_bot.c; only the bot being dropped may be freed. */
 void SV_BotFreeClient( int clientNum ) {
