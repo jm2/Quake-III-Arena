@@ -1463,7 +1463,9 @@ void S_StartBackgroundTrack( const char *intro, const char *loop ){
 		return;
 	}
 
-	Q_strncpyz( s_backgroundLoop, loop, sizeof( s_backgroundLoop ) );
+	if ( loop != s_backgroundLoop ) {	// a loop restarts with its own name: don't copy it onto itself
+		Q_strncpyz( s_backgroundLoop, loop, sizeof( s_backgroundLoop ) );
+	}
 
 	// close the background track, but DON'T reset s_rawend
 	// if restarting the same back ground track
@@ -1505,6 +1507,19 @@ void S_StartBackgroundTrack( const char *intro, const char *loop ){
 		FS_FCloseFile( s_backgroundFile );
 		s_backgroundFile = 0;
 		Com_Printf("Not a microsoft PCM format wav: %s\n", name);
+		return;
+	}
+
+	// the sample count divides by the frame size, S_RawSamples plays only
+	// 8 and 16 bit mono and stereo at a positive rate (anything else never
+	// fills the music buffer), and S_UpdateBackgroundTrack multiplies the
+	// rate by up to MAX_RAW_SAMPLES
+	if ( s_backgroundInfo.width < 1 || s_backgroundInfo.width > 2
+		|| s_backgroundInfo.channels < 1 || s_backgroundInfo.channels > 2
+		|| s_backgroundInfo.rate <= 0 || s_backgroundInfo.rate > 0x7fffffff / MAX_RAW_SAMPLES ) {
+		FS_FCloseFile( s_backgroundFile );
+		s_backgroundFile = 0;
+		Com_Printf("Unsupported sample format in music file %s\n", name);
 		return;
 	}
 
@@ -1570,6 +1585,12 @@ void S_UpdateBackgroundTrack( void ) {
 			fileSamples = s_backgroundSamples;
 		}
 
+		// a track slower than the mixer may have less than one sample to
+		// add yet, and an empty track has none: reading nothing never ends
+		if ( !fileSamples ) {
+			return;
+		}
+
 		// our max buffer size
 		fileBytes = fileSamples * (s_backgroundInfo.width * s_backgroundInfo.channels);
 		if ( fileBytes > sizeof(raw) ) {
@@ -1614,10 +1635,12 @@ void S_UpdateBackgroundTrack( void ) {
 /*
 ======================
 S_FreeOldestSound
+
+Returns qfalse if no sound is left in memory to free
 ======================
 */
 
-void S_FreeOldestSound() {
+qboolean S_FreeOldestSound() {
 	int	i, oldest, used;
 	sfx_t	*sfx;
 	sndBuffer	*buffer, *nbuffer;
@@ -1635,6 +1658,18 @@ void S_FreeOldestSound() {
 
 	sfx = &s_knownSfx[used];
 
+	if (!sfx->inMemory) {
+		// the default sound is not in memory, and may be the sound being
+		// loaded, whose buffers must stay; a sound in memory that was used
+		// too recently to free yet can be freed once the clock moves on
+		for (i=1 ; i < s_numSfx ; i++) {
+			if (s_knownSfx[i].inMemory) {
+				return qtrue;
+			}
+		}
+		return qfalse;
+	}
+
 	Com_DPrintf("S_FreeOldestSound: freeing sound %s\n", sfx->soundName);
 
 	buffer = sfx->soundData;
@@ -1645,4 +1680,5 @@ void S_FreeOldestSound() {
 	}
 	sfx->inMemory = qfalse;
 	sfx->soundData = NULL;
+	return qtrue;
 }
