@@ -8,9 +8,16 @@
  * This test includes the real snd_dma.c and links the real snd_mem.c, snd_mix.c, snd_adpcm.c and
  * snd_wavelet.c. Each mode fills the buffer pool while channels and looping sounds play, loads another
  * sound, and paints with S_PaintChannels, comparing each output sample with the sounds' own samples.
- * The last mode checks that sounds nothing plays are still freed oldest first, and page back in.
+ * The unused mode checks that sounds nothing plays are still freed least recently used first, and page
+ * back in.
+ *
+ * Issue #420, from the review of that fix: a looping sound whose page-in failed reached retail's
+ * "has length 0" drop, S_PaintChannelFrom16 took the NULL buffer after the last one of a sound that fills
+ * it exactly (UBSan reports the member access although nothing is read), and the unused mode also passed
+ * when the first idle sound by index was freed instead of the least recently used one.
  */
 #include "../code/client/snd_dma.c"
+#include <setjmp.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -22,8 +29,7 @@
 #define DEFAULT_SOUND	"sound/feedback/hit.wav"
 #define LISTENER		0								// the listener's own sounds play at full volume
 #define FULL_VOLUME		127
-// Each test sound stops short of filling its last buffer. S_PaintChannelFrom16 steps its chunk pointer
-// past the last buffer of a sound that fills it exactly, which UBSan reports although nothing is read.
+// Most test sounds stop short of filling their last buffer; the exact mode plays sounds that fill it.
 #define LENGTH( chunks )	( ( chunks ) * SND_CHUNK_SIZE - 100 )
 
 typedef struct {
@@ -50,6 +56,8 @@ static int			clockMsec = 1000;
 static cvar_t		volumeCvar, testsoundCvar, showCvar, dopplerCvar;
 static short		*dmaOut;
 static vec3_t		listenerAxis[3] = { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } };
+static jmp_buf		dropJump;
+static int			dropExpected;
 
 static void Check( int ok, const char *message ) {
 	if ( !ok ) {
@@ -70,10 +78,18 @@ void QDECL Com_Printf( const char *format, ... ) {
 	}
 }
 void QDECL Com_DPrintf( const char *format, ... ) { (void)format; }
+/** A drop the test expects returns to its setjmp; any other error fails. */
 void QDECL Com_Error( int level, const char *format, ... ) {
-	(void)level; (void)format;
-	Check( 0, "unexpected Com_Error" );
-	exit( 1 );
+	va_list args;
+
+	va_start( args, format );
+	vsnprintf( lastMessage, sizeof( lastMessage ), format, args );
+	va_end( args );
+	if ( !dropExpected || level != ERR_DROP ) {
+		fprintf( stderr, "Com_Error: %s\n", lastMessage );
+		Check( 0, "unexpected Com_Error" );
+	}
+	longjmp( dropJump, 1 );
 }
 void Com_Memset( void *dest, const int val, const size_t count ) { memset( dest, val, count ); }
 /** The clock moves on at every read. */
@@ -215,15 +231,19 @@ static void StartSounds( void ) {
 	S_Respatialize( LISTENER, vec3_origin, listenerAxis, 0 );
 }
 
-/** Serve a 22050 Hz mono sound that takes 'chunks' buffers under 'name', and register it. */
-static sfx_t *Register( const char *name, int seed, int chunks ) {
+/** Serve a 22050 Hz mono sound of 'length' samples under 'name', and register it. */
+static sfx_t *RegisterLength( const char *name, int seed, int length ) {
 	sfxHandle_t handle;
 
-	ServeWav( name, 1, 22050, LENGTH( chunks ), seed );
+	ServeWav( name, 1, 22050, length, seed );
 	handle = S_RegisterSound( name, qfalse );
 	Check( handle > 0, "a sound did not register" );
-	CheckIntact( &s_knownSfx[handle], seed, LENGTH( chunks ) );
+	CheckIntact( &s_knownSfx[handle], seed, length );
 	return &s_knownSfx[handle];
+}
+/** Register a sound that takes 'chunks' buffers without filling the last. */
+static sfx_t *Register( const char *name, int seed, int chunks ) {
+	return RegisterLength( name, seed, LENGTH( chunks ) );
 }
 
 /** Start a sound on a new channel of the listener's, as S_StartLocalSound does; it plays from the next mix. */
@@ -530,7 +550,8 @@ static void TestMixer( void ) {
 
 /**
  * Sounds nothing plays are still freed least recently used first, a sound whose channel has ended among
- * them, and a paged-out sound reloads and plays when it is started again.
+ * them, and a paged-out sound reloads and plays when it is started again. A sound that was played again
+ * and has ended is kept over an older one after it by index (issue #420).
  */
 static void TestUnused( void ) {
 	voice_t voices[1];
@@ -559,21 +580,184 @@ static void TestUnused( void ) {
 	for ( i = 0; i < 4; i++ ) {
 		Mix( 1000, voices, 1 );						// a ends, and its channel is freed
 	}
+	Play( a );										// now used after the filler, d and e
+	voices[0] = ChannelVoice( 24, LENGTH( 4 ) );
+	for ( i = 0; i < 5; i++ ) {
+		Mix( 1000, voices, 1 );						// a ends again
+	}
+	for ( i = 0; i < MAX_CHANNELS; i++ ) {
+		Check( !s_channels[i].thesfx, "a channel still plays a sound that ended" );
+	}
+	// a is the first sound nothing plays by index, but the filler is the least recently used
 	f = Register( "sound/f.wav", 30, 4 );
-	CheckFreed( a );
-	CheckIntact( filler, 27, filler->soundLength );
+	CheckFreed( filler );
+	CheckIntact( a, 24, LENGTH( 4 ) );
 	CheckIntact( d, 28, LENGTH( 4 ) );
 	CheckIntact( e, 29, LENGTH( 4 ) );
 	CheckIntact( f, 30, LENGTH( 4 ) );
 
 	testCase = "a paged-out sound started again";
-	Play( b );										// reloads b, which frees the filler, now the oldest
+	filler = Register( "sound/filler2.wav", 31, FreeBuffers() );
+	Check( FreeBuffers() == 0, "the pool is not full" );
+	Play( b );										// reloads b, which frees d, now the oldest
 	CheckIntact( b, 25, LENGTH( 4 ) );
-	CheckFreed( filler );
-	CheckIntact( d, 28, LENGTH( 4 ) );
+	CheckFreed( d );
+	CheckIntact( a, 24, LENGTH( 4 ) );
+	CheckIntact( e, 29, LENGTH( 4 ) );
+	CheckIntact( filler, 31, filler->soundLength );
 	voices[0] = ChannelVoice( 25, LENGTH( 4 ) );
 	for ( i = 0; i < 5; i++ ) {
 		Mix( 1000, voices, 1 );
+	}
+
+	testCase = "a sound whose channel has ended";
+	Register( "sound/g.wav", 32, 4 );				// frees e, now the oldest
+	CheckFreed( e );
+	CheckIntact( a, 24, LENGTH( 4 ) );
+	Register( "sound/h.wav", 33, 4 );				// frees a, now the oldest
+	CheckFreed( a );
+	CheckIntact( f, 30, LENGTH( 4 ) );
+	CheckIntact( b, 25, LENGTH( 4 ) );
+}
+
+/** Add a looping sound as cgame does, for a real looping sound or one it adds each frame. */
+static void AddLoop( int real, int entityNum, const sfx_t *sfx ) {
+	static const vec3_t origin = { 0, 0, 0 }, velocity = { 0, 0, 0 };
+
+	if ( real ) {
+		S_AddRealLoopingSound( entityNum, origin, velocity, sfx - s_knownSfx );
+	} else {
+		S_AddLoopingSound( entityNum, origin, velocity, sfx - s_knownSfx );
+	}
+}
+
+/** Require adding 'sfx' as a looping sound to drop with 'message', as retail does, and to leave no loop. */
+static void CheckLoopDrops( int real, const sfx_t *sfx, const char *message ) {
+	lastMessage[0] = '\0';
+	dropExpected = 1;
+	if ( !setjmp( dropJump ) ) {
+		AddLoop( real, 5, sfx );
+		dropExpected = 0;
+		Check( 0, "a looping sound with no samples did not drop" );
+	}
+	dropExpected = 0;
+	Check( !strcmp( lastMessage, message ), "the drop is not retail's" );
+	Check( !loopSounds[5].active, "a looping sound with no samples loops" );
+}
+
+/**
+ * Issue #420: a looping sound whose page-in fails, because every sound in memory is playing or because
+ * its file was removed, plays nothing; it reached retail's "has length 0" drop. Each kind of looping
+ * sound is added first, paging the sound in, and then after the other found it failed. A sound that
+ * loaded with no samples still drops, as in retail.
+ */
+static void TestFailedLoop( void ) {
+	voice_t voices[3];
+	sfx_t *hit = &s_knownSfx[0], *looping, *big, *next, *live, *empty;
+	sfxHandle_t handle;
+	int real;
+
+	for ( real = 0; real < 2; real++ ) {
+		testCase = real ? "a real looping sound paged in while every sound in memory plays"
+			: "a looping sound paged in while every sound in memory plays";
+		StartSounds();
+		looping = Register( "sound/loop.wav", 32, 3 );
+		big = Register( "sound/big.wav", 33, FreeBuffers() );
+		next = Register( "sound/next.wav", 34, 3 );	// pages the looping sound out
+		CheckFreed( looping );
+		Play( big );
+		voices[0] = ChannelVoice( 33, big->soundLength );
+		Play( hit );
+		voices[1] = ChannelVoice( 0, LENGTH( 1 ) );
+		Play( next );
+		voices[2] = ChannelVoice( 34, LENGTH( 3 ) );
+		Mix( 500, voices, 3 );
+		S_ClearLoopingSounds( qfalse );				// the start of a cgame frame
+		ClearMessages();
+		AddLoop( real, 5, looping );
+		Check( Printed( "sound/loop.wav does not fit in sound memory\n" ), "the page-in did not fail" );
+		AddLoop( !real, 6, looping );
+		Check( looping->inMemory && looping->defaultSound, "the failed page-in is not the default sound" );
+		Check( !looping->soundData && !looping->soundLength, "the failed page-in kept a length" );
+		Check( !loopSounds[5].active && !loopSounds[6].active, "a sound that failed to page in loops" );
+		Respatialize();
+		Check( numLoopChannels == 0, "a sound that failed to page in has a loop channel" );
+		Mix( 2000, voices, 3 );						// the playing sounds play on
+		CheckIntact( big, 33, big->soundLength );
+		CheckIntact( hit, 0, LENGTH( 1 ) );
+		CheckIntact( next, 34, LENGTH( 3 ) );
+
+		testCase = real ? "a real looping sound whose file was removed" : "a looping sound whose file was removed";
+		StartSounds();
+		looping = Register( "sound/loop.wav", 35, 3 );
+		live = Register( "sound/live.wav", 36, 8 );
+		Play( live );
+		voices[0] = ChannelVoice( 36, LENGTH( 8 ) );
+		Mix( 500, voices, 1 );
+		Register( "sound/filler.wav", 37, FreeBuffers() );
+		Register( "sound/next.wav", 38, 3 );		// pages the looping sound out
+		CheckFreed( looping );
+		Unserve( "sound/loop.wav" );
+		S_ClearLoopingSounds( qfalse );
+		AddLoop( real, 5, looping );
+		AddLoop( !real, 6, looping );
+		Check( looping->inMemory && looping->defaultSound, "the failed page-in is not the default sound" );
+		Check( !looping->soundData && !looping->soundLength, "the failed page-in kept a length" );
+		Check( !loopSounds[5].active && !loopSounds[6].active, "a sound that failed to page in loops" );
+		Respatialize();
+		Check( numLoopChannels == 0, "a sound that failed to page in has a loop channel" );
+		Mix( 2000, voices, 1 );
+		CheckIntact( live, 36, LENGTH( 8 ) );
+	}
+
+	testCase = "a looping sound that loaded with no samples";
+	StartSounds();
+	ServeWav( "sound/empty.wav", 1, 22050, 0, 39 );
+	handle = S_RegisterSound( "sound/empty.wav", qfalse );
+	Check( handle > 0, "a sound with no samples did not register" );
+	empty = &s_knownSfx[handle];
+	Check( empty->inMemory && !empty->defaultSound && !empty->soundLength, "a sound with no samples did not load" );
+	CheckLoopDrops( 0, empty, "sound/empty.wav has length 0" );
+	CheckLoopDrops( 1, empty, "sound/empty.wav has length 0" );
+}
+
+/**
+ * Issue #420: S_PaintChannelFrom16 took the next buffer after painting the last sample of each, so it
+ * took the samples of the NULL buffer after a sound that fills its last buffer, as the demo's
+ * sound/weapons/railgun/rg_hum.wav does with 25. Such sounds play sample for sample on a channel, in
+ * paints that end at the end of a buffer and paints that cross one, and as loops that wrap there.
+ */
+static void TestExact( void ) {
+	voice_t voices[2];
+	sfx_t *hum, *one;
+	int i;
+
+	testCase = "a sound that fills its last buffer on a channel";
+	StartSounds();
+	hum = RegisterLength( "sound/weapons/railgun/rg_hum.wav", 40, 25 * SND_CHUNK_SIZE );
+	Play( hum );
+	voices[0] = ChannelVoice( 40, 25 * SND_CHUNK_SIZE );
+	Mix( SND_CHUNK_SIZE, voices, 1 );				// ends at the end of the first buffer
+	Mix( 100, voices, 1 );
+	for ( i = 0; i < 7; i++ ) {
+		Mix( 4000, voices, 1 );						// crosses buffers, and the sound's end
+	}
+	Mix( 1000, NULL, 0 );
+	for ( i = 0; i < MAX_CHANNELS; i++ ) {
+		Check( !s_channels[i].thesfx, "a channel still plays a sound that ended" );
+	}
+
+	testCase = "sounds that fill their last buffer as loops";
+	StartSounds();
+	hum = RegisterLength( "sound/weapons/railgun/rg_hum.wav", 40, 25 * SND_CHUNK_SIZE );
+	one = RegisterLength( "sound/one.wav", 41, SND_CHUNK_SIZE );	// its only buffer is its last
+	AddLoop( 0, 5, hum );
+	AddLoop( 1, 6, one );
+	Respatialize();
+	voices[0] = LoopVoice( hum, 40 );
+	voices[1] = LoopVoice( one, 41 );
+	for ( i = 0; i < 16; i++ ) {
+		Mix( 4000, voices, 2 );						// each loop wraps at the end of its last buffer
 	}
 }
 
@@ -585,7 +769,9 @@ int main( int argc, char **argv ) {
 	else if ( !strcmp( mode, "full" ) ) { TestFull(); puts( "A load fails cleanly when every sound in memory is playing (issue #400)" ); }
 	else if ( !strcmp( mode, "reload" ) ) { TestReload(); puts( "A paged-out sound that fails to reload plays nothing (issue #400)" ); }
 	else if ( !strcmp( mode, "mixer" ) ) { TestMixer(); puts( "The mixer skips a channel whose sound has no data (issue #400)" ); }
-	else if ( !strcmp( mode, "unused" ) ) { TestUnused(); puts( "Sounds nothing plays are freed oldest first and page back in (issue #400)" ); }
+	else if ( !strcmp( mode, "unused" ) ) { TestUnused(); puts( "Sounds nothing plays are freed least recently used first and page back in (issues #400, #420)" ); }
+	else if ( !strcmp( mode, "failedloop" ) ) { TestFailedLoop(); puts( "A looping sound that fails to page in plays nothing instead of dropping (issue #420)" ); }
+	else if ( !strcmp( mode, "exact" ) ) { TestExact(); puts( "The mixer plays a sound that fills its last buffer without taking a buffer past it (issue #420)" ); }
 	else { Check( 0, "unknown mode" ); }
 	return 0;
 }
