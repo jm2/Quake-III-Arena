@@ -3639,14 +3639,16 @@ UI_MapCountByTeam
 static int UI_HeadCountByTeam() {
 	static int init = 0;
 	int i, j, k, c, tIndex;
+	unsigned int teamBit;
 	
 	c = 0;
 	if (!init) {
+		// reference has one bit per team, for teams 0-31 only (see teamBit)
 		for (i = 0; i < uiInfo.characterCount; i++) {
 			uiInfo.characterList[i].reference = 0;
-			for (j = 0; j < uiInfo.teamCount; j++) {
+			for (j = 0; j < uiInfo.teamCount && j < 32; j++) {
 			  if (UI_hasSkinForBase(uiInfo.characterList[i].base, uiInfo.teamList[j].teamName)) {
-					uiInfo.characterList[i].reference |= (1<<j);
+					uiInfo.characterList[i].reference |= (1U<<j);
 			  }
 			}
 		}
@@ -3654,13 +3656,18 @@ static int UI_HeadCountByTeam() {
 	}
 
 	tIndex = UI_TeamIndexFromName(UI_Cvar_VariableString("ui_teamName"));
+	// Retail set and tested 1 << team for all MAX_TEAMS teams.  PowerPC slw (the
+	// retail PPC QVM JIT, and the QVM interpreter since PR #293) gives 0 for
+	// 1 << 32 through 1 << 63, so no head matches teams 32 and up.  Those shifts
+	// are undefined in C, so they are not evaluated here.
+	teamBit = ( tIndex >= 0 && tIndex < 32 ) ? ( 1U << tIndex ) : 0;
 
 	// do names
 	for (i = 0; i < uiInfo.characterCount; i++) {
 		uiInfo.characterList[i].active = qfalse;
 		for(j = 0; j < TEAM_MEMBERS; j++) {
 			if (uiInfo.teamList[tIndex].teamMembers[j] != NULL) {
-				if (uiInfo.characterList[i].reference&(1<<tIndex)) {// && Q_stricmp(uiInfo.teamList[tIndex].teamMembers[j], uiInfo.characterList[i].name)==0) {
+				if (uiInfo.characterList[i].reference&teamBit) {// && Q_stricmp(uiInfo.teamList[tIndex].teamMembers[j], uiInfo.characterList[i].name)==0) {
 					uiInfo.characterList[i].active = qtrue;
 					c++;
 					break;
@@ -3675,7 +3682,7 @@ static int UI_HeadCountByTeam() {
 			if (uiInfo.aliasList[k].name != NULL) {
 				if (Q_stricmp(uiInfo.teamList[tIndex].teamMembers[j], uiInfo.aliasList[k].name)==0) {
 					for (i = 0; i < uiInfo.characterCount; i++) {
-						if (uiInfo.characterList[i].headImage != -1 && uiInfo.characterList[i].reference&(1<<tIndex) && Q_stricmp(uiInfo.aliasList[k].ai, uiInfo.characterList[i].name)==0) {
+						if (uiInfo.characterList[i].headImage != -1 && uiInfo.characterList[i].reference&teamBit && Q_stricmp(uiInfo.aliasList[k].ai, uiInfo.characterList[i].name)==0) {
 							if (uiInfo.characterList[i].active == qfalse) {
 								uiInfo.characterList[i].active = qtrue;
 								c++;
@@ -4544,6 +4551,31 @@ static void UI_FeederSelection(float feederID, int index) {
 	}
 }
 
+/*
+===============
+UI_SkipListEntry
+
+Reads the rest of a teaminfo or gameinfo list entry, up to and including
+its closing brace, without storing it.  The list parsers call it after the
+opening brace once their fixed-size array is full, so the extra entry is
+ignored instead of being written one past the end of the array, and the
+rest of the file still parses.
+===============
+*/
+static qboolean UI_SkipListEntry(char **p) {
+	char *token;
+
+	while ( 1 ) {
+		token = COM_ParseExt(p, qtrue);
+		if ( token[0] == 0 ) {
+			return qfalse;
+		}
+		if ( Q_stricmp(token, "}") == 0 ) {
+			return qtrue;
+		}
+	}
+}
+
 static qboolean Team_Parse(char **p) {
   char *token;
   const char *tempStr;
@@ -4568,6 +4600,13 @@ static qboolean Team_Parse(char **p) {
     }
 
     if (token[0] == '{') {
+      if (uiInfo.teamCount >= MAX_TEAMS) {
+        Com_Printf("Too many teams, extra team ignored!\n");
+        if (!UI_SkipListEntry(p)) {
+          return qfalse;
+        }
+        continue;
+      }
       // seven tokens per line, team name and icon, and 5 team member names
       if (!String_Parse(p, &uiInfo.teamList[uiInfo.teamCount].teamName) || !String_Parse(p, &tempStr)) {
         return qfalse;
@@ -4589,11 +4628,7 @@ static qboolean Team_Parse(char **p) {
 			}
 
       Com_Printf("Loaded team %s with team icon %s.\n", uiInfo.teamList[uiInfo.teamCount].teamName, tempStr);
-      if (uiInfo.teamCount < MAX_TEAMS) {
-        uiInfo.teamCount++;
-      } else {
-        Com_Printf("Too many teams, last team replaced!\n");
-      }
+      uiInfo.teamCount++;
       token = COM_ParseExt(p, qtrue);
       if (token[0] != '}') {
         return qfalse;
@@ -4627,6 +4662,13 @@ static qboolean Character_Parse(char **p) {
     }
 
     if (token[0] == '{') {
+      if (uiInfo.characterCount >= MAX_HEADS) {
+        Com_Printf("Too many characters, extra character ignored!\n");
+        if (!UI_SkipListEntry(p)) {
+          return qfalse;
+        }
+        continue;
+      }
       // two tokens per line, character name and sex
       if (!String_Parse(p, &uiInfo.characterList[uiInfo.characterCount].name) || !String_Parse(p, &tempStr)) {
         return qfalse;
@@ -4644,11 +4686,7 @@ static qboolean Character_Parse(char **p) {
 	  }
 
       Com_Printf("Loaded %s character %s.\n", uiInfo.characterList[uiInfo.characterCount].base, uiInfo.characterList[uiInfo.characterCount].name);
-      if (uiInfo.characterCount < MAX_HEADS) {
-        uiInfo.characterCount++;
-      } else {
-        Com_Printf("Too many characters, last character replaced!\n");
-      }
+      uiInfo.characterCount++;
      
       token = COM_ParseExt(p, qtrue);
       if (token[0] != '}') {
@@ -4682,17 +4720,20 @@ static qboolean Alias_Parse(char **p) {
     }
 
     if (token[0] == '{') {
+      if (uiInfo.aliasCount >= MAX_ALIASES) {
+        Com_Printf("Too many aliases, extra alias ignored!\n");
+        if (!UI_SkipListEntry(p)) {
+          return qfalse;
+        }
+        continue;
+      }
       // three tokens per line, character name, bot alias, and preferred action a - all purpose, d - defense, o - offense
       if (!String_Parse(p, &uiInfo.aliasList[uiInfo.aliasCount].name) || !String_Parse(p, &uiInfo.aliasList[uiInfo.aliasCount].ai) || !String_Parse(p, &uiInfo.aliasList[uiInfo.aliasCount].action)) {
         return qfalse;
       }
     
       Com_Printf("Loaded character alias %s using character ai %s.\n", uiInfo.aliasList[uiInfo.aliasCount].name, uiInfo.aliasList[uiInfo.aliasCount].ai);
-      if (uiInfo.aliasCount < MAX_ALIASES) {
-        uiInfo.aliasCount++;
-      } else {
-        Com_Printf("Too many aliases, last alias replaced!\n");
-      }
+      uiInfo.aliasCount++;
      
       token = COM_ParseExt(p, qtrue);
       if (token[0] != '}') {
@@ -4782,6 +4823,13 @@ static qboolean GameType_Parse(char **p, qboolean join) {
 		}
 
 		if (token[0] == '{') {
+			if ((join ? uiInfo.numJoinGameTypes : uiInfo.numGameTypes) >= MAX_GAMETYPES) {
+				Com_Printf("Too many %sgame types, extra one ignored!\n", join ? "net " : "");
+				if (!UI_SkipListEntry(p)) {
+					return qfalse;
+				}
+				continue;
+			}
 			// two tokens per line, character name and sex
 			if (join) {
 				if (!String_Parse(p, &uiInfo.joinGameTypes[uiInfo.numJoinGameTypes].gameType) || !Int_Parse(p, &uiInfo.joinGameTypes[uiInfo.numJoinGameTypes].gtEnum)) {
@@ -4794,17 +4842,9 @@ static qboolean GameType_Parse(char **p, qboolean join) {
 			}
     
 			if (join) {
-				if (uiInfo.numJoinGameTypes < MAX_GAMETYPES) {
-					uiInfo.numJoinGameTypes++;
-				} else {
-					Com_Printf("Too many net game types, last one replace!\n");
-				}		
+				uiInfo.numJoinGameTypes++;
 			} else {
-				if (uiInfo.numGameTypes < MAX_GAMETYPES) {
-					uiInfo.numGameTypes++;
-				} else {
-					Com_Printf("Too many game types, last one replace!\n");
-				}		
+				uiInfo.numGameTypes++;
 			}
      
 			token = COM_ParseExt(p, qtrue);
@@ -4839,6 +4879,13 @@ static qboolean MapList_Parse(char **p) {
 		}
 
 		if (token[0] == '{') {
+			if (uiInfo.mapCount >= MAX_MAPS) {
+				Com_Printf("Too many maps, extra map ignored!\n");
+				if (!UI_SkipListEntry(p)) {
+					return qfalse;
+				}
+				continue;
+			}
 			if (!String_Parse(p, &uiInfo.mapList[uiInfo.mapCount].mapName) || !String_Parse(p, &uiInfo.mapList[uiInfo.mapCount].mapLoadName) 
 				||!Int_Parse(p, &uiInfo.mapList[uiInfo.mapCount].teamMembers) ) {
 				return qfalse;
@@ -4870,11 +4917,7 @@ static qboolean MapList_Parse(char **p) {
   		uiInfo.mapList[uiInfo.mapCount].cinematic = -1;
 			uiInfo.mapList[uiInfo.mapCount].levelShot = trap_R_RegisterShaderNoMip(va("levelshots/%s_small", uiInfo.mapList[uiInfo.mapCount].mapLoadName));
 
-			if (uiInfo.mapCount < MAX_MAPS) {
-				uiInfo.mapCount++;
-			} else {
-				Com_Printf("Too many maps, last one replaced!\n");
-			}
+			uiInfo.mapCount++;
 		}
 	}
 	return qfalse;

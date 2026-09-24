@@ -643,7 +643,7 @@ typedef struct {
   qhandle_t headImage;
 	const char *base;
 	qboolean active;
-	int reference;
+	unsigned int reference;
 } characterInfo;
 
 typedef struct {
