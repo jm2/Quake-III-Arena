@@ -18,11 +18,24 @@
 #   - when the check itself cannot run (missing, read-only, full or
 #     inode-starved TMPDIR, a tool killed from outside, a missing check
 #     script), both stop and setup changes nothing;
-#   - a BSD/macOS wc, which pads its count, does not break the check.
+#   - a BSD/macOS wc, which pads its count, does not break the check;
+#   - a tool's error output decides the status even when the scratch
+#     directory cannot keep it.
+# Issue #227: the toolchain inputs are pinned in retro68-versions.txt. A stub
+# git plays Retro68's history, whose upstream HEAD is not the pinned commit:
+#   - a fresh setup (sh and ps1) checks out the pinned commit and submodules;
+#     an existing checkout is never pulled, and one at another commit or with
+#     other submodules stops setup before anything changes;
+#   - a tampered or truncated SDK archive, local or downloaded, is rejected
+#     before anything is extracted;
+#   - cmake/Quake3BuildManifest.cmake writes the PEF's SHA-256, the compiler's
+#     version and the Retro68 commit and submodules, deterministically, and the
+#     build runs it after MakePEF.
 # When pwsh is installed the same cases go through check_retro68.ps1 and
 # setup_retro68.ps1. A real toolchain ($Q3_RETRO68_DIR, default
-# tools/Retro68-build) must pass the full check; one that does not is reported
-# as SKIP (a local toolchain problem) unless Q3_RETRO68_REQUIRE=1.
+# tools/Retro68-build) must pass the full check, and the Retro68 source and
+# SDK archives next to it must match retro68-versions.txt; one that does not
+# is reported as SKIP (a local toolchain problem) unless Q3_RETRO68_REQUIRE=1.
 set -uo pipefail
 export TMPDIR="${TMPDIR:-/var/tmp}"
 export LC_ALL=C
@@ -57,6 +70,28 @@ Q3_HAVE_UNSHARE=0
 if unshare -r -m true > /dev/null 2>&1; then
     Q3_HAVE_UNSHARE=1
 fi
+
+# The pins in retro68-versions.txt (issue #227), and what upstream HEAD and its
+# submodules are instead: a checkout that follows upstream ends up there.
+Q3_VERSIONS="$Q3_TEST_ROOT/retro68-versions.txt"
+q3_version() {
+    sed -n "s/^$1=//p" "$Q3_VERSIONS"
+}
+Q3_PIN="$(q3_version RETRO68_COMMIT)"
+Q3_PIN_URL="$(q3_version RETRO68_URL)"
+Q3_PIN_SUBMODULES="$(q3_version RETRO68_SUBMODULE)"
+Q3_MPW_FILE="$(q3_version MPW_FILE)"
+Q3_OPENGL_FILE="$(q3_version OPENGL_FILE)"
+Q3_UPSTREAM=1111111111111111111111111111111111111111
+Q3_UPSTREAM_SUB=2222222222222222222222222222222222222222
+
+q3_sha256() {
+    if command -v sha256sum > /dev/null 2>&1; then
+        sha256sum < "$1" | cut -d ' ' -f 1
+    else
+        shasum -a 256 < "$1" | cut -d ' ' -f 1
+    fi
+}
 
 # expect NAME STATUS [TEXT...]: the last command exited with STATUS and
 # printed every TEXT.
@@ -465,6 +500,16 @@ run_check --tools-only "$TC"
 expect "an ar out of temporary files is status 3" 3 \
     "could not create temporary file whilst writing archive"
 
+# A tool's error output must decide the status even when a file in the
+# scratch directory could not keep it, as when that directory is full: this
+# compile reports ENOSPC, then empties whatever file its stderr went to.
+fresh_toolchain
+env_gcc 'echo "cc1: error writing to /x/check.s: No space left on device" >&2' \
+    '[ -f /proc/self/fd/2 ] && : > /proc/self/fd/2' 'exit 1'
+run_check --tools-only "$TC"
+expect "a space error that no scratch file kept is status 3" 3 \
+    "failed because of its surroundings" "No space left on device"
+
 fresh_toolchain
 Q3_STATUS=0
 (umask 222; exec env TMPDIR="$Q3_CHECK_TMP" bash "$Q3_TEST_ROOT/check_retro68.sh" --tools-only "$TC") \
@@ -496,6 +541,20 @@ if [ "$Q3_HAVE_UNSHARE" -eq 1 ]; then
         TMPDIR="$1" bash "$2/check_retro68.sh" --tools-only "$3"' _ \
         "$Q3_CHECK_TMP" "$Q3_TEST_ROOT" "$TC" > "$Q3_OUT" 2>&1 || Q3_STATUS=$?
     expect "a tmpfs filled during a compile is status 3" 3 "no longer takes writes"
+    # A compile that fills the tmpfs, reports ENOSPC and removes its temporary
+    # file again: the scratch directory takes writes afterwards, and the
+    # message only survives if the check did not write it there.
+    write_stub "$TC/bin/powerpc-apple-macos-gcc" "$Q3_VERSION_LINE" "$Q3_OUTPUT_ARG" \
+        'fill="$(dirname "$out")/fill.tmp"' \
+        'dd if=/dev/zero of="$fill" bs=1024 count=2048 2> /dev/null' \
+        'echo "cc1: error writing to check.s: No space left on device" >&2' \
+        'rm -f "$fill"' 'exit 1'
+    Q3_STATUS=0
+    unshare -r -m bash -c 'mount -t tmpfs -o size=1200k tmpfs "$1" &&
+        TMPDIR="$1" bash "$2/check_retro68.sh" --tools-only "$3"' _ \
+        "$Q3_CHECK_TMP" "$Q3_TEST_ROOT" "$TC" > "$Q3_OUT" 2>&1 || Q3_STATUS=$?
+    expect "a compile that briefly fills the tmpfs is status 3" 3 \
+        "failed because of its surroundings" "No space left on device"
     # A tmpfs with room for data but only a few inodes.
     Q3_STATUS=0
     unshare -r -m bash -c 'mount -t tmpfs -o size=4m,nr_inodes=9 tmpfs "$1" &&
@@ -521,7 +580,7 @@ make_root() {
     mkdir -p "$root/stubs" "$root/tools/Retro68-src/InterfacesAndLibraries/SharedLibraries"
     cp "$Q3_TEST_ROOT/build_mac.sh" "$Q3_TEST_ROOT/setup_retro68.sh" \
         "$Q3_TEST_ROOT/check_retro68.sh" "$Q3_TEST_ROOT/setup_retro68.ps1" \
-        "$Q3_TEST_ROOT/check_retro68.ps1" "$root/"
+        "$Q3_TEST_ROOT/check_retro68.ps1" "$Q3_VERSIONS" "$root/"
     chmod +x "$root/build_mac.sh" "$root/setup_retro68.sh" "$root/check_retro68.sh"
     make_toolchain "$root/tools/Retro68-build"
     : > "$root/tools/Retro68-build/powerpc-apple-macos/include/gl.h"
@@ -581,33 +640,111 @@ check "build_mac.sh reached CMake" test -e "$ROOT/cmake.called"
 
 # ---- setup_retro68.sh ----
 
-# make_setup_root DIR: make_root plus the Retro68 sources, SDK archives, an
-# earlier work tree and the host commands setup_retro68.sh runs before it
-# builds. The stub build-toolchain.bash records its arguments and whether the
-# install directory still exists, then stops setup with status 42.
+# write_git_stub ROOT: a git that logs its arguments to ROOT/git.log and plays
+# Retro68's history, whose upstream HEAD ($Q3_UPSTREAM) is not the pinned
+# commit. A clone copies ROOT/upstream at upstream HEAD, and pull moves a
+# checkout there. The pinned commit records the submodule commits
+# retro68-versions.txt lists, any other commit $Q3_UPSTREAM_SUB for each. A
+# checkout keeps its commit in .git/stub-head and its submodules' in
+# .git/stub-sub.
+write_git_stub() {
+    local root="$1"
+    mkdir -p "$root/stubs"
+    printf '%s\n' "$Q3_PIN_SUBMODULES" > "$root/pinned-gitlinks"
+    {
+        printf '#!/bin/bash\nroot=%q pin=%q upstream=%q upstream_sub=%q\n' \
+            "$root" "$Q3_PIN" "$Q3_UPSTREAM" "$Q3_UPSTREAM_SUB"
+        cat <<'EOF'
+echo "git $*" >> "$root/git.log"
+dir=.
+while :; do
+    case "$1" in
+        -C) dir="$2"; shift 2 ;;
+        -c) shift 2 ;;
+        *) break ;;
+    esac
+done
+# "<path> <commit>" for each submodule the checked-out commit records.
+gitlinks() {
+    if [ "$(cat "$dir/.git/stub-head")" = "$pin" ]; then
+        cat "$root/pinned-gitlinks"
+    else
+        sed "s/ .*/ $upstream_sub/" "$root/pinned-gitlinks"
+    fi
+}
+case "$1" in
+    --version) echo "git version 2.99.0" ;;
+    clone)
+        for target; do :; done
+        mkdir -p "$target/.git" && cp -R "$root/upstream/." "$target/" || exit 1
+        echo "$upstream" > "$target/.git/stub-head"
+        case " $* " in *" --recursive "*) dir="$target"; gitlinks > "$target/.git/stub-sub" ;; esac
+        ;;
+    checkout) for commit; do :; done; echo "$commit" > "$dir/.git/stub-head" ;;
+    pull) echo "$upstream" > "$dir/.git/stub-head" ;;
+    rev-parse) cat "$dir/.git/stub-head" ;;
+    submodule)
+        case "$2" in
+            update) gitlinks > "$dir/.git/stub-sub" ;;
+            status)
+                gitlinks | while read -r path link; do
+                    sub=$(sed -n "s|^$path ||p" "$dir/.git/stub-sub" 2> /dev/null)
+                    if [ -z "$sub" ]; then echo "-$link $path"
+                    elif [ "$sub" = "$link" ]; then echo " $sub $path (heads/master)"
+                    else echo "+$sub $path (heads/master)"; fi
+                done
+                ;;
+        esac
+        ;;
+esac
+EOF
+    } > "$root/stubs/git"
+    chmod +x "$root/stubs/git"
+}
+
+# set_version ROOT KEY VALUE: KEY=VALUE in ROOT's retro68-versions.txt.
+set_version() {
+    sed "s|^$2=.*|$2=$3|" "$1/retro68-versions.txt" > "$1/retro68-versions.new" &&
+        mv "$1/retro68-versions.new" "$1/retro68-versions.txt"
+}
+
+# make_setup_root DIR: make_root plus the Retro68 sources at the pinned
+# commit, SDK archives pinned by their digests, an earlier work tree and the
+# host commands setup_retro68.sh runs before it builds. The stub
+# build-toolchain.bash records its arguments and whether the install
+# directory still exists, then stops setup with status 42.
 make_setup_root() {
     local root="$1" tool
     make_root "$root"
-    mkdir -p "$root/tools/Retro68-src" "$root/tools/Retro68-work/gcc-build-ppc"
+    mkdir -p "$root/upstream" "$root/tools/Retro68-work/gcc-build-ppc"
     echo "object" > "$root/tools/Retro68-work/gcc-build-ppc/cc1.o"
-    echo 'find_package(Boost COMPONENTS system filesystem)' > "$root/tools/Retro68-src/CMakeLists.txt"
-    echo "archive" > "$root/tools/MPW_fully_updated.sit"
-    echo "archive" > "$root/tools/OpenGL_SDK_1.2.sit"
-    cat > "$root/tools/Retro68-src/build-toolchain.bash" <<EOF
+    echo 'find_package(Boost COMPONENTS system filesystem)' > "$root/upstream/CMakeLists.txt"
+    echo "mpw archive" > "$root/tools/$Q3_MPW_FILE"
+    echo "opengl archive" > "$root/tools/$Q3_OPENGL_FILE"
+    set_version "$root" MPW_SHA256 "$(q3_sha256 "$root/tools/$Q3_MPW_FILE")"
+    set_version "$root" OPENGL_SHA256 "$(q3_sha256 "$root/tools/$Q3_OPENGL_FILE")"
+    cat > "$root/upstream/build-toolchain.bash" <<EOF
 #!/bin/bash
 prefix=""
 for arg in "\$@"; do case "\$arg" in --prefix=*) prefix="\${arg#--prefix=}";; esac; done
 { echo "args: \$*"; if [ -e "\$prefix" ]; then echo "prefix kept"; else echo "prefix removed"; fi; } > "$root/build-toolchain.called"
 exit 42
 EOF
-    chmod +x "$root/tools/Retro68-src/build-toolchain.bash"
-    for tool in git bison flex makeinfo ruby sleep; do
+    chmod +x "$root/upstream/build-toolchain.bash"
+    for tool in bison flex makeinfo ruby sleep; do
         printf '#!/bin/sh\nexit 0\n' > "$root/stubs/$tool"
         chmod +x "$root/stubs/$tool"
     done
+    write_git_stub "$root"
+    # Retro68 checked out at the pinned commit and submodules.
+    mkdir -p "$root/tools/Retro68-src/.git"
+    cp -R "$root/upstream/." "$root/tools/Retro68-src/"
+    echo "$Q3_PIN" > "$root/tools/Retro68-src/.git/stub-head"
+    cp "$root/pinned-gitlinks" "$root/tools/Retro68-src/.git/stub-sub"
     # PowerShell passes Windows-style relative paths such as tools\temp_mpw.
-    cat > "$root/stubs/unar" <<'EOF'
-#!/bin/sh
+    {
+        printf '#!/bin/sh\necho "unar $*" >> %q\n' "$root/unar.called"
+        cat <<'EOF'
 out=""; prev=""; for arg in "$@"; do [ "$prev" = "-o" ] && out="$arg"; prev="$arg"; done
 out=$(printf '%s' "$out" | tr '\\' /)
 case "$out" in
@@ -618,6 +755,7 @@ case "$out" in
        : > "$out/OpenGL SDK/Headers/gl.h" ;;
 esac
 EOF
+    } > "$root/stubs/unar"
     chmod +x "$root/stubs/unar"
 }
 
@@ -742,6 +880,153 @@ if [ "$Q3_HAVE_UNSHARE" -eq 1 ]; then
     check "setup_retro68.sh changed nothing when TMPDIR is a full tmpfs" \
         setup_changed_nothing "$ROOT" "$Q3_BEFORE"
 fi
+
+# ---- pinned toolchain inputs (issue #227) ----
+
+versions_well_formed() {
+    local line key
+    [[ $Q3_PIN =~ ^[0-9a-f]{40}$ ]] && [ -n "$Q3_PIN_URL" ] && [ -n "$Q3_PIN_SUBMODULES" ] || return 1
+    while IFS= read -r line; do
+        [[ $line =~ ^[^[:space:]]+\ [0-9a-f]{40}$ ]] || return 1
+    done <<< "$Q3_PIN_SUBMODULES"
+    for key in MPW_SHA256 OPENGL_SHA256; do
+        [[ $(q3_version "$key") =~ ^[0-9a-f]{64}$ ]] || return 1
+    done
+    for key in MPW_FILE MPW_URL OPENGL_FILE OPENGL_URL; do
+        [ -n "$(q3_version "$key")" ] || return 1
+    done
+}
+check "retro68-versions.txt pins a full commit, its submodules and both archive digests" \
+    versions_well_formed
+
+# The stub checkout at DIR is at the pinned commit and submodules.
+at_pinned_commit() {
+    [ "$(cat "$1/.git/stub-head")" = "$Q3_PIN" ] &&
+        [ "$(cat "$1/.git/stub-sub" 2> /dev/null)" = "$Q3_PIN_SUBMODULES" ]
+}
+
+# Setup stopped before extracting an SDK archive: nothing extracted, built or
+# moved aside.
+rejected_before_extraction() {
+    local root="$1"
+    [ ! -e "$root/unar.called" ] && [ ! -e "$root/build-toolchain.called" ] &&
+        [ ! -e "$root/tools/temp_mpw" ] && [ ! -e "$root/tools/temp_opengl" ] &&
+        [ -z "$(find "$root/tools" -maxdepth 1 -name 'Retro68-*.*-*')" ]
+}
+
+# A fresh setup, as on a new host: tools/ holds only the SDK archives.
+make_setup_root "$ROOT"
+rm -rf "$ROOT/tools/Retro68-src" "$ROOT/tools/Retro68-build" "$ROOT/tools/Retro68-work"
+run_setup "$ROOT"
+expect "a fresh setup_retro68.sh clones Retro68 and builds" 42 "Step 5: Building Retro68"
+check "a fresh setup_retro68.sh checks out the pinned commit and submodules, not upstream HEAD" \
+    at_pinned_commit "$ROOT/tools/Retro68-src"
+check "a fresh setup_retro68.sh clones the pinned URL and checks out the pinned commit" \
+    bash -c 'grep -q -F "git clone --no-checkout $2 " "$1" && grep -q -F " checkout --detach $3" "$1"' \
+    _ "$ROOT/git.log" "$Q3_PIN_URL" "$Q3_PIN"
+
+make_setup_root "$ROOT"
+rm "$ROOT/tools/Retro68-src/.git/stub-sub"
+run_setup "$ROOT"
+expect "setup_retro68.sh resumes on a checkout of the pinned commit" 42 "resuming with --skip-thirdparty"
+check "setup_retro68.sh checks out the pinned submodules of an existing checkout" \
+    at_pinned_commit "$ROOT/tools/Retro68-src"
+check "setup_retro68.sh never pulls an existing checkout" \
+    bash -c '! grep -q -E "^git .*(pull|fetch|clone|checkout)" "$1"' _ "$ROOT/git.log"
+
+# A checkout at another commit (for example one that followed upstream) stops
+# setup before anything changes, even when the toolchain needs a rebuild.
+make_setup_root "$ROOT"
+echo "$Q3_UPSTREAM" > "$ROOT/tools/Retro68-src/.git/stub-head"
+break_cc1 "$ROOT/tools/Retro68-build"
+Q3_BEFORE="$(snapshot "$ROOT/tools/Retro68-src"; snapshot "$ROOT/tools/Retro68-work")"
+run_setup "$ROOT"
+expect "setup_retro68.sh stops on a Retro68 checkout at another commit" 1 \
+    "is at $Q3_UPSTREAM" "pins Retro68 $Q3_PIN. Nothing was changed."
+check "setup_retro68.sh neither moved nor updated a checkout at another commit" \
+    bash -c '! grep -q -E "^git .*(pull|fetch|clone|checkout|submodule update)" "$1/git.log"' _ "$ROOT"
+check "setup_retro68.sh left the source and work tree as they were" \
+    test "$Q3_BEFORE" = "$(snapshot "$ROOT/tools/Retro68-src"; snapshot "$ROOT/tools/Retro68-work")"
+check "setup_retro68.sh extracted, built and moved nothing for a checkout at another commit" \
+    rejected_before_extraction "$ROOT"
+
+make_setup_root "$ROOT"
+rm -rf "$ROOT/tools/Retro68-src/.git"
+run_setup "$ROOT"
+expect "setup_retro68.sh stops on a Retro68 source that is not a git checkout" 1 \
+    "is at not a git checkout" "Nothing was changed."
+
+# A pin whose submodule commit is not the one the pinned commit records, as
+# after bumping RETRO68_COMMIT alone.
+make_setup_root "$ROOT"
+set_version "$ROOT" RETRO68_SUBMODULE "${Q3_PIN_SUBMODULES%% *} 3333333333333333333333333333333333333333"
+run_setup "$ROOT"
+expect "setup_retro68.sh stops when the submodules are not the pinned ones" 1 \
+    "are not the ones retro68-versions.txt pins" "3333333333333333333333333333333333333333"
+check "setup_retro68.sh extracted and built nothing for other submodules" \
+    rejected_before_extraction "$ROOT"
+
+make_setup_root "$ROOT"
+set_version "$ROOT" RETRO68_COMMIT "${Q3_PIN:0:10}"
+run_setup "$ROOT"
+expect "setup_retro68.sh stops on an abbreviated RETRO68_COMMIT" 1 \
+    "RETRO68_COMMIT is not a full commit hash: ${Q3_PIN:0:10}"
+check "setup_retro68.sh ran no git and built nothing with a malformed retro68-versions.txt" \
+    bash -c '[ ! -e "$1/git.log" ] && [ ! -e "$1/build-toolchain.called" ]' _ "$ROOT"
+
+# SDK archives: a copy that does not match its pinned SHA-256 is never
+# extracted, and no archive is extracted until both match.
+make_setup_root "$ROOT"
+echo "tampered" >> "$ROOT/tools/$Q3_MPW_FILE"
+break_cc1 "$ROOT/tools/Retro68-build"
+run_setup "$ROOT"
+expect "setup_retro68.sh rejects a tampered MPW archive" 1 \
+    "tools/$Q3_MPW_FILE does not match the SHA-256 pinned in retro68-versions.txt" \
+    "no copy of $Q3_MPW_FILE matches its pinned SHA-256"
+check "setup_retro68.sh extracted, built and moved nothing for a tampered archive" \
+    rejected_before_extraction "$ROOT"
+
+make_setup_root "$ROOT"
+head -c 5 "$ROOT/tools/$Q3_OPENGL_FILE" > "$ROOT/truncated.sit"
+mv "$ROOT/truncated.sit" "$ROOT/tools/$Q3_OPENGL_FILE"
+run_setup "$ROOT"
+expect "setup_retro68.sh rejects a truncated OpenGL SDK archive" 1 \
+    "tools/$Q3_OPENGL_FILE does not match the SHA-256" ", 5 bytes"
+check "setup_retro68.sh extracted neither archive when one was truncated" \
+    rejected_before_extraction "$ROOT"
+
+make_setup_root "$ROOT"
+cp "$ROOT/tools/$Q3_MPW_FILE" "$ROOT/$Q3_MPW_FILE"
+echo "tampered" >> "$ROOT/tools/$Q3_MPW_FILE"
+run_setup "$ROOT"
+expect "setup_retro68.sh uses a matching repo-root archive over a damaged tools/ copy" 42 \
+    "tools/$Q3_MPW_FILE does not match" "Using $Q3_MPW_FILE (SHA-256 matches"
+check "setup_retro68.sh extracted the repo-root copy and left the damaged one alone" \
+    bash -c 'grep -q -F "unar -q -f $2 -o tools/temp_mpw" "$1/unar.called" &&
+        grep -q tampered "$1/tools/$2"' _ "$ROOT" "$Q3_MPW_FILE"
+
+# Downloads go to <name>.part and are kept only if they match.
+make_setup_root "$ROOT"
+mv "$ROOT/tools/$Q3_MPW_FILE" "$ROOT/good.sit"
+printf '#!/bin/sh\necho "wget $*" >> %q\n%s\ncat %q > "$out"\n' "$ROOT/wget.called" \
+    'out=""; prev=""; for arg in "$@"; do [ "$prev" = "-O" ] && out="$arg"; prev="$arg"; done' \
+    "$ROOT/download.sit" > "$ROOT/stubs/wget"
+chmod +x "$ROOT/stubs/wget"
+echo "another archive" > "$ROOT/download.sit"
+run_setup "$ROOT"
+expect "setup_retro68.sh rejects a download that does not match" 1 \
+    "tools/$Q3_MPW_FILE.part does not match the SHA-256" "was discarded"
+check "setup_retro68.sh kept no part of the rejected download and extracted nothing" \
+    bash -c '[ ! -e "$1/tools/$2" ] && [ ! -e "$1/tools/$2.part" ] && [ -s "$1/wget.called" ]' \
+    _ "$ROOT" "$Q3_MPW_FILE"
+check "setup_retro68.sh extracted, built and moved nothing for a rejected download" \
+    rejected_before_extraction "$ROOT"
+cp "$ROOT/good.sit" "$ROOT/download.sit"
+run_setup "$ROOT"
+expect "setup_retro68.sh keeps a download that matches" 42 "resuming with --skip-thirdparty"
+check "setup_retro68.sh extracted the matching download from tools/" \
+    bash -c 'cmp -s "$1/good.sit" "$1/tools/$2" && [ ! -e "$1/tools/$2.part" ] &&
+        grep -q -F "unar -q -f tools/$2 " "$1/unar.called"' _ "$ROOT" "$Q3_MPW_FILE"
 
 check "no scratch files are left behind" \
     bash -c '[ -z "$(ls -A "$1")" ]' _ "$Q3_CHECK_TMP"
@@ -916,9 +1201,223 @@ if command -v pwsh > /dev/null 2>&1; then
         grep -q -x "prefix removed" "$ROOT/build-toolchain.called"
     check "setup_retro68.ps1 renamed the toolchain aside as *.broken-<UTC time>" \
         bash -c 'set -- "$1"/tools/Retro68-build.broken-*; [ -x "$1/bin/powerpc-apple-macos-gcc.exe" ]' _ "$ROOT"
+    # Issue #227: the existing checkout is neither pulled nor moved.
+    check "setup_retro68.ps1 never pulls an existing checkout" \
+        bash -c '! grep -q -E "^git .*(pull|fetch|clone|checkout)" "$1/git.log"' _ "$ROOT"
+    check "setup_retro68.ps1 keeps an existing checkout at the pinned commit and submodules" \
+        at_pinned_commit "$ROOT/tools/Retro68-src"
+
+    # ps_broken_toolchain ROOT: setup_retro68.ps1 would rebuild this toolchain.
+    ps_broken_toolchain() {
+        break_cc1 "$1/tools/Retro68-build"
+        cp -p "$1/tools/Retro68-build/bin/powerpc-apple-macos-gcc" \
+            "$1/tools/Retro68-build/bin/powerpc-apple-macos-gcc.exe"
+    }
+
+    make_ps_setup_root "$ROOT"
+    rm -rf "$ROOT/tools/Retro68-src" "$ROOT/tools/Retro68-build" "$ROOT/tools/Retro68-work"
+    run_ps_setup "$ROOT"
+    expect "a fresh setup_retro68.ps1 clones Retro68 and builds" 1 "Build failed."
+    check "a fresh setup_retro68.ps1 checks out the pinned commit and submodules, not upstream HEAD" \
+        at_pinned_commit "$ROOT/tools/Retro68-src"
+    check "a fresh setup_retro68.ps1 ran the pinned checkout's build-toolchain.bash" \
+        grep -q -x "prefix removed" "$ROOT/build-toolchain.called"
+
+    make_ps_setup_root "$ROOT"
+    echo "$Q3_UPSTREAM" > "$ROOT/tools/Retro68-src/.git/stub-head"
+    ps_broken_toolchain "$ROOT"
+    run_ps_setup "$ROOT"
+    expect "setup_retro68.ps1 stops on a Retro68 checkout at another commit" 1 \
+        "is at $Q3_UPSTREAM" "pins Retro68 $Q3_PIN. Nothing was changed."
+    check "setup_retro68.ps1 neither moved nor updated a checkout at another commit" \
+        bash -c '[ "$(cat "$1/tools/Retro68-src/.git/stub-head")" = "$2" ] &&
+            ! grep -q -E "^git .*(pull|fetch|clone|checkout|submodule update)" "$1/git.log"' \
+        _ "$ROOT" "$Q3_UPSTREAM"
+    check "setup_retro68.ps1 extracted, built and renamed nothing for a checkout at another commit" \
+        rejected_before_extraction "$ROOT"
+
+    make_ps_setup_root "$ROOT"
+    set_version "$ROOT" RETRO68_SUBMODULE "${Q3_PIN_SUBMODULES%% *} 3333333333333333333333333333333333333333"
+    ps_broken_toolchain "$ROOT"
+    run_ps_setup "$ROOT"
+    expect "setup_retro68.ps1 stops when the submodules are not the pinned ones" 1 \
+        "are not the ones retro68-versions.txt pins" "3333333333333333333333333333333333333333"
+    check "setup_retro68.ps1 extracted, built and renamed nothing for other submodules" \
+        rejected_before_extraction "$ROOT"
+
+    make_ps_setup_root "$ROOT"
+    set_version "$ROOT" MPW_SHA256 "${Q3_PIN:0:10}"
+    run_ps_setup "$ROOT"
+    expect "setup_retro68.ps1 stops on a malformed MPW_SHA256" 1 "MPW_SHA256 has an invalid value"
+    check "setup_retro68.ps1 ran no git with a malformed retro68-versions.txt" test ! -e "$ROOT/git.log"
+
+    make_ps_setup_root "$ROOT"
+    echo "tampered" >> "$ROOT/tools/$Q3_MPW_FILE"
+    ps_broken_toolchain "$ROOT"
+    run_ps_setup "$ROOT"
+    expect "setup_retro68.ps1 rejects a tampered MPW archive" 1 \
+        "$Q3_MPW_FILE does not match the SHA-256 pinned in retro68-versions.txt" \
+        "no copy of $Q3_MPW_FILE matches its pinned SHA-256"
+    check "setup_retro68.ps1 extracted, built and renamed nothing for a tampered archive" \
+        rejected_before_extraction "$ROOT"
+
+    make_ps_setup_root "$ROOT"
+    head -c 5 "$ROOT/tools/$Q3_OPENGL_FILE" > "$ROOT/truncated.sit"
+    mv "$ROOT/truncated.sit" "$ROOT/tools/$Q3_OPENGL_FILE"
+    ps_broken_toolchain "$ROOT"
+    run_ps_setup "$ROOT"
+    expect "setup_retro68.ps1 rejects a truncated OpenGL SDK archive" 1 \
+        "$Q3_OPENGL_FILE does not match the SHA-256" ", 5 bytes"
+    check "setup_retro68.ps1 extracted neither archive when one was truncated" \
+        rejected_before_extraction "$ROOT"
 else
     echo "SKIP: pwsh is not installed; check_retro68.ps1 and setup_retro68.ps1 not exercised"
 fi
+
+# ---- build manifest (issue #227) ----
+
+# make_manifest_root DIR: a stub compiler, the Retro68 source next to it at
+# the pinned commit and submodules (played by the stub git), and a PEF.
+make_manifest_root() {
+    local root="$1"
+    rm -rf "$root"
+    mkdir -p "$root/tools/Retro68-build/bin" "$root/tools/Retro68-src/.git" "$root/build"
+    write_git_stub "$root"
+    echo "$Q3_PIN" > "$root/tools/Retro68-src/.git/stub-head"
+    cp "$root/pinned-gitlinks" "$root/tools/Retro68-src/.git/stub-sub"
+    printf '#!/bin/sh\n%s\n' \
+        'printf "powerpc-apple-macos-gcc (GCC) 12.2.0\nCopyright (C) 2022 Free Software Foundation, Inc.\n"' \
+        > "$root/tools/Retro68-build/bin/powerpc-apple-macos-gcc"
+    chmod +x "$root/tools/Retro68-build/bin/powerpc-apple-macos-gcc"
+    printf 'Joy!peffpwpc first build' > "$root/Quake3.pef"
+}
+
+# run_manifest ROOT [VERSIONS]: the manifest script as the build runs it.
+run_manifest() {
+    local root="$1" versions="${2:-$Q3_VERSIONS}"
+    Q3_STATUS=0
+    cmake "-DQ3_MANIFEST_PEF=$root/Quake3.pef" "-DQ3_MANIFEST_OUTPUT=$root/build/Quake3.manifest.txt" \
+        "-DQ3_MANIFEST_COMPILER=$root/tools/Retro68-build/bin/powerpc-apple-macos-gcc" \
+        "-DQ3_MANIFEST_GIT=$root/stubs/git" "-DQ3_MANIFEST_RETRO68_SOURCE=$root/tools/Retro68-src" \
+        "-DQ3_MANIFEST_VERSIONS=$versions" -P "$Q3_TEST_ROOT/cmake/Quake3BuildManifest.cmake" \
+        > "$Q3_OUT" 2>&1 || Q3_STATUS=$?
+}
+
+# manifest_is FILE PEF COMMIT PINNED SUBMODULES: FILE's fields are exactly
+# these, in this order, for the PEF at PEF. SUBMODULES holds one
+# "<path> <commit>[ note]" per line, or nothing.
+manifest_is() {
+    local file="$1" pef="$2" commit="$3" pinned="$4" submodules="$5" expected
+    expected="pef=Quake3.pef
+pef_sha256=$(q3_sha256 "$pef")
+gcc_version=powerpc-apple-macos-gcc (GCC) 12.2.0
+retro68_commit=$commit"
+    if [ -n "$submodules" ]; then
+        expected="$expected
+$(printf '%s\n' "$submodules" | LC_ALL=C sort | sed 's/^/retro68_submodule=/')"
+    fi
+    expected="$expected
+retro68_pinned=$pinned"
+    [ "$(grep -v '^#' "$file")" = "$expected" ] || {
+        echo "  expected:"; printf '%s\n' "$expected" | sed 's/^/    /'
+        echo "  found:"; sed 's/^/    /' "$file"
+        return 1
+    }
+}
+
+if command -v cmake > /dev/null 2>&1; then
+    MANIFEST="$Q3_TEST_WORK/manifest"
+    make_manifest_root "$MANIFEST"
+    run_manifest "$MANIFEST"
+    expect "the build manifest script runs" 0
+    check "the build manifest records the PEF's SHA-256, gcc --version and the pinned Retro68" \
+        manifest_is "$MANIFEST/build/Quake3.manifest.txt" "$MANIFEST/Quake3.pef" "$Q3_PIN" yes \
+        "$Q3_PIN_SUBMODULES"
+    cp "$MANIFEST/build/Quake3.manifest.txt" "$MANIFEST/first.txt"
+    run_manifest "$MANIFEST"
+    check "the build manifest is the same when nothing changed" \
+        cmp -s "$MANIFEST/first.txt" "$MANIFEST/build/Quake3.manifest.txt"
+    printf 'Joy!peffpwpc second build' > "$MANIFEST/Quake3.pef"
+    run_manifest "$MANIFEST"
+    check "a different PEF changes only pef_sha256 in the build manifest" \
+        bash -c '[ "$(diff "$1" "$2" | grep -c "^[<>]")" = 2 ] &&
+            [ "$(diff "$1" "$2" | grep "^[<>]" | cut -c 3- | cut -d = -f 1 | sort -u)" = pef_sha256 ]' \
+        _ "$MANIFEST/first.txt" "$MANIFEST/build/Quake3.manifest.txt"
+
+    # A checkout of another commit, with that commit's submodules.
+    make_manifest_root "$MANIFEST"
+    echo "$Q3_UPSTREAM" > "$MANIFEST/tools/Retro68-src/.git/stub-head"
+    sed "s/ .*/ $Q3_UPSTREAM_SUB/" "$MANIFEST/pinned-gitlinks" > "$MANIFEST/tools/Retro68-src/.git/stub-sub"
+    run_manifest "$MANIFEST"
+    check "the build manifest records a Retro68 checkout at another commit as not pinned" \
+        manifest_is "$MANIFEST/build/Quake3.manifest.txt" "$MANIFEST/Quake3.pef" "$Q3_UPSTREAM" \
+        "no (retro68-versions.txt pins $Q3_PIN)" \
+        "$(printf '%s\n' "$Q3_PIN_SUBMODULES" | sed "s/ .*/ $Q3_UPSTREAM_SUB/")"
+
+    make_manifest_root "$MANIFEST"
+    sed "s/ .*/ 3333333333333333333333333333333333333333/" "$MANIFEST/pinned-gitlinks" \
+        > "$MANIFEST/tools/Retro68-src/.git/stub-sub"
+    run_manifest "$MANIFEST"
+    check "the build manifest flags a submodule at another commit" \
+        manifest_is "$MANIFEST/build/Quake3.manifest.txt" "$MANIFEST/Quake3.pef" "$Q3_PIN" \
+        "no (retro68-versions.txt pins $Q3_PIN)" \
+        "$(printf '%s\n' "$Q3_PIN_SUBMODULES" |
+            sed "s/ .*/ 3333333333333333333333333333333333333333 (git submodule status flag '+')/")"
+
+    make_manifest_root "$MANIFEST"
+    rm -rf "$MANIFEST/tools/Retro68-src"
+    run_manifest "$MANIFEST"
+    check "the build manifest says unknown without a Retro68 checkout" \
+        manifest_is "$MANIFEST/build/Quake3.manifest.txt" "$MANIFEST/Quake3.pef" unknown \
+        "no (retro68-versions.txt pins $Q3_PIN)" ""
+
+    # The build runs the script after MakePEF and again whenever the PEF
+    # changes: a scratch project wires the same function to a stub PEF step.
+    make_manifest_root "$MANIFEST"
+    mkdir -p "$MANIFEST/project"
+    cp "$Q3_VERSIONS" "$MANIFEST/project/"
+    cat > "$MANIFEST/project/CMakeLists.txt" <<EOF
+cmake_minimum_required(VERSION 3.12)
+project(ManifestWiring NONE)
+set(CMAKE_C_COMPILER "$MANIFEST/tools/Retro68-build/bin/powerpc-apple-macos-gcc")
+set(RETRO68_INSTALL_ROOT "$MANIFEST/tools/Retro68-build")
+include("$Q3_TEST_ROOT/cmake/Quake3BuildManifest.cmake")
+add_custom_command(OUTPUT Quake3.pef
+    COMMAND "\${CMAKE_COMMAND}" -E copy "$MANIFEST/Quake3.pef" Quake3.pef
+    DEPENDS "$MANIFEST/Quake3.pef" VERBATIM)
+quake3_add_build_manifest(Quake3)
+add_custom_target(Quake3_APPL ALL DEPENDS Quake3.manifest.txt)
+EOF
+    Q3_STATUS=0
+    { cmake -S "$MANIFEST/project" -B "$MANIFEST/project/build" "-DGIT_EXECUTABLE=$MANIFEST/stubs/git" &&
+        cmake --build "$MANIFEST/project/build"; } > "$Q3_OUT" 2>&1 || Q3_STATUS=$?
+    expect "a build that uses quake3_add_build_manifest succeeds" 0 "Recording the build manifest of Quake3"
+    check "the build writes the manifest next to the PEF" \
+        manifest_is "$MANIFEST/project/build/Quake3.manifest.txt" "$MANIFEST/project/build/Quake3.pef" \
+        "$Q3_PIN" yes "$Q3_PIN_SUBMODULES"
+    sleep 1
+    printf 'Joy!peffpwpc rebuilt' > "$MANIFEST/Quake3.pef"
+    Q3_STATUS=0
+    cmake --build "$MANIFEST/project/build" > "$Q3_OUT" 2>&1 || Q3_STATUS=$?
+    expect "a rebuild after the PEF changes succeeds" 0 "Recording the build manifest of Quake3"
+    check "the rebuild records the new PEF's SHA-256" \
+        grep -q -x "pef_sha256=$(q3_sha256 "$MANIFEST/Quake3.pef")" \
+        "$MANIFEST/project/build/Quake3.manifest.txt"
+else
+    echo "SKIP: cmake is not installed; the build manifest script was not run"
+fi
+
+# CMakeLists.txt uses the function for every Classic application, and each
+# application's target depends on its manifest.
+classic_applications_record_manifests() {
+    local body
+    body="$(sed -n '/^function(quake3_add_classic_application /,/^endfunction()/p' "$Q3_TEST_ROOT/CMakeLists.txt")"
+    grep -q -x -F 'include("${CMAKE_SOURCE_DIR}/cmake/Quake3BuildManifest.cmake")' "$Q3_TEST_ROOT/CMakeLists.txt" &&
+        printf '%s\n' "$body" | grep -q -x -F '    quake3_add_build_manifest(${target})' &&
+        printf '%s\n' "$body" | grep -q -F '"${target}.manifest.txt")'
+}
+check "CMakeLists.txt writes a build manifest for every Classic application" \
+    classic_applications_record_manifests
 
 # ---- a real toolchain ----
 
@@ -939,6 +1438,57 @@ elif [ "${Q3_RETRO68_REQUIRE:-0}" = 1 ]; then
 else
     echo "SKIP: no Retro68 toolchain at $Q3_REAL"
 fi
+
+# real_pin NAME PROBLEM: PASS NAME when PROBLEM is empty; otherwise SKIP (a
+# local toolchain that is not the pinned one), or FAIL with
+# Q3_RETRO68_REQUIRE=1.
+real_pin() {
+    if [ -z "$2" ]; then
+        echo "PASS: $1"
+    elif [ "${Q3_RETRO68_REQUIRE:-0}" = 1 ]; then
+        echo "FAIL: $1: $2"
+        Q3_FAILED=1
+    else
+        echo "SKIP: $1: $2"
+    fi
+}
+
+# The Retro68 source next to the real toolchain, read without taking locks.
+Q3_REAL_SRC="$(dirname "$Q3_REAL")/Retro68-src"
+if [ -e "$Q3_REAL_SRC/.git" ] && command -v git > /dev/null 2>&1; then
+    Q3_PROBLEM=""
+    Q3_FOUND="$(GIT_OPTIONAL_LOCKS=0 git -C "$Q3_REAL_SRC" rev-parse HEAD 2> /dev/null)"
+    [ "$Q3_FOUND" = "$Q3_PIN" ] || Q3_PROBLEM="HEAD is ${Q3_FOUND:-unknown}"
+    while read -r Q3_PATH Q3_COMMIT; do
+        Q3_LINK="$(GIT_OPTIONAL_LOCKS=0 git -C "$Q3_REAL_SRC" rev-parse "HEAD:$Q3_PATH" 2> /dev/null)"
+        Q3_FOUND="$(GIT_OPTIONAL_LOCKS=0 git -C "$Q3_REAL_SRC/$Q3_PATH" rev-parse HEAD 2> /dev/null)"
+        if [ "$Q3_LINK" != "$Q3_COMMIT" ] || [ "$Q3_FOUND" != "$Q3_COMMIT" ]; then
+            Q3_PROBLEM="$Q3_PROBLEM${Q3_PROBLEM:+; }$Q3_PATH: recorded ${Q3_LINK:-nothing}, checked out ${Q3_FOUND:-nothing}"
+        fi
+    done <<< "$Q3_PIN_SUBMODULES"
+    Q3_FOUND="$(GIT_OPTIONAL_LOCKS=0 git -C "$Q3_REAL_SRC" config -f .gitmodules \
+        --get-regexp '^submodule\..*\.path$' | awk '{ print $2 }' | LC_ALL=C sort | tr '\n' ' ')"
+    [ "$Q3_FOUND" = "$(printf '%s\n' "$Q3_PIN_SUBMODULES" | cut -d ' ' -f 1 | LC_ALL=C sort | tr '\n' ' ')" ] ||
+        Q3_PROBLEM="$Q3_PROBLEM${Q3_PROBLEM:+; }its submodules are $Q3_FOUND"
+    real_pin "the Retro68 source at $Q3_REAL_SRC is at the pinned commit and submodules" "$Q3_PROBLEM"
+else
+    echo "SKIP: no Retro68 git checkout at $Q3_REAL_SRC"
+fi
+
+# The SDK archives next to the real toolchain or at the repository root.
+for Q3_KEY in MPW OPENGL; do
+    Q3_FILE="$(q3_version "${Q3_KEY}_FILE")"
+    Q3_FOUND=""
+    for Q3_PATH in "$(dirname "$Q3_REAL")/$Q3_FILE" "$(dirname "$(dirname "$Q3_REAL")")/$Q3_FILE"; do
+        [ -f "$Q3_PATH" ] || continue
+        Q3_FOUND="$Q3_PATH"
+        Q3_LINK="$(q3_sha256 "$Q3_PATH")"
+        Q3_PROBLEM=""
+        [ "$Q3_LINK" = "$(q3_version "${Q3_KEY}_SHA256")" ] || Q3_PROBLEM="its SHA-256 is $Q3_LINK"
+        real_pin "$Q3_PATH matches ${Q3_KEY}_SHA256" "$Q3_PROBLEM"
+    done
+    [ -n "$Q3_FOUND" ] || echo "SKIP: no $Q3_FILE next to $Q3_REAL or at the repository root"
+done
 
 if [ "$Q3_FAILED" -ne 0 ]; then
     echo "Retro68 readiness tests FAILED"

@@ -249,12 +249,19 @@ for app in $APPLICATIONS; do
     validate_pef "$app.pef" || exit 1
     python3 ../mac_app.py verify --pef "$app.pef" \
         "$app.bin" "$app.dsk" "%$app.ad" || exit 1
+    # The PEF's SHA-256 and the toolchain that built it (issue #227).
+    if [ ! -s "$app.manifest.txt" ]; then
+        echo "Error: the build did not write $app.manifest.txt next to $app.pef."
+        exit 1
+    fi
 done
 
 echo "Build complete. Launchable Classic application(s) in build_mac/:"
 for app in $APPLICATIONS; do
     echo "  $app.bin (MacBinary), $app.dsk (HFS disk image),"
     echo "  $app.ad + %$app.ad (AppleDouble)"
+    echo "  $app.manifest.txt (PEF SHA-256 and Retro68 toolchain):"
+    sed -n -E 's/^(pef_sha256|gcc_version|retro68_commit|retro68_pinned)=/    &/p' "$app.manifest.txt"
 done
 
 # Packaging Subcommand
