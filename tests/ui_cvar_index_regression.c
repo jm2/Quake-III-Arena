@@ -203,9 +203,12 @@ static void RunOrders( const char *script, const char *orders, const int *client
  * or %d (issue #401): orders, for a teammate and for Everyone, and voiceOrders,
  * for a teammate, refuse it, format and send nothing, and warn developers.
  * voiceOrdersTeam never formats its string: it sends it as it is, for Everyone
- * only. */
+ * only. UI_SendOrders also refuses it from an exact-size heap copy, so ASan
+ * sees a read past a trailing %, which the String_Alloc pool the scripts'
+ * strings come from would hide. */
 static void TestRefused( void ) {
 	static const char *selections[] = { "0", "3" };	/* client 1, and EVERYONE */
+	char *orders;
 	int i;
 
 	Cvar_Set( "developer", "1" );
@@ -226,6 +229,12 @@ static void TestRefused( void ) {
 		checkedFormat = NULL;
 		Check( formattedCount == 0 && !strcmp( executed, i ? va( "%s\n", value ) : "" ), "voiceOrdersTeam" );
 	}
+	orders = malloc( strlen( value ) + 1 );
+	Check( orders != NULL, "allocation" );
+	strcpy( orders, value );
+	executed[0] = 0;
+	Check( !UI_SendOrders( "orders", orders, 1 ) && !executed[0], "UI_SendOrders refuses the string" );
+	free( orders );
 }
 
 /** The selected player cvars after a key on the selected player item. */
