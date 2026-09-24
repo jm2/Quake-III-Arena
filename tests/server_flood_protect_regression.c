@@ -1,5 +1,7 @@
 /* Issue #320: sv_floodProtect must throttle the remote clients of a listen server as it does a
-   dedicated server's, but never the listen server's own loopback client or a bot. */
+   dedicated server's, but never the listen server's own loopback client or a bot.
+   Issue #341: it must throttle a network client that has not entered the world as well, while the
+   commands of a retail client's connect sequence, downloads included, still all run. */
 #include "../code/server/sv_client.c"
 #include <stdarg.h>
 #include <stdlib.h>
@@ -7,12 +9,16 @@
 
 #define REMOTE		0				/* a network client */
 #define LOCAL		1				/* the listen server's own client; a network client on a dedicated server */
-#define PRIMED		2				/* still entering the game: exempt, as in retail, while it downloads */
+#define PRIMED		2				/* has its gamestate but withholds usercmds, so it never enters the world */
 #define BOT			3
-#define CLIENTS		4
+#define CONNECTED	4				/* sends the current serverId instead of asking for a gamestate */
+#define JOINING		5				/* a retail client going through the connect sequence */
+#define CLIENTS		6
 #define BURST		6				/* game commands in one packet, e.g. a bound key on repeat */
 #define QUEUE		64
 #define WINDOW		1000			/* sv_floodProtect: one game command per second */
+#define BLOCKS		30				/* blocks of the pak JOINING downloads */
+#define FRAME		50				/* msec between two packets of a connecting client */
 
 serverStatic_t svs;
 server_t sv;
@@ -23,6 +29,10 @@ static cvar_t maxclients, floodProtect, pure, lanForceRate, dedicated, clRunning
 static char queued[CLIENTS][QUEUE][MAX_STRING_CHARS];
 static char lastSay[CLIENTS][MAX_STRING_CHARS];
 static int queuedSequence[CLIENTS], moveTime[CLIENTS], thinks[CLIENTS], says[CLIENTS], userinfoChanges[CLIENTS];
+static int moving[CLIENTS], begins[CLIENTS];
+static int gamestatesDue;			/* gamestates the connect sequence asks for with donedl */
+static sharedEntity_t entities[CLIENTS];
+static char emptyConfigstring[1];
 static const char *config;
 
 /** Fail with the violated property and the server configuration. */
@@ -62,9 +72,11 @@ qboolean NET_CompareAdr( netadr_t a, netadr_t b ) { (void)a; (void)b; Check( 0, 
 void SV_Heartbeat_f( void ) { Check( 0, "SV_Heartbeat_f" ); }
 void SV_BotFreeClient( int clientNum ) { (void)clientNum; Check( 0, "SV_BotFreeClient" ); }
 void SV_SendClientSnapshot( client_t *client ) { (void)client; Check( 0, "SV_SendClientSnapshot" ); }
-void SV_UpdateServerCommandsToClient( client_t *client, msg_t *msg ) { (void)client; (void)msg; Check( 0, "gamestate resent" ); }
-void SV_SendMessageToClient( msg_t *msg, client_t *client ) { (void)msg; (void)client; Check( 0, "gamestate resent" ); }
-sharedEntity_t *SV_GentityNum( int num ) { (void)num; Check( 0, "client entered the world" ); return NULL; }
+/** SV_SendClientGameState's output; only JOINING's donedl may ask for a gamestate. */
+void SV_UpdateServerCommandsToClient( client_t *client, msg_t *msg ) { (void)msg; Check( gamestatesDue > 0 && client == &svs.clients[JOINING], "gamestate resent" ); }
+void SV_SendMessageToClient( msg_t *msg, client_t *client ) { (void)msg; Check( gamestatesDue-- > 0 && client == &svs.clients[JOINING], "gamestate resent" ); }
+/** Only JOINING, the one client that ends its connect sequence with a usercmd, may enter the world. */
+sharedEntity_t *SV_GentityNum( int num ) { Check( num == JOINING, "client entered the world" ); return &entities[num]; }
 
 /** The game module entry points this path reaches; baseq3 ClientCommand reads the command with trap_Argv. */
 int VM_CallArgs( vm_t *vm, int callNum, const int *args, int argCount ) {
@@ -72,6 +84,7 @@ int VM_CallArgs( vm_t *vm, int callNum, const int *args, int argCount ) {
 	(void)vm;
 	Check( argCount == 1 && n >= 0 && n < CLIENTS, "game call client" );
 	if ( callNum == GAME_CLIENT_THINK ) thinks[n]++;
+	else if ( callNum == GAME_CLIENT_BEGIN ) begins[n]++;
 	else if ( callNum == GAME_CLIENT_USERINFO_CHANGED ) userinfoChanges[n]++;
 	else if ( callNum == GAME_CLIENT_COMMAND ) {
 		Check( !strcmp( Cmd_Argv( 0 ), "say" ), "unexpected game command" );
@@ -88,8 +101,8 @@ static void Queue( int n, const char *command ) {
 	Check( queuedSequence[n] - svs.clients[n].lastClientCommand < QUEUE, "test queue overflow" );
 	Q_strncpyz( queued[n][queuedSequence[n] & ( QUEUE - 1 )], command, sizeof( queued[n][0] ) );
 }
-/** Build one CL_WritePacket-style packet (every unacknowledged command, then a usercmd unless the
-    client is still primed) and hand it to SV_ExecuteClientMessage the way SV_PacketEvent does, over
+/** Build one CL_WritePacket-style packet (every unacknowledged command, then a usercmd if the
+    client sends them) and hand it to SV_ExecuteClientMessage the way SV_PacketEvent does, over
     the network or, for the listen server's own client, over the loopback netchan. */
 static void SendPacket( int n ) {
 	client_t *cl = &svs.clients[n];
@@ -107,7 +120,7 @@ static void SendPacket( int n ) {
 		MSG_WriteLong( &msg, i );
 		MSG_WriteString( &msg, queued[n][i & ( QUEUE - 1 )] );
 	}
-	if ( cl->state == CS_ACTIVE ) {
+	if ( moving[n] ) {
 		memset( &nullcmd, 0, sizeof( nullcmd ) );
 		cmd = nullcmd; cmd.serverTime = ++moveTime[n];
 		MSG_WriteByte( &msg, clc_moveNoDelta );
@@ -124,7 +137,8 @@ static void SendPacket( int n ) {
 	   with "Lost reliable commands", and the rest of the packet (its usercmd) still runs. */
 	Check( cl->state != CS_ZOMBIE, "client dropped" );
 	Check( cl->lastClientCommand == queuedSequence[n], "client commands left unacknowledged" );
-	Check( cl->state != CS_ACTIVE || thinks[n] == moveTime[n], "usercmd behind the commands did not run" );
+	/* The usercmd that puts a primed client in the world does not run. */
+	Check( cl->state != CS_ACTIVE || thinks[n] + begins[n] == moveTime[n], "usercmd behind the commands did not run" );
 }
 /** A fresh server: dedicated (no loopback client) or listen (LOCAL on the loopback netchan). */
 static void Reset( int listen, int protect ) {
@@ -132,7 +146,7 @@ static void Reset( int listen, int protect ) {
 	client_t *cl;
 	memset( svs.clients, 0, CLIENTS * sizeof( client_t ) );
 	memset( queuedSequence, 0, sizeof( queuedSequence ) ); memset( moveTime, 0, sizeof( moveTime ) );
-	memset( thinks, 0, sizeof( thinks ) ); memset( says, 0, sizeof( says ) );
+	memset( thinks, 0, sizeof( thinks ) ); memset( says, 0, sizeof( says ) ); memset( begins, 0, sizeof( begins ) );
 	memset( userinfoChanges, 0, sizeof( userinfoChanges ) ); memset( lastSay, 0, sizeof( lastSay ) );
 	svs.time = 100000; sv.state = SS_GAME; sv.serverId = 4242; sv.checksumFeed = 0x5eed;
 	dedicated.integer = !listen; clRunning.integer = listen; floodProtect.integer = protect;
@@ -140,7 +154,8 @@ static void Reset( int listen, int protect ) {
 		cl->netchan.remoteAddress.type = i == BOT ? NA_BOT : listen && i == LOCAL ? NA_LOOPBACK : NA_IP;
 		Com_sprintf( cl->userinfo, sizeof( cl->userinfo ), "\\name\\player%i", i );
 		SV_UserinfoChanged( cl );
-		cl->state = i == PRIMED ? CS_PRIMED : CS_ACTIVE;
+		cl->state = i == PRIMED || i == JOINING ? CS_PRIMED : i == CONNECTED ? CS_CONNECTED : CS_ACTIVE;
+		moving[i] = cl->state == CS_ACTIVE;
 		cl->lastPacketTime = svs.time;
 	}
 }
@@ -188,30 +203,80 @@ static void BotUnthrottled( void ) {
 	for ( i = 0; i < BURST; i++ ) SV_ExecuteClientCommand( &svs.clients[BOT], va( "say bot%i", i ), qtrue );
 	Check( says[BOT] == BURST, "bot commands throttled" );
 }
+/** A retail client's connect sequence, from CL_InitDownloads to its first usercmd: it downloads a pak,
+    acknowledging every block with a nextdl, while its player says something twice, a full window apart;
+    donedl asks for the gamestate again; after loading, cp and the userinfo its cgame registered; then
+    usercmds.  All of it runs, and neither say is held back by the nextdl sent around it. */
+static void Connect( int n ) {
+	client_t *cl = &svs.clients[n];
+	int block, typed = 2;
+	Queue( n, "download test.pk3" );
+	SendPacket( n );
+	Check( !strcmp( cl->downloadName, "test.pk3" ), "download not started" );
+	for ( block = 0; block <= BLOCKS; block++ ) {
+		/* SV_WriteDownloadToClient sent this block; an empty one ends the file */
+		cl->downloadBlockSize[block % MAX_DOWNLOAD_WINDOW] = block < BLOCKS ? MAX_DOWNLOAD_BLKSIZE : 0;
+		svs.time += FRAME;
+		Queue( n, va( "nextdl %i", block ) );
+		if ( block == typed ) Queue( n, "say downloading" );
+		if ( block == typed + WINDOW / FRAME ) Queue( n, "say almost" );
+		SendPacket( n );
+		Check( cl->state == CS_PRIMED, "download interrupted" );
+	}
+	Check( !*cl->downloadName && cl->downloadClientBlock == BLOCKS, "download not completed" );
+	Check( says[n] == 2 && !strcmp( lastSay[n], "almost" ), "say typed while downloading ignored" );
+	gamestatesDue = 1;
+	svs.time += FRAME;
+	Queue( n, "donedl" );
+	SendPacket( n );
+	Check( !gamestatesDue && cl->state == CS_PRIMED, "donedl did not resend the gamestate" );
+	svs.time += FRAME;
+	Queue( n, va( "cp %i", sv.serverId ) );
+	Queue( n, "userinfo \"\\name\\joined\"" );
+	SendPacket( n );
+	Check( userinfoChanges[n] == 1 && !strcmp( cl->name, "joined" ), "userinfo sent while connecting not applied" );
+	moving[n] = 1;
+	svs.time += FRAME;
+	SendPacket( n );
+	Check( cl->state == CS_ACTIVE && begins[n] == 1, "client did not enter the world" );
+}
 /** One server configuration: which of REMOTE and LOCAL sv_floodProtect must throttle. */
 static void Run( const char *name, int listen, int protect, int remoteThrottled, int localThrottled ) {
 	config = name;
 	Reset( listen, protect );
 	if ( remoteThrottled ) Throttled( REMOTE ); else Unthrottled( REMOTE );
 	if ( localThrottled ) Throttled( LOCAL ); else Unthrottled( LOCAL );
-	Unthrottled( PRIMED );
+	/* A network client that has not entered the world is throttled too, whether it withholds its
+	   usercmds (primed) or never asks for its gamestate (connected) (#341). */
+	if ( remoteThrottled ) Throttled( PRIMED ); else Unthrottled( PRIMED );
+	if ( remoteThrottled ) Throttled( CONNECTED ); else Unthrottled( CONNECTED );
 	BotUnthrottled();
 	svs.time += 10 * WINDOW;
 	UserinfoInWindow( REMOTE, remoteThrottled );
 	UserinfoInWindow( LOCAL, localThrottled );
+	UserinfoInWindow( PRIMED, remoteThrottled );
+	UserinfoInWindow( CONNECTED, remoteThrottled );
+	Check( svs.clients[PRIMED].state == CS_PRIMED && svs.clients[CONNECTED].state == CS_CONNECTED, "client state changed" );
+	Connect( JOINING );
+	/* The listen server's own client is not throttled while it loads a map either. */
+	Reset( listen, protect );
+	svs.clients[LOCAL].state = CS_PRIMED; moving[LOCAL] = 0;
+	if ( localThrottled ) Throttled( LOCAL ); else Unthrottled( LOCAL );
 }
 int main( void ) {
+	int i;
 	sv_maxclients = &maxclients; sv_floodProtect = &floodProtect; sv_pure = &pure;
 	sv_lanForceRate = &lanForceRate; com_dedicated = &dedicated; com_cl_running = &clRunning;
 	maxclients.integer = CLIENTS; lanForceRate.integer = 1;
+	for ( i = 0; i < MAX_CONFIGSTRINGS; i++ ) sv.configstrings[i] = emptyConfigstring;
 	svs.clients = calloc( CLIENTS, sizeof( client_t ) ); Check( svs.clients != NULL, "allocation" );
-	/* Dedicated servers are unchanged: every network client is throttled. */
+	/* A dedicated server throttles every network client, whether it has entered the world or not. */
 	Run( "dedicated server", 0, 1, 1, 1 );
 	/* A listen server throttles its remote clients too, but never its own local client. */
 	Run( "listen server", 1, 1, 1, 0 );
 	/* sv_floodProtect 0 still turns it off for everyone. */
 	Run( "dedicated server, sv_floodProtect 0", 0, 0, 0, 0 );
 	Run( "listen server, sv_floodProtect 0", 1, 0, 0, 0 );
-	puts( "Server flood protect regressions passed (issue #320)" );
+	puts( "Server flood protect regressions passed (issues #320, #341)" );
 	return 0;
 }
