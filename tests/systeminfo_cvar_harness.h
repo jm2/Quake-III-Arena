@@ -12,7 +12,10 @@ float Cvar_VariableValue( const char *var_name );
 void Cvar_VariableStringBuffer( const char *var_name, char *buffer, int bufsize );
 
 /* Deliver a CS_SYSTEMINFO string that sets name to value through the real
- * CL_SystemInfoChanged, as a server's gamestate does. */
+ * CL_SystemInfoChanged, as a server's gamestate does. Since issue #39 that
+ * only works before anything registers the cvar (the value survives the
+ * registration); after that the value is set as the player's console or
+ * config would, which the modules must bound just the same. */
 void SystemInfo_Set( const char *name, const char *value );
 
 #endif

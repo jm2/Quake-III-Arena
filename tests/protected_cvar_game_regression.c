@@ -1,13 +1,17 @@
-/* Issue #319: G_SEND_CONSOLE_COMMAND through the real game dispatcher and command buffer. */
+/* Issue #39: the game's cvar traps must not move the filesystem paths, while
+ * its own cvars keep working. Runs the real sv_game.c, cvar.c and cmd.c. */
 #include "../code/server/sv_game.c"
-#include "console_command_trap_harness.h"
+#include "protected_cvar_harness.h"
 
 server_t sv;
 serverStatic_t svs;
 cvar_t *sv_maxclients;
 vm_t *gvm = &vm;
 
+/* Engine services the cvar traps never reach. */
+qboolean CL_GameCommand( void ) { Unexpected( __func__ ); return qfalse; }
 qboolean UI_GameCommand( void ) { Unexpected( __func__ ); return qfalse; }
+void CL_ForwardCommandToServer( const char *string ) { Unexpected( __func__ ); }
 int BotImport_DebugPolygonCreate( int color, int numPoints, vec3_t *points ) { Unexpected( __func__ ); return 0; }
 void BotImport_DebugPolygonDelete( int id ) { Unexpected( __func__ ); }
 void CM_AdjustAreaPortalState( int area1, int area2, qboolean open ) { Unexpected( __func__ ); }
@@ -21,13 +25,6 @@ int CM_PointLeafnum( const vec3_t p ) { Unexpected( __func__ ); return 0; }
 void CM_TransformedBoxTrace( trace_t *results, const vec3_t start, const vec3_t end, vec3_t mins, vec3_t maxs,
 	clipHandle_t model, int brushmask, const vec3_t origin, const vec3_t angles, int capsule ) { Unexpected( __func__ ); }
 int Com_RealTime( qtime_t *qtime ) { Unexpected( __func__ ); return 0; }
-char *Cvar_InfoString( int bit ) { Unexpected( __func__ ); return NULL; }
-void Cvar_Register( vmCvar_t *vmCvar, const char *varName, const char *defaultValue, int flags ) { Unexpected( __func__ ); }
-void Cvar_Set( const char *var_name, const char *value ) { Unexpected( __func__ ); }
-void Cvar_SetSafe( const char *var_name, const char *value ) { Unexpected( __func__ ); }
-void Cvar_Update( vmCvar_t *vmCvar ) { Unexpected( __func__ ); }
-int Cvar_VariableIntegerValue( const char *var_name ) { Unexpected( __func__ ); return 0; }
-void Cvar_VariableStringBuffer( const char *var_name, char *buffer, int bufsize ) { Unexpected( __func__ ); }
 qboolean EA_ClientValid( int client ) { Unexpected( __func__ ); return qfalse; }
 void FS_FCloseFile( fileHandle_t f ) { Unexpected( __func__ ); }
 int FS_FOpenFileByMode( const char *qpath, fileHandle_t *f, fsMode_t mode ) { Unexpected( __func__ ); return 0; }
@@ -57,8 +54,65 @@ void SV_Trace( trace_t *results, const vec3_t start, vec3_t mins, vec3_t maxs, c
 void SV_UnlinkEntity( sharedEntity_t *ent ) { Unexpected( __func__ ); }
 int Sys_Milliseconds( void ) { Unexpected( __func__ ); return 0; }
 void Sys_SnapVector( float *v ) { Unexpected( __func__ ); }
+int VM_CallCompiled( vm_t *target, int *args ) { Unexpected( __func__ ); return 0; }
+int VM_CallInterpreted( vm_t *target, int *args ) { Unexpected( __func__ ); return 0; }
+
+static qboolean Is( const char *name, const char *value ) {
+	return Value( name ) && !strcmp( Value( name ), value );
+}
+
+/** The game's trap_Cvar_Register. */
+static void RegisterGameCvar( const char *name, int flags ) {
+	Trap( G_CVAR_REGISTER, Arg( Alloc( sizeof( vmCvar_t ) ) ), Str( name ), Str( "1" ), flags );
+}
+
+/** The game keeps its own cvars, and nothing else. */
+static void TestGame( void ) {
+	vmCvar_t *vmCvar;
+	int handle, offset, i;
+
+	handle = Arg( Alloc( sizeof( vmCvar_t ) ) );
+	Trap( G_CVAR_REGISTER, handle, Str( "g_modCvar" ), Str( "1" ), CVAR_SERVERINFO | CVAR_ARCHIVE );
+	Trap( G_CVAR_SET, Str( "g_modCvar" ), Str( "4" ), 0, 0 );
+	Trap( G_CVAR_UPDATE, handle, 0, 0, 0 );
+	vmCvar = Image( handle );
+	Check( Is( "g_modCvar", "4" ) && vmCvar->integer == 4, "the game sets its own cvar" );
+	Check( Trap( G_CVAR_VARIABLE_INTEGER_VALUE, Str( "g_modCvar" ), 0, 0, 0 ) == 4, "the game reads its own cvar" );
+	Trap( G_CVAR_SET, Str( "g_modNew" ), Str( "3" ), 0, 0 );
+	Check( Is( "g_modNew", "3" ), "the game creates a cvar by setting it" );
+	CheckEngineOnlyFlags( RegisterGameCvar, G_CVAR_SET );
+
+	for ( i = 0; i < COUNT( protectedCvars ); i++ ) {
+		Refuse( G_CVAR_SET, Str( protectedCvars[i] ), Str( HOSTILE ), 0, 0, "the game set a protected path" );
+		Refuse( G_CVAR_SET, Str( protectedCvars[i] ), 0, 0, 0, "the game reset a protected path" );
+		handle = Arg( Alloc( sizeof( vmCvar_t ) ) );
+		Trap( G_CVAR_REGISTER, handle, Str( protectedCvars[i] ), Str( HOSTILE ),
+			CVAR_SERVERINFO | CVAR_SYSTEMINFO | CVAR_USER_CREATED | CVAR_ROM );
+		vmCvar = Image( handle );
+		Check( !strcmp( vmCvar->string, protectedValues[i] ), "the game reads a protected path" );
+		// server browsers and every client would see it
+		Check( !strstr( Cvar_InfoString( CVAR_SERVERINFO ), protectedCvars[i] ),
+			"the game put a protected path in the serverinfo" );
+		Check( !strstr( Cvar_InfoString_Big( CVAR_SYSTEMINFO ), protectedCvars[i] ),
+			"the game put a protected path in the systeminfo" );
+	}
+	// a long value must not overrun the drop message
+	offset = Alloc( MAXPRINTMSG );
+	memset( vm.dataBase + offset, 'x', MAXPRINTMSG - 1 );
+	Refuse( G_CVAR_SET, Str( "fs_basegame" ), Arg( offset ), 0, 0, "the game set a protected path to a long value" );
+	CheckPaths( "the game moved a protected path" );
+}
 
 int main( void ) {
-	RunConsoleCommandTrap( SV_GameSystemCalls, G_SEND_CONSOLE_COMMAND, "Game" );
+	int pass;
+
+	StartEngine();
+	for ( pass = 0; pass < 2; pass++ ) {
+		if ( LoadModule( "game", SV_GameSystemCalls, pass ) ) {
+			TestGame();
+		}
+	}
+	munmap( vm.dataBase, IMAGE_SIZE );
+	puts( "the game keeps the filesystem paths (issue #39)" );
 	return 0;
 }
