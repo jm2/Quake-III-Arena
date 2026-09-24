@@ -246,6 +246,7 @@ void SV_ChangeMaxClients( void ) {
 	int		i;
 	client_t	*oldClients;
 	int		count;
+	netchan_buffer_t	**tail;
 
 	// get the highest client number in use
 	count = 0;
@@ -276,6 +277,14 @@ void SV_ChangeMaxClients( void ) {
 		}
 	}
 
+	// release the queued messages of the slots that are not carried over,
+	// the copied clients keep theirs
+	for ( i = 0 ; i < svs.clientCapacity ; i++ ) {
+		if ( i >= count || svs.clients[i].state < CS_CONNECTED ) {
+			SV_Netchan_FreeQueue( &svs.clients[i] );
+		}
+	}
+
 	// free old clients arrays
 	Z_Free( svs.clients );
 
@@ -288,6 +297,12 @@ void SV_ChangeMaxClients( void ) {
 	for ( i = 0 ; i < count ; i++ ) {
 		if ( oldClients[i].state >= CS_CONNECTED ) {
 			svs.clients[i] = oldClients[i];
+			// the tail of an empty queue pointed into the freed array
+			tail = &svs.clients[i].netchan_start_queue;
+			while ( *tail ) {
+				tail = &(*tail)->next;
+			}
+			svs.clients[i].netchan_end_queue = tail;
 		}
 	}
 
