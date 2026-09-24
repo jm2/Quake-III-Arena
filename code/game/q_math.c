@@ -141,7 +141,8 @@ vec3_t	bytedirs[NUMVERTEXNORMALS] =
 //==============================================================
 
 int		Q_rand( int *seed ) {
-	*seed = (69069 * *seed + 1);
+	// unsigned, so the native build wraps like the QVM instead of overflowing
+	*seed = (int)(69069U * (unsigned)*seed + 1U);
 	return *seed;
 }
 
