@@ -1104,6 +1104,7 @@ static void BotReplaceReplySynonymsSized(char *string, unsigned long int context
 int BotLoadChatMessage(source_t *source, char *chatmessagestring)
 {
 	char *ptr;
+	char escape[32];
 	token_t token;
 
 	ptr = chatmessagestring;
@@ -1126,22 +1127,25 @@ int BotLoadChatMessage(source_t *source, char *chatmessagestring)
 		//variable string
 		else if (token.type == TT_NUMBER && (token.subtype & TT_INTEGER))
 		{
-			if (strlen(ptr) + 7 > MAX_MESSAGE_SIZE)
+			//the printed index has no fixed length, so format the escape first
+			Com_sprintf(escape, sizeof(escape), "%cv%ld%c", ESCAPE_CHAR, token.intvalue, ESCAPE_CHAR);
+			if (strlen(ptr) + strlen(escape) + 1 > MAX_MESSAGE_SIZE)
 			{
 				SourceError(source, "chat message too long\n");
 				return qfalse;
 			} //end if
-			sprintf(&ptr[strlen(ptr)], "%cv%ld%c", ESCAPE_CHAR, token.intvalue, ESCAPE_CHAR);
+			strcat(ptr, escape);
 		} //end if
 		//random string
 		else if (token.type == TT_NAME)
 		{
-			if (strlen(ptr) + 7 > MAX_MESSAGE_SIZE)
+			//escape char, 'r', the name, escape char and the trailing zero
+			if (strlen(ptr) + strlen(token.string) + 4 > MAX_MESSAGE_SIZE)
 			{
 				SourceError(source, "chat message too long\n");
 				return qfalse;
 			} //end if
-			sprintf(&ptr[strlen(ptr)], "%cr%s%c", ESCAPE_CHAR, token.string, ESCAPE_CHAR);
+			Com_sprintf(&ptr[strlen(ptr)], MAX_MESSAGE_SIZE - strlen(ptr), "%cr%s%c", ESCAPE_CHAR, token.string, ESCAPE_CHAR);
 		} //end else if
 		else
 		{
