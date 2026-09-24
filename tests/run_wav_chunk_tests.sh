@@ -13,7 +13,7 @@ trap 'rm -f -- "$Q3_TEST_BINARY"' EXIT
     -Wl,--gc-sections -lm -o "$Q3_TEST_BINARY"
 
 # Each mode runs in its own process so a report in one does not hide the others.
-for Q3_TEST_MODE in valid riff list-fmt list-data data truncated; do
+for Q3_TEST_MODE in valid riff list-fmt list-data data truncated width adpcm; do
     # LeakSanitizer cannot initialize in the local ptrace sandbox.
     ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 \
     UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 "$Q3_TEST_BINARY" "$Q3_TEST_MODE"
