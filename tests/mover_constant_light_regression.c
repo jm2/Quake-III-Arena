@@ -17,6 +17,13 @@
  * sign-bit range, the clamp and negative values. Under -fsanitize=shift master
  * aborts on the first light of 512. Every expected value below is what master
  * built with -fwrapv (the -O0 bits) stores, so the fix must not change one.
+ *
+ * Issue #373: r, g, b and i come from float-to-int conversions of the keys,
+ * which are undefined in C when the value is beyond the int range ("light"
+ * "1e10", inf or NaN). PowerPC's fctiwz saturates there, and x86 gives
+ * INT_MIN. The last cases are such keys, run under
+ * -fsanitize=float-cast-overflow; each expects what the PowerPC build of
+ * master stores, so the Mac's movers keep their light.
  */
 #include "../code/game/g_local.h"
 #include <stdarg.h>
@@ -167,7 +174,7 @@ static const moverClass_t moverClasses[] = {
 typedef struct {
 	const char	*light;		// NULL leaves the key out
 	const char	*color;		// NULL leaves the key out
-	int			expected;	// master's constantLight with -fwrapv
+	int			expected;	// master's constantLight with -fwrapv, or PowerPC's (#373)
 } lightCase_t;
 
 /*
@@ -201,6 +208,31 @@ static const lightCase_t lightCases[] = {
 	{ "0", "0 -8421504 0", 0x00008000 },
 	{ "0", "0 0 -8421504", 0x00800000 },
 	{ "-8", "0.5 -0.25 2", (int)0xffffc17f },
+	// the ends of the int range
+	{ "0", "-8421505 0 0", (int)0x80000000 },	// color * 255 rounds to INT_MIN
+	{ "8589934080", NULL, (int)0xffffffff },	// light / 4 is the last float below 2^31
+	// issue #373: keys beyond the int range, which were undefined. They
+	// saturate, as PowerPC's fctiwz does: above INT_MAX gives 255 through the
+	// clamp, and below INT_MIN, -inf and NaN give INT_MIN, whose bits shift
+	// out of g, b and i
+	{ "1e10", NULL, (int)0xffffffff },
+	{ "-1e10", NULL, 0x00ffffff },
+	{ "8589934592", NULL, (int)0xffffffff },	// light / 4 == 2^31
+	{ "-8589935616", NULL, 0x00ffffff },	// light / 4 is the first float below INT_MIN
+	{ "1e40", NULL, (int)0xffffffff },	// atof's float is +inf
+	{ "-1e40", NULL, 0x00ffffff },
+	{ "inf", "0 0 0", (int)0xff000000 },
+	{ "-inf", "0 0 0", 0x00000000 },
+	{ "nan", NULL, 0x00ffffff },
+	{ "0", "1e10 0 0", 0x000000ff },
+	{ "0", "-1e10 0 0", (int)0x80000000 },
+	{ "0", "-8421506 0 0", (int)0x80000000 },	// color * 255 is the first float below INT_MIN
+	{ "0", "0 -1e10 0", 0x00000000 },
+	{ "0", "0 0 -1e10", 0x00000000 },
+	{ "0", "nan 0.5 1", (int)0x80ff7f00 },
+	{ "40", "1e39 -1e39 nan", 0x0a0000ff },	// sscanf's floats are +inf, -inf and NaN
+	{ "1e10", "-1e10 0.5 1e10", (int)0xffff7f00 },
+	{ "-1e10", "-1e10 -1e10 -1e10", (int)0x80000000 },
 };
 #define NUM_LIGHT_CASES	( sizeof( lightCases ) / sizeof( lightCases[0] ) )
 
@@ -277,7 +309,7 @@ int main( void ) {
 			}
 		}
 	}
-	printf( "Mover constantLight packs %d light/color keys unchanged for %d mover classes (issue #344)\n",
+	printf( "Mover constantLight packs %d light/color keys as the PowerPC build does for %d mover classes (issues #344, #373)\n",
 		(int)NUM_LIGHT_CASES, (int)NUM_MOVER_CLASSES );
 	return 0;
 }

@@ -11,17 +11,19 @@ trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 # test stubs. The test calls the mover spawn functions itself, so g_spawn.c's
 # spawns[] table must be dropped too; AddressSanitizer's global registration
 # would keep it (and every other entity's spawn function) alive, so g_spawn.c
-# is built with UBSan only. shift is named explicitly: it is the check issue
-# #344 is about. Built for base Quake III and Team Arena (MISSIONPACK).
+# is built with UBSan only. shift and float-cast-overflow are named explicitly:
+# they are the checks issues #344 and #373 are about, and GCC's
+# -fsanitize=undefined leaves float-cast-overflow out. Built for base Quake III
+# and Team Arena (MISSIONPACK).
 for Q3_TEST_VARIANT in base missionpack; do
     Q3_TEST_FLAGS=(-std=gnu99 -fno-omit-frame-pointer -ffunction-sections -fdata-sections
         -Wno-pointer-to-int-cast -fno-sanitize-recover=all)
     if [[ "$Q3_TEST_VARIANT" == missionpack ]]; then
         Q3_TEST_FLAGS+=(-DMISSIONPACK)
     fi
-    "${CC:-cc}" "${Q3_TEST_FLAGS[@]}" -fsanitize=undefined,shift \
+    "${CC:-cc}" "${Q3_TEST_FLAGS[@]}" -fsanitize=undefined,shift,float-cast-overflow \
         -c "$Q3_TEST_ROOT/code/game/g_spawn.c" -o "$Q3_TEST_DIR/g_spawn-$Q3_TEST_VARIANT.o"
-    "${CC:-cc}" "${Q3_TEST_FLAGS[@]}" -fsanitize=address,undefined,shift \
+    "${CC:-cc}" "${Q3_TEST_FLAGS[@]}" -fsanitize=address,undefined,shift,float-cast-overflow \
         "$Q3_TEST_ROOT/tests/mover_constant_light_regression.c" \
         "$Q3_TEST_ROOT/code/game/g_mover.c" \
         "$Q3_TEST_ROOT/code/game/g_utils.c" \
