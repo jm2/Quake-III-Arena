@@ -3690,7 +3690,8 @@ void FS_PureServerSetLoadedPaks( const char *pakSums, const char *pakNames ) {
 		}
 	}
 
-	for ( i = 0 ; i < c ; i++ ) {
+	// the last list may have had more names than checksums
+	for ( i = 0 ; i < MAX_SEARCH_PATHS ; i++ ) {
 		if (fs_serverPakNames[i]) {
 			Z_Free(fs_serverPakNames[i]);
 		}
@@ -3720,7 +3721,7 @@ checksums to see if any pk3 files need to be auto-downloaded.
 =====================
 */
 void FS_PureServerSetReferencedPaks( const char *pakSums, const char *pakNames ) {
-	int		i, c, d;
+	int		i, c, d = 0;
 
 	Cmd_TokenizeString( pakSums );
 
@@ -3729,13 +3730,11 @@ void FS_PureServerSetReferencedPaks( const char *pakSums, const char *pakNames )
 		c = MAX_SEARCH_PATHS;
 	}
 
-	fs_numServerReferencedPaks = c;
-
 	for ( i = 0 ; i < c ; i++ ) {
 		fs_serverReferencedPaks[i] = atoi( Cmd_Argv( i ) );
 	}
 
-	for ( i = 0 ; i < c ; i++ ) {
+	for ( i = 0 ; i < MAX_SEARCH_PATHS ; i++ ) {
 		if (fs_serverReferencedPakNames[i]) {
 			Z_Free(fs_serverReferencedPakNames[i]);
 		}
@@ -3745,14 +3744,17 @@ void FS_PureServerSetReferencedPaks( const char *pakSums, const char *pakNames )
 		Cmd_TokenizeString( pakNames );
 
 		d = Cmd_Argc();
-		if ( d > MAX_SEARCH_PATHS ) {
-			d = MAX_SEARCH_PATHS;
+		if ( d > c ) {
+			d = c;
 		}
 
 		for ( i = 0 ; i < d ; i++ ) {
 			fs_serverReferencedPakNames[i] = CopyString( Cmd_Argv( i ) );
 		}
 	}
+
+	// keep only the checksums that have names, as ioquake3 does
+	fs_numServerReferencedPaks = d;
 }
 
 /*
