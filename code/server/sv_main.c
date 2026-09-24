@@ -756,7 +756,7 @@ Redirect all printfs
 ===============
 */
 void SVC_RemoteCommand( netadr_t from, msg_t *msg ) {
-	qboolean	valid;
+	qboolean	valid, limited;
 	leakyBucket_t	*bucket;
 	char		remaining[1024];
 	// TTimo - scaled down to accumulate, but not overflow anything network wise, print wise etc.
@@ -767,15 +767,17 @@ void SVC_RemoteCommand( netadr_t from, msg_t *msg ) {
 
 	// Prevent using rcon as an amplifier and make dictionary attacks impractical
 	bucket = SVC_BucketForAddress( from, 1000, qfalse );
-	if ( bucket != NULL && SVC_RateLimit( bucket, 10, 1000 ) ) {
-		Com_DPrintf( "SVC_RemoteCommand: rate limit from %s exceeded, dropping request\n",
-			NET_AdrToString( from ) );
-		return;
-	}
+	limited = bucket != NULL && SVC_RateLimit( bucket, 10, 1000 );
 
 	if ( !strlen( sv_rconPassword->string ) ||
 		strcmp (Cmd_Argv(1), sv_rconPassword->string) ) {
 		static leakyBucket_t badRconBucket;
+
+		if ( limited ) {
+			Com_DPrintf( "SVC_RemoteCommand: rate limit from %s exceeded, dropping request\n",
+				NET_AdrToString( from ) );
+			return;
+		}
 
 		// Make DoS via rcon impractical
 		if ( SVC_RateLimit( &badRconBucket, 10, 1000 ) ) {
@@ -794,9 +796,11 @@ void SVC_RemoteCommand( netadr_t from, msg_t *msg ) {
 	} else {
 		static leakyBucket_t adminBucket;
 
-		// The password is right: if a flood has left no bucket to be had,
-		// share a small allowance instead, so the admin is never locked out
-		if ( bucket == NULL && SVC_RateLimitNewAddress( from ) &&
+		// The password is right: if the address has used up its quota (a
+		// flood may spoof it) or a flood has left no bucket to be had, share
+		// a small allowance that only the right password can use instead, so
+		// the admin is never locked out
+		if ( ( limited || ( bucket == NULL && SVC_RateLimitNewAddress( from ) ) ) &&
 			SVC_RateLimit( &adminBucket, 10, 1000 ) ) {
 			Com_DPrintf( "SVC_RemoteCommand: rate limit exceeded, dropping request\n" );
 			return;

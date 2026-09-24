@@ -1,8 +1,9 @@
 /* Issue #38: getstatus, getinfo, getchallenge and rcon are rate limited with ioquake3's leaky buckets: 10 at once and
  * one a second more for each source address, and for the three queries 10 at once and one every 100 msec more for all
- * sources together; bad rcon passwords share their own 10 at once and one a second more. A flooding source only loses
- * its own quota, a spoofed flood cannot make the server an amplifier or fill the bucket table, a flood cannot lock out
- * the admin, a clock that jumps back or passes INT_MAX neither disables nor locks the limits, and every request looks
+ * sources together; bad rcon passwords share their own 10 at once and one a second more, and the right password falls
+ * back on a shared allowance of the same. A flooding source only loses its own quota, a spoofed flood cannot make the
+ * server an amplifier or fill the bucket table, a flood cannot lock out the admin, even by spoofing the admin's own
+ * address, a clock that jumps back or passes INT_MAX neither disables nor locks the limits, and every request looks
  * at a bounded number of buckets. Replies within the limits are the retail bytes. Usage: server_rate_limit <case>. */
 static int bucketVisits;	/* buckets the limiter looked at, counted through its test hook */
 #define SVC_BUCKET_VISITED() ( bucketVisits++ )
@@ -178,6 +179,13 @@ static int Occupy( netadr_t from, int burst ) {
 	bucket->burst = burst; bucket->lastTime = now;
 	return 1;
 }
+/** Buckets in one hash chain. */
+static int ChainLength( long hash ) {
+	leakyBucket_t *bucket;
+	int length = 0;
+	for ( bucket = bucketHashes[hash]; bucket; bucket = bucket->next ) length++;
+	return length;
+}
 /** Hold every slot of the table, with sources from n on. */
 static void Fill( int n, int burst ) {
 	int first = n;
@@ -224,20 +232,22 @@ static void NormalUse( void ) {
 	}
 }
 
-/** One source flooding any of the commands gets its burst of 10, then one a second. */
+/** One source flooding any of the commands gets its burst of 10, then one a second. With the right password it also
+ * gets the shared admin allowance, the same again. */
 static void SourceFlood( void ) {
 	static const char *const lines[] = { "getstatus", "getinfo xxx", "getchallenge", RCON, BAD_RCON };
+	static const int shares[] = { 1, 1, 1, 2, 1 };
 	netadr_t flooder = Address( 198, 51, 100, 66 );
 	int c, i, answered;
 
 	for ( c = 0; c < 5; c++ ) {
 		Advance( 60000 );	/* every bucket has drained */
 		for ( i = answered = 0; i < 50; i++ ) answered += Send( flooder, lines[c] );
-		Check( answered == 10, "flood not limited to its burst" );
-		for ( i = answered = 0; i < 300; i++ ) { Advance( 10 ); answered += Send( flooder, lines[c] ); }
-		Check( answered == 3, "flood not limited to one a second" );
+		Check( answered == 10 * shares[c], "flood not limited to its burst" );
+		for ( i = answered = 0; i < 305; i++ ) { Advance( 10 ); answered += Send( flooder, lines[c] ); }
+		Check( answered == 3 * shares[c], "flood not limited to one a second" );
 	}
-	Check( executed == 13, "rcon with the password not executed within the limit" );
+	Check( executed == 2 * ( 10 + 3 ), "rcon with the password not executed within the limit" );
 }
 
 /** While one source floods, another is answered every time. */
@@ -320,10 +330,11 @@ static void Clock( void ) {
 	Check( now < 0 && answered == 10 + 9, "clock passing INT_MAX disabled or locked the global limit" );
 }
 
-/** A bad-rcon flood gets 10 replies at once and one a second, and never locks out the admin elsewhere. */
+/** A bad-rcon flood gets 10 replies at once and one a second, and no flood locks out the admin. */
 static void BadRcon( void ) {
+	static const int spoofRates[] = { 2, 10, 50 };	/* packets a second */
 	netadr_t admin = Address( 198, 51, 100, 200 ), guesser = Address( 198, 51, 100, 66 );
-	int t, answered = 0, prints;
+	int t, r, answered = 0, prints, ran;
 
 	for ( t = 0; t < 3000; t += 2 ) {
 		answered += Send( Spoofed( t % 1000 ), BAD_RCON );
@@ -347,19 +358,44 @@ static void BadRcon( void ) {
 	Advance( 60000 );
 	for ( t = 0; t < FLOOD; t++ ) { Send( Spoofed( t ), "getinfo xxx" ); if ( t & 1 ) Advance( 1 ); }
 	Expect( Address( 198, 51, 100, 201 ), RCON, RCON_REPLY, "spoofed flood locked out the admin" );
+	/* A flood that spoofs the admin's own address keeps that address's quota spent, at 2, 10 or 50 packets a second of
+	 * getinfo and bad rcon. The right password still gets in on the shared allowance: the admin's rcon every 2 s runs
+	 * every time. */
+	for ( r = 0; r < 3; r++ ) {
+		Advance( 60000 );
+		ran = executed;
+		for ( t = 0; t < 60000; t += 10 ) {
+			if ( t % ( 1000 / spoofRates[r] ) == 0 ) Send( admin, t / ( 1000 / spoofRates[r] ) % 2 ? BAD_RCON : "getinfo xxx" );
+			if ( t % 2000 == 1000 ) Expect( admin, RCON, RCON_REPLY, "flood spoofing the admin's address locked out the admin" );
+			Advance( 10 );
+		}
+		Check( executed - ran == 30, "admin rcon not executed under a spoofed flood" );
+	}
+	/* The allowance is 10 at once and one more a second, for the right password only. */
+	Advance( 60000 );
+	for ( t = 0; t < 20; t++ ) Send( admin, "getinfo xxx" );	/* spoofed: the address's quota is spent */
+	for ( t = answered = 0; t < 20; t++ ) answered += Send( admin, RCON );
+	Check( answered == 10, "admin allowance is not 10 at once" );
+	Check( !Send( admin, BAD_RCON ), "bad password used the admin allowance" );
+	Advance( 100 );
+	Check( !Send( admin, RCON ), "admin allowance refilled faster than one a second" );
+	Advance( 900 );
+	Send( admin, "getinfo xxx" );	/* the spoofer takes the address's own leaked request */
+	Expect( admin, RCON, RCON_REPLY, "admin allowance not refilled after a second" );
 #ifdef MAX_BUCKET_SCAN
 	/* Even when a flood holds every bucket, the right password gets in on a small shared allowance, while a bad
 	 * password or a query from a new source is dropped. */
 	Advance( 60000 );
 	Fill( FLOOD, 10 );
 	prints = consolePrints;
+	ran = executed;
 	Check( !Send( Address( 198, 51, 100, 202 ), BAD_RCON ) && consolePrints == prints, "bad rcon got a bucket from a full table" );
 	Check( !Send( Address( 198, 51, 100, 202 ), "getinfo xxx" ), "query got a bucket from a full table" );
 	for ( t = answered = 0; t < 20; t++ ) answered += Send( Address( 198, 51, 102, t ), RCON );
 	Check( answered == 10 && !strcmp( reply, "" ), "admin allowance on a full table" );
 	Advance( 1000 );
 	Expect( admin, RCON, RCON_REPLY, "admin locked out of a full table" );
-	Check( executed == 6 + 6 + 1 + 10 + 1, "admin rcon not executed" );
+	Check( executed - ran == 10 + 1, "admin rcon not executed on a full table" );
 #else
 	Check( 0, "the bucket table is not bounded" );
 #endif
@@ -404,7 +440,7 @@ static void BoundedWork( void ) {
 	static const unsigned int keys[] = { 0, 1, 0x9e3779b1u, 0xffffffffu, 0x2545f491u };
 	static const char *const lines[] = { "getstatus", "getinfo xxx", "getchallenge", BAD_RCON, RCON };
 	netadr_t family[64], aimed[64], elsewhere = Address( 198, 51, 100, 9 ), local;
-	int i, k, n, found, distinct, moved, used[MAX_HASHES];
+	int i, k, n, t, found, distinct, moved, used[MAX_HASHES];
 	long chain, hash;
 
 	/* ioquake3 adds 119a + 120b + 121c + 122d, so all of a.b+i.c-2i.d+i shared one chain. */
@@ -425,6 +461,18 @@ static void BoundedWork( void ) {
 	}
 	Check( moved >= 48, "the key does not choose the chain" );
 
+	/* A flood that knows the key sends a new address in one chain every 100 msec, each answered and then left to
+	 * drain: the chain releases drained buckets, so it never holds more than MAX_BUCKET_CHAIN. */
+	bucketHashKey = keys[4];
+	chain = SVC_HashForAddress( elsewhere ) ^ 2;
+	for ( t = n = 0; t < 200; t++ ) {
+		while ( SVC_HashForAddress( Spoofed( ( 1 << 23 ) + n ) ) != chain ) n++;
+		Expect( Spoofed( ( 1 << 23 ) + n++ ), "getinfo xxx", INFO_REPLY( "xxx" ), "new source in a draining chain not answered" );
+		Check( ChainLength( chain ) <= MAX_BUCKET_CHAIN, "chain kept drained buckets past its cap" );
+		Check( lastVisits <= 2 * MAX_BUCKET_CHAIN + 1, "request walked a long chain" );
+		Advance( 100 );
+	}
+
 	/* A flood that knows the key aims at one chain: it gets MAX_BUCKET_CHAIN buckets there, then none. */
 	bucketHashKey = keys[4];
 	chain = SVC_HashForAddress( elsewhere ) ^ 1;
@@ -433,8 +481,10 @@ static void BoundedWork( void ) {
 	Check( n == MAX_BUCKET_CHAIN, "aimed chain not capped" );
 	/* and holds every other slot too. */
 	Fill( 1 << 20, 10 );
+	/* Every request still looks at a bounded number of buckets. Only the right rcon password gets through, on the admin
+	 * allowance. */
 	for ( k = 0; k < 5; k++ ) {
-		Check( Send( aimed[0], lines[k] ) == 0 && lastVisits > 0 && lastVisits <= MAX_BUCKET_CHAIN, "held source" );
+		Check( Send( aimed[0], lines[k] ) == ( k == 4 ) && lastVisits > 0 && lastVisits <= MAX_BUCKET_CHAIN, "held source" );
 		Check( Send( aimed[48 + k], lines[k] ) == ( k == 4 ) && lastVisits > 0 && lastVisits <= 2 * MAX_BUCKET_CHAIN,
 		       "new source in the aimed chain" );
 		Check( Send( Spoofed( ( 1 << 21 ) + k ), lines[k] ) == ( k == 4 ) && lastVisits >= MAX_BUCKET_SCAN
