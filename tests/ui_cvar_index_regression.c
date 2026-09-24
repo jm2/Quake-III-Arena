@@ -215,8 +215,7 @@ static void TestSelection( int selected ) {
 
 	// orders go to the selected teammate, else to every teammate but the local
 	// client, which only its client number identifies (its name has a color code
-	// that the team list cleans off, and teammate 4 has the same name in another
-	// color); voiceOrders only go to a selected teammate
+	// that the team list cleans off); voiceOrders only go to a selected teammate
 	for ( i = 0; i < ARRAY_LEN( ordersStrings ); i++ ) {
 		if ( selected >= 0 && selected < TEAMMATES ) {
 			RunOrders( "orders", ordersStrings[i], &teammateClients[selected], 1 );
