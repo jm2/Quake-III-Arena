@@ -348,6 +348,7 @@ static void HeldKey( int listen ) {
 	for ( i = 0; i < 4 * PERIOD / FRAME_MSEC; i++ ) Frame( NORMAL, 0 );
 	Check( applied[NORMAL] == last, "held-back userinfo applied after the client left" );
 	Check( cl->state == CS_FREE, "zombie slot not freed" );
+	Check( !cl->userinfoPending && !cl->userinfo[0], "held-back userinfo outlived the client" );
 }
 /** Dedicated and listen-server configurations, the listen server with sv_floodProtect off and on
     (it also throttles a listen server's remote clients since #320); it must not matter. */

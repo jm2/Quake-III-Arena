@@ -123,12 +123,13 @@ static void CreateSystemInfoCvars( void ) {
 }
 
 /*
-Publish the pak lists as SV_SpawnServer does for count pk3s, in the
-FS_LoadedPakChecksums, FS_LoadedPakNames, FS_ReferencedPakChecksums and
-FS_ReferencedPakNames formats (search order, BIG_INFO_STRING buffers).
+Publish the pak lists as SV_SpawnServer does for count pk3s named prefix
+and a number, in the FS_LoadedPakChecksums, FS_LoadedPakNames,
+FS_ReferencedPakChecksums and FS_ReferencedPakNames formats (search order,
+BIG_INFO_STRING buffers).
 Every pk3 outside baseq3 is referenced; in baseq3 only the first three are.
 */
-static void SetPakLists( const char *gamename, int count ) {
+static void SetPakLists( const char *gamename, const char *prefix, int count ) {
 	static char sums[BIG_INFO_STRING], names[BIG_INFO_STRING];
 	static char refSums[BIG_INFO_STRING], refNames[BIG_INFO_STRING];
 	char name[MAX_QPATH];
@@ -140,7 +141,7 @@ static void SetPakLists( const char *gamename, int count ) {
 	for ( i = 0 ; i < count ; i++ ) {
 		seed = seed * 1103515245u + 12345u;
 		checksum = (int)seed;
-		Com_sprintf( name, sizeof( name ), "mappack-%03i", i );
+		Com_sprintf( name, sizeof( name ), "%s%03i", prefix, i );
 		referenced = Q_stricmp( gamename, BASEGAME ) || i < 3;
 
 		Q_strcat( sums, sizeof( sums ), va( "%i ", checksum ) );
@@ -180,6 +181,27 @@ static qboolean ShortKeysSent( const char *info ) {
 	return qtrue;
 }
 
+/* True if every short key in info goes ahead of every value too long for a normal info string. */
+static qboolean ShortKeysFirst( const char *info ) {
+	static char key[BIG_INFO_KEY], value[BIG_INFO_VALUE];
+	qboolean longSeen = qfalse;
+	int i;
+
+	while ( *info ) {
+		Info_NextPair( &info, key, value );
+		if ( strlen( value ) >= MAX_INFO_VALUE ) {
+			longSeen = qtrue;
+			continue;
+		}
+		for ( i = 0 ; longSeen && i < ARRAY_LEN( shortKeys ) ; i++ ) {
+			if ( !Q_stricmp( key, shortKeys[i] ) ) {
+				return qfalse;
+			}
+		}
+	}
+	return qtrue;
+}
+
 /* 202cda0: short values first, then each long value on its own, for the pure-mode check. */
 static const char *UnpairedTwoPassInfo( void ) {
 	static char info[BIG_INFO_STRING];
@@ -212,7 +234,8 @@ static const char *SinglePassInfo( void ) {
 }
 
 /* Build systeminfo for 0..maxPaks pk3s; return the first count that leaves a list out. */
-static int SweepPakCounts( const char *name, const char *gamename, int maxPaks, char *dropped, int droppedSize ) {
+static int SweepPakCounts( const char *name, const char *gamename, const char *prefix, int maxPaks,
+	char *dropped, int droppedSize ) {
 	char info[BIG_INFO_STRING];
 	char sent[BIG_INFO_VALUE];
 	char message[256];
@@ -225,7 +248,7 @@ static int SweepPakCounts( const char *name, const char *gamename, int maxPaks, 
 	Cvar_Set( "fs_game", Q_stricmp( gamename, BASEGAME ) ? gamename : "" );
 	dropped[0] = 0;
 	for ( numPaks = 0 ; numPaks <= maxPaks ; numPaks++ ) {
-		SetPakLists( gamename, numPaks );
+		SetPakLists( gamename, prefix, numPaks );
 		printedLength = 0;
 		printed[0] = 0;
 		built = Cvar_InfoString_Big( CVAR_SYSTEMINFO );
@@ -242,6 +265,8 @@ static int SweepPakCounts( const char *name, const char *gamename, int maxPaks, 
 			Com_sprintf( message, sizeof( message ), "%s is present with its value", shortKeys[i] );
 			Check( !strcmp( sent, value ), message );
 		}
+		/* a pair with either list too long for a normal info string goes after every short key */
+		Check( ShortKeysFirst( info ), "short keys go ahead of every long pak list" );
 
 		allShort = qtrue;
 		for ( i = 0 ; i < ARRAY_LEN( pakListPairs ) ; i++ ) {
@@ -311,7 +336,7 @@ static int SweepPakCounts( const char *name, const char *gamename, int maxPaks, 
 static const char *BuildWithRejected( const char *key, const char *value ) {
 	static char info[BIG_INFO_STRING];
 
-	SetPakLists( BASEGAME, numPaks );
+	SetPakLists( BASEGAME, "mappack-", numPaks );
 	Cvar_Set( key, value );
 	printedLength = 0;
 	printed[0] = 0;
@@ -346,6 +371,35 @@ static void TestRejectedValue( void ) {
 	Check( Sent( info, "sv_paks" ) && Sent( info, "sv_pakNames" ), "the loaded pair is still sent" );
 }
 
+/* A pair that takes systeminfo to exactly BIG_INFO_STRING - 1 chars still fits, so it goes whole and in cvar order. */
+static void TestExactFit( void ) {
+	static char names[BIG_INFO_STRING];
+	const char *info;
+	int length;
+
+	scenario = "exact fit";
+	numPaks = 300;
+	Cvar_Set( "fs_game", "" );
+	SetPakLists( BASEGAME, "mappack-", numPaks );
+	/* lengthen the last pk3 name until sv_pakNames ends on the last char */
+	Q_strncpyz( names, Cvar_VariableString( "sv_pakNames" ), sizeof( names ) );
+	Cvar_Set( "sv_pakNames", "" );
+	length = BIG_INFO_STRING - 1 - (int)strlen( Cvar_InfoString_Big( CVAR_SYSTEMINFO ) ) - (int)strlen( "\\sv_pakNames\\" );
+	Check( length > (int)strlen( names ) && length < BIG_INFO_VALUE, "exact-fit sv_pakNames length" );
+	memset( names + strlen( names ), 'x', length - strlen( names ) );
+	names[length] = 0;
+	Cvar_Set( "sv_pakNames", names );
+
+	printedLength = 0;
+	printed[0] = 0;
+	info = Cvar_InfoString_Big( CVAR_SYSTEMINFO );
+	Check( strlen( info ) == BIG_INFO_STRING - 1 && !strcmp( Info_ValueForKey( info, "sv_pakNames" ), names )
+		&& !strcmp( Info_ValueForKey( info, "sv_paks" ), Cvar_VariableString( "sv_paks" ) ) && !printed[0],
+		"a pair that fills systeminfo exactly is sent whole" );
+	Check( ShortKeysSent( info ) && ShortKeysFirst( info ), "short keys go ahead of the pair that fills systeminfo" );
+	Check( !strcmp( info, UnpairedTwoPassInfo() ), "a pair that fits exactly keeps the cvar order" );
+}
+
 int main( void ) {
 	char dropped[256];
 	int baseDrop, modDrop;
@@ -353,15 +407,30 @@ int main( void ) {
 	CreateSystemInfoCvars();
 	Cvar_Set( "sv_serverid", va( "%i", 3601234 ) );	/* com_frameTime an hour after start-up */
 
-	baseDrop = SweepPakCounts( "baseq3", BASEGAME, 800, dropped, sizeof( dropped ) );
+	baseDrop = SweepPakCounts( "baseq3", BASEGAME, "mappack-", 800, dropped, sizeof( dropped ) );
 	Check( baseDrop > 0, "baseq3 sweep reaches a count that fills systeminfo" );
 	printf( "baseq3: every key fits up to %i pk3s; from %i, left out: %s\n", baseDrop - 1, baseDrop, dropped );
 
-	modDrop = SweepPakCounts( "mod", "mymod", 800, dropped, sizeof( dropped ) );
+	modDrop = SweepPakCounts( "mod", "mymod", "mappack-", 800, dropped, sizeof( dropped ) );
 	Check( modDrop > 0, "mod sweep reaches a count that fills systeminfo" );
 	printf( "mymod: every key fits up to %i pk3s; from %i, left out: %s\n", modDrop - 1, modDrop, dropped );
 
+	/* short pk3 names: sv_paks reaches MAX_INFO_VALUE long before sv_pakNames does */
+	scenario = "short names";
+	numPaks = 150;
+	SetPakLists( BASEGAME, "m", numPaks );
+	Check( strlen( Cvar_VariableString( "sv_paks" ) ) >= MAX_INFO_VALUE
+		&& strlen( Cvar_VariableString( "sv_pakNames" ) ) < MAX_INFO_VALUE, "sv_paks is long while sv_pakNames is short" );
+	baseDrop = SweepPakCounts( "baseq3, short names", BASEGAME, "m", 800, dropped, sizeof( dropped ) );
+	Check( baseDrop > 0, "short-name baseq3 sweep reaches a count that fills systeminfo" );
+	printf( "baseq3, short names: every key fits up to %i pk3s; from %i, left out: %s\n", baseDrop - 1, baseDrop, dropped );
+
+	modDrop = SweepPakCounts( "mod, short names", "mymod", "m", 800, dropped, sizeof( dropped ) );
+	Check( modDrop > 0, "short-name mod sweep reaches a count that fills systeminfo" );
+	printf( "mymod, short names: every key fits up to %i pk3s; from %i, left out: %s\n", modDrop - 1, modDrop, dropped );
+
 	TestRejectedValue();
+	TestExactFit();
 
 	printf( "Cvar systeminfo regression passed\n" );
 	return 0;

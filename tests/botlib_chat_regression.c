@@ -68,13 +68,15 @@ static void MatchVariable( bot_match_t *match, int variable, char *out, int size
 }
 /** Preserve native nullable substring queries. */
 static int Contains( char *a, char *b, int sensitive ) { Callback(); Check(!a && !b && sensitive==1,"nullable contains"); return -1; }
-/** Map a page below 4 GiB so the dispatcher's 32-bit native pointer ABI can address it. */
+/** Map a page below 4 GiB so the dispatcher's 32-bit native pointer ABI can address it; NULL if this host gives none. */
 static char *LowPage( void ) {
 	char *page;
 #ifdef MAP_32BIT
 	page=mmap(NULL,4096,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_32BIT,-1,0);
 #else
+	/* only a hint: a 64-bit host without MAP_32BIT may place the page above 4 GiB */
 	page=mmap((void *)0x10000000,4096,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+	if(page!=MAP_FAILED && (unsigned long)page!=(unsigned int)(unsigned long)page) { munmap(page,4096); return NULL; }
 #endif
 	Check(page!=MAP_FAILED && (unsigned long)page==(unsigned int)(unsigned long)page,"low native page");
 	return page;
@@ -117,15 +119,21 @@ int main( void ) {
 	args[11]=1024; Check(SV_BotLibChatCalls(args)==0,"variable past combined capacity"); Received(args,4);
 	for(i=0;i<8;i++) args[4+i]=512;
 	Check(SV_BotLibChatCalls(args)==0,"eight full-length variables"); Received(args,4);
-	for(i=1;i<8;i++) args[4+i]=0;
-	args[11]=IMAGE_SIZE-1; vm.dataBase[IMAGE_SIZE-1]='x'; Reject(args);
-	args[5]=1024; Reject(args); args[5]=0; /* an unterminated variable still faults past the combined capacity */
+	/* an unterminated variable faults in any of the eight slots, also past the combined capacity */
+	vm.dataBase[IMAGE_SIZE-1]='x';
+	for(i=0;i<8;i++) {
+		memset(args+4,0,8*sizeof(int)); args[4+i]=IMAGE_SIZE-1; Reject(args);
+		args[4+(i+1)%8]=512; args[4+(i+2)%8]=1024; Reject(args);
+	}
 	memset(args+4,0,8*sizeof(int)); args[0]=BOTLIB_AI_REPLY_CHAT; args[2]=512; args[3]=3; args[4]=4;
 	Check(SV_BotLibChatCalls(args)==5,"exact reply message"); Received(args,5);
 	args[12]=1024; Check(SV_BotLibChatCalls(args)==5,"reply name past combined capacity"); Received(args,5);
 	args[11]=512; Check(SV_BotLibChatCalls(args)==5,"reply names past combined capacity"); Received(args,5);
-	args[12]=IMAGE_SIZE-1; Reject(args); args[11]=0;
-	args[12]=0; vm.dataBase[767]='a'; vm.dataBase[768]=0; Reject(args); vm.dataBase[767]=0;
+	for(i=0;i<8;i++) {
+		memset(args+5,0,8*sizeof(int)); args[5+i]=IMAGE_SIZE-1; Reject(args);
+		args[5+(i+1)%8]=512; Reject(args);
+	}
+	memset(args+5,0,8*sizeof(int)); vm.dataBase[767]='a'; vm.dataBase[768]=0; Reject(args); vm.dataBase[767]=0;
 	args[0]=BOTLIB_AI_GET_CHAT_MESSAGE; args[2]=IMAGE_SIZE-8; args[3]=8;
 	Check(SV_BotLibChatCalls(args)==0,"whole message output"); args[3]=0; Reject(args); args[3]=9; Reject(args);
 	args[0]=BOTLIB_AI_REPLACE_SYNONYMS; args[1]=IMAGE_SIZE-MAX_MESSAGE_SIZE; args[2]=1; args[3]=MAX_MESSAGE_SIZE;
@@ -141,9 +149,16 @@ int main( void ) {
 	args[1]=IMAGE_SIZE-2; vm.dataBase[IMAGE_SIZE-2]=vm.dataBase[IMAGE_SIZE-1]='a'; Reject(args);
 	args[1]=3072; memset(vm.dataBase+args[1],'a',256); vm.dataBase[args[1]+256]=0; Reject(args);
 	args[1]=0; Reject(args);
-	native=LowPage(); strcpy(native+100,"hi hi"); args[1]=(int)(unsigned long)(native+100); args[3]=MAX_MESSAGE_SIZE-100;
-	vm.entryPoint=NativeEntry; Check(SV_BotLibChatCalls(args)==0 && synonymSize==MAX_MESSAGE_SIZE-100 && !strcmp(native+100,"sssss"),"native message size");
-	vm.entryPoint=NULL; munmap(native,4096); args[3]=0;
+	if((native=LowPage())!=NULL) {
+		strcpy(native+100,"hi hi"); args[1]=(int)(unsigned long)(native+100); args[3]=MAX_MESSAGE_SIZE-100;
+		vm.entryPoint=NativeEntry; Check(SV_BotLibChatCalls(args)==0 && synonymSize==MAX_MESSAGE_SIZE-100 && !strcmp(native+100,"sssss"),"native message size");
+		vm.entryPoint=NULL; munmap(native,4096);
+	} else {
+		/* CI output hides passing runners, so a CI host must run the native check */
+		Check(!getenv("CI"),"low native page (CI does not skip the native check)");
+		puts("Botlib chat regression: SKIPPED the native message size check, no page below 4 GiB on this host");
+	}
+	args[3]=0;
 	args[0]=BOTLIB_AI_MATCH_VARIABLE; args[1]=64; args[2]=0; args[3]=IMAGE_SIZE-8; args[4]=8;
 	match=(bot_match_t *)(vm.dataBase+64); memset(match,0,sizeof(*match)); strcpy(match->string,"test");
 	match->variables[0].offset=0; match->variables[0].length=4;

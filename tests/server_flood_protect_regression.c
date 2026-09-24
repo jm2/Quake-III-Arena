@@ -154,9 +154,14 @@ static int Burst( int n ) {
 	SendPacket( n );
 	return says[n] - before;
 }
-/** A client that is throttled gets its first say through, and one more a full window after its last command. */
+/** A client that is throttled gets its first say through, and one more a full window after its last command,
+    ignored or not. */
 static void Throttled( int n ) {
 	Check( Burst( n ) == 1 && !strcmp( lastSay[n], "burst0" ), "game commands not throttled" );
+	svs.time += WINDOW / 2;	/* a full window after the first say, but inside the ignored one's */
+	Queue( n, "say still" );
+	SendPacket( n );
+	Check( says[n] == 1, "an ignored game command did not restart the window" );
 	svs.time += WINDOW;
 	Queue( n, "say again" );
 	SendPacket( n );
