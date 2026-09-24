@@ -354,6 +354,41 @@ void SV_TouchCGame(void) {
 
 /*
 ================
+SV_FitSystemInfo
+
+Builds the systeminfo string. Many pk3s can make the pure lists too
+big for the gamestate a client takes, so while it doesn't fit they are
+left out: the names first, which no client reads, then the checksums.
+That is Quake3e's degraded pure mode: clients are not restricted to the
+server's pk3s, but their cp command is still checked against them, so a
+client that loads a file from a pk3 the server doesn't have is dropped
+as unpure, where the full list would have made it skip that pk3.
+================
+*/
+static void SV_FitSystemInfo( char *systemInfo, int size ) {
+	const char	*key, *effect;
+	int			len;
+
+	Q_strncpyz( systemInfo, Cvar_InfoString_Big( CVAR_SYSTEMINFO ), size );
+	while ( SV_RemainingGameState( systemInfo ) < 0 ) {
+		if ( Cvar_VariableString( "sv_pakNames" )[0] ) {
+			key = "sv_pakNames";
+			effect = "";
+		} else if ( Cvar_VariableString( "sv_paks" )[0] ) {
+			key = "sv_paks";
+			effect = ": clients will not be restricted to the server's pk3s (degraded pure)";
+		} else {
+			return;		// the pure lists are not what is too big
+		}
+		len = strlen( Cvar_VariableString( key ) );
+		Cvar_Set( key, "" );
+		Com_Printf( "WARNING: no room in the gamestate for %s (%i chars), left it out%s\n", key, len, effect );
+		Q_strncpyz( systemInfo, Cvar_InfoString_Big( CVAR_SYSTEMINFO ), size );
+	}
+}
+
+/*
+================
 SV_SpawnServer
 
 Change the server to a new map, taking all connected
@@ -546,7 +581,7 @@ void SV_SpawnServer( char *server, qboolean killBots ) {
 	Cvar_Set( "sv_referencedPakNames", p );
 
 	// save systeminfo and serverinfo strings
-	Q_strncpyz( systemInfo, Cvar_InfoString_Big( CVAR_SYSTEMINFO ), sizeof( systemInfo ) );
+	SV_FitSystemInfo( systemInfo, sizeof( systemInfo ) );
 	cvar_modifiedFlags &= ~CVAR_SYSTEMINFO;
 	SV_SetConfigstring( CS_SYSTEMINFO, systemInfo );
 
