@@ -6,10 +6,11 @@
  * A level whose gamestate is roomy keeps the systeminfo master builds, byte
  * for byte; one whose pure lists would not fit loses sv_pakNames and then
  * sv_paks, each with a warning; the server never sends a gamestate over
- * MAX_GAMESTATE_CHARS or one message, or with a configstring retail's
- * MSG_ReadBigString can't end, and refuses one cleanly instead, at the
- * first char and byte over. Every gamestate sent is written to argv[1]
- * for the real client parser (client_gamestate_budget_regression.c). */
+ * MAX_GAMESTATE_CHARS, or longer than a retail 1.32c client's netchan
+ * copies safely, or with a configstring retail's MSG_ReadBigString can't
+ * end, and refuses one cleanly instead, at the first char and byte over.
+ * Every gamestate sent is written to argv[1] for the real client parser
+ * (client_gamestate_budget_regression.c). */
 #include "../code/server/server.h"
 #include <setjmp.h>
 #include <stdarg.h>
@@ -18,6 +19,10 @@
 #include <string.h>
 
 #define RESERVE		512		/* SV_RemainingGameState keeps this much back */
+/* Retail 1.32c's Netchan_Process (dbe4ddb net_chan.c) checks a reassembled message only against
+   MAX_MSGLEN, then copies it behind the 4 byte sequence number into Com_EventLoop's
+   bufData[MAX_MSGLEN] (common.c); ioquake3 does the same. So that is the most a client takes. */
+#define RETAIL_MSGLEN	( MAX_MSGLEN - 4 )
 
 serverStatic_t svs;
 server_t sv;
@@ -44,7 +49,7 @@ static char printed[1 << 16], oob[MAX_STRING_CHARS], disconnect[MAX_STRING_CHARS
 static char loadedSums[BIG_INFO_STRING], loadedNames[BIG_INFO_STRING];
 static char referencedSums[BIG_INFO_STRING], referencedNames[BIG_INFO_STRING];
 static size_t printedLength;
-static int sends, sentBytes, expectDrop, nameExtra;
+static int sends, sentBytes, largestSent, expectDrop, nameExtra;
 static void *snapshotEntities;
 static jmp_buf dropJump;
 static FILE *out;
@@ -135,7 +140,17 @@ void QDECL SV_SendServerCommand( client_t *cl, const char *fmt, ... ) {
 }
 /** No server command is waiting when the gamestate goes out. */
 void SV_UpdateServerCommandsToClient( client_t *client, msg_t *msg ) { (void)client; (void)msg; }
-/** The netchan adds svc_EOF, then the message has to fit MAX_MSGLEN; keep it for the client parser. */
+/** Retail's Netchan_Process copy of a reassembled message, into a buffer of exactly MAX_MSGLEN so ASan sees an overrun. */
+static void RetailReassemble( const byte *data, int length ) {
+	byte *bufData = malloc( MAX_MSGLEN );
+	Check( bufData != NULL, "allocation" );
+	Check( length <= MAX_MSGLEN, "retail Netchan_Process takes the message" );
+	Check( 4 + length <= MAX_MSGLEN, "gamestate fits a retail client's buffer behind its sequence number" );
+	*(int *)bufData = LittleLong( 345 );
+	memcpy( bufData + 4, data, length );
+	free( bufData );
+}
+/** The netchan adds svc_EOF, then a retail client reassembles the message; keep it for the client parser. */
 void SV_SendMessageToClient( msg_t *msg, client_t *client ) {
 	const char *systemInfo = sv.configstrings[CS_SYSTEMINFO];
 	int length;
@@ -151,6 +166,8 @@ void SV_SendMessageToClient( msg_t *msg, client_t *client ) {
 	fflush( out );
 	sends++;
 	Check( !msg->overflowed && msg->cursize <= MAX_MSGLEN, "gamestate sent that does not fit one message with its svc_EOF" );
+	RetailReassemble( msg->data, msg->cursize );
+	if ( msg->cursize > largestSent ) largestSent = msg->cursize;
 }
 
 /** The game: its cvars, the level's entities and configstrings up to level.fill chars. */
@@ -246,15 +263,15 @@ static gamestateSize_t Measure( const char *systemInfo ) {
 }
 /** Room for the reserve and the queued commands twice over: the lists must stay. */
 static qboolean Roomy( gamestateSize_t size ) {
-	return size.chars + 2 * RESERVE <= MAX_GAMESTATE_CHARS && size.bytes + 2 * RESERVE <= MAX_MSGLEN;
+	return size.chars + 2 * RESERVE <= MAX_GAMESTATE_CHARS && size.bytes + 2 * RESERVE <= RETAIL_MSGLEN;
 }
 /** Inside the reserve even with no queued command: a list here must go. */
 static qboolean Tight( gamestateSize_t size ) {
-	return size.chars + RESERVE > MAX_GAMESTATE_CHARS || size.bytes + RESERVE > MAX_MSGLEN;
+	return size.chars + RESERVE > MAX_GAMESTATE_CHARS || size.bytes + RESERVE > RETAIL_MSGLEN;
 }
-/** Fits what a client takes: MAX_GAMESTATE_CHARS, and one message with the netchan's svc_EOF. */
+/** Fits what a retail client takes: MAX_GAMESTATE_CHARS, and RETAIL_MSGLEN with the netchan's svc_EOF (one more byte at most). */
 static qboolean Fits( gamestateSize_t size ) {
-	return size.chars <= MAX_GAMESTATE_CHARS && size.bytes < MAX_MSGLEN;
+	return size.chars <= MAX_GAMESTATE_CHARS && size.bytes + 1 <= RETAIL_MSGLEN;
 }
 /** The systeminfo master's SV_SpawnServer builds with or without each pure list, from the same cvars. */
 static const char *Candidate( qboolean sums, qboolean names, char *info ) {
@@ -358,7 +375,7 @@ static void RunLevel( void ) {
 	else if ( namesDropped ) namesOut++;
 	else unchanged++;
 	if ( strlen( full ) == BIG_INFO_STRING - 1 ) unreadable++;
-	else if ( sent && fullSize.chars > MAX_GAMESTATE_CHARS && fullSize.bytes < MAX_MSGLEN ) charBound++;
+	else if ( sent && fullSize.chars > MAX_GAMESTATE_CHARS && fullSize.bytes + 1 <= RETAIL_MSGLEN ) charBound++;
 	if ( sent && !Fits( fullSize ) ) rescued++;
 }
 
@@ -461,7 +478,7 @@ static void Overflow( void ) {
 	Spawn();
 	PadTo( MAX_GAMESTATE_CHARS, qtrue, 'h' );
 	size = Measure( sv.configstrings[CS_SYSTEMINFO] );
-	Check( size.bytes < MAX_MSGLEN - 64, "chars edge is under the message size" );
+	Check( size.bytes < RETAIL_MSGLEN - 64, "chars edge is under the message size" );
 	Check( SendGameState( NA_IP ), "gamestate of exactly MAX_GAMESTATE_CHARS sent" );
 	PadTo( MAX_GAMESTATE_CHARS + 1, qtrue, 'h' );
 	Check( !SendGameState( NA_IP ), "gamestate one char over MAX_GAMESTATE_CHARS refused" );
@@ -477,12 +494,12 @@ static void Overflow( void ) {
 	level.pad = 'K';	/* ten bits a char: the message fills before the chars do */
 	level.fill = 9000;
 	Spawn();
-	PadTo( MAX_MSGLEN - 1, qfalse, 'K' );
+	PadTo( RETAIL_MSGLEN - 1, qfalse, 'K' );
 	size = Measure( sv.configstrings[CS_SYSTEMINFO] );
 	Check( size.chars < MAX_GAMESTATE_CHARS, "message edge is under MAX_GAMESTATE_CHARS" );
-	Check( SendGameState( NA_IP ), "gamestate with room for svc_EOF sent" );
-	PadTo( MAX_MSGLEN, qfalse, 'K' );
-	Check( !SendGameState( NA_IP ), "gamestate that fills the message refused" );
+	Check( SendGameState( NA_IP ), "gamestate a retail client takes with its svc_EOF sent" );
+	PadTo( RETAIL_MSGLEN, qfalse, 'K' );
+	Check( !SendGameState( NA_IP ), "gamestate one byte over what a retail client takes refused" );
 	level.fill = 15500; level.entities = 900;
 	Spawn();
 	Check( !SendGameState( NA_IP ), "gamestate that overflows the message refused" );
@@ -519,6 +536,8 @@ int main( int argc, char **argv ) {
 	ExactFit();
 	Overflow();
 	fclose( out );
+	printf( "largest gamestate sent: %d bytes with svc_EOF; a retail client takes %d\n", largestSent, RETAIL_MSGLEN );
+	Check( largestSent >= RETAIL_MSGLEN - 1 && largestSent <= RETAIL_MSGLEN, "the retail edge was reached and never passed" );
 	puts( "Server gamestate budget regression passed" );
 	return 0;
 }

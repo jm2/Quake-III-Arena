@@ -618,15 +618,21 @@ static int SV_ConfigstringChars( const char *s ) {
 
 #define	GAMESTATE_RESERVE	512
 
+// The longest message a retail 1.32c or ioquake3 client takes whole.
+// Its Netchan_Process only checks a reassembled message against
+// MAX_MSGLEN, then copies it behind the 4 byte sequence number into
+// Com_EventLoop's MAX_MSGLEN buffer, so a longer one overruns the stack
+#define	MAX_CLIENT_MSGLEN	( MAX_MSGLEN - 4 )
+
 /*
 ================
 SV_RemainingGameState
 
 Room a gamestate with systemInfo as its CS_SYSTEMINFO leaves in a
-client's MAX_GAMESTATE_CHARS and in one message, less a reserve for
-queued server commands and for configstrings that grow later, such
-as the userinfo of players who join. Negative if it doesn't fit.
-After Quake3e, which only measures the message.
+client's MAX_GAMESTATE_CHARS and in one MAX_CLIENT_MSGLEN message, less
+a reserve for queued server commands and for configstrings that grow
+later, such as the userinfo of players who join. Negative if it doesn't
+fit. After Quake3e, which only measures the message.
 ================
 */
 int SV_RemainingGameState( const char *systemInfo ) {
@@ -685,7 +691,7 @@ int SV_RemainingGameState( const char *systemInfo ) {
 	if ( msg.overflowed ) {
 		return -1;
 	}
-	bytes = msg.maxsize - msg.cursize;
+	bytes = MAX_CLIENT_MSGLEN - msg.cursize;
 	chars = MAX_GAMESTATE_CHARS - chars;
 	return ( bytes < chars ? bytes : chars ) - GAMESTATE_RESERVE;
 }
@@ -763,13 +769,13 @@ void SV_SendClientGameState( client_t *client ) {
 	// write the checksum feed
 	MSG_WriteLong( &msg, sv.checksumFeed);
 
-	// a client drops a gamestate over MAX_GAMESTATE_CHARS, and one that
-	// fills the message has no room left for the svc_EOF the netchan adds.
-	// The client can't take reliable commands yet, so tell it out of band
-	// and free the slot, as Quake3e does
-	if ( msg.overflowed || msg.cursize >= msg.maxsize || chars > MAX_GAMESTATE_CHARS ) {
+	// a client drops a gamestate over MAX_GAMESTATE_CHARS, and the message
+	// must fit MAX_CLIENT_MSGLEN with the svc_EOF the netchan adds (a 5 bit
+	// code, so at most one more byte). The client can't take reliable
+	// commands yet, so tell it out of band and free the slot, as Quake3e does
+	if ( msg.overflowed || msg.cursize + 1 > MAX_CLIENT_MSGLEN || chars > MAX_GAMESTATE_CHARS ) {
 		Com_Printf( "WARNING: gamestate for %s is too big (%i of %i chars, %i of %i bytes)\n",
-			client->name, chars, MAX_GAMESTATE_CHARS, msg.cursize, msg.maxsize );
+			client->name, chars, MAX_GAMESTATE_CHARS, msg.cursize + 1, MAX_CLIENT_MSGLEN );
 		if ( client->netchan.remoteAddress.type == NA_LOOPBACK ) {
 			Com_Error( ERR_DROP, "gamestate overflow" );
 		}

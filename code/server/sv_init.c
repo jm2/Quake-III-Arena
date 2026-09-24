@@ -363,6 +363,10 @@ That is Quake3e's degraded pure mode: clients are not restricted to the
 server's pk3s, but their cp command is still checked against them, so a
 client that loads a file from a pk3 the server doesn't have is dropped
 as unpure, where the full list would have made it skip that pk3.
+Like Quake3e, sv_paks also has to leave SV_RemainingGameState's reserve:
+a gamestate that later grows past MAX_GAMESTATE_CHARS, as players join,
+drops every client in the game, where degraded pure drops only a client
+that loads from a pk3 the server doesn't have.
 ================
 */
 static void SV_FitSystemInfo( char *systemInfo, int size ) {

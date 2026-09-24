@@ -1,8 +1,10 @@
 /* Issue #345: every gamestate server_gamestate_budget_regression.c sent is
- * parsed by the real CL_ParseGamestate (cl_parse.c), as a client gets it
- * from the netchan: it must fit MAX_GAMESTATE_CHARS, carry the server's
- * systeminfo whole and end with the netchan's svc_EOF, and the client must
- * see the pure lists the server kept (none, in degraded pure mode). */
+ * parsed by the real CL_ParseGamestate (cl_parse.c), as a retail 1.32c
+ * client gets it from the netchan: reassembled behind the 4 byte sequence
+ * number in a buffer of exactly MAX_MSGLEN. It must fit there and in
+ * MAX_GAMESTATE_CHARS, carry the server's systeminfo whole and end with
+ * the netchan's svc_EOF, and the client must see the pure lists the server
+ * kept (none, in degraded pure mode). */
 #include "../code/client/cl_parse.c"
 #include <setjmp.h>
 #include <stdarg.h>
@@ -55,8 +57,9 @@ void Cvar_SetSafe( const char *name, const char *value ) { (void)name; (void)val
 cvar_t *Cvar_Get( const char *name, const char *value, int flags ) { (void)name; (void)value; (void)flags; return &shownet; }
 
 int main( int argc, char **argv ) {
-	static byte data[MAX_MSGLEN];
+	static byte payload[4 * MAX_MSGLEN];
 	static char systemInfo[BIG_INFO_STRING];
+	byte *bufData;
 	FILE *in;
 	msg_t msg;
 	int length, full = 0, degraded = 0;
@@ -67,9 +70,17 @@ int main( int argc, char **argv ) {
 	Check( in != NULL, "open the gamestates" );
 	while ( fread( &length, sizeof( length ), 1, in ) == 1 ) {
 		gamestate++;
-		Check( length > 0 && length <= MAX_MSGLEN && fread( data, 1, length, in ) == (size_t)length, "message fits a client's buffer" );
-		MSG_Init( &msg, data, sizeof( data ) );	/* sets up the Huffman tables */
-		msg.cursize = length;
+		Check( length > 0 && length <= (int)sizeof( payload ) && fread( payload, 1, length, in ) == (size_t)length, "record" );
+		/* retail's Netchan_Process and Com_EventLoop: the sequence, then the message, in bufData[MAX_MSGLEN] */
+		Check( 4 + length <= MAX_MSGLEN, "message fits a retail client's buffer behind its sequence number" );
+		bufData = malloc( MAX_MSGLEN );
+		Check( bufData != NULL, "allocation" );
+		MSG_Init( &msg, bufData, MAX_MSGLEN );	/* sets up the Huffman tables */
+		*(int *)bufData = LittleLong( 345 );
+		memcpy( bufData + 4, payload, length );
+		msg.cursize = length + 4;
+		msg.readcount = 4;	/* past the sequence number */
+		msg.bit = 32;
 		Check( fread( &length, sizeof( length ), 1, in ) == 1 && length >= 0 && length < BIG_INFO_STRING
 			&& fread( systemInfo, 1, length, in ) == (size_t)length, "record" );
 		systemInfo[length] = 0;
@@ -79,7 +90,6 @@ int main( int argc, char **argv ) {
 		pureSums[0] = pureNames[0] = 0;
 		downloads = 0;
 		MSG_Bitstream( &msg );
-		MSG_BeginReading( &msg );
 		MSG_ReadLong( &msg );
 		Check( MSG_ReadByte( &msg ) == svc_gamestate, "gamestate command" );
 		if ( setjmp( dropJump ) ) {
@@ -92,6 +102,7 @@ int main( int argc, char **argv ) {
 		Check( !strcmp( pureSums, Info_ValueForKey( systemInfo, "sv_paks" ) )
 			&& !strcmp( pureNames, Info_ValueForKey( systemInfo, "sv_pakNames" ) ), "client sees the pure lists the server kept" );
 		if ( pureSums[0] ) full++; else degraded++;
+		free( bufData );
 	}
 	fclose( in );
 	Check( gamestate > 100 && full > 0 && degraded > 0, "the server sent full and degraded pure gamestates" );
