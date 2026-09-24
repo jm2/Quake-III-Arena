@@ -524,9 +524,10 @@ void CL_PlayDemo_f( void ) {
 		return;
 	}
 
-	// check for an extension .dm_?? (?? is protocol)
-	ext_test = arg + strlen(arg) - 6;
-	if ((strlen(arg) > 6) && (ext_test[0] == '.') && ((ext_test[1] == 'd') || (ext_test[1] == 'D')) && ((ext_test[2] == 'm') || (ext_test[2] == 'M')) && (ext_test[3] == '_'))
+	// check for an extension .dm_?? (?? is protocol); only a name longer
+	// than six characters can have one, so never point before a shorter one
+	ext_test = strlen(arg) > 6 ? arg + strlen(arg) - 6 : NULL;
+	if (ext_test && (ext_test[0] == '.') && ((ext_test[1] == 'd') || (ext_test[1] == 'D')) && ((ext_test[2] == 'm') || (ext_test[2] == 'M')) && (ext_test[3] == '_'))
 	{
 		protocol = atoi(ext_test+4);
 		i=0;

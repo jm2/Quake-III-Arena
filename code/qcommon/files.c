@@ -2337,7 +2337,8 @@ char **FS_ListFilteredFiles( const char *path, const char *extension, char *filt
 	}
 
 	pathLength = strlen( path );
-	if ( path[pathLength-1] == '\\' || path[pathLength-1] == '/' ) {
+	// "" (the Load Config menu, UI_LoadTeams, fdir) has no last character
+	if ( pathLength > 0 && ( path[pathLength-1] == '\\' || path[pathLength-1] == '/' ) ) {
 		pathLength--;
 	}
 	extensionLength = strlen( extension );

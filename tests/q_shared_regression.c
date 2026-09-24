@@ -49,6 +49,29 @@ static void TestStripExtension( void ) {
 	Check( !strcmp( output, "abcd" ), "truncated destination" );
 }
 
+/* Issue #384: exec "", writeconfig "" and a map without music
+ * (S_StartBackgroundTrack( "", "" )) pass "", which has no last character. */
+static void TestDefaultExtension( void ) {
+	static const char *const cases[][3] = {
+		{ "", ".cfg", ".cfg" },
+		{ "", ".wav", ".wav" },
+		{ "a", ".cfg", "a.cfg" },
+		{ "q3config", ".cfg", "q3config.cfg" },
+		{ "autoexec.cfg", ".cfg", "autoexec.cfg" },
+		{ "music/sonic1", ".wav", "music/sonic1.wav" },
+		{ "maps.v2/q3dm1", ".cfg", "maps.v2/q3dm1.cfg" },
+		{ NULL, NULL, NULL }
+	};
+	char path[MAX_QPATH];
+	int i;
+
+	for ( i = 0; cases[i][0]; i++ ) {
+		Q_strncpyz( path, cases[i][0], sizeof(path) );
+		COM_DefaultExtension( path, sizeof(path), cases[i][1] );
+		Check( !strcmp( path, cases[i][2] ), "default extension" );
+	}
+}
+
 static void TestBoundedFormatting( void ) {
 	char output[8];
 
@@ -117,6 +140,7 @@ static void TestBigInfoValues( void ) {
 
 int main( void ) {
 	TestStripExtension();
+	TestDefaultExtension();
 	TestBoundedFormatting();
 	TestTokenTermination();
 	TestBigInfoValues();

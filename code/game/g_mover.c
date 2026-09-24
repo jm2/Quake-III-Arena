@@ -706,6 +706,29 @@ void Use_BinaryMover( gentity_t *ent, gentity_t *other, gentity_t *activator ) {
 
 /*
 ================
+MoverLightInt
+
+Converts a scaled "color" or "light" key to int for constantLight,
+truncating toward zero and clamping to 255 from above. The keys are map
+data, and a value beyond the int range made the conversion undefined in C
+(PowerPC's fctiwz saturates, x86 gives INT_MIN). It now saturates as on
+PowerPC: above 255 gives 255, and INT_MIN or below, -inf and NaN give
+INT_MIN. The double holds color * 255 exactly, so in-range keys convert
+as before whatever precision the float math uses.
+================
+*/
+static int MoverLightInt( double value ) {
+	if ( value > 255 ) {
+		return 255;
+	}
+	if ( !( value > INT_MIN ) ) {	// also NaN
+		return INT_MIN;
+	}
+	return (int)value;
+}
+
+/*
+================
 InitMover
 
 "pos1", "pos2", and "speed" should be set before calling,
@@ -737,22 +760,10 @@ void InitMover( gentity_t *ent ) {
 	if ( lightSet || colorSet ) {
 		int		r, g, b, i;
 
-		r = color[0] * 255;
-		if ( r > 255 ) {
-			r = 255;
-		}
-		g = color[1] * 255;
-		if ( g > 255 ) {
-			g = 255;
-		}
-		b = color[2] * 255;
-		if ( b > 255 ) {
-			b = 255;
-		}
-		i = light / 4;
-		if ( i > 255 ) {
-			i = 255;
-		}
+		r = MoverLightInt( color[0] * 255 );
+		g = MoverLightInt( color[1] * 255 );
+		b = MoverLightInt( color[2] * 255 );
+		i = MoverLightInt( light / 4 );
 		// shift unsigned: map keys can make these negative, and a light
 		// of 512 or more reaches the sign bit (the bits are unchanged)
 		ent->s.constantLight = r | (int)( (unsigned)g << 8 ) | (int)( (unsigned)b << 16 ) | (int)( (unsigned)i << 24 );

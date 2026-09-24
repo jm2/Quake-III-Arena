@@ -12,6 +12,10 @@ trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 # trap_Cvar_Update and trap_Cvar_VariableValue as they do in the client.
 # The UIs read some of the cvars back as floats; GCC's -fsanitize=undefined
 # leaves out the float to int conversion check that Clang's includes.
+# Issue #390: the Team Arena UI fixture routes ui_main.c's va and Com_sprintf
+# through printf-attributed checkers, so -Wformat checks their literal formats
+# and the checkers check the menus' orders strings at run time. ui_main.c passes
+# one extra argument, which printf ignores.
 Q3_TEST_ENGINE=(
     "$Q3_TEST_ROOT/tests/systeminfo_cvar_harness.c" "$Q3_TEST_ROOT/code/qcommon/cvar.c"
     "$Q3_TEST_ROOT/code/game/q_shared.c" "$Q3_TEST_ROOT/code/game/q_math.c"
@@ -33,7 +37,7 @@ for Q3_TEST_SOURCE in "$Q3_TEST_ROOT"/code/q3_ui/ui_*.c; do
 done
 "${CC:-cc}" \
     -std=gnu99 -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
-    -fsanitize=address,undefined,float-cast-overflow -DMISSIONPACK \
+    -fsanitize=address,undefined,float-cast-overflow -DMISSIONPACK -Wformat -Werror=format -Wno-format-extra-args \
     "$Q3_TEST_ROOT/tests/ui_cvar_index_regression.c" "${Q3_TEST_UI[@]}" \
     "$Q3_TEST_ROOT/code/game/bg_misc.c" "${Q3_TEST_ENGINE[@]}" \
     -Wl,--gc-sections -lm -o "$Q3_TEST_DIR/ui"
@@ -58,6 +62,8 @@ done
 # sortedTeamPlayers.
 # LeakSanitizer cannot initialize in the local ptrace sandbox.
 Q3_TEST_RUN=(env ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1)
+# Everyone (3) and the values that name nobody send the orders script's
+# commands to every teammate but the local client (issue #390).
 for Q3_TEST_VALUE in -1 0 1 2 3 2147483647 -2147483648; do
     "${Q3_TEST_RUN[@]}" "$Q3_TEST_DIR/ui" selected "$Q3_TEST_VALUE"
 done
