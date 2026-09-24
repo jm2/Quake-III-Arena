@@ -392,8 +392,6 @@ static void TestPlayerNumbers( void ) {
 	cent->currentState.clientNum = 3;
 	cent->currentState.eType = ET_PLAYER;
 	cent->currentState.generic1 = 2;
-	// one smoke puff per run: Q_rand's signed LCG overflows UBSan on the second
-	cgs.clientinfo[3].breathPuffTime = cg.time + 1;
 	CG_Player( cent );
 	Check( cg.skulltrails[3].numpositions == 2, "valid player tokens" );
 
