@@ -93,7 +93,7 @@ void COM_DefaultExtension (char *path, int maxSize, const char *extension ) {
 // if path doesn't have a .EXT, append extension
 // (extension should include the .)
 //
-	src = path + strlen(path) - 1;
+	src = path[0] ? path + strlen(path) - 1 : path;	// never step before ""
 
 	while (*src != '/' && src != path) {
 		if ( *src == '.' ) {
