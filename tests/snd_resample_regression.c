@@ -54,14 +54,17 @@ cvar_t *Cvar_Get( const char *name, const char *value, int flags ) {
 	soundMegs.integer = 1;
 	return &soundMegs;
 }
-void S_FreeOldestSound( void ) { Fail( "the sound buffer pool ran out" ); }
-/** Keep the ADPCM encoder's input: the resampled 16-bit samples. */
+qboolean S_FreeOldestSound( void ) { Fail( "the sound buffer pool ran out" ); return qfalse; }
+/** Keep the ADPCM encoder's input: the resampled 16-bit samples. Like the real encoder, give the sound its data. */
 void S_AdpcmEncodeSound( sfx_t *sfx, short *samples ) {
+	static sndBuffer encoded;
+
 	if ( sfx->soundLength < 0 || sfx->soundLength > (int)( sizeof( encodedSamples ) / sizeof( encodedSamples[0] ) ) ) {
 		Fail( "resampled length out of range" );
 	}
 	memcpy( encodedSamples, samples, sfx->soundLength * sizeof( short ) );
 	encodedLength = sfx->soundLength;
+	sfx->soundData = &encoded;
 }
 void *Hunk_AllocateTempMemory( int size ) {
 	if ( size <= 0 ) {

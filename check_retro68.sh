@@ -86,16 +86,21 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Prints the first 20 lines of a tool's output, quoted.
+show_output() {
+    if [ -n "$1" ]; then
+        printf '%s\n' "$1" | sed -n '1,20p' | sed 's/^/  | /'
+    fi
+}
+
 # Status 3: the check could not run. Says nothing about the toolchain.
 cannot_check() {
-    local problem="$1" log="${2:-}"
+    local problem="$1" output="${2:-}"
 
     {
         echo "Error: could not check the Retro68 toolchain in $INSTALL_DIR:"
         echo "  $problem"
-        if [ -n "$log" ] && [ -s "$log" ]; then
-            sed -n '1,20p' "$log" | sed 's/^/  | /'
-        fi
+        show_output "$output"
         echo "The toolchain itself was not judged. Make TMPDIR ($SCRATCH_PARENT)"
         echo "an existing, writable directory with free space and run the check again."
     } >&2
@@ -147,27 +152,25 @@ report_missing_libraries() {
 # 137 KILL, 143 TERM, 152 XCPU or 153 XFSZ), the tool reports no space or
 # temporary files, or the scratch directory no longer takes writes.
 fail() {
-    local step="$1" log="${2:-}" status="${3:-}"
+    local step="$1" output="${2:-}" status="${3:-}"
 
     if [ -n "$WORK" ]; then
         case "$status" in
             129|130|137|143|152|153)
-                cannot_check "$step was stopped by signal $((status - 128)) from outside (exit status $status), for example by the OOM killer or a timeout." "$log"
+                cannot_check "$step was stopped by signal $((status - 128)) from outside (exit status $status), for example by the OOM killer or a timeout." "$output"
                 ;;
         esac
-        if [ -n "$log" ] && grep -q -E "$ENVIRONMENT_ERRORS" "$log" 2> /dev/null; then
-            cannot_check "$step failed because of its surroundings (space, temporary files or a signal), not the toolchain:" "$log"
+        if [ -n "$output" ] && printf '%s\n' "$output" | grep -q -E "$ENVIRONMENT_ERRORS"; then
+            cannot_check "$step failed because of its surroundings (space, temporary files or a signal), not the toolchain:" "$output"
         fi
         if ! scratch_writable 64; then
-            cannot_check "$step failed, and the scratch directory $WORK no longer takes writes." "$log"
+            cannot_check "$step failed, and the scratch directory $WORK no longer takes writes." "$output"
         fi
     fi
     {
         echo "Error: Retro68 toolchain check failed in $INSTALL_DIR:"
         echo "  $step"
-        if [ -n "$log" ] && [ -s "$log" ]; then
-            sed -n '1,20p' "$log" | sed 's/^/  | /'
-        fi
+        show_output "$output"
         report_missing_libraries
         echo "If a host shared library is missing (for example after an OS"
         echo "upgrade), install it or rebuild the toolchain: setup_retro68.sh"
@@ -191,29 +194,31 @@ write_scratch_file() {
         cannot_check "could not write $file."
 }
 
-# Runs a tool that must succeed.
+# Runs a tool that must succeed. Its output is kept in memory, not in the
+# scratch directory: when that directory fills up, a log file there loses the
+# tool's "No space left on device", and the failure would be blamed on the
+# toolchain.
 run_step() {
-    local step="$1" log status
+    local step="$1" output status
     shift
-    log="$WORK/step.log"
-    "$@" < /dev/null > "$log" 2>&1
+    output=$("$@" < /dev/null 2>&1)
     status=$?
     if [ "$status" -ne 0 ]; then
-        fail "$step failed (exit status $status):" "$log" "$status"
+        fail "$step failed (exit status $status):" "$output" "$status"
     fi
 }
 
 # Runs a tool without input: its own usage error is fine, but the host loader
 # must not stop it (status 126/127, a signal, or a loader message).
 run_probe() {
-    local tool="$1" log status
+    local tool="$1" output status
     shift
-    log="$WORK/probe.log"
-    "$BIN/$tool" "$@" < /dev/null > "$log" 2>&1
+    output=$("$BIN/$tool" "$@" < /dev/null 2>&1)
     status=$?
     if [ "$status" -ge 126 ] ||
-       grep -q -E "error while loading shared libraries|symbol lookup error|Library not loaded|not found \(required by" "$log"; then
-        fail "$tool could not start (exit status $status):" "$log" "$status"
+       printf '%s\n' "$output" |
+       grep -q -E "error while loading shared libraries|symbol lookup error|Library not loaded|not found \(required by"; then
+        fail "$tool could not start (exit status $status):" "$output" "$status"
     fi
 }
 
