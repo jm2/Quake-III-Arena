@@ -1410,6 +1410,25 @@ void SV_ExecuteClientCommand( client_t *cl, const char *s, qboolean clientOK ) {
 }
 
 /*
+==================
+SV_IsServerCommand
+
+Whether SV_ExecuteClientCommand runs s itself instead of passing it to the game
+==================
+*/
+static qboolean SV_IsServerCommand( const char *s ) {
+	ucmd_t	*u;
+
+	Cmd_TokenizeString( s );
+	for (u=ucmds ; u->name ; u++) {
+		if (!strcmp (Cmd_Argv(0), u->name) ) {
+			return qtrue;
+		}
+	}
+	return qfalse;
+}
+
+/*
 ===============
 SV_ClientCommand
 ===============
@@ -1442,15 +1461,19 @@ static qboolean SV_ClientCommand( client_t *cl, msg_t *msg ) {
 	// the command, we will stop processing the rest of the packet,
 	// including the usercmd.  This causes flooders to lag themselves
 	// but not other people
-	// We don't do this when the client hasn't been active yet since its
-	// normal to spam a lot of commands when downloading
 	// Only a listen server's own local client is exempt, so the host's
 	// menus and binds are never throttled.  Retail (and ioquake3/Quake3e)
 	// skipped the check for every client whenever cl_running was set,
 	// leaving the remote clients of a listen server unlimited.  A
 	// dedicated server has no loopback client, so it is unchanged
+	// A client that is not active yet is limited too, on either kind of
+	// server.  Retail skipped it, since a download sends a nextdl for every
+	// block, but a client that never sends a usercmd stays CS_PRIMED (or
+	// CS_CONNECTED, if it never asks for the gamestate) and the game still
+	// takes its commands.  The server level commands always run, and until
+	// the client is active they do not start the window, so a say typed
+	// while downloading is not held back by the nextdl sent around it
 	if ( cl->netchan.remoteAddress.type != NA_LOOPBACK &&
-		cl->state >= CS_ACTIVE &&
 		sv_floodProtect->integer && 
 		svs.time < cl->nextReliableTime ) {
 		// ignore any other text messages from this client but let them keep playing
@@ -1459,7 +1482,9 @@ static qboolean SV_ClientCommand( client_t *cl, msg_t *msg ) {
 	} 
 
 	// don't allow another command for one second
-	cl->nextReliableTime = svs.time + 1000;
+	if ( cl->state >= CS_ACTIVE || !SV_IsServerCommand( s ) ) {
+		cl->nextReliableTime = svs.time + 1000;
+	}
 
 	SV_ExecuteClientCommand( cl, s, clientOk );
 
