@@ -89,8 +89,9 @@ merging several PRs in a row never cancels or drops a master run.
     structs, complete/optional arrays, zero-capacity outputs, NULL map/entity
     operations, and client indices bounded by actual server allocation.
   - checks the actual bot chat dispatcher with complete output structures,
-    nullable variables and their combined capacity, bounded match metadata,
-    native synonym expansion/search bounds, and overlapping substring output.
+    terminated nullable variables passed through even past their combined
+    capacity, bounded match metadata, native synonym expansion/search bounds,
+    and overlapping substring output.
   - checks actual bot action dispatch into native elementary-action routines,
     whole input output, bounded strings/vectors, separate server/bot capacities,
     invalid native client indices, allocation arithmetic, and shutdown reset.
@@ -260,11 +261,14 @@ Q3_TEST_DETECT_LEAKS=0 bash tests/run_host_regressions.sh --skip-file tests/be32
 ```
 
 Without root, an `ubuntu:24.04` container under rootless Podman
-(`podman run --privileged`) can install those packages, mount its own
+(`podman run --privileged`) can install those packages, mount
 `binfmt_misc` (Linux 6.7 and later) and register
-`/usr/lib/binfmt.d/qemu-ppc.conf` there. A bare container also needs the host
-tools the runners assume, which the GitHub image already has:
-`git python3 python-is-python3 cmake make g++`. Without them
+`/usr/lib/binfmt.d/qemu-ppc.conf` there. As in the workflow, register it only
+if `/proc/sys/fs/binfmt_misc/qemu-ppc` doesn't already exist: rootless
+containers share one `binfmt_misc`, so another container may have registered
+it, and a second registration fails with `File exists`. A bare container
+also needs the host tools the runners assume, which the GitHub image already
+has: `git python3 python-is-python3 cmake make g++`. Without them
 `run_duplicate_global_tests` (CMake needs a C++ compiler) and
 `run_sky_bounds_tests` (`python`) fail.
 

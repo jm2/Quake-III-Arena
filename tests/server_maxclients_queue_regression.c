@@ -271,29 +271,30 @@ static void NonEmptyQueue( void ) {
 	Shutdown();
 	puts( "queued messages survive a resize and are released once" );
 }
-/** A shrink discards free and zombie slots past the highest connected client, with anything they still queue. */
+/** A shrink discards free and zombie slots past the highest connected client, with anything they still queue,
+    and does not carry over a zombie slot below it either. */
 static void ShrinkDiscards( void ) {
 	int a = Active( 1 ), b = Active( 2 ), c = Active( 3 ), d = Active( 4 ), e = Active( 5 );
 	byte data[64]; msg_t msg;
 	Donedl( a, 3 );
 	Check( Queued( a ) == 2, "kept client queue" );
-	SV_DropClient( &svs.clients[c], "left" );
-	Donedl( d, QUEUE_CAP + 2 );
-	Check( svs.clients[d].state == CS_ZOMBIE && !Queued( d ), "overflow dropped a client and freed its queue" );
+	SV_DropClient( &svs.clients[d], "left" );
+	Donedl( e, QUEUE_CAP + 2 );
+	Check( svs.clients[e].state == CS_ZOMBIE && !Queued( e ), "overflow dropped a client and freed its queue" );
 	// nothing queues for a zombie today (SV_DropClient empties the queue first),
-	// but a discarded slot must not leak whatever it still holds
-	Donedl( e, 1 ); SV_DropClient( &svs.clients[e], "left" );
+	// but a discarded slot must not leak whatever it still holds, even below a kept client
+	Donedl( b, 1 ); SV_DropClient( &svs.clients[b], "left" );
 	MSG_Init( &msg, data, sizeof(data) ); MSG_WriteLong( &msg, 0 );
-	SV_Netchan_Transmit( &svs.clients[e], &msg );
-	Check( svs.clients[e].state == CS_ZOMBIE && Queued( e ) == 1 && queueLive == 3, "zombie slot holds a queued message" );
+	SV_Netchan_Transmit( &svs.clients[b], &msg );
+	Check( svs.clients[b].state == CS_ZOMBIE && Queued( b ) == 1 && queueLive == 3, "zombie slot holds a queued message" );
 	MapChange( 1 );
-	Check( sv_maxclients->integer == b + 1, "never shrunk below the highest connected client" );
+	Check( b < c && sv_maxclients->integer == c + 1, "never shrunk below the highest connected client" );
 	Check( Queued( a ) == 2 && queueLive == 2, "discarded slots released their queue exactly once" );
-	Rejoin( b ); Donedl( b, 2 );
-	Check( Queued( b ) == 2, "copies queued for the kept idle client" );
+	Rejoin( c ); Donedl( c, 2 );
+	Check( Queued( c ) == 2, "copies queued for the kept idle client" );
 	Donedl( a, 2 );
 	Check( Queued( a ) == QUEUE_CAP, "copies appended for the kept busy client" );
-	Check( Drain( a ) == 1 + QUEUE_CAP && Drain( b ) == 3 && !queueLive, "kept clients sent every message once" );
+	Check( Drain( a ) == 1 + QUEUE_CAP && Drain( c ) == 3 && !queueLive, "kept clients sent every message once" );
 	Shutdown();
 	puts( "a shrink releases the queues of discarded slots" );
 }
