@@ -118,6 +118,16 @@ static void LongInitial( void ) {
 	      "one byte past capacity leaves only that variable unset");
 }
 
+/** A reply variable that cannot fit is unset even where the template already captured that variable. */
+static void SkippedReply( void ) {
+	char name[512];
+	printErrors=0;
+	/* the template captures v0 as "sure" at offset 8, a non-zero offset the skipped v0 must not keep */
+	Check(BotReplyChat(1,"are you sure",0,0,Fill(name,'v',300),NULL,NULL,NULL,NULL,NULL,"Sarge","Player") &&
+	      !strcmp(state.chatmessage,"I'm not , Player.") && !printErrors,
+	      "a reply variable that cannot fit is unset, not the captured text");
+}
+
 /** Deterministic generator for the retail comparison sweep. */
 static unsigned int seed=306;
 static int Next( int range ) { seed=seed*1103515245u+12345u; return (int)((seed>>16)%(unsigned int)range); }
@@ -163,8 +173,9 @@ int main( int argc, char **argv ) {
 	else if(proof==1) LongReply(90);
 	else if(proof==2) LongInitial();
 	else if(proof==3) { Golden(); RetailSweep(); }
+	else if(proof==4) SkippedReply();
 	else {
-		Golden(); RetailSweep(); LongReply(90); LongReply(300); LongInitial(); LongReply(36); LongReply(6);
+		Golden(); RetailSweep(); LongReply(90); LongReply(300); LongInitial(); SkippedReply(); LongReply(36); LongReply(6);
 		puts("Initial and reply chat variables stay inside the native match string with retail output (issue #306)");
 	}
 	botchatstates[1]=NULL; replychats=NULL;

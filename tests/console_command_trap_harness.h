@@ -62,15 +62,22 @@ int VM_CallInterpreted( vm_t *target, int *args ) { Unexpected( __func__ ); retu
 
 /** Mark the module as native, as the Mac OS 9 static modules are. */
 static int QDECL NativeEntry( int command, ... ) { (void)command; return 0; }
-/** Map a page below 4 GiB so native text pointers fit the int syscall ABI. */
+/** True if native text pointers into page fit the int syscall ABI. */
+static int Below4GiB( const byte *page ) {
+	return (unsigned long)page == (unsigned int)(unsigned long)page;
+}
+/** Map the image page below 4 GiB, where native text pointers fit the int syscall ABI. */
 static byte *LowPage( void ) {
 	byte *page;
 #ifdef MAP_32BIT
 	page = mmap( NULL, IMAGE_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_32BIT, -1, 0 );
+	Check( page != MAP_FAILED && Below4GiB( page ), "low native page" );
 #else
+	/* only a hint: a 64-bit host without MAP_32BIT may place the page above 4 GiB,
+	   where only the QVM pass can use it */
 	page = mmap( (void *)0x10000000, IMAGE_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0 );
+	Check( page != MAP_FAILED, "image page" );
 #endif
-	Check( page != MAP_FAILED && (unsigned long)page == (unsigned int)(unsigned long)page, "low native page" );
 	return page;
 }
 /** Enter the real dispatcher the way each module kind does: QVM args directly, native via VM_DllSyscall. */
@@ -121,6 +128,12 @@ static void RunConsoleCommandTrap( int (*dispatch)( int * ), int trap, const cha
 	/* text + 96 stays "": EXEC_NOW with no text runs the buffer. */
 	Cbuf_Init();
 	for ( native = 0; native < 2; native++ ) {
+		if ( native && !Below4GiB( vm.dataBase ) ) {
+			/* CI output hides passing runners, so a CI host must run the native pass */
+			Check( !getenv( "CI" ), "low native page (CI does not skip the native pass)" );
+			printf( "%s console-command trap: SKIPPED the native pass, no page below 4 GiB on this host\n", module );
+			break;
+		}
 		vm.entryPoint = native ? NativeEntry : NULL;
 		executed[0] = 0;
 		Accept( trap, EXEC_APPEND, 32 );
