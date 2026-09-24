@@ -340,8 +340,7 @@ void SV_DirectConnect( netadr_t from ) {
 
 			// the slot is rebuilt below, don't leak its queued messages
 			// or the file handle and blocks of a download in progress
-			SV_Netchan_FreeQueue( newcl );
-			SV_CloseDownload( newcl );
+			SV_FreeClient( newcl );
 
 			// this doesn't work because it nukes the players userinfo
 
@@ -505,11 +504,9 @@ void SV_DropClient( client_t *drop, const char *reason ) {
 		}
 	}
 
-	// Kill any download
-	SV_CloseDownload( drop );
-
-	// release queued messages, the zombie only needs its disconnect command
-	SV_Netchan_FreeQueue( drop );
+	// Kill any download and release queued messages, the zombie only
+	// needs its disconnect command
+	SV_FreeClient( drop );
 
 	// tell everyone why they got dropped
 	SV_SendServerCommand( NULL, "print \"%s" S_COLOR_WHITE " %s\n\"", drop->name, reason );
@@ -688,6 +685,19 @@ static void SV_CloseDownload( client_t *cl ) {
 		}
 	}
 
+}
+
+/*
+==================
+SV_FreeClient
+
+Release what a client slot holds outside the client array, before the
+slot is rebuilt or the array is freed
+==================
+*/
+void SV_FreeClient( client_t *cl ) {
+	SV_CloseDownload( cl );
+	SV_Netchan_FreeQueue( cl );
 }
 
 /*
