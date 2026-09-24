@@ -753,7 +753,9 @@ void InitMover( gentity_t *ent ) {
 		if ( i > 255 ) {
 			i = 255;
 		}
-		ent->s.constantLight = r | ( g << 8 ) | ( b << 16 ) | ( i << 24 );
+		// shift unsigned: map keys can make these negative, and a light
+		// of 512 or more reaches the sign bit (the bits are unchanged)
+		ent->s.constantLight = r | (int)( (unsigned)g << 8 ) | (int)( (unsigned)b << 16 ) | (int)( (unsigned)i << 24 );
 	}
 
 

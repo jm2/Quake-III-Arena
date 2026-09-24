@@ -277,7 +277,7 @@ static void ResampleSfx( sfx_t *sfx, int inrate, int inwidth, byte *data, qboole
 		if( inwidth == 2 ) {
 			sample = LittleShort ( ((short *)data)[srcsample] );
 		} else {
-			sample = (int)( (unsigned char)(data[srcsample]) - 128) << 8;
+			sample = (int)( (unsigned char)(data[srcsample]) - 128) * 256;
 		}
 		part  = (i&(SND_CHUNK_SIZE-1));
 		if (part == 0) {
@@ -323,7 +323,7 @@ static int ResampleSfxRaw( short *sfx, int inrate, int inwidth, int samples, byt
 		if( inwidth == 2 ) {
 			sample = LittleShort ( ((short *)data)[srcsample] );
 		} else {
-			sample = (int)( (unsigned char)(data[srcsample]) - 128) << 8;
+			sample = (int)( (unsigned char)(data[srcsample]) - 128) * 256;
 		}
 		sfx[i] = sample;
 	}
