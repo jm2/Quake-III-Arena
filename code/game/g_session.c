@@ -78,6 +78,16 @@ void G_ReadSessionData( gclient_t *client ) {
 	var = va( "session%i", client - level.clients );
 	trap_Cvar_VariableStringBuffer( var, s, sizeof(s) );
 
+	// a field that sscanf does not reach keeps the value G_InitSessionData
+	// gives a spectator (after the memset in ClientConnect)
+	sessionTeam = TEAM_SPECTATOR;
+	client->sess.spectatorTime = level.time;
+	spectatorState = SPECTATOR_FREE;
+	client->sess.spectatorClient = 0;
+	client->sess.wins = 0;
+	client->sess.losses = 0;
+	teamLeader = qfalse;
+
 	sscanf( s, "%i %i %i %i %i %i %i",
 		&sessionTeam,                 // bk010221 - format
 		&client->sess.spectatorTime,
@@ -87,6 +97,33 @@ void G_ReadSessionData( gclient_t *client ) {
 		&client->sess.losses,
 		&teamLeader                   // bk010221 - format
 		);
+
+	// the game only writes values in these ranges, but an admin or rcon can
+	// set the session cvars to anything: reset the rest to the
+	// G_InitSessionData values, so that sessionTeam and spectatorClient never
+	// index past level.teamScores or level.clients
+	if ( sessionTeam < TEAM_FREE || sessionTeam >= TEAM_NUM_TEAMS ) {
+		sessionTeam = TEAM_SPECTATOR;
+	}
+	if ( spectatorState < SPECTATOR_NOT || spectatorState > SPECTATOR_SCOREBOARD ) {
+		spectatorState = SPECTATOR_FREE;
+	}
+	// a slot at or past a lowered sv_maxclients is still inside level.clients,
+	// and Cmd_FollowCycle_f and SpectatorClientEndFrame handle it as retail
+	// does, so only the follow1/follow2 modes and MAX_CLIENTS bound it
+	if ( client->sess.spectatorClient < FOLLOW_ACTIVE2
+		|| client->sess.spectatorClient >= MAX_CLIENTS ) {
+		client->sess.spectatorClient = 0;
+	}
+	if ( client->sess.wins < 0 ) {
+		client->sess.wins = 0;
+	}
+	if ( client->sess.losses < 0 ) {
+		client->sess.losses = 0;
+	}
+	if ( teamLeader != qfalse && teamLeader != qtrue ) {
+		teamLeader = qfalse;
+	}
 
 	// bk001205 - format issues
 	client->sess.sessionTeam = (team_t)sessionTeam;

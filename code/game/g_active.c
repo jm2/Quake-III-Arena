@@ -1071,8 +1071,13 @@ void SpectatorClientEndFrame( gentity_t *ent ) {
 			clientNum = level.follow2;
 		}
 		if ( clientNum >= 0 ) {
-			cl = &level.clients[ clientNum ];
-			if ( cl->pers.connected == CON_CONNECTED && cl->sess.sessionTeam != TEAM_SPECTATOR ) {
+			// a slot at or past level.maxclients is never connected: treat it
+			// as an empty slot without indexing past level.clients
+			cl = NULL;
+			if ( clientNum < level.maxclients ) {
+				cl = &level.clients[ clientNum ];
+			}
+			if ( cl && cl->pers.connected == CON_CONNECTED && cl->sess.sessionTeam != TEAM_SPECTATOR ) {
 				flags = (cl->ps.eFlags & ~(EF_VOTED | EF_TEAMVOTED)) | (ent->client->ps.eFlags & (EF_VOTED | EF_TEAMVOTED));
 				ent->client->ps = cl->ps;
 				ent->client->ps.pm_flags |= PMF_FOLLOW;
