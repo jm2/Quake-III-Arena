@@ -62,9 +62,13 @@ cvar_t *Cvar_Get( const char *name, const char *value, int flags ) {
 	soundMegs.integer = 1;
 	return &soundMegs;
 }
-void S_FreeOldestSound( void ) { Check( 0, "S_FreeOldestSound", "the sound buffer pool ran out" ); }
-/** Keep the resampled sound, reading every sample: AddressSanitizer reports one past the temp buffer. */
+qboolean S_FreeOldestSound( void ) { Check( 0, "S_FreeOldestSound", "the sound buffer pool ran out" ); return qfalse; }
+/**
+ * Keep the resampled sound, reading every sample: AddressSanitizer reports one past the temp buffer. Like the
+ * real encoder, give the sound its data, which S_LoadSound checks for.
+ */
 void S_AdpcmEncodeSound( sfx_t *sfx, short *samples ) {
+	static sndBuffer encoded;
 	int i;
 
 	Check( adpcmAllowed, sfx->soundName, "unexpected ADPCM encode" );
@@ -73,6 +77,7 @@ void S_AdpcmEncodeSound( sfx_t *sfx, short *samples ) {
 		adpcmSamples[i] = samples[i];
 	}
 	adpcmLength = sfx->soundLength;
+	sfx->soundData = &encoded;
 }
 void *Hunk_AllocateTempMemory( int size ) {
 	Check( size >= 0, "Hunk_AllocateTempMemory", "negative temp allocation" );

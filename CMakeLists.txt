@@ -291,6 +291,8 @@ endif()
 #   <name>.ad + %<name>.ad  AppleDouble pair (what package mode stages)
 # mac_app.py then sets the kHasBundle Finder flag Rez cannot express and checks
 # type/creator, the data fork and the cfrg/SIZE/BNDL/FREF/icon resources.
+# <name>.manifest.txt records the PEF's SHA-256 and the Retro68 toolchain that
+# built it (issue #227; see cmake/Quake3BuildManifest.cmake).
 get_filename_component(RETRO68_BIN_DIR "${CMAKE_C_COMPILER}" DIRECTORY)
 find_program(RETRO68_MAKEPEF MakePEF
     HINTS "${RETRO68_BIN_DIR}" "${CMAKE_SOURCE_DIR}/tools/Retro68-build/bin")
@@ -332,6 +334,8 @@ foreach(resource_source ${QUAKE3_RESOURCE_SOURCES})
     endif()
 endforeach()
 
+include("${CMAKE_SOURCE_DIR}/cmake/Quake3BuildManifest.cmake")
+
 function(quake3_add_classic_application target)
     set_target_properties(${target} PROPERTIES OUTPUT_NAME "${target}.xcoff")
     add_custom_command(
@@ -353,8 +357,10 @@ function(quake3_add_classic_application target)
                 "${CMAKE_SOURCE_DIR}/mac_app.py"
         COMMENT "Building Classic application ${target} (APPL/IDQ3)"
         VERBATIM)
+    quake3_add_build_manifest(${target})
     add_custom_target(${target}_APPL ALL
-        DEPENDS "${target}.bin" "${target}.dsk" "${target}.ad" "%${target}.ad")
+        DEPENDS "${target}.bin" "${target}.dsk" "${target}.ad" "%${target}.ad"
+                "${target}.manifest.txt")
 endfunction()
 
 quake3_add_classic_application(Quake3)

@@ -47,8 +47,55 @@ python3 mac_app.py verify --pef build_mac/Quake3.pef \
     build_mac/Quake3.bin build_mac/Quake3.dsk build_mac/%Quake3.ad
 ```
 
+Next to the PEF, `build_mac/Quake3.manifest.txt` records its SHA-256 and the
+toolchain that built it; see [Pinned toolchain inputs](#pinned-toolchain-inputs).
+
 Building needs Retro68 (compiler, MakePEF, Rez and its `RIncludes`), CMake
 3.12 or newer, and Python 3.
+
+## Pinned toolchain inputs
+
+`retro68-versions.txt` pins what `setup_retro68.sh` and `setup_retro68.ps1`
+build the toolchain from (issue #227): Retro68 commit `83b9c8d2c5` (GCC 12.2.0)
+and its `multiversal` submodule, and the SHA-256 of the MPW
+(`MPW_fully_updated.sit`) and OpenGL SDK 1.2 (`OpenGL_SDK_1.2.sit`) archives.
+
+- A fresh setup clones Retro68, checks out the pinned commit and its
+  submodules, and stops unless `git submodule status --recursive` lists
+  exactly the pinned submodule commits.
+- An existing `tools/Retro68-src` is never pulled or switched. If it is at
+  another commit or is not a git checkout, setup stops before anything
+  changes. To build the pinned toolchain, move `tools/Retro68-src`,
+  `tools/Retro68-build` and `tools/Retro68-work` aside and run setup again.
+- Setup looks for each archive in `tools/`, then at the repository root, and
+  otherwise downloads it to `tools/<name>.part`. It extracts neither archive
+  until both match their pinned SHA-256. A local copy that does not match
+  (truncated, damaged or another file) is reported and left in place; a
+  download that does not match is discarded.
+
+To move to another Retro68 commit, change `RETRO68_COMMIT` and every
+`RETRO68_SUBMODULE` line together, then rebuild the toolchain.
+
+After MakePEF, every build writes `build_mac/<name>.manifest.txt` next to
+`<name>.pef`:
+
+```text
+pef=Quake3.pef
+pef_sha256=<SHA-256 of Quake3.pef>
+gcc_version=powerpc-apple-macos-gcc (GCC) 12.2.0
+retro68_commit=83b9c8d2c58f8efb0925a305aca1e0edab2e6571
+retro68_submodule=multiversal 25b78f82807a967772797ab3b9d4b86c9137fcdf
+retro68_pinned=yes
+```
+
+`gcc_version` is the first line of the compiler's `--version`. The commit and
+submodules come from the Retro68 checkout next to the toolchain
+(`tools/Retro68-src` for `tools/Retro68-build`); `unknown` means there is
+none. `retro68_pinned=no` means they are not the ones `retro68-versions.txt`
+pins. The manifest holds no dates or paths, so it changes only with the PEF or
+the toolchain. The PEF itself embeds the source directory (`assert()` messages
+carry `__FILE__`), so the same source built in another directory has another
+`pef_sha256`.
 
 ## Checking and rebuilding the toolchain
 
