@@ -5,8 +5,9 @@ native dispatch. Console messages marshal through a native temporary into
 the retail 276-byte QVM layout, clearing 32-bit links and excluding native pointer padding. A
 no-message result preserves the output. Match structures, output capacities,
 input strings, and nullable chat variables have complete VM range checks.
-Initial and reply chat variables must fit the fixed native buffer together;
-reply messages count toward that capacity. NULL optional variables and
+Initial and reply chat variables reach botlib whatever their combined size;
+botlib leaves a variable that does not fit its fixed buffer unset (#306,
+#340). NULL optional variables and
 substring queries preserve existing native behavior.
 
 Selected match variables must lie within their terminated embedded string.
@@ -35,7 +36,7 @@ fixes also cover part of #48.
 Two ASan/UBSan fixtures execute the actual VM dispatcher and native text
 routines with exact-sized allocations. They cover exact QVM console output
 and adjacent object canaries on a 64-bit host, scalar/message layout, cleared links, unchanged no-message output,
-eight nullable variables, combined-size limits, reply message limits,
+eight nullable variables, variables past the combined size, reply message limits,
 unterminated strings, match metadata rejection, growing/shrinking/empty
 synonym replacements, exact known expansion capacity, exact-sized/interior
 exported objects, near-end and empty VM strings, unchanged object canaries,
@@ -57,6 +58,6 @@ PEF validation with the temporary libraries in the
 
 Keep #35 and #48 open. Botlib elementary-action and remaining AI syscall
 families, scalar indices, indirect native accesses, and bot file/parser
-bounds remain under review. Native initial/reply concatenation is protected
-by syscall capacity checks; the broader native bot-data audit is unfinished.
+bounds remain under review. Native initial/reply concatenation bounds itself
+(#306); the broader native bot-data audit is unfinished.
 Retail 1.32c and Mac OS 9 live acceptance remain deferred.

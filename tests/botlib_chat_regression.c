@@ -12,6 +12,7 @@ vm_t *gvm = &vm;
 static botlib_export_t api;
 static byte before[IMAGE_SIZE];
 static int expectError, callbacks, emptyConsole, synonymSize;
+static char *received[MAX_MATCHVARIABLES];
 static jmp_buf errorJump;
 
 /** Stop on unexpected output or native dispatch. */
@@ -35,18 +36,21 @@ static int Console( int state, bot_consolemessage_t *out ) {
 	memset(out,0,sizeof(*out)); out->handle=2; out->time=3.5f; out->type=4;
 	strcpy(out->message,"test"); out->prev=(bot_consolemessage_t *)out; out->next=(bot_consolemessage_t *)out; return 2;
 }
-/** Reproduce native fixed-buffer concatenation for all eight nullable variables. */
+/** Record all eight nullable variables; native botlib leaves any that do not fit unset (#306). */
 static void Initial( int state, char *type, int context, char *v0, char *v1, char *v2, char *v3, char *v4, char *v5, char *v6, char *v7 ) {
-	char output[MAX_MESSAGE_SIZE]="", *vars[]={v0,v1,v2,v3,v4,v5,v6,v7}; int i;
-	Callback(); Check(state==1 && !strcmp(type,"test") && context==3,"initial args");
-	for(i=0;i<8;i++) if(vars[i]) strcat(output,vars[i]);
-	Check(strlen(output)<sizeof(output),"initial capacity");
+	char *vars[]={v0,v1,v2,v3,v4,v5,v6,v7};
+	Callback(); Check(state==1 && !strcmp(type,"test") && context==3,"initial args"); memcpy(received,vars,sizeof(received));
 }
-/** Include the original message in native fixed-buffer concatenation. */
+/** Native botlib copies only a message that fits its match string, then bounds the variables. */
 static int Reply( int state, char *message, int mc, int vc, char *v0, char *v1, char *v2, char *v3, char *v4, char *v5, char *v6, char *v7 ) {
-	char output[MAX_MESSAGE_SIZE], *vars[]={v0,v1,v2,v3,v4,v5,v6,v7}; int i;
-	Callback(); Check(state==1 && mc==3 && vc==4,"reply args"); strcpy(output,message);
-	for(i=0;i<8;i++) if(vars[i]) strcat(output,vars[i]); return 5;
+	char *vars[]={v0,v1,v2,v3,v4,v5,v6,v7};
+	Callback(); Check(state==1 && mc==3 && vc==4 && strlen(message)<MAX_MESSAGE_SIZE,"reply args");
+	memcpy(received,vars,sizeof(received)); return 5;
+}
+/** Issue #340: each variable reaches botlib unchanged, NULL or its terminated VM string, whatever their combined size. */
+static void Received( int *args, int start ) {
+	int i;
+	for(i=0;i<8;i++) Check(args[start+i] ? received[i]==(char *)vm.dataBase+args[start+i] : !received[i],"variables passed through");
 }
 /** Touch the entire caller-supplied chat output. */
 static void GetMessage( int state, char *out, int size ) { Callback(); Check(state==1,"message state"); memset(out,'m',size); }
@@ -82,7 +86,7 @@ static void Reject( int *args ) {
 	if(setjmp(errorJump)==0) { SV_BotLibChatCalls(args); Check(0,"invalid request accepted"); }
 	expectError=0; Check(callbacks==calls,"rejection dispatched");
 }
-/** Cover complete outputs, optional variables, combined sizes, embedded metadata, and API availability. */
+/** Cover complete outputs, optional variables, variables past the combined size, embedded metadata, and API availability. */
 int main( void ) {
 	int args[16]={0}, i;
 	bot_match_t *match; qvmBotConsoleMessage_t *console; char *native;
@@ -104,14 +108,23 @@ int main( void ) {
 	for(i=0;i<12;i++) Check(vm.dataBase[args[2]+sizeof(*console)+i]==0x5a,"QVM object tail overwritten");
 	args[2]=IMAGE_SIZE-sizeof(*console)+4; Reject(args); args[2]=0; Reject(args);
 	args[0]=BOTLIB_AI_INITIAL_CHAT; args[2]=32; args[3]=3;
-	Check(SV_BotLibChatCalls(args)==0,"all absent variables");
+	Check(SV_BotLibChatCalls(args)==0,"all absent variables"); Received(args,4);
 	for(i=0;i<8;i++) args[4+i]=1024;
-	Check(SV_BotLibChatCalls(args)==0,"eight variables");
+	Check(SV_BotLibChatCalls(args)==0,"eight variables"); Received(args,4);
 	for(i=0;i<8;i++) args[4+i]=0; args[4]=512;
-	Check(SV_BotLibChatCalls(args)==0,"exact combined capacity"); args[11]=1024; Reject(args);
+	Check(SV_BotLibChatCalls(args)==0,"exact combined capacity"); Received(args,4);
+	/* Issue #340: past the combined capacity the variables still reach botlib instead of dropping the server */
+	args[11]=1024; Check(SV_BotLibChatCalls(args)==0,"variable past combined capacity"); Received(args,4);
+	for(i=0;i<8;i++) args[4+i]=512;
+	Check(SV_BotLibChatCalls(args)==0,"eight full-length variables"); Received(args,4);
+	for(i=1;i<8;i++) args[4+i]=0;
 	args[11]=IMAGE_SIZE-1; vm.dataBase[IMAGE_SIZE-1]='x'; Reject(args);
+	args[5]=1024; Reject(args); args[5]=0; /* an unterminated variable still faults past the combined capacity */
 	memset(args+4,0,8*sizeof(int)); args[0]=BOTLIB_AI_REPLY_CHAT; args[2]=512; args[3]=3; args[4]=4;
-	Check(SV_BotLibChatCalls(args)==5,"exact reply message"); args[12]=1024; Reject(args);
+	Check(SV_BotLibChatCalls(args)==5,"exact reply message"); Received(args,5);
+	args[12]=1024; Check(SV_BotLibChatCalls(args)==5,"reply name past combined capacity"); Received(args,5);
+	args[11]=512; Check(SV_BotLibChatCalls(args)==5,"reply names past combined capacity"); Received(args,5);
+	args[12]=IMAGE_SIZE-1; Reject(args); args[11]=0;
 	args[12]=0; vm.dataBase[767]='a'; vm.dataBase[768]=0; Reject(args); vm.dataBase[767]=0;
 	args[0]=BOTLIB_AI_GET_CHAT_MESSAGE; args[2]=IMAGE_SIZE-8; args[3]=8;
 	Check(SV_BotLibChatCalls(args)==0,"whole message output"); args[3]=0; Reject(args); args[3]=9; Reject(args);
