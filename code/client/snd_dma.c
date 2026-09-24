@@ -536,7 +536,7 @@ void S_StartSound(vec3_t origin, int entityNum, int entchannel, sfxHandle_t sfxH
 	}
 
 	if ( sfxHandle < 0 || sfxHandle >= s_numSfx ) {
-		Com_Printf( S_COLOR_YELLOW, "S_StartSound: handle %i out of range\n", sfxHandle );
+		Com_Printf( S_COLOR_YELLOW "S_StartSound: handle %i out of range\n", sfxHandle );
 		return;
 	}
 
@@ -563,8 +563,8 @@ void S_StartSound(vec3_t origin, int entityNum, int entchannel, sfxHandle_t sfxH
 	ch = s_channels;
 	inplay = 0;
 	for ( i = 0; i < MAX_CHANNELS ; i++, ch++ ) {		
-		if (ch[i].entnum == entityNum && ch[i].thesfx == sfx) {
-			if (time - ch[i].allocTime < 50) {
+		if (ch->entnum == entityNum && ch->thesfx == sfx) {
+			if (time - ch->allocTime < 50) {
 //				if (Cvar_VariableValue( "cg_showmiss" )) {
 //					Com_Printf("double sound start\n");
 //				}
@@ -601,6 +601,7 @@ void S_StartSound(vec3_t origin, int entityNum, int entchannel, sfxHandle_t sfxH
 				}
 			}
 			if (chosen == -1) {
+				ch = s_channels;
 				if (ch->entnum == listener_number) {
 					for ( i = 0 ; i < MAX_CHANNELS ; i++, ch++ ) {
 						if (ch->allocTime<oldest) {
@@ -648,7 +649,7 @@ void S_StartLocalSound( sfxHandle_t sfxHandle, int channelNum ) {
 	}
 
 	if ( sfxHandle < 0 || sfxHandle >= s_numSfx ) {
-		Com_Printf( S_COLOR_YELLOW, "S_StartLocalSound: handle %i out of range\n", sfxHandle );
+		Com_Printf( S_COLOR_YELLOW "S_StartLocalSound: handle %i out of range\n", sfxHandle );
 		return;
 	}
 
@@ -757,7 +758,7 @@ void S_AddLoopingSound( int entityNum, const vec3_t origin, const vec3_t velocit
 	}
 
 	if ( sfxHandle < 0 || sfxHandle >= s_numSfx ) {
-		Com_Printf( S_COLOR_YELLOW, "S_AddLoopingSound: handle %i out of range\n", sfxHandle );
+		Com_Printf( S_COLOR_YELLOW "S_AddLoopingSound: handle %i out of range\n", sfxHandle );
 		return;
 	}
 
@@ -818,7 +819,7 @@ void S_AddRealLoopingSound( int entityNum, const vec3_t origin, const vec3_t vel
 	}
 
 	if ( sfxHandle < 0 || sfxHandle >= s_numSfx ) {
-		Com_Printf( S_COLOR_YELLOW, "S_AddRealLoopingSound: handle %i out of range\n", sfxHandle );
+		Com_Printf( S_COLOR_YELLOW "S_AddRealLoopingSound: handle %i out of range\n", sfxHandle );
 		return;
 	}
 
