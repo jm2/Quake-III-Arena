@@ -2151,6 +2151,14 @@ bot_replychat_t *BotLoadReplyChat(char *filename)
 						return NULL;
 					} //end if
 					StripDoubleQuotes(token.string);
+					//the separator, the name and the trailing zero must fit
+					if (strlen(namebuffer) + (strlen(namebuffer) ? 1 : 0) + strlen(token.string) >= sizeof(namebuffer))
+					{
+						SourceError(source, "reply chat name too long");
+						BotFreeReplyChat(replychatlist);
+						FreeSource(source);
+						return NULL;
+					} //end if
 					if (strlen(namebuffer)) strcat(namebuffer, "\\");
 					strcat(namebuffer, token.string);
 				} while(PC_CheckTokenString(source, ","));
