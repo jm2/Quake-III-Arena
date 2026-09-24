@@ -2060,6 +2060,10 @@ extern int unzReadCurrentFile  (unzFile file, void *buf, unsigned len)
 		if (pfile_in_zip_read_info->compression_method==0)
 		{
 			uInt uDoCopy,i ;
+			/* A stored entry declaring more data than it holds has no input left. */
+			if ((pfile_in_zip_read_info->stream.avail_in == 0) &&
+				(pfile_in_zip_read_info->rest_read_compressed == 0))
+				return (iRead==0) ? UNZ_EOF : iRead;
 			if (pfile_in_zip_read_info->stream.avail_out < 
                             pfile_in_zip_read_info->stream.avail_in)
 				uDoCopy = pfile_in_zip_read_info->stream.avail_out ;

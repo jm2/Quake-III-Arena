@@ -47,6 +47,29 @@ def create(directory):
             struct.pack_into("<I", data, local + 18, compressed)
             struct.pack_into("<I", data, central + 20, compressed)
         path.write_bytes(data)
+    # Stored entries. "stored" keeps 6 of the 12 payload bytes as its data but
+    # still declares the full length; "overrun" declares, in matching local and
+    # central sizes, more data than the archive holds after the local header.
+    for name, declared, fault in (
+        ("stored-small.pk3", 12, "stored"),
+        ("stored-large.pk3", 32 * 1024 * 1024, "stored"),
+        ("overrun-small.pk3", 4096, "overrun"),
+        ("overrun-large.pk3", 32 * 1024 * 1024, "overrun"),
+    ):
+        path = directory / name
+        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_STORED) as z:
+            z.writestr("native.txt", b"native data\n")
+            z.writestr("bad.bin", b"native data\n")
+        data = bytearray(path.read_bytes())
+        local = data.index(b"PK\x03\x04", 4)
+        central = data.index(b"PK\x01\x02")
+        central = data.index(b"PK\x01\x02", central + 4)
+        compressed = 6 if fault == "stored" else declared
+        if fault == "overrun" and declared <= len(data) - local:
+            raise ValueError("overrun fixture must declare past the archive end")
+        struct.pack_into("<II", data, local + 18, compressed, declared)
+        struct.pack_into("<II", data, central + 20, compressed, declared)
+        path.write_bytes(data)
 
 
 if __name__ == "__main__":
