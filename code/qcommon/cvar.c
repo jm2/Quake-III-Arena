@@ -238,7 +238,10 @@ cvar_t *Cvar_Get( const char *var_name, const char *var_value, int flags ) {
 		// Make sure servers cannot mark engine-added variables as SERVER_CREATED
 		if ( var->flags & CVAR_SERVER_CREATED ) {
 			if ( !( flags & CVAR_SERVER_CREATED ) ) {
-				var->flags &= ~CVAR_SERVER_CREATED;
+				// the registration's flags decide from now on: the
+				// CVAR_ROM only kept the player off the server's copy, and
+				// retail never had it (/pmove_fixed, set g_synchronousClients)
+				var->flags &= ~( CVAR_SERVER_CREATED | CVAR_ROM );
 			}
 		} else {
 			flags &= ~CVAR_SERVER_CREATED;

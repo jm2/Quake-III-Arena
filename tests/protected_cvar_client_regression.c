@@ -131,6 +131,14 @@ static void CheckNotPublished( const char *name ) {
 	Check( !strstr( Cvar_InfoString_Big( CVAR_SYSTEMINFO ), name ), "a module put a protected path in the systeminfo" );
 }
 
+/** The cgame's trap_Cvar_Register and the UI's trap_Cvar_Create. */
+static void RegisterCgameCvar( const char *name, int flags ) {
+	Register( CG_CVAR_REGISTER, name, "1", flags );
+}
+static void CreateUICvar( const char *name, int flags ) {
+	Trap( UI_CVAR_CREATE, Str( name ), Str( "1" ), flags, 0 );
+}
+
 /** The cgame keeps its own cvars and commands, and nothing else. */
 static void TestCgame( void ) {
 	int handle, i;
@@ -148,6 +156,7 @@ static void TestCgame( void ) {
 	Trap( CG_REMOVECOMMAND, Str( "+modcmd" ), 0, 0, 0 );
 	Check( CommandCount( "+modcmd" ) == 0, "the cgame removes its own command" );
 	Trap( CG_REMOVECOMMAND, Str( "nosuchcmd" ), 0, 0, 0 );
+	CheckEngineOnlyFlags( RegisterCgameCvar, CG_CVAR_SET );
 
 	for ( i = 0; i < COUNT( protectedCvars ); i++ ) {
 		Refuse( CG_CVAR_SET, Str( protectedCvars[i] ), Str( HOSTILE ), 0, 0, "the cgame set a protected path" );
@@ -188,6 +197,7 @@ static void TestUI( void ) {
 	Trap( UI_CVAR_SET, Str( "fs_game" ), Str( "missionpack" ), 0, 0 );
 	Check( Is( "fs_game", "missionpack" ), "the mods menu sets fs_game" );
 	Trap( UI_CVAR_SET, Str( "fs_game" ), Str( "" ), 0, 0 );
+	CheckEngineOnlyFlags( CreateUICvar, UI_CVAR_SET );
 
 	for ( i = 0; i < COUNT( protectedCvars ); i++ ) {
 		Refuse( UI_CVAR_SET, Str( protectedCvars[i] ), Str( HOSTILE ), 0, 0, "the UI set a protected path" );
@@ -278,14 +288,40 @@ static void TestSystemInfo( void ) {
 	Check( LoadModule( "cgame", CL_CgameSystemCalls, 0 ), "cgame" );
 	Trap( CG_CVAR_SET, Str( "cg_currentSelectedPlayer" ), Str( "1" ), 0, 0 );
 	Check( Is( "cg_currentSelectedPlayer", "1" ), "the cgame sets the cvar it registered" );
+	// the registration's flags decide now, so the player sets it as in retail
+	// (the server still may not, which never depended on CVAR_ROM)
+	Cmd_ExecuteString( "cg_currentSelectedPlayer 2" );
+	Check( Is( "cg_currentSelectedPlayer", "2" ), "the player sets a cvar the cgame took over" );
+	module = "systeminfo";
+	SystemInfo( "\\cg_currentSelectedPlayer\\996", qfalse );
+	Check( Is( "cg_currentSelectedPlayer", "2" ) && Warned( "cg_currentSelectedPlayer" ),
+		"a server set a cvar the cgame took over" );
+	// a registration that asks for CVAR_ROM keeps it
+	SystemInfo( "\\cg_modReadOnly\\5", qfalse );
+	Check( LoadModule( "cgame", CL_CgameSystemCalls, 0 ), "cgame" );
+	Register( CG_CVAR_REGISTER, "cg_modReadOnly", "0", CVAR_ROM );
+	Cmd_ExecuteString( "cg_modReadOnly 6" );
+	Check( Is( "cg_modReadOnly", "5" ), "the player set a read-only cvar the cgame took over" );
 
-	// the retail cgame registers the prediction cvars without CVAR_SYSTEMINFO
+	// A retail server's first gamestate creates the prediction cvars, and the
+	// retail cgame registers them without CVAR_SYSTEMINFO. The player may set
+	// them from the console as in retail (CL_Record_f's tip is to set
+	// g_synchronousClients 1), and every gamestate still sets them.
+	module = "systeminfo";
+	SystemInfo( "\\g_synchronousClients\\0\\pmove_fixed\\0\\pmove_msec\\8", qfalse );
+	Check( LoadModule( "cgame", CL_CgameSystemCalls, 0 ), "cgame" );
 	Register( CG_CVAR_REGISTER, "g_synchronousClients", "0", 0 );
 	Register( CG_CVAR_REGISTER, "pmove_fixed", "0", 0 );
 	Register( CG_CVAR_REGISTER, "pmove_msec", "8", 0 );
 	module = "systeminfo";
-	SystemInfo( "\\g_synchronousClients\\1\\pmove_fixed\\1\\pmove_msec\\11", qfalse );
-	Check( Is( "g_synchronousClients", "1" ) && Is( "pmove_fixed", "1" ) && Is( "pmove_msec", "11" ),
+	printed[0] = 0;
+	Cmd_ExecuteString( "set g_synchronousClients 1" );
+	Cmd_ExecuteString( "pmove_fixed 1" );
+	Cmd_ExecuteString( "pmove_msec 15" );
+	Check( Is( "g_synchronousClients", "1" ) && Is( "pmove_fixed", "1" ) && Is( "pmove_msec", "15" ) &&
+		!strstr( printed, "read only" ), "the player sets the movement cvars" );
+	SystemInfo( "\\g_synchronousClients\\0\\pmove_fixed\\0\\pmove_msec\\11", qfalse );
+	Check( Is( "g_synchronousClients", "0" ) && Is( "pmove_fixed", "0" ) && Is( "pmove_msec", "11" ),
 		"the cgame predicts with the server's movement cvars" );
 
 	// behind the filter, Cvar_SetSafe: a protected path the server could

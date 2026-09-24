@@ -400,9 +400,10 @@ void CL_SystemInfoChanged( void ) {
 		}
 
 		// A server may create cvars and set the systeminfo ones, but not
-		// change engine cvars (issue #39). A cvar it creates before a module
-		// registers it keeps its value, as in ioquake3, so the modules still
-		// bound what they read.
+		// change a cvar the engine or a module has registered (issue #39).
+		// A cvar it creates before that keeps its value when it is
+		// registered, as in ioquake3, so the modules still bound what they
+		// read.
 		if ( ( cvar_flags = Cvar_Flags( key ) ) == CVAR_NONEXISTENT ) {
 			Cvar_Get( key, value, CVAR_SERVER_CREATED | CVAR_ROM );
 		} else {

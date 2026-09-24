@@ -61,6 +61,11 @@ static qboolean Is( const char *name, const char *value ) {
 	return Value( name ) && !strcmp( Value( name ), value );
 }
 
+/** The game's trap_Cvar_Register. */
+static void RegisterGameCvar( const char *name, int flags ) {
+	Trap( G_CVAR_REGISTER, Arg( Alloc( sizeof( vmCvar_t ) ) ), Str( name ), Str( "1" ), flags );
+}
+
 /** The game keeps its own cvars, and nothing else. */
 static void TestGame( void ) {
 	vmCvar_t *vmCvar;
@@ -75,6 +80,7 @@ static void TestGame( void ) {
 	Check( Trap( G_CVAR_VARIABLE_INTEGER_VALUE, Str( "g_modCvar" ), 0, 0, 0 ) == 4, "the game reads its own cvar" );
 	Trap( G_CVAR_SET, Str( "g_modNew" ), Str( "3" ), 0, 0 );
 	Check( Is( "g_modNew", "3" ), "the game creates a cvar by setting it" );
+	CheckEngineOnlyFlags( RegisterGameCvar, G_CVAR_SET );
 
 	for ( i = 0; i < COUNT( protectedCvars ); i++ ) {
 		Refuse( G_CVAR_SET, Str( protectedCvars[i] ), Str( HOSTILE ), 0, 0, "the game set a protected path" );

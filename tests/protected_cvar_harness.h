@@ -252,4 +252,29 @@ static void Refuse( int trap, int a1, int a2, int a3, int a4, const char *what )
 	expectDrop = 0;
 	Check( drops == before + 1, what );
 }
+/** A module registering its own cvar with the flags only the engine gives
+ * (who created it, protection, the not-found marker), each alone and all
+ * together, new and again: Cvar_Register drops them, and the module still
+ * sets the cvar through setTrap. */
+static void CheckEngineOnlyFlags( void (*registerCvar)( const char *name, int flags ), int setTrap ) {
+	static const unsigned int asked[] = {
+		CVAR_USER_CREATED, CVAR_SERVER_CREATED, CVAR_PROTECTED, CVAR_NONEXISTENT,
+		CVAR_USER_CREATED | CVAR_SERVER_CREATED | CVAR_PROTECTED | CVAR_NONEXISTENT
+	};
+	char name[MAX_CVAR_VALUE_STRING];
+	cvar_t *var;
+	int i, again;
+
+	for ( i = 0; i < COUNT( asked ); i++ ) {
+		Com_sprintf( name, sizeof( name ), "%s_flags%i%s", module, i, native ? "_native" : "" );
+		for ( again = 0; again < 2; again++ ) {
+			registerCvar( name, CVAR_ARCHIVE | (int)asked[i] );
+			var = FindCvar( name );
+			Check( var && ( var->flags & CVAR_ARCHIVE ) && !( (unsigned int)var->flags & asked[i] ),
+				"a module gave its cvar a flag only the engine gives" );
+		}
+		Trap( setTrap, Str( name ), Str( "2" ), 0, 0 );
+		Check( !strcmp( var->string, "2" ), "a module sets its cvar after asking for engine-only flags" );
+	}
+}
 #endif
