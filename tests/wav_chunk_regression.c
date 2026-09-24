@@ -283,10 +283,11 @@ static void TestData( void ) {
 	}
 }
 
-/** Files that end inside the fmt fields or inside a chunk header. */
+/** Files that end inside, or exactly at the end of, the RIFF header, the fmt fields or a chunk header. */
 static void TestTruncated( void ) {
 	char fixture[96];
 	wavFixture_t wav;
+	wavExpect_t expect;
 	int kind, fmt;
 
 	for ( kind = 0; kind < OVER_LENGTHS; kind++ ) {
@@ -299,6 +300,20 @@ static void TestTruncated( void ) {
 
 	StartWav( &wav ); PutFmt( &wav ); Put( &wav, "LIST", 4 ); PutShort( &wav, 8 ); Finish( &wav );
 	Load( "six bytes of a chunk header after fmt", &wav, &missingData );
+
+	// each bound exactly: one byte short of it is rejected, a file that just holds it parses as on master
+	StartWav( &wav ); PutFmt( &wav ); Put( &wav, "LIST", 4 ); PutShort( &wav, 8 ); Put( &wav, "", 1 ); Finish( &wav );
+	Load( "seven bytes of a chunk header after fmt", &wav, &missingData );
+	expect = acceptFour;
+	expect.samples = 0;
+	StartWav( &wav ); PutFmt( &wav ); PutHeader( &wav, "data", 0 ); Finish( &wav );
+	Load( "empty data chunk header at the end of the file", &wav, &expect );
+	StartWav( &wav ); PutFmt( &wav ); wav.length -= 1; Finish( &wav );
+	Load( "fmt with 15 format bytes", &wav, &missingFmt );
+	StartWav( &wav ); PutFmt( &wav ); Finish( &wav );
+	Load( "fmt ending at the end of the file", &wav, &missingData );
+	StartWav( &wav ); Finish( &wav );
+	Load( "RIFF/WAVE header only", &wav, &missingFmt );
 }
 
 int main( int argc, char **argv ) {
@@ -314,6 +329,6 @@ int main( int argc, char **argv ) {
 	if ( all || !strcmp( mode, "list-fmt" ) ) { TestListBeforeFmt(); puts( "An over-long LIST before fmt is rejected inside the file (issue #347)" ); }
 	if ( all || !strcmp( mode, "list-data" ) ) { TestListBeforeData(); puts( "An over-long LIST before data is rejected inside the file (issue #347)" ); }
 	if ( all || !strcmp( mode, "data" ) ) { TestData(); puts( "An over-long data chunk loads only the samples in the file (issue #347)" ); }
-	if ( all || !strcmp( mode, "truncated" ) ) { TestTruncated(); puts( "Truncated fmt fields and chunk headers are rejected inside the file (issue #347)" ); }
+	if ( all || !strcmp( mode, "truncated" ) ) { TestTruncated(); puts( "Truncated headers and fmt fields are rejected at their exact bounds (issue #347)" ); }
 	return 0;
 }
