@@ -98,10 +98,12 @@ void CG_CheckOrderPending() {
 			break;
 		}
 
+		// a server can set the cvar through systeminfo: a value that is neither
+		// Everyone nor an overlay slot orders nobody
 		if (cg_currentSelectedPlayer.integer == numSortedTeamPlayers) {
 			// to everyone
 			trap_SendConsoleCommand(va("cmd vsay_team %s\n", p2));
-		} else {
+		} else if (cg_currentSelectedPlayer.integer >= 0 && cg_currentSelectedPlayer.integer < numSortedTeamPlayers) {
 			// for the player self
 			if (sortedTeamPlayers[cg_currentSelectedPlayer.integer] == cg.snap->ps.clientNum && p1) {
 				trap_SendConsoleCommand(va("teamtask %i\n", cgs.currentOrder));

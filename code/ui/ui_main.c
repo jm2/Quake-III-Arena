@@ -1828,6 +1828,24 @@ static void UI_DrawCrosshair(rectDef_t *rect, float scale, vec4_t color) {
 
 /*
 ===============
+UI_SelectedPlayer
+
+cg_selectedPlayer: a teammate index below myTeamCount, or myTeamCount for
+Everyone. A server can set the cvar to anything through systeminfo, so any
+other value, including ones too large for an int, comes back as -1.
+===============
+*/
+static int UI_SelectedPlayer( void ) {
+	float selected = trap_Cvar_VariableValue( "cg_selectedPlayer" );
+
+	if ( selected > -1 && selected < uiInfo.myTeamCount + 1 ) {
+		return (int)selected;
+	}
+	return -1;
+}
+
+/*
+===============
 UI_BuildPlayerList
 ===============
 */
@@ -1873,7 +1891,7 @@ static void UI_BuildPlayerList() {
 		trap_Cvar_Set("cg_selectedPlayer", va("%d", playerTeamNumber));
 	}
 
-	n = trap_Cvar_VariableValue("cg_selectedPlayer");
+	n = UI_SelectedPlayer();
 	if (n < 0 || n > uiInfo.myTeamCount) {
 		n = 0;
 	}
@@ -2216,7 +2234,7 @@ static qboolean UI_OwnerDrawVisible(int flags) {
 				vis = qfalse;
 			} else {
 				// if showing yourself
-				if (ui_selectedPlayer.integer < uiInfo.myTeamCount && uiInfo.teamClientNums[ui_selectedPlayer.integer] == uiInfo.playerNumber) { 
+				if (ui_selectedPlayer.integer >= 0 && ui_selectedPlayer.integer < uiInfo.myTeamCount && uiInfo.teamClientNums[ui_selectedPlayer.integer] == uiInfo.playerNumber) {
 					vis = qfalse;
 				}
 			}
@@ -2226,7 +2244,7 @@ static qboolean UI_OwnerDrawVisible(int flags) {
 			// these need to show when this client is assigning their own status or they are NOT the leader
 			if (uiInfo.teamLeader) {
 				// if not showing yourself
-				if (!(ui_selectedPlayer.integer < uiInfo.myTeamCount && uiInfo.teamClientNums[ui_selectedPlayer.integer] == uiInfo.playerNumber)) { 
+				if (!(ui_selectedPlayer.integer >= 0 && ui_selectedPlayer.integer < uiInfo.myTeamCount && uiInfo.teamClientNums[ui_selectedPlayer.integer] == uiInfo.playerNumber)) {
 					vis = qfalse;
 				}
 				// these need to show when this client can give orders to a player or a group
@@ -2684,7 +2702,7 @@ static qboolean UI_SelectedPlayer_HandleKey(int flags, float *special, int key) 
 		if (!uiInfo.teamLeader) {
 			return qfalse;
 		}
-		selected = trap_Cvar_VariableValue("cg_selectedPlayer");
+		selected = UI_SelectedPlayer();
 		
 		if (key == K_MOUSE2) {
 			selected--;
@@ -3519,8 +3537,8 @@ static void UI_RunMenuScript(char **args) {
 		} else if (Q_stricmp(name, "orders") == 0) {
 			const char *orders;
 			if (String_Parse(args, &orders)) {
-				int selectedPlayer = trap_Cvar_VariableValue("cg_selectedPlayer");
-				if (selectedPlayer < uiInfo.myTeamCount) {
+				int selectedPlayer = UI_SelectedPlayer();
+				if (selectedPlayer >= 0 && selectedPlayer < uiInfo.myTeamCount) {
 					strcpy(buff, orders);
 					trap_Cmd_ExecuteText( EXEC_APPEND, va(buff, uiInfo.teamClientNums[selectedPlayer]) );
 					trap_Cmd_ExecuteText( EXEC_APPEND, "\n" );
@@ -3543,7 +3561,7 @@ static void UI_RunMenuScript(char **args) {
 		} else if (Q_stricmp(name, "voiceOrdersTeam") == 0) {
 			const char *orders;
 			if (String_Parse(args, &orders)) {
-				int selectedPlayer = trap_Cvar_VariableValue("cg_selectedPlayer");
+				int selectedPlayer = UI_SelectedPlayer();
 				if (selectedPlayer == uiInfo.myTeamCount) {
 					trap_Cmd_ExecuteText( EXEC_APPEND, orders );
 					trap_Cmd_ExecuteText( EXEC_APPEND, "\n" );
@@ -3556,8 +3574,8 @@ static void UI_RunMenuScript(char **args) {
 		} else if (Q_stricmp(name, "voiceOrders") == 0) {
 			const char *orders;
 			if (String_Parse(args, &orders)) {
-				int selectedPlayer = trap_Cvar_VariableValue("cg_selectedPlayer");
-				if (selectedPlayer < uiInfo.myTeamCount) {
+				int selectedPlayer = UI_SelectedPlayer();
+				if (selectedPlayer >= 0 && selectedPlayer < uiInfo.myTeamCount) {
 					strcpy(buff, orders);
 					trap_Cmd_ExecuteText( EXEC_APPEND, va(buff, uiInfo.teamClientNums[selectedPlayer]) );
 					trap_Cmd_ExecuteText( EXEC_APPEND, "\n" );
@@ -5117,6 +5135,7 @@ UI_Init
 void _UI_Init( qboolean inGameLoad ) {
 	const char *menuSet;
 	int start;
+	float color1;
 
 	printf("=== _UI_Init START ===\n"); fflush(stdout);
 
@@ -5273,7 +5292,10 @@ void _UI_Init( qboolean inGameLoad ) {
 
 	// sets defaults for ui temp cvars
 	printf("UI_Init: Setting effectsColor...\n"); fflush(stdout);
-	uiInfo.effectsColor = gamecodetoui[(int)trap_Cvar_VariableValue("color1")-1];
+	// a server can set color1 through systeminfo; like q3_ui's player settings,
+	// show a value outside the seven game colors as white, which the cgame draws
+	color1 = trap_Cvar_VariableValue("color1");
+	uiInfo.effectsColor = gamecodetoui[(color1 >= 1 && color1 < 8) ? (int)color1 - 1 : 6];
 	printf("UI_Init: Setting crosshair...\n"); fflush(stdout);
 	uiInfo.currentCrosshair = (int)trap_Cvar_VariableValue("cg_drawCrosshair");
 	printf("UI_Init: Setting mousePitch...\n"); fflush(stdout);
