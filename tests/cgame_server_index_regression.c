@@ -2,6 +2,7 @@
 #include "../code/cgame/cg_local.h"
 #ifdef MISSIONPACK
 #include "../ui/menudef.h"
+#include "../code/ui/ui_shared.h"
 #endif
 #include <limits.h>
 #include <setjmp.h>
@@ -13,6 +14,10 @@
 #define MAX_VOICECHATBUFFER 32	/* private to cg_servercmds.c */
 
 void dllEntry( int (QDECL *syscallptr)( int arg, ... ) );
+#ifdef MISSIONPACK
+extern displayContextDef_t cgDC;
+void CG_LoadHudMenu( void );
+#endif
 extern localEntity_t cg_activeLocalEntities;
 
 static jmp_buf errorJump;
@@ -85,11 +90,18 @@ static int QDECL FakeSyscall( int command, ... ) {
 		fileHandle_t *f = va_arg( ap, fileHandle_t * );
 		*f = voiceFile && !strcmp( path, "scripts/female1.voice" );
 		result = *f ? strlen( voiceFile ) : -1;
+		if ( !strcmp( path, "ui/hud.txt" ) ) {
+			*f = 2;		// an empty Team Arena HUD: no menus
+			result = 0;
+		}
 		break;
 	}
 	case CG_FS_READ: {
 		void *buffer = va_arg( ap, void * );
-		memcpy( buffer, voiceFile, va_arg( ap, int ) );
+		int length = va_arg( ap, int );
+		if ( length > 0 ) {
+			memcpy( buffer, voiceFile, length );
+		}
 		break;
 	}
 	case CG_CM_BOXTRACE: case CG_CM_TRANSFORMEDBOXTRACE:
@@ -416,6 +428,61 @@ static void TestOwnerDraws( void ) {
 	ServerCommand( "tinfo 1 3 0 100 0 200 0" );
 	CG_OwnerDraw( 0, 0, 10, 10, 0, 0, CG_SELECTEDPLAYER_WEAPON, 0, 0, 0, 1, color, 0, 0 );
 }
+
+/** Issue #40: the scoreboard list rows stay inside cg.scores whatever count "scores" sends. */
+static void TestScoreList( void ) {
+	static const char *counts[] = { "0", "-1", "-2147483647", "-2147483648", NULL };
+	static menuDef_t menu;
+	static itemDef_t item;
+	static listBoxDef_t list;
+	vec4_t color = { 1, 1, 1, 1 };
+	qhandle_t handle;
+	int i, column;
+
+	Reset();
+	cg.snap = &serverSnap;
+	cgs.gametype = GT_FFA;
+	CG_LoadHudMenu();	// the scoreboard feeders
+	memset( &menu, 0, sizeof( menu ) );
+	memset( &item, 0, sizeof( item ) );
+	memset( &list, 0, sizeof( list ) );
+	menu.itemCount = 1;
+	menu.items[0] = &item;
+	item.parent = &menu;
+	item.type = ITEM_TYPE_LISTBOX;
+	item.special = FEEDER_SCOREBOARD;
+	item.typeData = &list;
+	item.window.rect.w = item.window.rect.h = 100;
+	list.elementWidth = list.elementHeight = 10;
+
+	// two real rows: scrolling down selects the second, and its text is read
+	ValidClient( 7 );
+	ServerCommand( "scores 2 0 0  5 10 50 100 0 0 90 0 0 0 0 0 0 0  7 20 60 100 0 0 80 0 0 0 0 0 0 0" );
+	Check( cg.numScores == 2 && cg.scores[1].client == 7, "valid scores" );
+	Menu_ScrollFeeder( &menu, FEEDER_SCOREBOARD, qtrue );
+	Check( cg.selectedScore == 1, "scrolled to the second score" );
+	Check( !strcmp( cgDC.feederItemText( FEEDER_SCOREBOARD, 1, 4, &handle ), "20" ), "second score text" );
+	CG_OwnerDraw( 0, 0, 10, 10, 0, 0, CG_ACCURACY, 0, 0, 0, 1, color, 0, 0 );
+
+	for ( i = 0; counts[i]; i++ ) {
+		ServerCommand( va( "scores %s 0 0", counts[i] ) );
+		Check( cg.numScores == 0, "hostile score count" );
+		// a selectable list moves its cursor to count - 1
+		list.notselectable = qfalse;
+		list.cursorPos = list.startPos = 0;
+		Menu_ScrollFeeder( &menu, FEEDER_SCOREBOARD, qtrue );
+		Check( cg.selectedScore >= 0 && cg.selectedScore < MAX_CLIENTS, "selected score row" );
+		CG_OwnerDraw( 0, 0, 10, 10, 0, 0, CG_ACCURACY, 0, 0, 0, 1, color, 0, 0 );
+		// a list that is not selectable scrolls its first row to count - 1
+		list.notselectable = qtrue;
+		list.cursorPos = list.startPos = 0;
+		Menu_ScrollFeeder( &menu, FEEDER_SCOREBOARD, qtrue );
+		for ( column = 0; column < 7; column++ ) {
+			Check( !strcmp( cgDC.feederItemText( FEEDER_SCOREBOARD, list.startPos, column, &handle ), "" ),
+				"row outside the scores reads as empty" );
+		}
+	}
+}
 #else
 /** The status bar and team overlay with a hostile weapon on our entity slot. */
 static void TestStatusBar( void ) {
@@ -451,6 +518,7 @@ int main( void ) {
 	TestVoiceChatBuffer();
 	TestPlayerNumbers();
 	TestOwnerDraws();
+	TestScoreList();
 	puts( "Team Arena cgame server index regressions passed (issue #239)" );
 #else
 	TestStatusBar();

@@ -1586,6 +1586,11 @@ static clientInfo_t * CG_InfoFromScoreIndex(int index, int team, int *scoreIndex
 			}
 		}
 	}
+	// a list box scrolled on an empty score list asks for row -1
+	if ( index < 0 || index >= cg.numScores ) {
+		*scoreIndex = 0;
+		return NULL;
+	}
 	*scoreIndex = index;
 	return &cgs.clientinfo[ cg.scores[index].client ];
 }
@@ -1691,7 +1696,8 @@ static void CG_FeederSelection(float feederID, int index) {
 				count++;
 			}
 		}
-	} else {
+	} else if ( index >= 0 && index < cg.numScores ) {
+		// a list box scrolled on an empty score list selects row -1
 		cg.selectedScore = index;
 	}
 }

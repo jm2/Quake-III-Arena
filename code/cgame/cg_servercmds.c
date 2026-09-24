@@ -70,6 +70,8 @@ static void CG_ParseScores( void ) {
 	cg.numScores = atoi( CG_Argv( 1 ) );
 	if ( cg.numScores > MAX_CLIENTS ) {
 		cg.numScores = MAX_CLIENTS;
+	} else if ( cg.numScores < 0 ) {
+		cg.numScores = 0;	// the Team Arena score lists count rows with it
 	}
 
 	cg.teamScores[0] = atoi( CG_Argv( 2 ) );
