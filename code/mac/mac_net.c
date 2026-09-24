@@ -383,6 +383,14 @@ qboolean	Sys_StringToAdr( const char *s, netadr_t *a ) {
 		return qfalse;
 	}
 
+	// OTInitDNSAddress copies the whole name into dnsAddr.fName, which holds
+	// kMaxHostNameLen (255) characters; NET_StringToAdr passes up to 1023
+	if ( strlen( s ) >= sizeof( dnsAddr.fName ) ) {
+		Com_Printf( "Sys_StringToAdr: host name longer than %i characters\n",
+			(int)sizeof( dnsAddr.fName ) - 1 );
+		return qfalse;
+	}
+
 	memset( &in, 0, sizeof( in ) );
 	in.addr.buf = (UInt8 *) &dnsAddr;
 	in.addr.len = OTInitDNSAddress(&dnsAddr, (char *)s );
@@ -512,6 +520,25 @@ qboolean	Sys_GetPacket ( netadr_t *net_from, msg_t *net_message ) {
 	net_from->type = NA_IP;
 	net_from->port = inAddr.fPort;
 	*(int *)net_from->ip = inAddr.fHost;
+
+	// A datagram larger than the buffer comes back in pieces with T_MORE set.
+	// Read the rest, or the next call would return it as a packet of its own
+	// with no source address, and drop the whole datagram as unix_net.c and
+	// win_net.c do; like them, also drop one that exactly fills the buffer.
+	// A piece with no source address is the rest of a datagram whose drain
+	// failed on an earlier call: drop it the same way.
+	if ( ( flags & T_MORE ) || (int)d.udata.len >= net_message->maxsize
+		|| d.addr.len == 0 ) {
+		while ( flags & T_MORE ) {
+			err = OTRcvUData( endpoint, &d, &flags );
+			if ( err ) {
+				HandleOTError( endpoint, err, "Sys_GetPacket" );
+				break;
+			}
+		}
+		Com_Printf( "Oversize packet from %s\n", NET_AdrToString( *net_from ) );
+		return qfalse;
+	}
 
 	net_message->cursize = d.udata.len;
 	
