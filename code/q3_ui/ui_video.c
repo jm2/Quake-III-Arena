@@ -631,20 +631,35 @@ GraphicsOptions_SetMenuItems
 */
 static void GraphicsOptions_SetMenuItems( void )
 {
-	s_graphicsoptions.mode.curvalue = trap_Cvar_VariableValue( "r_mode" );
-	if ( s_graphicsoptions.mode.curvalue < 0 )
+	float	value;
+
+	// a config or the console can set these to anything (issue #389), and
+	// the spin controls draw the name at their value: a mode the list does
+	// not have shows 640x480, as a negative (custom) mode always has, and
+	// r_fullscreen and r_allowExtensions show on for any value the renderer
+	// reads as on, a nonzero integer
+	value = trap_Cvar_VariableValue( "r_mode" );
+	if ( value > -1 && value < s_graphicsoptions.mode.numitems )
+	{
+		s_graphicsoptions.mode.curvalue = value;
+	}
+	else
 	{
 		s_graphicsoptions.mode.curvalue = 3;
 	}
-	s_graphicsoptions.fs.curvalue = trap_Cvar_VariableValue("r_fullscreen");
-	s_graphicsoptions.allow_extensions.curvalue = trap_Cvar_VariableValue("r_allowExtensions");
+	value = trap_Cvar_VariableValue( "r_fullscreen" );
+	s_graphicsoptions.fs.curvalue = ( value >= 1 || value <= -1 );
+	value = trap_Cvar_VariableValue( "r_allowExtensions" );
+	s_graphicsoptions.allow_extensions.curvalue = ( value >= 1 || value <= -1 );
 	s_graphicsoptions.tq.curvalue = 3-trap_Cvar_VariableValue( "r_picmip");
 	if ( s_graphicsoptions.tq.curvalue < 0 )
 	{
 		s_graphicsoptions.tq.curvalue = 0;
 	}
-	else if ( s_graphicsoptions.tq.curvalue > 3 )
+	else if ( !( s_graphicsoptions.tq.curvalue <= 3 ) )
 	{
+		// also a NaN, which GraphicsOptions_GetInitialVideo would convert to
+		// int; the renderer reads r_picmip "nan" as 0, full detail (#389)
 		s_graphicsoptions.tq.curvalue = 3;
 	}
 

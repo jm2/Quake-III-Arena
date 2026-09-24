@@ -225,7 +225,7 @@ static void UI_CalcPostGameStats() {
 	char		fileName[MAX_QPATH];
 	char		info[MAX_INFO_STRING];
 	fileHandle_t f;
-	int size, game, time, adjustedTime;
+	int size, game, time, adjustedTime, currentMap;
 	postGameInfo_t oldInfo;
 	postGameInfo_t newInfo;
 	qboolean newHigh = qfalse;
@@ -262,7 +262,14 @@ static void UI_CalcPostGameStats() {
 	newInfo.captures = atoi(UI_Argv(14));
 
 	newInfo.time = (time - trap_Cvar_VariableValue("ui_matchStartTime")) / 1000;
-	adjustedTime = uiInfo.mapList[ui_currentMap.integer].timeToBeat[game];
+	// issue #389: ui_currentMap is an archived cvar, and the server names the
+	// game type; the skirmish menu starts the first map for a value past the
+	// map list, and a game type past the table has no time to beat
+	currentMap = ui_currentMap.integer;
+	if (currentMap < 0 || currentMap >= uiInfo.mapCount) {
+		currentMap = 0;
+	}
+	adjustedTime = (game >= 0 && game < MAX_GAMETYPES) ? uiInfo.mapList[currentMap].timeToBeat[game] : 0;
 	if (newInfo.time < adjustedTime) { 
 		newInfo.timeBonus = (adjustedTime - newInfo.time) * 10;
 	} else {
@@ -275,9 +282,14 @@ static void UI_CalcPostGameStats() {
 		newInfo.shutoutBonus = 0;
 	}
 
-	newInfo.skillBonus = trap_Cvar_VariableValue("g_spSkill");
+	// issue #389: g_spSkill can hold any value; the bonus is its skill level,
+	// 1 to 5 as the game's G_InitBots clamps it, so a bogus value cannot
+	// multiply the score past the int range or into the saved best score
+	newInfo.skillBonus = UI_CvarInt("g_spSkill");
 	if (newInfo.skillBonus <= 0) {
 		newInfo.skillBonus = 1;
+	} else if (newInfo.skillBonus > 5) {
+		newInfo.skillBonus = 5;
 	}
 	newInfo.score = newInfo.baseScore + newInfo.shutoutBonus + newInfo.timeBonus;
 	newInfo.score *= newInfo.skillBonus;
