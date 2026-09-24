@@ -3545,11 +3545,11 @@ static void UI_RunMenuScript(char **args) {
 				} else {
 					int i;
 					for (i = 0; i < uiInfo.myTeamCount; i++) {
-						if (Q_stricmp(UI_Cvar_VariableString("name"), uiInfo.teamNames[i]) == 0) {
+						if (uiInfo.playerNumber == uiInfo.teamClientNums[i]) {
 							continue;
 						}
 						strcpy(buff, orders);
-						trap_Cmd_ExecuteText( EXEC_APPEND, va(buff, uiInfo.teamNames[i]) );
+						trap_Cmd_ExecuteText( EXEC_APPEND, va(buff, uiInfo.teamClientNums[i]) );
 						trap_Cmd_ExecuteText( EXEC_APPEND, "\n" );
 					}
 				}
