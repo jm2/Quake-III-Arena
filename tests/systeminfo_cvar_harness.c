@@ -1,6 +1,6 @@
-/* Issue #379: the engine half of the selected-player fixtures. A server's
- * systeminfo reaches the client cvars through the real CL_SystemInfoChanged
- * (cl_parse.c) and cvar.c, where the UI and cgame read them back. */
+/* Issue #379: the engine half of the cvar index fixtures. A server's systeminfo
+ * reaches the client cvars through the real CL_SystemInfoChanged (cl_parse.c)
+ * and cvar.c, where the UI and cgame read them back. */
 #include "../code/client/cl_parse.c"
 
 clientActive_t cl;

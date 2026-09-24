@@ -3,7 +3,7 @@
  * overlay's sortedTeamPlayers. */
 #include "../code/cgame/cg_local.h"
 #include "../ui/menudef.h"
-#include "selected_player_systeminfo.h"
+#include "systeminfo_cvar_harness.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>

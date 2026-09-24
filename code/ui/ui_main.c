@@ -5135,6 +5135,7 @@ UI_Init
 void _UI_Init( qboolean inGameLoad ) {
 	const char *menuSet;
 	int start;
+	float color1;
 
 	printf("=== _UI_Init START ===\n"); fflush(stdout);
 
@@ -5291,7 +5292,10 @@ void _UI_Init( qboolean inGameLoad ) {
 
 	// sets defaults for ui temp cvars
 	printf("UI_Init: Setting effectsColor...\n"); fflush(stdout);
-	uiInfo.effectsColor = gamecodetoui[(int)trap_Cvar_VariableValue("color1")-1];
+	// a server can set color1 through systeminfo; like q3_ui's player settings,
+	// show a value outside the seven game colors as white, which the cgame draws
+	color1 = trap_Cvar_VariableValue("color1");
+	uiInfo.effectsColor = gamecodetoui[(color1 >= 1 && color1 < 8) ? (int)color1 - 1 : 6];
 	printf("UI_Init: Setting crosshair...\n"); fflush(stdout);
 	uiInfo.currentCrosshair = (int)trap_Cvar_VariableValue("cg_drawCrosshair");
 	printf("UI_Init: Setting mousePitch...\n"); fflush(stdout);
