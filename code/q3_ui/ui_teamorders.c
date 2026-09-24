@@ -144,6 +144,12 @@ static void UI_TeamOrdersMenu_SetList( int id ) {
 	}
 
 	teamOrdersMenuInfo.list.generic.bottom = teamOrdersMenuInfo.list.generic.top + teamOrdersMenuInfo.list.numitems * PROP_HEIGHT;
+	teamOrdersMenuInfo.list.height = teamOrdersMenuInfo.list.numitems;	// one page: page up/down stop at the first/last row
+
+	// the selected bot's row may be past the end of the orders
+	if( teamOrdersMenuInfo.list.curvalue >= teamOrdersMenuInfo.list.numitems ) {
+		teamOrdersMenuInfo.list.curvalue = 0;
+	}
 }
 
 
@@ -169,6 +175,9 @@ sfxHandle_t UI_TeamOrdersMenu_Key( int key ) {
 			y = l->generic.top;
 			if( UI_CursorInRect( x, y, l->generic.right - x, l->generic.bottom - y ) ) {
 				index = (uis.cursory - y) / PROP_HEIGHT;
+				if( index >= l->numitems ) {
+					return menu_null_sound;	// the rect includes the bottom edge
+				}
 				l->oldvalue = l->curvalue;
 				l->curvalue = index;
 
@@ -261,6 +270,9 @@ static void UI_TeamOrdersMenu_ListEvent( void *ptr, int event ) {
 
 	id = ((menulist_s *)ptr)->generic.id;
 	selection = ((menulist_s *)ptr)->curvalue;
+	if( selection < 0 || selection >= ((menulist_s *)ptr)->numitems ) {
+		return;	// only a row the list has
+	}
 
 	if( id == ID_LIST_BOTS ) {
 		teamOrdersMenuInfo.selectedBot = selection;
@@ -315,15 +327,15 @@ static void UI_TeamOrdersMenu_BuildBotList( void ) {
 	}
 	teamOrdersMenuInfo.gametype = atoi( Info_ValueForKey( info, "g_gametype" ) );
 
+	trap_GetConfigString( CS_PLAYERS + cs.clientNum, info, MAX_INFO_STRING );
+	playerTeam = *Info_ValueForKey( info, "t" );
+
 	for( n = 0; n < numPlayers && teamOrdersMenuInfo.numBots < 9; n++ ) {
-		trap_GetConfigString( CS_PLAYERS + n, info, MAX_INFO_STRING );
-
-		playerTeam = TEAM_SPECTATOR; // bk001204 = possible uninit use
-
 		if( n == cs.clientNum ) {
-			playerTeam = *Info_ValueForKey( info, "t" );
 			continue;
 		}
+
+		trap_GetConfigString( CS_PLAYERS + n, info, MAX_INFO_STRING );
 
 		isBot = atoi( Info_ValueForKey( info, "skill" ) );
 		if( !isBot ) {
