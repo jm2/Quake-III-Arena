@@ -21,7 +21,8 @@ SEVERITY_PATTERN = re.compile(
     r"\*\*(?:assurance gate|critical|high|moderate-high|medium-low|medium|low|"
     r"informational)\*\*")
 CHECKBOX_PATTERN = re.compile(r"^\s*[-*+]\s*\[[^\]]?\]")
-TRACKED_FLOOR = frozenset(range(1, 53)) | frozenset(range(220, 278)) | {290}
+TRACKED_FLOOR = frozenset(range(1, 53)) | frozenset(range(220, 278)) | frozenset(
+    {290, 291, 296, 299, 300, 301, 302, 303, 306, 307, 313, 314, 318, 319, 320, 325, 326, 327})
 
 
 class ReviewLedgerTests(unittest.TestCase):
