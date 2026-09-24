@@ -1,9 +1,11 @@
 /* Issue #38: getstatus, getinfo, getchallenge and rcon are rate limited with ioquake3's leaky buckets: 10 at once and
  * one a second more for each source address, and for the three queries 10 at once and one every 100 msec more for all
  * sources together; bad rcon passwords share their own 10 at once and one a second more. A flooding source only loses
- * its own quota, a spoofed flood cannot make the server an amplifier, a bad-rcon flood cannot lock out the admin, and a
- * clock that jumps back or passes INT_MAX neither disables nor locks the limits. Replies within the limits are the
- * retail bytes. Usage: server_rate_limit <case>. */
+ * its own quota, a spoofed flood cannot make the server an amplifier or fill the bucket table, a flood cannot lock out
+ * the admin, a clock that jumps back or passes INT_MAX neither disables nor locks the limits, and every request looks
+ * at a bounded number of buckets. Replies within the limits are the retail bytes. Usage: server_rate_limit <case>. */
+static int bucketVisits;	/* buckets the limiter looked at, counted through its test hook */
+#define SVC_BUCKET_VISITED() ( bucketVisits++ )
 #include "../code/server/sv_main.c"
 #include <limits.h>
 #include <stdarg.h>
@@ -12,7 +14,7 @@
 
 #define PASSWORD	"sesame"
 #define HOSTNAME	"Mac OS 9 test server"
-#define TABLE		16384	/* ioquake3's MAX_BUCKETS */
+#define FLOOD		16384	/* ioquake3's MAX_BUCKETS, which such a flood filled */
 #define OOB			"\xff\xff\xff\xff"
 #define SERVERINFO	"\\sv_hostname\\" HOSTNAME "\\sv_maxclients\\8\\g_gametype\\0\\protocol\\68\\mapname\\q3dm17" \
 	"\\version\\Q3 1.32c ppc-mac\\sv_privateClients\\0"
@@ -32,7 +34,7 @@ static cvar_t maxclients = { .integer = 8 }, zero = { .string = "" }, hostname =
 static cvar_t mapname = { .string = "q3dm17" }, pure = { .integer = 1 }, rconPassword = { .string = PASSWORD };
 static client_t clients[8];
 static playerState_t players[8];
-static int now, replies, connects, executed, consolePrints;
+static int now, replies, connects, executed, consolePrints, lastVisits, maxVisits;
 static char reply[MAX_MSGLEN];
 static netadr_t replyTo;
 
@@ -125,12 +127,14 @@ static void Advance( int msec ) { now = (int)( (unsigned)now + (unsigned)msec );
 static int Send( netadr_t from, const char *line ) {
 	byte data[MAX_MSGLEN];
 	msg_t msg;
-	int before = replies;
+	int before = replies, visits = bucketVisits;
 	memset( &msg, 0, sizeof( msg ) );
 	msg.data = data; msg.maxsize = sizeof( data );
 	memcpy( data, OOB, 4 ); memcpy( data + 4, line, strlen( line ) ); msg.cursize = 4 + (int)strlen( line );
 	reply[0] = 0;
 	SV_ConnectionlessPacket( from, &msg );
+	lastVisits = bucketVisits - visits;
+	if ( lastVisits > maxVisits ) maxVisits = lastVisits;
 	Check( replies - before <= 1, "more than one reply datagram" );
 	if ( replies > before ) {
 		Check( replyTo.type == from.type && !memcmp( replyTo.ip, from.ip, 4 ) && !memcmp( replyTo.ipx, from.ipx, 10 )
@@ -154,6 +158,35 @@ static void Connect( netadr_t from ) {
 	Huff_Compress( &msg, 12 );
 	SV_ConnectionlessPacket( from, &msg );
 }
+
+#ifdef MAX_BUCKET_SCAN
+#define MOST_VISITS	( 2 * MAX_BUCKET_CHAIN + MAX_BUCKET_SCAN )	/* a lookup, then a chain walk and a scan for a new bucket */
+/** Buckets holding requests that have not leaked away yet. */
+static int LiveBuckets( void ) {
+	int i, interval, live = 0;
+	for ( i = 0; i < MAX_BUCKETS; i++ ) {
+		interval = SVC_TimeDelta( now, buckets[i].lastTime );
+		live += buckets[i].type != NA_BOT && interval >= 0 && interval <= buckets[i].burst * 1000;
+	}
+	return live;
+}
+/** Hold a bucket the way a source that keeps sending does, for burst seconds; 10 is full. Return whether one was to
+ * be had. */
+static int Occupy( netadr_t from, int burst ) {
+	leakyBucket_t *bucket = SVC_BucketForAddress( from, 1000, qtrue );
+	if ( bucket == NULL ) return 0;
+	bucket->burst = burst; bucket->lastTime = now;
+	return 1;
+}
+/** Hold every slot of the table, with sources from n on. */
+static void Fill( int n, int burst ) {
+	int first = n;
+	while ( LiveBuckets() < MAX_BUCKETS ) {
+		Check( n - first < 4 * MAX_BUCKETS, "table never filled" );
+		Occupy( Spoofed( n++ ), burst );
+	}
+}
+#endif
 
 /** Retail clients, masters, monitors and admins at their normal rates are all answered, with the retail bytes. */
 static void NormalUse( void ) {
@@ -231,13 +264,13 @@ static void OtherSource( void ) {
 	Check( answered == 10, "IPX flood not limited" );
 	Advance( 100 );
 	Expect( otherIpx, "getinfo xxx", INFO_REPLY( "xxx" ), "second IPX source starved" );
-	/* Loopback and 192.0.2.130 hash to the same chain, but are different sources. */
+	/* The local client is one source too. */
 	Advance( 60000 );
 	memset( &local, 0, sizeof( local ) ); local.type = NA_LOOPBACK;
 	for ( t = answered = 0; t < 50; t++ ) answered += Send( local, "getinfo xxx" );
 	Check( answered == 10, "loopback flood not limited" );
 	Advance( 100 );
-	Expect( Address( 192, 0, 2, 130 ), "getinfo xxx", INFO_REPLY( "xxx" ), "source in loopback's hash chain starved" );
+	Expect( other, "getinfo xxx", INFO_REPLY( "xxx" ), "second source starved by loopback" );
 }
 
 /** A spoofed flood from many addresses gets 10 replies at once and one every 100 msec, however it is spread. */
@@ -310,25 +343,123 @@ static void BadRcon( void ) {
 	Check( answered == 10 + 2 && consolePrints - prints == 10 + 2 + 6, "password guesses not limited" );
 	Advance( 60000 );
 	Expect( guesser, BAD_RCON, BAD_RCON_REPLY, "bad rcon within the limit" );
+	/* 16384 spoofed getinfo sources in 8 s (which filled ioquake3's table) leave the admin a bucket at a new address. */
+	Advance( 60000 );
+	for ( t = 0; t < FLOOD; t++ ) { Send( Spoofed( t ), "getinfo xxx" ); if ( t & 1 ) Advance( 1 ); }
+	Expect( Address( 198, 51, 100, 201 ), RCON, RCON_REPLY, "spoofed flood locked out the admin" );
+#ifdef MAX_BUCKET_SCAN
+	/* Even when a flood holds every bucket, the right password gets in on a small shared allowance, while a bad
+	 * password or a query from a new source is dropped. */
+	Advance( 60000 );
+	Fill( FLOOD, 10 );
+	prints = consolePrints;
+	Check( !Send( Address( 198, 51, 100, 202 ), BAD_RCON ) && consolePrints == prints, "bad rcon got a bucket from a full table" );
+	Check( !Send( Address( 198, 51, 100, 202 ), "getinfo xxx" ), "query got a bucket from a full table" );
+	for ( t = answered = 0; t < 20; t++ ) answered += Send( Address( 198, 51, 102, t ), RCON );
+	Check( answered == 10 && !strcmp( reply, "" ), "admin allowance on a full table" );
+	Advance( 1000 );
+	Expect( admin, RCON, RCON_REPLY, "admin locked out of a full table" );
+	Check( executed == 6 + 6 + 1 + 10 + 1, "admin rcon not executed" );
+#else
+	Check( 0, "the bucket table is not bounded" );
+#endif
 }
 
-/** The table is fixed: a flood of new addresses fills it, then waits for buckets to expire, before and after the
- * clock wraps negative (ioquake3 only reclaims buckets with a positive time). */
+/** A flood of new sources gets no more buckets than replies, before and after the clock wraps negative, so it cannot
+ * fill the table, and a new source is answered as soon as the limit for all sources allows. */
 static void Table( void ) {
+	static const char *const lines[] = { "getstatus", "getinfo xxx", "getchallenge" };
 	netadr_t late = Address( 198, 51, 100, 9 );
-	int round, n;
+	int round, n, t, i, answered;
 
 	now = INT_MAX - 4000;
 	for ( round = 0; round < 2; round++ ) {
-		for ( n = 0; n < TABLE; n++ ) Send( Spoofed( n ), "getinfo xxx" );
+		for ( n = answered = 0; n < FLOOD; n++ ) answered += Send( Spoofed( n ), "getinfo xxx" );
+		Check( answered == 10, "flood of new sources not limited" );
+#ifdef MAX_BUCKET_SCAN
+		Check( LiveBuckets() == 10, "sources the global limit dropped got buckets" );
+#endif
 		Advance( 1000 );	/* the global bucket has refilled */
-		Check( Send( late, "getinfo xxx" ) == 0, "source past the full table answered" );
-		Check( Send( Spoofed( 5 ), "getinfo xxx" ) == 1, "source in the table not answered" );
+		Expect( late, "getinfo xxx", INFO_REPLY( "xxx" ), "new source after the flood not answered" );
+		Expect( Spoofed( 5 ), "getinfo xxx", INFO_REPLY( "xxx" ), "source from the flood not answered" );
 		Advance( 10001 );	/* round 0 passes INT_MAX */
-		Expect( late, "getinfo xxx", INFO_REPLY( "xxx" ), "expired buckets not reclaimed" );
 		Advance( 60000 );	/* round 1 runs at negative times */
 		Check( now < 0, "clock did not wrap" );
 	}
+	/* A sustained flood of new sources for 20 s: only the sources answered in the last second hold a bucket. */
+	for ( t = n = 0; t < 20000; t++ ) {
+		for ( i = 0; i < 5; i++, n++ ) Send( Spoofed( n ), lines[n % 3] );
+		Advance( 1 );
+#ifdef MAX_BUCKET_SCAN
+		if ( t % 1000 == 999 ) Check( LiveBuckets() <= 10 + 11, "sustained flood held buckets" );
+#endif
+	}
+}
+
+/** Whatever state a flood builds, a request looks at a bounded number of buckets: a chain aimed at with the key known
+ * holds MAX_BUCKET_CHAIN buckets, a full table is searched MAX_BUCKET_SCAN slots at a time, addresses that collided in
+ * ioquake3 no longer share a chain, and a clock that went back frees every bucket. */
+static void BoundedWork( void ) {
+#ifdef MAX_BUCKET_SCAN
+	static const unsigned int keys[] = { 0, 1, 0x9e3779b1u, 0xffffffffu, 0x2545f491u };
+	static const char *const lines[] = { "getstatus", "getinfo xxx", "getchallenge", BAD_RCON, RCON };
+	netadr_t family[64], aimed[64], elsewhere = Address( 198, 51, 100, 9 ), local;
+	int i, k, n, found, distinct, moved, used[MAX_HASHES];
+	long chain, hash;
+
+	/* ioquake3 adds 119a + 120b + 121c + 122d, so all of a.b+i.c-2i.d+i shared one chain. */
+	for ( i = 0; i < 64; i++ ) {
+		family[i] = Address( 10, 20 + i, 200 - 2 * i, 30 + i );
+		Check( 120 * ( 20 + i ) + 121 * ( 200 - 2 * i ) + 122 * ( 30 + i ) == 120 * 20 + 121 * 200 + 122 * 30,
+		       "ioquake3 collision family" );
+	}
+	for ( k = 0; k < 5; k++ ) {
+		bucketHashKey = keys[k]; bucketHashKeyed = qtrue;
+		memset( used, 0, sizeof( used ) );
+		for ( i = distinct = 0; i < 64; i++ ) distinct += !used[SVC_HashForAddress( family[i] )]++;
+		Check( distinct >= 40, "addresses that collided in ioquake3 share chains" );
+	}
+	for ( i = moved = 0; i < 64; i++ ) {
+		bucketHashKey = keys[1]; hash = SVC_HashForAddress( family[i] );
+		bucketHashKey = keys[2]; moved += hash != SVC_HashForAddress( family[i] );
+	}
+	Check( moved >= 48, "the key does not choose the chain" );
+
+	/* A flood that knows the key aims at one chain: it gets MAX_BUCKET_CHAIN buckets there, then none. */
+	bucketHashKey = keys[4];
+	chain = SVC_HashForAddress( elsewhere ) ^ 1;
+	for ( n = found = 0; found < 64; n++ ) if ( SVC_HashForAddress( Spoofed( n ) ) == chain ) aimed[found++] = Spoofed( n );
+	for ( i = n = 0; i < 48; i++ ) n += Occupy( aimed[i], 10 );
+	Check( n == MAX_BUCKET_CHAIN, "aimed chain not capped" );
+	/* and holds every other slot too. */
+	Fill( 1 << 20, 10 );
+	for ( k = 0; k < 5; k++ ) {
+		Check( Send( aimed[0], lines[k] ) == 0 && lastVisits > 0 && lastVisits <= MAX_BUCKET_CHAIN, "held source" );
+		Check( Send( aimed[48 + k], lines[k] ) == ( k == 4 ) && lastVisits > 0 && lastVisits <= 2 * MAX_BUCKET_CHAIN,
+		       "new source in the aimed chain" );
+		Check( Send( Spoofed( ( 1 << 21 ) + k ), lines[k] ) == ( k == 4 ) && lastVisits >= MAX_BUCKET_SCAN
+		       && lastVisits <= MOST_VISITS, "new source with the table full" );
+	}
+	/* The clock goes back 5 s: every bucket counts as drained, so the chain and the table take new sources again. */
+	Advance( -5000 );
+	Expect( aimed[60], "getinfo xxx", INFO_REPLY( "xxx" ), "aimed chain not freed after the clock went back" );
+	Expect( Spoofed( ( 1 << 21 ) + 10 ), "getinfo xxx", INFO_REPLY( "xxx" ), "table not freed after the clock went back" );
+	/* A bucket is reused as soon as it has leaked empty: sources that sent one request each hold the table for 1 s. */
+	Advance( 60000 );
+	Fill( 1 << 22, 1 );
+	Advance( 1001 );
+	Expect( Spoofed( ( 1 << 21 ) + 11 ), "getinfo xxx", INFO_REPLY( "xxx" ), "leaked-empty buckets not reused" );
+	/* A chain holding the loopback bucket and IPv4 sources keeps them apart. */
+	Advance( 60000 );
+	memset( &local, 0, sizeof( local ) ); local.type = NA_LOOPBACK;
+	for ( n = 0; SVC_HashForAddress( Spoofed( n ) ) != SVC_HashForAddress( local ); n++ ) { }
+	for ( i = found = 0; i < 20; i++ ) found += Send( local, "getinfo xxx" );
+	Check( found == 10, "loopback flood not limited" );
+	Advance( 100 );
+	Expect( Spoofed( n ), "getinfo xxx", INFO_REPLY( "xxx" ), "source in the loopback chain starved" );
+#else
+	Check( 0, "the bucket table is not bounded" );
+#endif
 }
 
 int main( int argc, char **argv ) {
@@ -350,8 +481,12 @@ int main( int argc, char **argv ) {
 	case 4: Clock(); break;
 	case 5: BadRcon(); break;
 	case 6: Table(); break;
+	case 7: BoundedWork(); break;
 	default: Check( 0, "unknown case" );
 	}
-	printf( "Server rate limit regression %d passed (issue #38)\n", test );
+#ifdef MAX_BUCKET_SCAN
+	Check( maxVisits <= MOST_VISITS, "a request looked at too many buckets" );
+#endif
+	printf( "Server rate limit regression %d passed (issue #38): at most %d bucket visits a request\n", test, maxVisits );
 	return 0;
 }
