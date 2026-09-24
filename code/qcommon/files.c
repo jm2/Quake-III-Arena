@@ -663,6 +663,50 @@ static qboolean FS_CheckFilenameIsMutable( const char *filename, const char *fun
 }
 
 /*
+===================
+FS_CheckOSPathIsMutable
+
+FS_CheckFilenameIsMutable on the final component of an OS path, the
+name a file is really created, replaced or renamed under
+===================
+*/
+static qboolean FS_CheckOSPathIsMutable( const char *ospath, const char *function ) {
+	const char *name;
+
+	name = strrchr( ospath, PATH_SEP );
+	return FS_CheckFilenameIsMutable( name ? name + 1 : ospath, function );
+}
+
+/*
+===================
+FS_BuildWriteOSPath
+
+FS_BuildOSPath into ospath[MAX_OSPATH] for a file that is about to be
+created, replaced or renamed, or qfalse if the OS path would not fit.
+FS_BuildOSPath silently cuts a longer path, so a name that passed the
+extension check ("x.pk3x") could otherwise be written as another one
+("x.pk3").  FS_ReplaceSeparators never lengthens "base/game/qpath" (on
+HFS it may drop doubled separators, which only makes this stricter).
+The FS_SV_* form (qpath "") has a trailing separator that must fit too.
+The copy keeps the path out of FS_BuildOSPath's two rotating buffers,
+which any Com_Printf that retries opening qconsole.log reuses.
+===================
+*/
+static qboolean FS_BuildWriteOSPath( char *ospath, const char *base, const char *game, const char *qpath, const char *function ) {
+	if( !game || !game[0] ) {
+		game = fs_gamedir;
+	}
+
+	if ( strlen( base ) + strlen( game ) + strlen( qpath ) + 2 >= MAX_OSPATH ) {
+		Com_Printf( "WARNING: %s: refusing %s, its OS path would be longer than %d characters\n",
+			function, qpath[0] ? qpath : game, MAX_OSPATH - 1 );
+		return qfalse;
+	}
+	Q_strncpyz( ospath, FS_BuildOSPath( base, game, qpath ), MAX_OSPATH );
+	return qtrue;
+}
+
+/*
 ===========
 FS_Remove
 
@@ -748,7 +792,7 @@ FS_SV_FOpenFileWrite
 ===========
 */
 fileHandle_t FS_SV_FOpenFileWrite( const char *filename ) {
-	char *ospath;
+	char ospath[MAX_OSPATH];
 	fileHandle_t	f;
 
 	if ( !fs_searchpaths ) {
@@ -759,8 +803,13 @@ fileHandle_t FS_SV_FOpenFileWrite( const char *filename ) {
 		return 0;
 	}
 
-	ospath = FS_BuildOSPath( fs_homepath->string, filename, "" );
+	if ( !FS_BuildWriteOSPath( ospath, fs_homepath->string, filename, "", "FS_SV_FOpenFileWrite" ) ) {
+		return 0;
+	}
 	ospath[strlen(ospath)-1] = '\0';
+	if ( !FS_CheckOSPathIsMutable( ospath, "FS_SV_FOpenFileWrite" ) ) {
+		return 0;
+	}
 
 	f = FS_HandleForFile();
 	fsh[f].zipFile = qfalse;
@@ -878,24 +927,27 @@ safe == qfalse; every other caller must pass qtrue
 ===========
 */
 void FS_SV_Rename( const char *from, const char *to, qboolean safe ) {
-	char			*from_ospath, *to_ospath;
+	char			from_ospath[MAX_OSPATH], to_ospath[MAX_OSPATH];
 
 	if ( !fs_searchpaths ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
 	}
 
-	if ( safe && ( !FS_CheckFilenameIsMutable( from, "FS_SV_Rename" ) ||
-		!FS_CheckFilenameIsMutable( to, "FS_SV_Rename" ) ) ) {
-		return;
-	}
-
 	// don't let sound stutter
 	S_ClearSoundBuffer();
 
-	from_ospath = FS_BuildOSPath( fs_homepath->string, from, "" );
-	to_ospath = FS_BuildOSPath( fs_homepath->string, to, "" );
+	// a cut path names another file, so even a trusted rename refuses it
+	if ( !FS_BuildWriteOSPath( from_ospath, fs_homepath->string, from, "", "FS_SV_Rename" ) ||
+		!FS_BuildWriteOSPath( to_ospath, fs_homepath->string, to, "", "FS_SV_Rename" ) ) {
+		return;
+	}
 	from_ospath[strlen(from_ospath)-1] = '\0';
 	to_ospath[strlen(to_ospath)-1] = '\0';
+
+	if ( safe && ( !FS_CheckOSPathIsMutable( from_ospath, "FS_SV_Rename" ) ||
+		!FS_CheckOSPathIsMutable( to_ospath, "FS_SV_Rename" ) ) ) {
+		return;
+	}
 
 	if ( fs_debug->integer ) {
 		Com_Printf( "FS_SV_Rename: %s --> %s\n", from_ospath, to_ospath );
@@ -917,22 +969,21 @@ FS_Rename
 ===========
 */
 void FS_Rename( const char *from, const char *to ) {
-	char			*from_ospath, *to_ospath;
+	char			from_ospath[MAX_OSPATH], to_ospath[MAX_OSPATH];
 
 	if ( !fs_searchpaths ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
 	}
 
-	if ( !FS_CheckFilenameIsMutable( from, "FS_Rename" ) ||
-		!FS_CheckFilenameIsMutable( to, "FS_Rename" ) ) {
-		return;
-	}
-
 	// don't let sound stutter
 	S_ClearSoundBuffer();
 
-	from_ospath = FS_BuildOSPath( fs_homepath->string, fs_gamedir, from );
-	to_ospath = FS_BuildOSPath( fs_homepath->string, fs_gamedir, to );
+	if ( !FS_BuildWriteOSPath( from_ospath, fs_homepath->string, fs_gamedir, from, "FS_Rename" ) ||
+		!FS_BuildWriteOSPath( to_ospath, fs_homepath->string, fs_gamedir, to, "FS_Rename" ) ||
+		!FS_CheckOSPathIsMutable( from_ospath, "FS_Rename" ) ||
+		!FS_CheckOSPathIsMutable( to_ospath, "FS_Rename" ) ) {
+		return;
+	}
 
 	if ( fs_debug->integer ) {
 		Com_Printf( "FS_Rename: %s --> %s\n", from_ospath, to_ospath );
@@ -997,7 +1048,7 @@ FS_FOpenFileWrite
 ===========
 */
 fileHandle_t FS_FOpenFileWrite( const char *filename ) {
-	char			*ospath;
+	char			ospath[MAX_OSPATH];
 	fileHandle_t	f;
 
 	if ( !fs_searchpaths ) {
@@ -1009,14 +1060,13 @@ fileHandle_t FS_FOpenFileWrite( const char *filename ) {
 		return 0;
 	}
 
-	if ( !FS_CheckFilenameIsMutable( filename, "FS_FOpenFileWrite" ) ) {
+	if ( !FS_BuildWriteOSPath( ospath, fs_homepath->string, fs_gamedir, filename, "FS_FOpenFileWrite" ) ||
+		!FS_CheckOSPathIsMutable( ospath, "FS_FOpenFileWrite" ) ) {
 		return 0;
 	}
 
 	f = FS_HandleForFile();
 	fsh[f].zipFile = qfalse;
-
-	ospath = FS_BuildOSPath( fs_homepath->string, fs_gamedir, filename );
 
 	if ( fs_debug->integer ) {
 		Com_Printf( "FS_FOpenFileWrite: %s\n", ospath );
@@ -1047,7 +1097,7 @@ FS_FOpenFileAppend
 ===========
 */
 fileHandle_t FS_FOpenFileAppend( const char *filename ) {
-	char			*ospath;
+	char			ospath[MAX_OSPATH];
 	fileHandle_t	f;
 
 	if ( !fs_searchpaths ) {
@@ -1059,7 +1109,11 @@ fileHandle_t FS_FOpenFileAppend( const char *filename ) {
 		return 0;
 	}
 
-	if ( !FS_CheckFilenameIsMutable( filename, "FS_FOpenFileAppend" ) ) {
+	// don't let sound stutter
+	S_ClearSoundBuffer();
+
+	if ( !FS_BuildWriteOSPath( ospath, fs_homepath->string, fs_gamedir, filename, "FS_FOpenFileAppend" ) ||
+		!FS_CheckOSPathIsMutable( ospath, "FS_FOpenFileAppend" ) ) {
 		return 0;
 	}
 
@@ -1067,11 +1121,6 @@ fileHandle_t FS_FOpenFileAppend( const char *filename ) {
 	fsh[f].zipFile = qfalse;
 
 	Q_strncpyz( fsh[f].name, filename, sizeof( fsh[f].name ) );
-
-	// don't let sound stutter
-	S_ClearSoundBuffer();
-
-	ospath = FS_BuildOSPath( fs_homepath->string, fs_gamedir, filename );
 
 	if ( fs_debug->integer ) {
 		Com_Printf( "FS_FOpenFileAppend: %s\n", ospath );
@@ -1517,10 +1566,11 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 			// if we are getting it from the cdpath, optionally copy it
 			//  to the basepath
 			if ( fs_copyfiles->integer && !Q_stricmp( dir->path, fs_cdpath->string ) ) {
-				char	*copypath;
+				char	copypath[MAX_OSPATH];
 
-				copypath = FS_BuildOSPath( fs_basepath->string, dir->gamedir, filename );
-				FS_CopyFile( netpath, copypath );
+				if ( FS_BuildWriteOSPath( copypath, fs_basepath->string, dir->gamedir, filename, "FS_FOpenFileRead" ) ) {
+					FS_CopyFile( netpath, copypath );
+				}
 			}
 
 			return FS_filelength (*file);
