@@ -115,7 +115,8 @@ jobs:
 
   host-c-regressions-be32-shard:
     name: Host C regressions (ppc32 BE ${{ matrix.shard }}/4)
-    runs-on: ubuntu-latest
+    # Pinned: the job depends on Ubuntu's cross/qemu package names and binfmt layout.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     strategy:
       fail-fast: false

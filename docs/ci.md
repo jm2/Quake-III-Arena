@@ -188,7 +188,8 @@ merging several PRs in a row never cancels or drops a master run.
   - summarizes four parallel jobs, `Host C regressions (ppc32 BE K/4)`, that
     run the same `tests/run_*_tests.sh` runners on 32-bit big-endian PowerPC
     Linux (ILP32, `__BIG_ENDIAN__`), the target's byte order and word size. Each
-    job installs Ubuntu's `gcc-powerpc-linux-gnu` and `qemu-user-static`, checks
+    job runs on a pinned `ubuntu-24.04` image, because it relies on Ubuntu's
+    package names. It installs `gcc-powerpc-linux-gnu` and `qemu-user-static`, checks
     that a sanitized probe runs through the qemu-ppc binfmt handler, then runs
     its quarter through `tests/run_host_regressions.sh` with the same 10-minute
     runner and 20-minute shard bounds;
@@ -261,7 +262,11 @@ Q3_TEST_DETECT_LEAKS=0 bash tests/run_host_regressions.sh --skip-file tests/be32
 Without root, an `ubuntu:24.04` container under rootless Podman
 (`podman run --privileged`) can install those packages, mount its own
 `binfmt_misc` (Linux 6.7 and later) and register
-`/usr/lib/binfmt.d/qemu-ppc.conf` there.
+`/usr/lib/binfmt.d/qemu-ppc.conf` there. A bare container also needs the host
+tools the runners assume, which the GitHub image already has:
+`git python3 python-is-python3 cmake make g++`. Without them
+`run_duplicate_global_tests` (CMake needs a C++ compiler) and
+`run_sky_bounds_tests` (`python`) fail.
 
 The native shader runtime runner compiles the actual math/noise bodies in normal
 and release fast-math sanitizer configurations. It compares 645 valid waveform/
