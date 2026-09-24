@@ -594,6 +594,110 @@ void SV_DropClient( client_t *drop, const char *reason ) {
 
 /*
 ================
+SV_ConfigstringChars
+
+Chars a client's gameState_t takes for configstring s, as
+MSG_WriteBigString sends it (empty, if it is too long). One of
+BIG_INFO_STRING - 1 chars is one too many for the MSG_ReadBigString
+of retail 1.32c and this client: it stops before the terminator, and
+the rest of the gamestate is garbage, so it counts as too big.
+================
+*/
+static int SV_ConfigstringChars( const char *s ) {
+	int		len;
+
+	len = strlen( s );
+	if ( len >= BIG_INFO_STRING ) {
+		return 1;
+	}
+	if ( len == BIG_INFO_STRING - 1 ) {
+		return MAX_GAMESTATE_CHARS + 1;
+	}
+	return len + 1;
+}
+
+#define	GAMESTATE_RESERVE	512
+
+// The longest message a retail 1.32c or ioquake3 client takes whole.
+// Its Netchan_Process only checks a reassembled message against
+// MAX_MSGLEN, then copies it behind the 4 byte sequence number into
+// Com_EventLoop's MAX_MSGLEN buffer, so a longer one overruns the stack
+#define	MAX_CLIENT_MSGLEN	( MAX_MSGLEN - 4 )
+
+/*
+================
+SV_RemainingGameState
+
+Room a gamestate with systemInfo as its CS_SYSTEMINFO leaves in a
+client's MAX_GAMESTATE_CHARS and in one MAX_CLIENT_MSGLEN message, less
+a reserve for queued server commands and for configstrings that grow
+later, such as the userinfo of players who join. Negative if it doesn't
+fit. After Quake3e, which only measures the message.
+================
+*/
+int SV_RemainingGameState( const char *systemInfo ) {
+	int			start, i, chars, bytes;
+	const char	*s;
+	entityState_t	*base, nullstate;
+	msg_t		msg;
+	byte		msgBuffer[MAX_MSGLEN];
+
+	MSG_Init( &msg, msgBuffer, sizeof( msgBuffer ) );
+
+	MSG_WriteLong( &msg, 7 );	// last client command
+
+	// server commands still waiting to be sent go first
+	for ( i = 0 ; i < 256 ; i++ ) {
+		MSG_WriteByte( &msg, i & 127 );
+	}
+
+	MSG_WriteByte( &msg, svc_gamestate );
+	MSG_WriteLong( &msg, 7 );	// reliable sequence
+
+	// the configstrings, with the systeminfo and serverinfo to be set
+	chars = 1;	// the client keeps a 0 ahead of them
+	for ( start = 0 ; start < MAX_CONFIGSTRINGS ; start++ ) {
+		if ( start == CS_SYSTEMINFO ) {
+			s = systemInfo;
+		} else if ( start == CS_SERVERINFO ) {
+			s = Cvar_InfoString( CVAR_SERVERINFO );
+		} else {
+			s = sv.configstrings[start];
+		}
+		if ( s[0] ) {
+			MSG_WriteByte( &msg, svc_configstring );
+			MSG_WriteShort( &msg, start );
+			MSG_WriteBigString( &msg, s );
+			chars += SV_ConfigstringChars( s );
+		}
+	}
+
+	// the baselines
+	Com_Memset( &nullstate, 0, sizeof( nullstate ) );
+	for ( start = 0 ; start < MAX_GENTITIES; start++ ) {
+		base = &sv.svEntities[start].baseline;
+		if ( !base->number ) {
+			continue;
+		}
+		MSG_WriteByte( &msg, svc_baseline );
+		MSG_WriteDeltaEntity( &msg, &nullstate, base, qtrue );
+	}
+
+	MSG_WriteByte( &msg, svc_EOF );
+	MSG_WriteLong( &msg, 7 );	// client number
+	MSG_WriteLong( &msg, sv.checksumFeed );
+	MSG_WriteByte( &msg, svc_EOF );	// added by the netchan
+
+	if ( msg.overflowed ) {
+		return -1;
+	}
+	bytes = MAX_CLIENT_MSGLEN - msg.cursize;
+	chars = MAX_GAMESTATE_CHARS - chars;
+	return ( bytes < chars ? bytes : chars ) - GAMESTATE_RESERVE;
+}
+
+/*
+================
 SV_SendClientGameState
 
 Sends the first message from the server to a connected client.
@@ -604,7 +708,7 @@ the wrong gamestate.
 ================
 */
 void SV_SendClientGameState( client_t *client ) {
-	int			start;
+	int			start, chars;
 	entityState_t	*base, nullstate;
 	msg_t		msg;
 	byte		msgBuffer[MAX_MSGLEN];
@@ -637,11 +741,13 @@ void SV_SendClientGameState( client_t *client ) {
 	MSG_WriteLong( &msg, client->reliableSequence );
 
 	// write the configstrings
+	chars = 1;	// the client keeps a 0 ahead of them
 	for ( start = 0 ; start < MAX_CONFIGSTRINGS ; start++ ) {
 		if (sv.configstrings[start][0]) {
 			MSG_WriteByte( &msg, svc_configstring );
 			MSG_WriteShort( &msg, start );
 			MSG_WriteBigString( &msg, sv.configstrings[start] );
+			chars += SV_ConfigstringChars( sv.configstrings[start] );
 		}
 	}
 
@@ -662,6 +768,21 @@ void SV_SendClientGameState( client_t *client ) {
 
 	// write the checksum feed
 	MSG_WriteLong( &msg, sv.checksumFeed);
+
+	// a client drops a gamestate over MAX_GAMESTATE_CHARS, and the message
+	// must fit MAX_CLIENT_MSGLEN with the svc_EOF the netchan adds (a 5 bit
+	// code, so at most one more byte). The client can't take reliable
+	// commands yet, so tell it out of band and free the slot, as Quake3e does
+	if ( msg.overflowed || msg.cursize + 1 > MAX_CLIENT_MSGLEN || chars > MAX_GAMESTATE_CHARS ) {
+		Com_Printf( "WARNING: gamestate for %s is too big (%i of %i chars, %i of %i bytes)\n",
+			client->name, chars, MAX_GAMESTATE_CHARS, msg.cursize + 1, MAX_CLIENT_MSGLEN );
+		if ( client->netchan.remoteAddress.type == NA_LOOPBACK ) {
+			Com_Error( ERR_DROP, "gamestate overflow" );
+		}
+		NET_OutOfBandPrint( NS_SERVER, client->netchan.remoteAddress, "print\nSERVER ERROR: gamestate overflow\n" );
+		SV_DropClient( client, "gamestate overflow" );
+		return;
+	}
 
 	// deliver this to the client
 	SV_SendMessageToClient( &msg, client );
