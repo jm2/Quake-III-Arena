@@ -3250,19 +3250,20 @@ static void FS_Startup( const char *gameName ) {
 
 	fs_debug = Cvar_Get( "fs_debug", "0", 0 );
 	fs_copyfiles = Cvar_Get( "fs_copyfiles", "0", CVAR_INIT );
-	fs_cdpath = Cvar_Get ("fs_cdpath", Sys_DefaultCDPath(), CVAR_INIT );
-	fs_basepath = Cvar_Get ("fs_basepath", Sys_DefaultInstallPath(), CVAR_INIT );
-	fs_basegame = Cvar_Get ("fs_basegame", "", CVAR_INIT );
+	fs_cdpath = Cvar_Get ("fs_cdpath", Sys_DefaultCDPath(), CVAR_INIT|CVAR_PROTECTED );
+	fs_basepath = Cvar_Get ("fs_basepath", Sys_DefaultInstallPath(), CVAR_INIT|CVAR_PROTECTED );
+	fs_basegame = Cvar_Get ("fs_basegame", "", CVAR_INIT|CVAR_PROTECTED );
   homePath = Sys_DefaultHomePath();
   if (!homePath || !homePath[0]) {
 		homePath = fs_basepath->string;
 	}
-	fs_homepath = Cvar_Get ("fs_homepath", homePath, CVAR_INIT );
+	fs_homepath = Cvar_Get ("fs_homepath", homePath, CVAR_INIT|CVAR_PROTECTED );
 	fs_gamedirvar = Cvar_Get ("fs_game", "", CVAR_INIT|CVAR_SYSTEMINFO );
 	fs_restrict = Cvar_Get ("fs_restrict", "", CVAR_INIT );
 
-	// servers and VMs can set these; a ':' or separator in them could
-	// walk out of the install folder, so drop them instead
+	// the command line can set both of these, and servers and VMs fs_game;
+	// a ':' or separator in them could walk out of the install folder, so
+	// drop them instead
 	if ( !FS_CheckGameDir( fs_basegame->string ) ) {
 		Com_Printf( "WARNING: ignoring illegal fs_basegame \"%s\"\n", fs_basegame->string );
 		Cvar_Set( "fs_basegame", "" );

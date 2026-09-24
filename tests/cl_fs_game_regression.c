@@ -37,6 +37,18 @@ void Cvar_Set(const char *name, const char *value) {
         gameSets++;
     }
 }
+/* Issue #39: the client's systeminfo cvars (fs_game from FS_Startup, the others from SV_Init) */
+int Cvar_Flags(const char *name) {
+    Check(!strcmp(name, "fs_game") || !strcmp(name, "sv_serverid") || !strcmp(name, "sv_pure"),
+          "only the delivered keys are looked up");
+    return !strcmp(name, "fs_game") ? CVAR_INIT | CVAR_SYSTEMINFO : CVAR_SYSTEMINFO;
+}
+cvar_t *Cvar_Get(const char *name, const char *value, int flags) {
+    (void)name; (void)value; (void)flags;
+    Check(0, "no systeminfo cvar is created");
+    return NULL;
+}
+void Cvar_SetSafe(const char *name, const char *value) { Cvar_Set(name, value); }
 
 /* Deliver one systeminfo configstring with the client's fs_game preset. */
 static void SystemInfo(const char *current, const char *serverGame) {

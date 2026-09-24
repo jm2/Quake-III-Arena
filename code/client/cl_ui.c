@@ -939,7 +939,7 @@ int CL_UISystemCalls( int *args ) {
 		return 0;
 
 	case UI_CVAR_SET:
-		Cvar_Set( VMAS(1), VMASN(2) );
+		Cvar_SetSafe( VMAS(1), VMASN(2) );
 		return 0;
 
 	case UI_CVAR_VARIABLEVALUE:
@@ -950,7 +950,7 @@ int CL_UISystemCalls( int *args ) {
 		return 0;
 
 	case UI_CVAR_SETVALUE:
-		Cvar_SetValue( VMAS(1), VMF(2) );
+		Cvar_SetValueSafe( VMAS(1), VMF(2) );
 		return 0;
 
 	case UI_CVAR_RESET:
@@ -958,7 +958,7 @@ int CL_UISystemCalls( int *args ) {
 		return 0;
 
 	case UI_CVAR_CREATE:
-		Cvar_Get( VMAS(1), VMAS(2), args[3] );
+		Cvar_Register( NULL, VMAS(1), VMAS(2), args[3] );
 		return 0;
 
 	case UI_CVAR_INFOSTRINGBUFFER:
