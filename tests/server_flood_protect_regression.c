@@ -1,7 +1,9 @@
 /* Issue #320: sv_floodProtect must throttle the remote clients of a listen server as it does a
    dedicated server's, but never the listen server's own loopback client or a bot.
    Issue #341: it must throttle a network client that has not entered the world as well, while the
-   commands of a retail client's connect sequence, downloads included, still all run. */
+   commands of a retail client's connect sequence, downloads included, still all run.
+   Issue #378: the game must never take a command from a client below CS_PRIMED, which has not loaded the
+   map (retail's team would spawn it with ClientBegin), while that client's server commands still run. */
 #include "../code/server/sv_client.c"
 #include <stdarg.h>
 #include <stdlib.h>
@@ -13,7 +15,8 @@
 #define BOT			3
 #define CONNECTED	4				/* sends the current serverId instead of asking for a gamestate */
 #define JOINING		5				/* a retail client going through the connect sequence */
-#define CLIENTS		6
+#define RELOADING	6				/* a retail client whose download spans a map change */
+#define CLIENTS		7
 #define BURST		6				/* game commands in one packet, e.g. a bound key on repeat */
 #define QUEUE		64
 #define WINDOW		1000			/* sv_floodProtect: one game command per second */
@@ -29,8 +32,8 @@ static cvar_t maxclients, floodProtect, pure, lanForceRate, dedicated, clRunning
 static char queued[CLIENTS][QUEUE][MAX_STRING_CHARS];
 static char lastSay[CLIENTS][MAX_STRING_CHARS];
 static int queuedSequence[CLIENTS], moveTime[CLIENTS], thinks[CLIENTS], says[CLIENTS], userinfoChanges[CLIENTS];
-static int moving[CLIENTS], begins[CLIENTS];
-static int gamestatesDue;			/* gamestates the connect sequence asks for with donedl */
+static int moving[CLIENTS], begins[CLIENTS], teams[CLIENTS], serverIds[CLIENTS];
+static int gamestatesDue, gamestateFor;	/* gamestates the connect sequence asks for with donedl, and its client */
 static sharedEntity_t entities[CLIENTS];
 static char emptyConfigstring[1];
 static const char *config;
@@ -72,11 +75,11 @@ qboolean NET_CompareAdr( netadr_t a, netadr_t b ) { (void)a; (void)b; Check( 0, 
 void SV_Heartbeat_f( void ) { Check( 0, "SV_Heartbeat_f" ); }
 void SV_BotFreeClient( int clientNum ) { (void)clientNum; Check( 0, "SV_BotFreeClient" ); }
 void SV_SendClientSnapshot( client_t *client ) { (void)client; Check( 0, "SV_SendClientSnapshot" ); }
-/** SV_SendClientGameState's output; only JOINING's donedl may ask for a gamestate. */
-void SV_UpdateServerCommandsToClient( client_t *client, msg_t *msg ) { (void)msg; Check( gamestatesDue > 0 && client == &svs.clients[JOINING], "gamestate resent" ); }
-void SV_SendMessageToClient( msg_t *msg, client_t *client ) { (void)msg; Check( gamestatesDue-- > 0 && client == &svs.clients[JOINING], "gamestate resent" ); }
-/** Only JOINING, the one client that ends its connect sequence with a usercmd, may enter the world. */
-sharedEntity_t *SV_GentityNum( int num ) { Check( num == JOINING, "client entered the world" ); return &entities[num]; }
+/** SV_SendClientGameState's output; only the donedl of a connect sequence may ask for a gamestate. */
+void SV_UpdateServerCommandsToClient( client_t *client, msg_t *msg ) { (void)msg; Check( gamestatesDue > 0 && client == &svs.clients[gamestateFor], "gamestate resent" ); }
+void SV_SendMessageToClient( msg_t *msg, client_t *client ) { (void)msg; Check( gamestatesDue-- > 0 && client == &svs.clients[gamestateFor], "gamestate resent" ); }
+/** Only JOINING and RELOADING, the clients that end their connect sequence with a usercmd, may enter the world. */
+sharedEntity_t *SV_GentityNum( int num ) { Check( num == JOINING || num == RELOADING, "client entered the world" ); return &entities[num]; }
 
 /** The game module entry points this path reaches; baseq3 ClientCommand reads the command with trap_Argv. */
 int VM_CallArgs( vm_t *vm, int callNum, const int *args, int argCount ) {
@@ -86,6 +89,11 @@ int VM_CallArgs( vm_t *vm, int callNum, const int *args, int argCount ) {
 	if ( callNum == GAME_CLIENT_THINK ) thinks[n]++;
 	else if ( callNum == GAME_CLIENT_BEGIN ) begins[n]++;
 	else if ( callNum == GAME_CLIENT_USERINFO_CHANGED ) userinfoChanges[n]++;
+	else if ( callNum == GAME_CLIENT_COMMAND && !strcmp( Cmd_Argv( 0 ), "team" ) ) {
+		/* retail g_cmds.c Cmd_Team_f: SetTeam spawns the client with ClientBegin */
+		teams[n]++;
+		begins[n]++;
+	}
 	else if ( callNum == GAME_CLIENT_COMMAND ) {
 		Check( !strcmp( Cmd_Argv( 0 ), "say" ), "unexpected game command" );
 		Q_strncpyz( lastSay[n], Cmd_Argv( 1 ), sizeof( lastSay[n] ) );
@@ -112,7 +120,7 @@ static void SendPacket( int n ) {
 	int i, messageAcknowledge = cl->messageAcknowledge + 1;
 	MSG_Init( &msg, data, sizeof( data ) );
 	MSG_Bitstream( &msg );
-	MSG_WriteLong( &msg, sv.serverId );
+	MSG_WriteLong( &msg, serverIds[n] );
 	MSG_WriteLong( &msg, messageAcknowledge );
 	MSG_WriteLong( &msg, cl->reliableSequence );
 	for ( i = cl->lastClientCommand + 1; i <= queuedSequence[n]; i++ ) {
@@ -148,14 +156,16 @@ static void Reset( int listen, int protect ) {
 	memset( queuedSequence, 0, sizeof( queuedSequence ) ); memset( moveTime, 0, sizeof( moveTime ) );
 	memset( thinks, 0, sizeof( thinks ) ); memset( says, 0, sizeof( says ) ); memset( begins, 0, sizeof( begins ) );
 	memset( userinfoChanges, 0, sizeof( userinfoChanges ) ); memset( lastSay, 0, sizeof( lastSay ) );
-	svs.time = 100000; sv.state = SS_GAME; sv.serverId = 4242; sv.checksumFeed = 0x5eed;
+	memset( teams, 0, sizeof( teams ) );
+	svs.time = 100000; sv.state = SS_GAME; sv.serverId = sv.restartedServerId = 4242; sv.checksumFeed = 0x5eed;
 	dedicated.integer = !listen; clRunning.integer = listen; floodProtect.integer = protect;
 	for ( i = 0, cl = svs.clients; i < CLIENTS; i++, cl++ ) {
 		cl->netchan.remoteAddress.type = i == BOT ? NA_BOT : listen && i == LOCAL ? NA_LOOPBACK : NA_IP;
 		Com_sprintf( cl->userinfo, sizeof( cl->userinfo ), "\\name\\player%i", i );
 		SV_UserinfoChanged( cl );
-		cl->state = i == PRIMED || i == JOINING ? CS_PRIMED : i == CONNECTED ? CS_CONNECTED : CS_ACTIVE;
+		cl->state = i == PRIMED || i == JOINING || i == RELOADING ? CS_PRIMED : i == CONNECTED ? CS_CONNECTED : CS_ACTIVE;
 		moving[i] = cl->state == CS_ACTIVE;
+		serverIds[i] = sv.serverId;
 		cl->lastPacketTime = svs.time;
 	}
 }
@@ -181,6 +191,22 @@ static void Throttled( int n ) {
 	Queue( n, "say again" );
 	SendPacket( n );
 	Check( says[n] == 2 && !strcmp( lastSay[n], "again" ), "game command a full window later was ignored" );
+}
+/** A client below CS_PRIMED gets none of its game commands through, whatever the window or sv_floodProtect,
+    so its team never spawns it; its userinfo is still applied. */
+static void Refused( int n ) {
+	int i;
+	for ( i = 0; i < BURST; i++ ) Queue( n, va( "say burst%i", i ) );
+	Queue( n, "team red" );
+	SendPacket( n );
+	svs.time += 10 * WINDOW;	/* long after any window */
+	Queue( n, "team blue" );
+	Queue( n, "userinfo \"\\name\\renamed\"" );
+	Queue( n, "say later" );
+	SendPacket( n );
+	Check( !says[n] && !teams[n], "game command from a client without its gamestate reached the game" );
+	Check( !begins[n] && svs.clients[n].state == CS_CONNECTED, "client without its gamestate spawned" );
+	Check( userinfoChanges[n] == 1 && !strcmp( svs.clients[n].name, "renamed" ), "userinfo of a connected client not applied" );
 }
 /** A client that is not throttled gets every say through, in order. */
 static void Unthrottled( int n ) {
@@ -225,7 +251,7 @@ static void Connect( int n ) {
 	}
 	Check( !*cl->downloadName && cl->downloadClientBlock == BLOCKS, "download not completed" );
 	Check( says[n] == 2 && !strcmp( lastSay[n], "almost" ), "say typed while downloading ignored" );
-	gamestatesDue = 1;
+	gamestatesDue = 1; gamestateFor = n;
 	svs.time += FRAME;
 	Queue( n, "donedl" );
 	SendPacket( n );
@@ -240,28 +266,76 @@ static void Connect( int n ) {
 	SendPacket( n );
 	Check( cl->state == CS_ACTIVE && begins[n] == 1, "client did not enter the world" );
 }
+/** A retail client downloading a pak when the map changes: SV_SpawnServer connects it again (CS_CONNECTED),
+    and it keeps downloading with its old serverId, which SV_ExecuteClientMessage lets through for a download
+    (zerowing bug 536).  Its nextdl all run, but the say and team its player types meanwhile are refused, so
+    the game never spawns a client that has not loaded the new map.  donedl gets it the new gamestate, and
+    from then on its connect sequence runs as JOINING's does: a say sent with its cp is not held back by the
+    team refused just before. */
+static void Reload( int n ) {
+	client_t *cl = &svs.clients[n];
+	int block;
+	Queue( n, "download test.pk3" );
+	SendPacket( n );
+	Check( !strcmp( cl->downloadName, "test.pk3" ), "download not started" );
+	sv.serverId = sv.restartedServerId = sv.serverId + 1;
+	cl->state = CS_CONNECTED;
+	for ( block = 0; block <= BLOCKS; block++ ) {
+		cl->downloadBlockSize[block % MAX_DOWNLOAD_WINDOW] = block < BLOCKS ? MAX_DOWNLOAD_BLKSIZE : 0;
+		svs.time += FRAME;
+		Queue( n, va( "nextdl %i", block ) );
+		if ( block == 2 ) Queue( n, "say downloading" );
+		if ( block == BLOCKS - 1 ) Queue( n, "team red" );
+		SendPacket( n );
+		Check( cl->state == CS_CONNECTED, "download interrupted" );
+	}
+	Check( !*cl->downloadName && cl->downloadClientBlock == BLOCKS, "download not completed" );
+	Check( !says[n] && !teams[n], "game command from a client without its gamestate reached the game" );
+	Check( !begins[n], "client without its gamestate spawned" );
+	gamestatesDue = 1; gamestateFor = n;
+	svs.time += FRAME;
+	Queue( n, "donedl" );
+	SendPacket( n );
+	Check( !gamestatesDue && cl->state == CS_PRIMED, "donedl did not send the new gamestate" );
+	serverIds[n] = sv.serverId;	/* CL_ParseGamestate */
+	svs.time += FRAME;
+	Queue( n, va( "cp %i", sv.serverId ) );
+	Queue( n, "userinfo \"\\name\\reloaded\"" );
+	Queue( n, "say loaded" );
+	SendPacket( n );
+	Check( userinfoChanges[n] == 1 && !strcmp( cl->name, "reloaded" ), "userinfo sent while connecting not applied" );
+	Check( says[n] == 1 && !strcmp( lastSay[n], "loaded" ), "say held back by a refused game command" );
+	moving[n] = 1;
+	svs.time += FRAME;
+	SendPacket( n );
+	Check( cl->state == CS_ACTIVE && begins[n] == 1 && !teams[n], "client did not enter the world" );
+}
 /** One server configuration: which of REMOTE and LOCAL sv_floodProtect must throttle. */
 static void Run( const char *name, int listen, int protect, int remoteThrottled, int localThrottled ) {
 	config = name;
 	Reset( listen, protect );
 	if ( remoteThrottled ) Throttled( REMOTE ); else Unthrottled( REMOTE );
 	if ( localThrottled ) Throttled( LOCAL ); else Unthrottled( LOCAL );
-	/* A network client that has not entered the world is throttled too, whether it withholds its
-	   usercmds (primed) or never asks for its gamestate (connected) (#341). */
+	/* A network client that withholds its usercmds (primed) is throttled too (#341).  One that never asks
+	   for its gamestate (connected) has its game commands refused (#378). */
 	if ( remoteThrottled ) Throttled( PRIMED ); else Unthrottled( PRIMED );
-	if ( remoteThrottled ) Throttled( CONNECTED ); else Unthrottled( CONNECTED );
+	Refused( CONNECTED );
 	BotUnthrottled();
 	svs.time += 10 * WINDOW;
 	UserinfoInWindow( REMOTE, remoteThrottled );
 	UserinfoInWindow( LOCAL, localThrottled );
 	UserinfoInWindow( PRIMED, remoteThrottled );
-	UserinfoInWindow( CONNECTED, remoteThrottled );
 	Check( svs.clients[PRIMED].state == CS_PRIMED && svs.clients[CONNECTED].state == CS_CONNECTED, "client state changed" );
 	Connect( JOINING );
+	Reload( RELOADING );
 	/* The listen server's own client is not throttled while it loads a map either. */
 	Reset( listen, protect );
 	svs.clients[LOCAL].state = CS_PRIMED; moving[LOCAL] = 0;
 	if ( localThrottled ) Throttled( LOCAL ); else Unthrottled( LOCAL );
+	/* Before it has its gamestate, its game commands are refused like any client's. */
+	Reset( listen, protect );
+	svs.clients[LOCAL].state = CS_CONNECTED; moving[LOCAL] = 0;
+	Refused( LOCAL );
 }
 int main( void ) {
 	int i;
@@ -277,6 +351,6 @@ int main( void ) {
 	/* sv_floodProtect 0 still turns it off for everyone. */
 	Run( "dedicated server, sv_floodProtect 0", 0, 0, 0, 0 );
 	Run( "listen server, sv_floodProtect 0", 1, 0, 0, 0 );
-	puts( "Server flood protect regressions passed (issues #320, #341)" );
+	puts( "Server flood protect regressions passed (issues #320, #341, #378)" );
 	return 0;
 }
