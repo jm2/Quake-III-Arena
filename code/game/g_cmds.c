@@ -1180,7 +1180,13 @@ void Cmd_GameCommand_f( gentity_t *ent ) {
 	if ( player < 0 || player >= MAX_CLIENTS ) {
 		return;
 	}
-	if ( order < 0 || order > sizeof(gc_orders)/sizeof(char *) ) {
+	// the element count is one past the last order (retail used '>')
+	if ( order < 0 || order >= sizeof(gc_orders)/sizeof(char *) ) {
+		return;
+	}
+	// as in Cmd_Tell_f: slots from level.maxclients up have no client,
+	// which the SAY_TELL path of G_Say dereferences
+	if ( !g_entities[player].inuse || !g_entities[player].client ) {
 		return;
 	}
 	G_Say( ent, &g_entities[player], SAY_TELL, gc_orders[order] );
