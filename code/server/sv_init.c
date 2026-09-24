@@ -277,11 +277,11 @@ void SV_ChangeMaxClients( void ) {
 		}
 	}
 
-	// release the queued messages of the slots that are not carried over,
-	// the copied clients keep theirs
+	// release the queued messages and downloads of the slots that are not
+	// carried over, the copied clients keep theirs
 	for ( i = 0 ; i < svs.clientCapacity ; i++ ) {
 		if ( i >= count || svs.clients[i].state < CS_CONNECTED ) {
-			SV_Netchan_FreeQueue( &svs.clients[i] );
+			SV_FreeClient( &svs.clients[i] );
 		}
 	}
 
@@ -715,7 +715,7 @@ void SV_Shutdown( char *finalmsg ) {
 		int		i;
 
 		for ( i = 0 ; i < svs.clientCapacity ; i++ ) {
-			SV_Netchan_FreeQueue( &svs.clients[i] );
+			SV_FreeClient( &svs.clients[i] );
 		}
 		Z_Free( svs.clients );
 	}
