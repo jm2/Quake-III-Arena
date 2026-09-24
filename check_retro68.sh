@@ -1,7 +1,7 @@
 #!/bin/bash
 # Check that the Retro68 toolchain runs on this host (issue #269).
 #
-#   ./check_retro68.sh [--tools-only] [INSTALL_DIR]
+#   bash check_retro68.sh [--tools-only] [INSTALL_DIR]
 #
 # INSTALL_DIR defaults to tools/Retro68-build next to this script. Finding the
 # programs is not enough: after a host OS upgrade `powerpc-apple-macos-gcc
@@ -24,9 +24,16 @@
 # libraries, which a --skip-thirdparty rebuild recreates. setup_retro68.sh
 # uses it to decide whether resuming a build is safe.
 #
-# Exits 0 when the toolchain runs, 1 with a message naming the failed step and
-# the tool's output (a missing library is named there, and on hosts with ldd
-# every missing library of the toolchain is listed), and 2 on bad usage.
+# Exit status:
+#   0  the toolchain runs;
+#   1  the toolchain is broken: the message names the failed step and quotes
+#      the tool's output (a library the loader cannot find is named there, and
+#      on hosts with ldd every missing library of the toolchain is listed);
+#   2  bad usage;
+#   3  the check itself could not run, so nothing is known about the
+#      toolchain: the scratch directory could not be created or written (a
+#      missing, read-only or full TMPDIR), or a step failed for lack of space.
+# Callers must treat only status 1 as a broken toolchain.
 set -u
 
 usage() {
@@ -55,9 +62,15 @@ if [ -z "$INSTALL_DIR" ]; then
 fi
 BIN="$INSTALL_DIR/bin"
 TARGET=powerpc-apple-macos
+SCRATCH_PARENT="${TMPDIR:-/var/tmp}"
 
-# Keep in step with CMakeLists.txt and cmake/Retro68.toolchain.cmake.
+# Keep in step with CMakeLists.txt, cmake/Retro68.toolchain.cmake and
+# check_retro68.ps1.
 COMPILE_FLAGS="-std=gnu99 -fgnu89-inline -O0 -g -fno-strict-aliasing -fsigned-char -D__MACOS__ -D__POWERPC__"
+CXX_FLAGS="-fsigned-char"
+
+# Messages from a tool that could not write its output for lack of space.
+SPACE_ERRORS="No space left on device|Disk quota exceeded|Read-only file system"
 
 WORK=""
 cleanup() {
@@ -66,6 +79,32 @@ cleanup() {
     fi
 }
 trap cleanup EXIT
+
+# Status 3: the check could not run. Says nothing about the toolchain.
+cannot_check() {
+    local problem="$1" log="${2:-}"
+
+    {
+        echo "Error: could not check the Retro68 toolchain in $INSTALL_DIR:"
+        echo "  $problem"
+        if [ -n "$log" ] && [ -s "$log" ]; then
+            sed -n '1,20p' "$log" | sed 's/^/  | /'
+        fi
+        echo "The toolchain itself was not judged. Make TMPDIR ($SCRATCH_PARENT)"
+        echo "an existing, writable directory with free space and run the check again."
+    } >&2
+    exit 3
+}
+
+# Succeeds when the scratch directory still takes SIZE KiB.
+scratch_writable() {
+    local size="$1" probe="$WORK/space.probe" status=0
+
+    dd if=/dev/zero of="$probe" bs=1024 count="$size" > /dev/null 2>&1 &&
+        [ "$(wc -c < "$probe" 2> /dev/null)" = "$((size * 1024))" ] || status=1
+    rm -f -- "$probe"
+    return "$status"
+}
 
 # Lists the host libraries that the toolchain's executables cannot find.
 report_missing_libraries() {
@@ -76,7 +115,7 @@ report_missing_libraries() {
         for file in "$BIN"/* "$INSTALL_DIR/libexec/gcc/$TARGET"/*/*; do
             case "${file##*/}" in m68k-*) continue ;; esac
             [ -f "$file" ] && [ -x "$file" ] || continue
-            ldd "$file" 2> /dev/null |
+            ldd "$file" < /dev/null 2> /dev/null |
                 awk -v tool="${file##*/}" '/=> not found/ { print $1, tool }'
         done | sort -u |
             awk '$1 != library { if (line != "") print line; library = $1; line = "  " $1 " (needed by " $2; next }
@@ -90,9 +129,19 @@ report_missing_libraries() {
     fi
 }
 
+# Status 1: the toolchain is broken. A failure that the scratch directory
+# explains (it reports no space or no longer takes writes) is status 3.
 fail() {
     local step="$1" log="${2:-}"
 
+    if [ -n "$WORK" ]; then
+        if [ -n "$log" ] && grep -q -E "$SPACE_ERRORS" "$log" 2> /dev/null; then
+            cannot_check "$step failed for lack of space in the scratch directory $WORK:" "$log"
+        fi
+        if ! scratch_writable 64; then
+            cannot_check "$step failed, and the scratch directory $WORK no longer takes writes." "$log"
+        fi
+    fi
     {
         echo "Error: Retro68 toolchain check failed in $INSTALL_DIR:"
         echo "  $step"
@@ -102,7 +151,7 @@ fail() {
         report_missing_libraries
         echo "If a host shared library is missing (for example after an OS"
         echo "upgrade), install it or rebuild the toolchain: setup_retro68.sh"
-        echo "rebuilds everything when the installed tools cannot run. See"
+        echo "moves a toolchain that cannot run aside and rebuilds it. See"
         echo "\"Checking and rebuilding the toolchain\" in docs/building-mac-os9.md."
     } >&2
     exit 1
@@ -113,12 +162,21 @@ require_tool() {
         fail "$1 is missing or not executable in $BIN."
 }
 
+# Writes the remaining arguments, one per line, to FILE and reads them back.
+write_scratch_file() {
+    local file="$1"
+    shift
+    { printf '%s\n' "$@" > "$file"; } 2> /dev/null &&
+        [ "$(cat "$file" 2> /dev/null)" = "$(printf '%s\n' "$@")" ] ||
+        cannot_check "could not write $file."
+}
+
 # Runs a tool that must succeed.
 run_step() {
     local step="$1" log
     shift
     log="$WORK/step.log"
-    if ! "$@" > "$log" 2>&1; then
+    if ! "$@" < /dev/null > "$log" 2>&1; then
         fail "$step failed:" "$log"
     fi
 }
@@ -129,7 +187,7 @@ run_probe() {
     local tool="$1" log status
     shift
     log="$WORK/probe.log"
-    "$BIN/$tool" "$@" > "$log" 2>&1
+    "$BIN/$tool" "$@" < /dev/null > "$log" 2>&1
     status=$?
     if [ "$status" -ge 126 ] ||
        grep -q -E "error while loading shared libraries|symbol lookup error|Library not loaded|not found \(required by" "$log"; then
@@ -142,26 +200,34 @@ for tool in "$TARGET-gcc" "$TARGET-g++" "$TARGET-ar" "$TARGET-ranlib" \
     require_tool "$tool"
 done
 
-WORK="$(mktemp -d "${TMPDIR:-/var/tmp}/q3-retro68-check.XXXXXX")" ||
-    fail "could not create a scratch directory under ${TMPDIR:-/var/tmp}."
+WORK="$(mktemp -d "$SCRATCH_PARENT/q3-retro68-check.XXXXXX" 2> /dev/null)" || {
+    WORK=""
+    cannot_check "could not create a scratch directory under $SCRATCH_PARENT."
+}
+# The check writes well under 1 MiB; make sure that much fits before any tool
+# runs, so a full TMPDIR is not mistaken for a broken compiler.
+scratch_writable 1024 ||
+    cannot_check "the scratch directory $WORK does not take 1 MiB (TMPDIR full or read-only)."
 export PATH="$BIN:$PATH"
 
 if [ "$TOOLS_ONLY" -eq 1 ]; then
-    printf 'int retro68_check(void)\n{\n\treturn 0;\n}\n' > "$WORK/check.c"
+    write_scratch_file "$WORK/check.c" 'int retro68_check(void)' '{' '	return 0;' '}'
 else
-    printf '%s\n' '#include <MacTypes.h>' '#include <math.h>' '' \
+    write_scratch_file "$WORK/check.c" '#include <MacTypes.h>' '#include <math.h>' '' \
         'int main(int argc, char **argv)' '{' \
         '	Boolean ok = argc > 0 && argv != NULL;' \
-        '	return ok && floor(1.5) == 1.0 ? 0 : 1;' '}' > "$WORK/check.c"
+        '	return ok && floor(1.5) == 1.0 ? 0 : 1;' '}'
 fi
-printf 'int retro68_check_cxx(int value)\n{\n\treturn value + 1;\n}\n' > "$WORK/check_cxx.cc"
+write_scratch_file "$WORK/check_cxx.cc" 'int retro68_check_cxx(int value)' '{' \
+    '	return value + 1;' '}'
 
 run_step "$TARGET-gcc --version" "$BIN/$TARGET-gcc" --version
 # shellcheck disable=SC2086
 run_step "compiling a C file ($TARGET-gcc -c)" \
     "$BIN/$TARGET-gcc" $COMPILE_FLAGS -c "$WORK/check.c" -o "$WORK/check.o"
+# shellcheck disable=SC2086
 run_step "compiling a C++ file ($TARGET-g++ -c)" \
-    "$BIN/$TARGET-g++" -fsigned-char -c "$WORK/check_cxx.cc" -o "$WORK/check_cxx.o"
+    "$BIN/$TARGET-g++" $CXX_FLAGS -c "$WORK/check_cxx.cc" -o "$WORK/check_cxx.o"
 run_step "archiving the object ($TARGET-ar qc)" \
     "$BIN/$TARGET-ar" qc "$WORK/libcheck.a" "$WORK/check.o"
 run_step "indexing the archive ($TARGET-ranlib)" \
@@ -179,10 +245,11 @@ if [ "$TOOLS_ONLY" -eq 0 ]; then
         -lm -lInterfaceLib -o "$WORK/check.xcoff"
     run_step "converting the XCOFF image to PEF (MakePEF)" \
         "$BIN/MakePEF" "$WORK/check.xcoff" -o "$WORK/check.pef"
+    # "Joy!" "peff" and the "pwpc" architecture: a PowerPC PEF container.
     if [ "$(head -c 12 "$WORK/check.pef" 2> /dev/null)" != "Joy!peffpwpc" ]; then
         fail "MakePEF did not write a PowerPC PEF (no Joy!peff/pwpc header)."
     fi
-    printf "data 'Q3ck' (128) {\n\t\$\"00\"\n};\n" > "$WORK/check.r"
+    write_scratch_file "$WORK/check.r" "data 'Q3ck' (128) {" '	$"00"' '};'
     run_step "building an application with Rez" \
         "$BIN/Rez" "$WORK/check.r" -t APPL -c IDQ3 --data "$WORK/check.pef" \
         -o "$WORK/check.bin"

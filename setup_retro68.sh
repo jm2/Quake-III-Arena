@@ -30,7 +30,7 @@ echo "This will:"
 echo "1. Clone/Update Retro68"
 echo "2. Locate or download MPW & OpenGL SDKs (.sit)"
 echo "3. Inject them into Retro68-src/InterfacesAndLibraries"
-echo "4. CLEAN build directories"
+echo "4. Move old build directories aside (unless resuming)"
 echo "5. Rebuild Retro68 completely"
 echo "=========================================="
 echo "Press Ctrl+C to cancel in 5 seconds..."
@@ -58,6 +58,34 @@ if [ $MISSING_DEPS -eq 1 ]; then
 fi
 
 mkdir -p tools
+
+# Decide before changing anything whether step 4 can resume an existing
+# toolchain. A full Retro68 build takes 30+ minutes; if we already have the
+# host tools (ConvertDiskImage is the last one built and installed), step 4
+# keeps the existing binutils/gcc/host-tool artifacts and passes
+# --skip-thirdparty to build-toolchain.bash so it just runs the I&L +
+# multiversal + target-lib steps. The installed tools must also run: after a
+# host OS upgrade they can fail to load their shared libraries, and
+# --skip-thirdparty never rebuilds gcc or binutils (issue #269).
+# check_retro68.sh exits 1 only for tools that cannot run. Any other status
+# means the check itself could not run (for example a missing, read-only or
+# full TMPDIR), which says nothing about the toolchain: stop and change nothing.
+SKIP_FLAGS=()
+ASIDE_SUFFIX=previous
+if [ -x "$INSTALL_DIR/bin/ConvertDiskImage" ] && [ -d "$BUILD_WORK_DIR" ]; then
+    CHECK_STATUS=0
+    bash ./check_retro68.sh --tools-only "$INSTALL_DIR" || CHECK_STATUS=$?
+    case "$CHECK_STATUS" in
+        0) SKIP_FLAGS=(--skip-thirdparty) ;;
+        1) ASIDE_SUFFIX=broken ;;
+        *)
+            echo "Error: check_retro68.sh could not check the existing toolchain"
+            echo "(exit status $CHECK_STATUS). Nothing was changed; fix the problem"
+            echo "above and run setup_retro68.sh again."
+            exit 1
+            ;;
+    esac
+fi
 
 # 1. Clone Retro68 if missing. We do NOT auto-pull here: this script makes
 # in-tree edits (Boost patch, InterfacesAndLibraries population) that block
@@ -182,29 +210,32 @@ else
     find "$SOURCE_DIR" -name "CMakeLists.txt" -exec sed -i '/find_package(Boost/s/ system//g' {} +
 fi
 
-# 4. Clean / resume.
-#
-# A full Retro68 build takes 30+ minutes; if we already have the host tools
-# (ConvertDiskImage is the last one built and installed), keep the existing
-# binutils/gcc/host-tool artifacts and pass --skip-thirdparty to
-# build-toolchain.bash so it just runs the I&L + multiversal + target-lib
-# steps. The installed tools must also run: after a host OS upgrade they can
-# fail to load their shared libraries, and --skip-thirdparty never rebuilds
-# gcc or binutils (issue #269). To force a full rebuild, delete
-# tools/Retro68-build manually.
-SKIP_FLAGS=()
-if [ -x "$INSTALL_DIR/bin/ConvertDiskImage" ] && [ -d "$BUILD_WORK_DIR" ]; then
-    if ./check_retro68.sh --tools-only "$INSTALL_DIR"; then
-        echo "Step 4: Existing toolchain detected — resuming with --skip-thirdparty."
-        SKIP_FLAGS=(--skip-thirdparty)
-    else
+# 4. Clean / resume (decided above). A full build needs an empty prefix and a
+# fresh work tree, but never delete them: move them aside, so a toolchain that
+# only lacks a host library, or was set aside by mistake, can be restored. To
+# force a full rebuild, move tools/Retro68-build away yourself.
+if [ "${#SKIP_FLAGS[@]}" -ne 0 ]; then
+    echo "Step 4: Existing toolchain detected — resuming with --skip-thirdparty."
+else
+    if [ "$ASIDE_SUFFIX" = broken ]; then
         echo "Step 4: The existing toolchain cannot run (see above); rebuilding it all."
     fi
-fi
-if [ "${#SKIP_FLAGS[@]}" -eq 0 ]; then
-    echo "Step 4: Cleaning previous builds..."
-    [ -d "$INSTALL_DIR" ]    && rm -rf "$INSTALL_DIR"
-    [ -d "$BUILD_WORK_DIR" ] && rm -rf "$BUILD_WORK_DIR"
+    echo "Step 4: Moving previous builds aside..."
+    ASIDE_STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+    MOVED_ASIDE=0
+    for previous in "$INSTALL_DIR" "$BUILD_WORK_DIR"; do
+        [ -e "$previous" ] || continue
+        aside="$previous.$ASIDE_SUFFIX-$ASIDE_STAMP"
+        [ -e "$aside" ] && aside="$aside-$$"
+        mv "$previous" "$aside"
+        MOVED_ASIDE=1
+        echo "  Moved $previous"
+        echo "     to $aside"
+        echo "  To restore it: rm -rf \"$previous\" && mv \"$aside\" \"$previous\""
+    done
+    if [ "$MOVED_ASIDE" -eq 1 ]; then
+        echo "  Delete the moved directories once the new toolchain works."
+    fi
 fi
 
 # 5. Build

@@ -6,8 +6,12 @@
 # the compiler, archiver, linker, MakePEF, MakeImport and Rez the build uses,
 # and unless -ToolsOnly is given, compile and link a C file with the
 # CMakeLists.txt flags, convert it with MakePEF and build an application with
-# Rez. Exits 0 when the toolchain runs and 1 with a message naming the failed
-# step otherwise. On Windows a missing DLL shows up as exit status 0xC0000135.
+# Rez. On Windows a missing DLL shows up as exit status 0xC0000135.
+#
+# Exit status: 0 when the toolchain runs; 1 when it is broken (the message
+# names the failed step); 3 when the check itself could not run, for example
+# because the scratch directory under TMPDIR/TEMP could not be created or
+# written. Callers must treat only status 1 as a broken toolchain.
 
 param(
     [string]$InstallDir = "",
@@ -20,34 +24,85 @@ if (-not $InstallDir) {
 $Bin = Join-Path $InstallDir "bin"
 $Target = "powerpc-apple-macos"
 
-# Keep in step with CMakeLists.txt and cmake/Retro68.toolchain.cmake.
+# Keep in step with CMakeLists.txt, cmake/Retro68.toolchain.cmake and
+# check_retro68.sh.
 $CompileFlags = @("-std=gnu99", "-fgnu89-inline", "-O0", "-g",
     "-fno-strict-aliasing", "-fsigned-char", "-D__MACOS__", "-D__POWERPC__")
+$CxxFlags = @("-fsigned-char")
+
+# Messages from a tool that could not write its output for lack of space.
+$SpaceErrors = "No space left on device|Disk quota exceeded|Read-only file system|not enough space on the disk"
 
 $Work = $null
 $PreviousPath = $env:PATH
-
-function Stop-Check {
-    param([string]$Step, [string]$Output = "")
-
-    Write-Host "Error: Retro68 toolchain check failed in ${InstallDir}:" -ForegroundColor Red
-    Write-Host "  $Step"
-    if ($Output) {
-        $Output -split "`r?`n" | Select-Object -First 20 |
-            ForEach-Object { Write-Host "  | $_" }
-    }
-    Write-Host "If a host shared library or DLL is missing (for example after an OS"
-    Write-Host "upgrade), install it or rebuild the toolchain with setup_retro68.ps1. See"
-    Write-Host "`"Checking and rebuilding the toolchain`" in docs/building-mac-os9.md."
-    Remove-CheckState
-    exit 1
-}
 
 function Remove-CheckState {
     if ($Work -and (Test-Path $Work)) {
         Remove-Item -Recurse -Force $Work -ErrorAction SilentlyContinue
     }
     $env:PATH = $PreviousPath
+}
+
+function Write-ToolOutput {
+    param([string]$Output)
+
+    if ($Output) {
+        $Output -split "`r?`n" | Select-Object -First 20 |
+            ForEach-Object { Write-Host "  | $_" }
+    }
+}
+
+# Status 3: the check could not run. Says nothing about the toolchain.
+function Stop-CannotCheck {
+    param([string]$Problem, [string]$Output = "")
+
+    Write-Host "Error: could not check the Retro68 toolchain in ${InstallDir}:" -ForegroundColor Red
+    Write-Host "  $Problem"
+    Write-ToolOutput $Output
+    Write-Host "The toolchain itself was not judged. Make the scratch directory ($TempRoot)"
+    Write-Host "an existing, writable directory with free space and run the check again."
+    Remove-CheckState
+    exit 3
+}
+
+# Succeeds when the scratch directory still takes $Size KiB.
+function Test-ScratchWritable {
+    param([int]$Size)
+
+    $Probe = Join-Path $Work "space.probe"
+    try {
+        [System.IO.File]::WriteAllBytes($Probe, (New-Object byte[] ($Size * 1024)))
+        return ((Get-Item $Probe).Length -eq ($Size * 1024))
+    }
+    catch {
+        return $false
+    }
+    finally {
+        Remove-Item -Force $Probe -ErrorAction SilentlyContinue
+    }
+}
+
+# Status 1: the toolchain is broken, unless the scratch directory explains
+# the failure.
+function Stop-Check {
+    param([string]$Step, [string]$Output = "")
+
+    if ($Work) {
+        if ($Output -match $SpaceErrors) {
+            Stop-CannotCheck "$Step failed for lack of space in the scratch directory ${Work}:" $Output
+        }
+        if (-not (Test-ScratchWritable 64)) {
+            Stop-CannotCheck "$Step failed, and the scratch directory $Work no longer takes writes." $Output
+        }
+    }
+    Write-Host "Error: Retro68 toolchain check failed in ${InstallDir}:" -ForegroundColor Red
+    Write-Host "  $Step"
+    Write-ToolOutput $Output
+    Write-Host "If a host shared library or DLL is missing (for example after an OS"
+    Write-Host "upgrade), install it or rebuild the toolchain with setup_retro68.ps1. See"
+    Write-Host "`"Checking and rebuilding the toolchain`" in docs/building-mac-os9.md."
+    Remove-CheckState
+    exit 1
 }
 
 function Find-Tool {
@@ -73,15 +128,16 @@ function Get-ExitStatusText {
     return "$Code"
 }
 
-# Runs a native tool and returns its exit status and combined output. Native
-# stderr must not become a terminating error under a caller's "Stop" setting.
+# Runs a native tool with no input and returns its exit status and combined
+# output. Native stderr must not become a terminating error under a caller's
+# "Stop" setting.
 function Invoke-Tool {
     param([string]$Path, [string[]]$Arguments)
 
     $PreviousPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        $Lines = & $Path @Arguments 2>&1 | ForEach-Object { "$_" }
+        $Lines = $null | & $Path @Arguments 2>&1 | ForEach-Object { "$_" }
         $Code = $LASTEXITCODE
     }
     catch {
@@ -116,14 +172,21 @@ function Invoke-Probe {
     }
 }
 
-$Gcc = Find-Tool "$Target-gcc"
-$Gxx = Find-Tool "$Target-g++"
-$Ar = Find-Tool "$Target-ar"
-$Ranlib = Find-Tool "$Target-ranlib"
-$Ld = Find-Tool "$Target-ld"
-$MakePEF = Find-Tool "MakePEF"
-$MakeImport = Find-Tool "MakeImport"
-$Rez = Find-Tool "Rez"
+# Writes lines to a scratch file and reads them back.
+function Write-ScratchFile {
+    param([string]$Path, [string[]]$Lines)
+
+    try {
+        Set-Content -Path $Path -Value $Lines -Encoding Ascii -ErrorAction Stop
+        $Written = Get-Content -Path $Path -ErrorAction Stop
+        if (($Written -join "`n") -cne ($Lines -join "`n")) {
+            throw "read back different contents"
+        }
+    }
+    catch {
+        Stop-CannotCheck "could not write ${Path}: $_"
+    }
+}
 
 if ($env:TMPDIR) {
     $TempRoot = $env:TMPDIR
@@ -134,8 +197,32 @@ elseif ($env:OS -eq "Windows_NT") {
 else {
     $TempRoot = "/var/tmp"
 }
-$Work = Join-Path $TempRoot ("q3-retro68-check." + [System.Guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Path $Work -Force | Out-Null
+
+$Gcc = Find-Tool "$Target-gcc"
+$Gxx = Find-Tool "$Target-g++"
+$Ar = Find-Tool "$Target-ar"
+$Ranlib = Find-Tool "$Target-ranlib"
+$Ld = Find-Tool "$Target-ld"
+$MakePEF = Find-Tool "MakePEF"
+$MakeImport = Find-Tool "MakeImport"
+$Rez = Find-Tool "Rez"
+
+try {
+    if (-not (Test-Path $TempRoot -PathType Container)) {
+        throw "$TempRoot is not a directory"
+    }
+    $Work = Join-Path $TempRoot ("q3-retro68-check." + [System.Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $Work -ErrorAction Stop | Out-Null
+}
+catch {
+    $Work = $null
+    Stop-CannotCheck "could not create a scratch directory under ${TempRoot}: $_"
+}
+# The check writes well under 1 MiB; make sure that much fits before any tool
+# runs, so a full scratch directory is not mistaken for a broken compiler.
+if (-not (Test-ScratchWritable 1024)) {
+    Stop-CannotCheck "the scratch directory $Work does not take 1 MiB (full or read-only)."
+}
 $env:PATH = $Bin + [System.IO.Path]::PathSeparator + $env:PATH
 
 $CheckC = Join-Path $Work "check.c"
@@ -151,15 +238,15 @@ else {
         "`tBoolean ok = argc > 0 && argv != NULL;",
         "`treturn ok && floor(1.5) == 1.0 ? 0 : 1;", "}")
 }
-Set-Content -Path $CheckC -Value $CSource -Encoding Ascii
-Set-Content -Path $CheckCxx -Value @("int retro68_check_cxx(int value)", "{",
-    "`treturn value + 1;", "}") -Encoding Ascii
+Write-ScratchFile $CheckC $CSource
+Write-ScratchFile $CheckCxx @("int retro68_check_cxx(int value)", "{",
+    "`treturn value + 1;", "}")
 
 Invoke-Step "$Target-gcc --version" $Gcc @("--version")
 Invoke-Step "compiling a C file ($Target-gcc -c)" $Gcc `
     ($CompileFlags + @("-c", $CheckC, "-o", $CheckObject))
 Invoke-Step "compiling a C++ file ($Target-g++ -c)" $Gxx `
-    @("-fsigned-char", "-c", $CheckCxx, "-o", (Join-Path $Work "check_cxx.o"))
+    ($CxxFlags + @("-c", $CheckCxx, "-o", (Join-Path $Work "check_cxx.o")))
 Invoke-Step "archiving the object ($Target-ar qc)" $Ar @("qc", $CheckLibrary, $CheckObject)
 Invoke-Step "indexing the archive ($Target-ranlib)" $Ranlib @($CheckLibrary)
 Invoke-Step "$Target-ld --version" $Ld @("--version")
@@ -177,6 +264,7 @@ if (-not $ToolsOnly) {
             "-Wl,--no-whole-archive", "-lm", "-lInterfaceLib", "-o", $CheckXcoff))
     Invoke-Step "converting the XCOFF image to PEF (MakePEF)" $MakePEF `
         @($CheckXcoff, "-o", $CheckPef)
+    # "Joy!" "peff" and the "pwpc" architecture: a PowerPC PEF container.
     $Header = ""
     if (Test-Path $CheckPef) {
         $Bytes = [System.IO.File]::ReadAllBytes($CheckPef)
@@ -187,7 +275,7 @@ if (-not $ToolsOnly) {
     if ($Header -cne "Joy!peffpwpc") {
         Stop-Check "MakePEF did not write a PowerPC PEF (no Joy!peff/pwpc header)."
     }
-    Set-Content -Path $CheckRez -Value @("data 'Q3ck' (128) {", "`t`$`"00`"", "};") -Encoding Ascii
+    Write-ScratchFile $CheckRez @("data 'Q3ck' (128) {", "`t`$`"00`"", "};")
     Invoke-Step "building an application with Rez" $Rez `
         @($CheckRez, "-t", "APPL", "-c", "IDQ3", "--data", $CheckPef, "-o", $CheckApplication)
     if (-not (Test-Path $CheckApplication) -or (Get-Item $CheckApplication).Length -eq 0) {

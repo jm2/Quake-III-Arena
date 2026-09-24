@@ -150,8 +150,16 @@ fi
 # All of those files can exist while the tools cannot run, for example after a
 # host OS upgrade removed a shared library they need (issue #269). Run them
 # now: CMake would only report that the compiler identification is unknown.
-if ! ../check_retro68.sh "$(cd .. && pwd)/tools/Retro68-build"; then
+# Status 1 means the toolchain is broken; any other status means the check
+# itself could not run (for example no usable TMPDIR).
+CHECK_STATUS=0
+bash ../check_retro68.sh "$(cd .. && pwd)/tools/Retro68-build" || CHECK_STATUS=$?
+if [ "$CHECK_STATUS" -eq 1 ]; then
     echo "Stopping before CMake: the Retro68 toolchain cannot build Quake3."
+    exit 1
+elif [ "$CHECK_STATUS" -ne 0 ]; then
+    echo "Stopping before CMake: check_retro68.sh could not check the Retro68"
+    echo "toolchain (exit status $CHECK_STATUS)."
     exit 1
 fi
 

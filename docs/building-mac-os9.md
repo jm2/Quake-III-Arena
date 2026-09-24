@@ -63,17 +63,25 @@ takes well under a second: `gcc --version`, `gcc -c` and `g++ -c` with the
 MakePEF, MakeImport and Rez without input. It then links a small C file with
 `-lm -lInterfaceLib`, converts it with MakePEF (the result must start with
 `Joy!peff`/`pwpc`) and has Rez build an application from it. Run it by hand
-with `./check_retro68.sh [tools/Retro68-build]`.
+with `bash check_retro68.sh [tools/Retro68-build]`.
 
-If a step fails, the build stops before CMake and prints the step and the
-tool's output, which names a library the host cannot load (for example
-`libisl.so.23` for `cc1`). On Linux the check also lists every library `ldd`
-cannot find for the toolchain's programs. Install the missing libraries or
-rebuild the toolchain. `setup_retro68.sh` resumes an earlier build with
-`--skip-thirdparty` only if `check_retro68.sh --tools-only` passes; otherwise
-it deletes `tools/Retro68-build` and `tools/Retro68-work` and rebuilds
-everything. `setup_retro68.ps1` likewise rebuilds a toolchain that fails
-`check_retro68.ps1`.
+If a step fails (exit status 1), the build stops before CMake and prints the
+step and the tool's output, which names a library the host cannot load (for
+example `libisl.so.23` for `cc1`). On Linux the check also lists every library
+`ldd` cannot find for the toolchain's programs. Install the missing libraries
+or rebuild the toolchain. Exit status 3 means the check itself could not run,
+because its scratch directory is missing, read-only or full; it says nothing
+about the toolchain, and the build stops with that message instead.
+
+`setup_retro68.sh` resumes an earlier build with `--skip-thirdparty` only if
+`check_retro68.sh --tools-only` passes. If the tools cannot run, it rebuilds
+everything, but it never deletes the old build: it first moves
+`tools/Retro68-build` and `tools/Retro68-work` aside to `*.broken-<UTC time>`
+(an incomplete earlier build to `*.previous-<UTC time>`) and prints how to
+restore them. Delete those directories once the new toolchain works. If the
+check could not run, setup stops before changing anything. `setup_retro68.ps1`
+does the same with `check_retro68.ps1` (it renames `tools/Retro68-build`
+aside).
 
 ### Rebuilding on a host with GCC 16
 
@@ -111,9 +119,10 @@ cmake -P build-target-ppc/libretro/cmake_install.cmake
 cmake -P build-target-ppc/Console/cmake_install.cmake
 ```
 
-Then check the new toolchain with `./check_retro68.sh tools/Retro68-build.new`,
-move the old `tools/Retro68-build` aside and rename the new one to
-`tools/Retro68-build` (the install tree is relocatable). The next
+Then check the new toolchain with
+`bash check_retro68.sh tools/Retro68-build.new`, move the old
+`tools/Retro68-build` aside and rename the new one to `tools/Retro68-build`
+(the install tree is relocatable). The next
 `build_mac.sh` run copies the OpenGL SDK headers into its prepared include
 directory. The rebuilt toolchain needs no `LD_LIBRARY_PATH`.
 
