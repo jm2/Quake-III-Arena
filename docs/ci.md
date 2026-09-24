@@ -208,7 +208,9 @@ merging several PRs in a row never cancels or drops a master run.
     `double`/`long long` alignment differs from the Mac OS PowerPC ABI.
 
 GitHub Actions dependencies are pinned to exact release commits, and
-Dependabot is configured to propose GitHub Actions updates.
+Dependabot is configured to propose GitHub Actions updates. Every job runs on
+the pinned `ubuntu-24.04` runner image rather than `ubuntu-latest`, which moves
+to a new Ubuntu release without a change to the workflow (issue #227).
 
 The native skin runner exercises complete default/plain surface allocations,
 name and 32-surface/token boundaries, malformed exact input prefixes, file

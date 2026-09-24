@@ -16,10 +16,12 @@ concurrency:
   group: portable-ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Every job runs on a pinned runner image (issue #227): ubuntu-latest moves to a
+# new Ubuntu release without a change here.
 jobs:
   scripts-and-ledger:
     name: Scripts and review ledger
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Check out source
@@ -63,7 +65,7 @@ jobs:
 
   packaging-tools:
     name: Packaging tools (Python ${{ matrix.python }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -83,7 +85,7 @@ jobs:
 
   host-c-regressions-shard:
     name: Host C regressions (${{ matrix.cc }} ${{ matrix.shard }}/4)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -103,7 +105,7 @@ jobs:
     name: Host C regressions (ASan/UBSan)
     if: always()
     needs: host-c-regressions-shard
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require every shard to pass
@@ -164,7 +166,7 @@ jobs:
     name: Host C regressions (ppc32 BE)
     if: always()
     needs: host-c-regressions-be32-shard
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require every shard to pass
