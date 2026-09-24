@@ -11,7 +11,9 @@
 # Exit status: 0 when the toolchain runs; 1 when it is broken (the message
 # names the failed step); 3 when the check itself could not run, for example
 # because the scratch directory under TMPDIR/TEMP could not be created or
-# written. Callers must treat only status 1 as a broken toolchain.
+# written or ran out of space or inodes, or because a signal from outside (the
+# OOM killer, a timeout, Ctrl-C) stopped a step. Callers must treat only
+# status 1 as a broken toolchain.
 
 param(
     [string]$InstallDir = "",
@@ -30,14 +32,23 @@ $CompileFlags = @("-std=gnu99", "-fgnu89-inline", "-O0", "-g",
     "-fno-strict-aliasing", "-fsigned-char", "-D__MACOS__", "-D__POWERPC__")
 $CxxFlags = @("-fsigned-char")
 
-# Messages from a tool that could not write its output for lack of space.
-$SpaceErrors = "No space left on device|Disk quota exceeded|Read-only file system|not enough space on the disk"
+# Messages from a tool that failed because of its surroundings: no space,
+# inodes or temporary files in the scratch directory, or the gcc driver
+# reporting that something outside killed cc1 or as. See check_retro68.sh.
+$EnvironmentErrors = "No space left on device|Disk quota exceeded|Read-only file system|not enough space on the disk|[Cc]ould not create temporary file|[Cc]annot create temporary file|(Killed|Terminated|Interrupt|Hangup|CPU time limit exceeded|File size limit exceeded) signal terminated program"
+# Exit statuses of a tool stopped from outside: 128 + HUP, INT, KILL, TERM,
+# XCPU or XFSZ on Unix, and STATUS_CONTROL_C_EXIT (0xC000013A) on Windows.
+$SignalStatuses = @(129, 130, 137, 143, 152, 153, -1073741510)
 
 $Work = $null
 $PreviousPath = $env:PATH
 
 function Remove-CheckState {
     if ($Work -and (Test-Path $Work)) {
+        # A step may have left the scratch directory read-only.
+        if (Get-Command chmod -CommandType Application -ErrorAction SilentlyContinue) {
+            & chmod -R u+w $Work 2>$null
+        }
         Remove-Item -Recurse -Force $Work -ErrorAction SilentlyContinue
     }
     $env:PATH = $PreviousPath
@@ -65,31 +76,47 @@ function Stop-CannotCheck {
     exit 3
 }
 
-# Succeeds when the scratch directory still takes $Size KiB.
+# Succeeds when the scratch directory still takes a $Size KiB file and 16
+# more files (the tools need inodes for temporary and output files).
 function Test-ScratchWritable {
     param([int]$Size)
 
     $Probe = Join-Path $Work "space.probe"
+    $Files = @($Probe)
     try {
         [System.IO.File]::WriteAllBytes($Probe, (New-Object byte[] ($Size * 1024)))
-        return ((Get-Item $Probe).Length -eq ($Size * 1024))
+        if ((Get-Item $Probe).Length -ne ($Size * 1024)) {
+            return $false
+        }
+        for ($Count = 0; $Count -lt 16; $Count++) {
+            $File = Join-Path $Work "inode.probe.$Count"
+            $Files += $File
+            [System.IO.File]::WriteAllBytes($File, (New-Object byte[] 0))
+        }
+        return $true
     }
     catch {
         return $false
     }
     finally {
-        Remove-Item -Force $Probe -ErrorAction SilentlyContinue
+        foreach ($File in $Files) {
+            Remove-Item -Force $File -ErrorAction SilentlyContinue
+        }
     }
 }
 
-# Status 1: the toolchain is broken, unless the scratch directory explains
-# the failure.
+# Status 1: the toolchain is broken, unless its surroundings explain the
+# failure: a signal from outside, a tool reporting no space or temporary
+# files, or a scratch directory that no longer takes writes.
 function Stop-Check {
-    param([string]$Step, [string]$Output = "")
+    param([string]$Step, [string]$Output = "", $Code = $null)
 
     if ($Work) {
-        if ($Output -match $SpaceErrors) {
-            Stop-CannotCheck "$Step failed for lack of space in the scratch directory ${Work}:" $Output
+        if ($null -ne $Code -and $SignalStatuses -contains $Code) {
+            Stop-CannotCheck "$Step was stopped from outside (exit status $Code), for example by the OOM killer or a timeout." $Output
+        }
+        if ($Output -cmatch $EnvironmentErrors) {
+            Stop-CannotCheck "$Step failed because of its surroundings (space, temporary files or a signal), not the toolchain:" $Output
         }
         if (-not (Test-ScratchWritable 64)) {
             Stop-CannotCheck "$Step failed, and the scratch directory $Work no longer takes writes." $Output
@@ -124,6 +151,7 @@ function Get-ExitStatusText {
         -1073741515 { return "0xC0000135: a DLL it needs was not found" }
         -1073741511 { return "0xC0000139: a DLL it loads lacks an entry point" }
         -1073741701 { return "0xC000007B: a DLL it loads is not a valid image" }
+        -1073741510 { return "0xC000013A: stopped by Ctrl-C" }
     }
     return "$Code"
 }
@@ -156,7 +184,7 @@ function Invoke-Step {
 
     $Result = Invoke-Tool $Path $Arguments
     if ($Result.Code -ne 0) {
-        Stop-Check "$Step failed (exit status $(Get-ExitStatusText $Result.Code)):" $Result.Output
+        Stop-Check "$Step failed (exit status $(Get-ExitStatusText $Result.Code)):" $Result.Output $Result.Code
     }
 }
 
@@ -168,7 +196,7 @@ function Invoke-Probe {
     $Result = Invoke-Tool $Path $Arguments
     if ($Result.Code -ge 126 -or $Result.Code -lt 0 -or
         $Result.Output -match "error while loading shared libraries|symbol lookup error|Library not loaded|not found \(required by") {
-        Stop-Check "$Name could not start (exit status $(Get-ExitStatusText $Result.Code)):" $Result.Output
+        Stop-Check "$Name could not start (exit status $(Get-ExitStatusText $Result.Code)):" $Result.Output $Result.Code
     }
 }
 
@@ -218,10 +246,11 @@ catch {
     $Work = $null
     Stop-CannotCheck "could not create a scratch directory under ${TempRoot}: $_"
 }
-# The check writes well under 1 MiB; make sure that much fits before any tool
-# runs, so a full scratch directory is not mistaken for a broken compiler.
+# The check writes well under 1 MiB in a few files; make sure that much fits
+# before any tool runs, so a full scratch directory is not mistaken for a
+# broken compiler.
 if (-not (Test-ScratchWritable 1024)) {
-    Stop-CannotCheck "the scratch directory $Work does not take 1 MiB (full or read-only)."
+    Stop-CannotCheck "the scratch directory $Work does not take 1 MiB and 16 files (full, out of inodes or read-only)."
 }
 $env:PATH = $Bin + [System.IO.Path]::PathSeparator + $env:PATH
 

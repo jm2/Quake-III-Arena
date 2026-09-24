@@ -69,17 +69,23 @@ If a step fails (exit status 1), the build stops before CMake and prints the
 step and the tool's output, which names a library the host cannot load (for
 example `libisl.so.23` for `cc1`). On Linux the check also lists every library
 `ldd` cannot find for the toolchain's programs. Install the missing libraries
-or rebuild the toolchain. Exit status 3 means the check itself could not run,
-because its scratch directory is missing, read-only or full; it says nothing
-about the toolchain, and the build stops with that message instead.
+or rebuild the toolchain. Exit status 3 means the check itself could not run:
+its scratch directory is missing, read-only, full or out of inodes, or a
+signal from outside (the OOM killer, a timeout, Ctrl-C) stopped a step. It
+says nothing about the toolchain, and the build stops with that message
+instead.
 
 `setup_retro68.sh` resumes an earlier build with `--skip-thirdparty` only if
 `check_retro68.sh --tools-only` passes. If the tools cannot run, it rebuilds
-everything, but it never deletes the old build: it first moves
+everything, but it never deletes the toolchain: it first moves
 `tools/Retro68-build` and `tools/Retro68-work` aside to `*.broken-<UTC time>`
 (an incomplete earlier build to `*.previous-<UTC time>`) and prints how to
-restore them. Delete those directories once the new toolchain works. If the
-check could not run, setup stops before changing anything. `setup_retro68.ps1`
+restore them. Moved-aside toolchains are never removed automatically; delete
+them once the new toolchain works. The work tree holds only build
+intermediates (several GB), so setup keeps one moved-aside copy of it and
+removes the older one when it moves a newer one aside. If the check could not
+run, for example because a signal from outside stopped a step or TMPDIR is out
+of space or inodes, setup stops before changing anything. `setup_retro68.ps1`
 does the same with `check_retro68.ps1` (it renames `tools/Retro68-build`
 aside).
 

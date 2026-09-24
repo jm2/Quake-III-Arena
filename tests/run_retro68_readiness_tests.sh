@@ -13,9 +13,12 @@
 # build-toolchain.bash commands:
 #   - a broken toolchain stops build_mac.sh before CMake with the missing
 #     library named, and makes setup_retro68.sh move the toolchain and work
-#     tree aside (never delete them) and rebuild everything;
-#   - when the check itself cannot run (missing, read-only or full TMPDIR,
-#     missing check script), both stop and setup changes nothing.
+#     tree aside (never delete a toolchain; keep one moved-aside work tree)
+#     and rebuild everything;
+#   - when the check itself cannot run (missing, read-only, full or
+#     inode-starved TMPDIR, a tool killed from outside, a missing check
+#     script), both stop and setup changes nothing;
+#   - a BSD/macOS wc, which pads its count, does not break the check.
 # When pwsh is installed the same cases go through check_retro68.ps1 and
 # setup_retro68.ps1. A real toolchain ($Q3_RETRO68_DIR, default
 # tools/Retro68-build) must pass the full check; one that does not is reported
@@ -410,7 +413,72 @@ write_stub "$TC/bin/powerpc-apple-macos-gcc" "$Q3_VERSION_LINE" \
     'echo "cc1: error writing to /x/check.s: No space left on device" >&2' 'exit 1'
 run_check --tools-only "$TC"
 expect "a compile that runs out of space is status 3" 3 \
-    "failed for lack of space in the scratch directory" "No space left on device"
+    "failed because of its surroundings" "No space left on device"
+
+# More surroundings that are not the toolchain. None needs tmpfs, so CI runs
+# them all.
+# env_gcc LINE...: a gcc whose --version works and whose other calls run LINE...
+env_gcc() {
+    write_stub "$TC/bin/powerpc-apple-macos-gcc" "$Q3_VERSION_LINE" "$Q3_OUTPUT_ARG" "$@"
+}
+# env_ar LINE...: an ar whose --version works and whose other calls run LINE...
+env_ar() {
+    write_stub "$TC/bin/powerpc-apple-macos-ar" '[ "$1" = --version ] && exit 0' "$@"
+}
+# A padding wc, as on BSD and macOS ("%8s").
+Q3_PAD_STUBS="$Q3_TEST_WORK/padding-wc"
+mkdir -p "$Q3_PAD_STUBS"
+printf '#!/bin/sh\nprintf "%%8s\\n" "$(%s "$@" | tr -d " ")"\n' "$(command -v wc)" > "$Q3_PAD_STUBS/wc"
+chmod +x "$Q3_PAD_STUBS/wc"
+
+fresh_toolchain
+env_gcc 'kill -KILL $$'
+run_check --tools-only "$TC"
+expect "a compile killed by SIGKILL (the OOM killer) is status 3" 3 \
+    "was stopped by signal 9 from outside (exit status 137)"
+
+fresh_toolchain
+env_gcc 'echo "powerpc-apple-macos-gcc: fatal error: Killed signal terminated program cc1" >&2' 'exit 1'
+run_check --tools-only "$TC"
+expect "cc1 killed from outside is status 3" 3 \
+    "failed because of its surroundings" "Killed signal terminated program cc1"
+
+fresh_toolchain
+env_gcc 'echo "powerpc-apple-macos-gcc: internal compiler error: Segmentation fault signal terminated program cc1" >&2' 'exit 4'
+run_check --tools-only "$TC"
+expect "cc1 that crashes is status 1" 1 "Segmentation fault signal terminated program cc1"
+
+fresh_toolchain
+write_stub "$TC/bin/MakePEF" 'kill -TERM $$'
+run_check --tools-only "$TC"
+expect "a probe stopped by SIGTERM is status 3" 3 "(exit status 143)"
+
+fresh_toolchain
+env_gcc '[ -n "$out" ] && chmod a-w "$(dirname "$out")"' 'exit 1'
+run_check --tools-only "$TC"
+expect "a compile that leaves the scratch directory read-only is status 3" 3 \
+    "no longer takes writes"
+
+fresh_toolchain
+env_ar 'echo "powerpc-apple-macos-ar: could not create temporary file whilst writing archive: no more archived files" >&2' 'exit 1'
+run_check --tools-only "$TC"
+expect "an ar out of temporary files is status 3" 3 \
+    "could not create temporary file whilst writing archive"
+
+fresh_toolchain
+Q3_STATUS=0
+(umask 222; exec env TMPDIR="$Q3_CHECK_TMP" bash "$Q3_TEST_ROOT/check_retro68.sh" --tools-only "$TC") \
+    > "$Q3_OUT" 2>&1 || Q3_STATUS=$?
+expect "a scratch directory created read-only (umask 222) is status 3" 3 "does not take 1 MiB"
+check "no tool ran with a read-only scratch directory" test ! -s "$TC/calls.log"
+
+check "the padding wc stub pads like BSD wc" \
+    bash -c '[ "$(printf abc | PATH="$1:$PATH" wc -c)" = "       3" ]' _ "$Q3_PAD_STUBS"
+fresh_toolchain
+Q3_CHECK_ENV=(PATH="$Q3_PAD_STUBS:$PATH")
+run_check "$TC"
+expect "a padding (BSD/macOS) wc passes the full check" 0 "Retro68 toolchain check passed"
+Q3_CHECK_ENV=()
 
 if [ "$Q3_HAVE_UNSHARE" -eq 1 ]; then
     fresh_toolchain
@@ -428,6 +496,12 @@ if [ "$Q3_HAVE_UNSHARE" -eq 1 ]; then
         TMPDIR="$1" bash "$2/check_retro68.sh" --tools-only "$3"' _ \
         "$Q3_CHECK_TMP" "$Q3_TEST_ROOT" "$TC" > "$Q3_OUT" 2>&1 || Q3_STATUS=$?
     expect "a tmpfs filled during a compile is status 3" 3 "no longer takes writes"
+    # A tmpfs with room for data but only a few inodes.
+    Q3_STATUS=0
+    unshare -r -m bash -c 'mount -t tmpfs -o size=4m,nr_inodes=9 tmpfs "$1" &&
+        TMPDIR="$1" bash "$2/check_retro68.sh" --tools-only "$3"' _ \
+        "$Q3_CHECK_TMP" "$Q3_TEST_ROOT" "$TC" > "$Q3_OUT" 2>&1 || Q3_STATUS=$?
+    expect "a tmpfs out of inodes is status 3" 3 "does not take 1 MiB and 16 files"
 else
     echo "SKIP: tmpfs TMPDIR cases (unshare -r -m is not available)"
 fi
@@ -587,6 +661,23 @@ check "setup_retro68.sh builds into an empty prefix" \
     grep -q -x "prefix removed" "$ROOT/build-toolchain.called"
 check "setup_retro68.sh moved the toolchain and work tree aside as *.broken-<UTC time>" \
     moved_aside "$ROOT" broken
+
+# A second failed rebuild (build_mac.sh reruns setup after one) leaves a
+# partial prefix and a new work tree. Every moved-aside toolchain is kept, but
+# only the newest moved-aside work tree.
+mkdir -p "$ROOT/tools/Retro68-build/bin"
+echo partial > "$ROOT/tools/Retro68-build/marker"
+echo second > "$ROOT/tools/Retro68-work/marker"
+run_setup "$ROOT"
+expect "setup_retro68.sh replaces an older moved-aside work tree" 42 \
+    "Removing the older moved-aside work tree" "one moved-aside work tree is kept"
+check "setup_retro68.sh keeps one moved-aside work tree, the newest" \
+    bash -c 'set -- "$1"/tools/Retro68-work.*-*; [ "$#" -eq 1 ] && [ "$(cat "$1/marker")" = second ]' _ "$ROOT"
+check "setup_retro68.sh keeps both moved-aside toolchains" \
+    bash -c 'root="$1"; set -- "$root"/tools/Retro68-build.broken-*
+        [ "$#" -eq 1 ] && [ -x "$1/bin/powerpc-apple-macos-gcc" ] || exit 1
+        set -- "$root"/tools/Retro68-build.previous-*
+        [ "$#" -eq 1 ] && [ "$(cat "$1/marker")" = partial ]' _ "$ROOT"
 
 # An incomplete toolchain (no ConvertDiskImage) is also moved, never deleted.
 make_setup_root "$ROOT"
@@ -763,7 +854,29 @@ if command -v pwsh > /dev/null 2>&1; then
         'echo "cc1: error writing to /x/check.s: No space left on device" >&2' 'exit 1'
     run_ps_check -ToolsOnly -InstallDir "$TC"
     expect "check_retro68.ps1: a compile that runs out of space is status 3" 3 \
-        "failed for lack of space in the scratch directory"
+        "failed because of its surroundings"
+    fresh_toolchain
+    env_gcc 'kill -KILL $$'
+    run_ps_check -ToolsOnly -InstallDir "$TC"
+    expect "check_retro68.ps1: a compile killed by SIGKILL is status 3" 3 \
+        "was stopped from outside (exit status 137)"
+    fresh_toolchain
+    env_gcc '[ -n "$out" ] && chmod a-w "$(dirname "$out")"' 'exit 1'
+    run_ps_check -ToolsOnly -InstallDir "$TC"
+    expect "check_retro68.ps1: a compile that leaves the scratch directory read-only is status 3" 3 \
+        "no longer takes writes"
+    fresh_toolchain
+    env_ar 'echo "powerpc-apple-macos-ar: could not create temporary file whilst writing archive: no more archived files" >&2' 'exit 1'
+    run_ps_check -ToolsOnly -InstallDir "$TC"
+    expect "check_retro68.ps1: an ar out of temporary files is status 3" 3 \
+        "could not create temporary file whilst writing archive"
+    fresh_toolchain
+    Q3_STATUS=0
+    (umask 222; exec env TMPDIR="$Q3_CHECK_TMP" pwsh -NoProfile -NonInteractive \
+        -File "$Q3_TEST_ROOT/check_retro68.ps1" -ToolsOnly -InstallDir "$TC") \
+        > "$Q3_OUT" 2>&1 || Q3_STATUS=$?
+    expect "check_retro68.ps1: a scratch directory created read-only (umask 222) is status 3" 3 \
+        "does not take 1 MiB"
     if [ "$Q3_HAVE_UNSHARE" -eq 1 ]; then
         fresh_toolchain
         Q3_STATUS=0

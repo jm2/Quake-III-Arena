@@ -211,9 +211,11 @@ else
 fi
 
 # 4. Clean / resume (decided above). A full build needs an empty prefix and a
-# fresh work tree, but never delete them: move them aside, so a toolchain that
-# only lacks a host library, or was set aside by mistake, can be restored. To
-# force a full rebuild, move tools/Retro68-build away yourself.
+# fresh work tree. Never delete the toolchain: move it aside every time, so
+# one that only lacks a host library, or was set aside by mistake, can be
+# restored. The work tree holds only build intermediates (several GB), so keep
+# a single moved-aside copy of it: an older one is removed when a newer one is
+# moved aside. To force a full rebuild, move tools/Retro68-build away yourself.
 if [ "${#SKIP_FLAGS[@]}" -ne 0 ]; then
     echo "Step 4: Existing toolchain detected — resuming with --skip-thirdparty."
 else
@@ -227,6 +229,14 @@ else
         [ -e "$previous" ] || continue
         aside="$previous.$ASIDE_SUFFIX-$ASIDE_STAMP"
         [ -e "$aside" ] && aside="$aside-$$"
+        if [ "$previous" = "$BUILD_WORK_DIR" ]; then
+            for older in "$BUILD_WORK_DIR".broken-* "$BUILD_WORK_DIR".previous-*; do
+                [ -d "$older" ] || continue
+                echo "  Removing the older moved-aside work tree $older"
+                echo "  (build intermediates only; one moved-aside work tree is kept)."
+                rm -rf "$older"
+            done
+        fi
         mv "$previous" "$aside"
         MOVED_ASIDE=1
         echo "  Moved $previous"

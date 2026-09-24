@@ -32,7 +32,9 @@
 #   2  bad usage;
 #   3  the check itself could not run, so nothing is known about the
 #      toolchain: the scratch directory could not be created or written (a
-#      missing, read-only or full TMPDIR), or a step failed for lack of space.
+#      missing, read-only or full TMPDIR, or one out of inodes), a step failed
+#      for lack of space or temporary files, or a signal from outside (the OOM
+#      killer, a timeout, Ctrl-C) stopped a step.
 # Callers must treat only status 1 as a broken toolchain.
 set -u
 
@@ -69,12 +71,16 @@ SCRATCH_PARENT="${TMPDIR:-/var/tmp}"
 COMPILE_FLAGS="-std=gnu99 -fgnu89-inline -O0 -g -fno-strict-aliasing -fsigned-char -D__MACOS__ -D__POWERPC__"
 CXX_FLAGS="-fsigned-char"
 
-# Messages from a tool that could not write its output for lack of space.
-SPACE_ERRORS="No space left on device|Disk quota exceeded|Read-only file system"
+# Messages from a tool that failed because of its surroundings: no space,
+# inodes or temporary files in the scratch directory, or the gcc driver
+# reporting that something outside killed cc1 or as (a crash such as
+# "Segmentation fault signal terminated program" is the toolchain's own).
+ENVIRONMENT_ERRORS="No space left on device|Disk quota exceeded|Read-only file system|[Cc]ould not create temporary file|[Cc]annot create temporary file|(Killed|Terminated|Interrupt|Hangup|CPU time limit exceeded|File size limit exceeded) signal terminated program"
 
 WORK=""
 cleanup() {
     if [ -n "$WORK" ]; then
+        chmod -R u+w "$WORK" 2> /dev/null
         rm -rf -- "$WORK"
     fi
 }
@@ -96,13 +102,20 @@ cannot_check() {
     exit 3
 }
 
-# Succeeds when the scratch directory still takes SIZE KiB.
+# Succeeds when the scratch directory still takes a SIZE KiB file and 16
+# more files (the tools need inodes for temporary and output files). BSD wc
+# pads its count with spaces, so compare numbers, not strings.
 scratch_writable() {
-    local size="$1" probe="$WORK/space.probe" status=0
+    local size="$1" probe="$WORK/space.probe" status=0 count=0
 
     dd if=/dev/zero of="$probe" bs=1024 count="$size" > /dev/null 2>&1 &&
-        [ "$(wc -c < "$probe" 2> /dev/null)" = "$((size * 1024))" ] || status=1
-    rm -f -- "$probe"
+        [ "$(wc -c < "$probe" 2> /dev/null)" -eq "$((size * 1024))" ] 2> /dev/null ||
+        status=1
+    while [ "$status" -eq 0 ] && [ "$count" -lt 16 ]; do
+        : 2> /dev/null > "$WORK/inode.probe.$count" || status=1
+        count=$((count + 1))
+    done
+    rm -f -- "$probe" "$WORK"/inode.probe.*
     return "$status"
 }
 
@@ -129,14 +142,21 @@ report_missing_libraries() {
     fi
 }
 
-# Status 1: the toolchain is broken. A failure that the scratch directory
-# explains (it reports no space or no longer takes writes) is status 3.
+# Status 1: the toolchain is broken. A failure that its surroundings explain
+# is status 3: a signal from outside stopped the tool (STATUS 129 HUP, 130 INT,
+# 137 KILL, 143 TERM, 152 XCPU or 153 XFSZ), the tool reports no space or
+# temporary files, or the scratch directory no longer takes writes.
 fail() {
-    local step="$1" log="${2:-}"
+    local step="$1" log="${2:-}" status="${3:-}"
 
     if [ -n "$WORK" ]; then
-        if [ -n "$log" ] && grep -q -E "$SPACE_ERRORS" "$log" 2> /dev/null; then
-            cannot_check "$step failed for lack of space in the scratch directory $WORK:" "$log"
+        case "$status" in
+            129|130|137|143|152|153)
+                cannot_check "$step was stopped by signal $((status - 128)) from outside (exit status $status), for example by the OOM killer or a timeout." "$log"
+                ;;
+        esac
+        if [ -n "$log" ] && grep -q -E "$ENVIRONMENT_ERRORS" "$log" 2> /dev/null; then
+            cannot_check "$step failed because of its surroundings (space, temporary files or a signal), not the toolchain:" "$log"
         fi
         if ! scratch_writable 64; then
             cannot_check "$step failed, and the scratch directory $WORK no longer takes writes." "$log"
@@ -173,11 +193,13 @@ write_scratch_file() {
 
 # Runs a tool that must succeed.
 run_step() {
-    local step="$1" log
+    local step="$1" log status
     shift
     log="$WORK/step.log"
-    if ! "$@" < /dev/null > "$log" 2>&1; then
-        fail "$step failed:" "$log"
+    "$@" < /dev/null > "$log" 2>&1
+    status=$?
+    if [ "$status" -ne 0 ]; then
+        fail "$step failed (exit status $status):" "$log" "$status"
     fi
 }
 
@@ -191,7 +213,7 @@ run_probe() {
     status=$?
     if [ "$status" -ge 126 ] ||
        grep -q -E "error while loading shared libraries|symbol lookup error|Library not loaded|not found \(required by" "$log"; then
-        fail "$tool could not start (exit status $status):" "$log"
+        fail "$tool could not start (exit status $status):" "$log" "$status"
     fi
 }
 
@@ -204,10 +226,10 @@ WORK="$(mktemp -d "$SCRATCH_PARENT/q3-retro68-check.XXXXXX" 2> /dev/null)" || {
     WORK=""
     cannot_check "could not create a scratch directory under $SCRATCH_PARENT."
 }
-# The check writes well under 1 MiB; make sure that much fits before any tool
-# runs, so a full TMPDIR is not mistaken for a broken compiler.
+# The check writes well under 1 MiB in a few files; make sure that much fits
+# before any tool runs, so a full TMPDIR is not mistaken for a broken compiler.
 scratch_writable 1024 ||
-    cannot_check "the scratch directory $WORK does not take 1 MiB (TMPDIR full or read-only)."
+    cannot_check "the scratch directory $WORK does not take 1 MiB and 16 files (TMPDIR full, out of inodes or read-only)."
 export PATH="$BIN:$PATH"
 
 if [ "$TOOLS_ONLY" -eq 1 ]; then
