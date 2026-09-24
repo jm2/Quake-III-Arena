@@ -538,6 +538,9 @@ issues.
 
 #define	MAX_FILE_HANDLES	64
 
+// the longest qpath or pk3 entry name, terminator included
+#define MAX_ZPATH			256
+
 #define BASEGAME "baseq3"
 
 qboolean FS_Initialized();
