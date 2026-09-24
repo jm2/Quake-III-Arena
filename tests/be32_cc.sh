@@ -9,15 +9,13 @@
 # The runners keep their own flags, sanitizers included. This wrapper swaps in
 # the cross compiler ($Q3_BE32_CC, default powerpc-linux-gnu-gcc) and adds:
 #   -fsigned-char, -mlong-double-64  the Retro68 target's char and long double;
-#   -fno-sanitize=shift-base         LongSwap shifts a byte into the sign bit
-#                                    on every big-endian swap (issue #333);
 #   -latomic                         the ppc32 sanitizer runtimes' 64-bit atomics.
 # The binaries run through a qemu-ppc binfmt_misc handler. QEMU_LD_PREFIX
 # points qemu at the cross sysroot, and ppc32 has no LeakSanitizer, so leak
 # checking runners must see Q3_TEST_DETECT_LEAKS=0.
 set -euo pipefail
 
-extra=(-fno-sanitize=shift-base)
+extra=()
 link=1
 for arg in "$@"; do
     case "$arg" in
