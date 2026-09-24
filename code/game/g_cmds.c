@@ -754,6 +754,7 @@ Cmd_FollowCycle_f
 void Cmd_FollowCycle_f( gentity_t *ent, int dir ) {
 	int		clientnum;
 	int		original;
+	int		count;
 
 	// if they are playing a tournement game, count as a loss
 	if ( (g_gametype.integer == GT_TOURNAMENT )
@@ -769,9 +770,26 @@ void Cmd_FollowCycle_f( gentity_t *ent, int dir ) {
 		G_Error( "Cmd_FollowCycle_f: bad dir %i", dir );
 	}
 
+	// if dedicated follow client, just switch between the two auto clients
+	// (a free spectator that StopFollowing left with -1 or -2 cycles through
+	// the players as before)
+	if (ent->client->sess.spectatorState == SPECTATOR_FOLLOW && ent->client->sess.spectatorClient < 0) {
+		if (ent->client->sess.spectatorClient == -1) {
+			ent->client->sess.spectatorClient = -2;
+		} else if (ent->client->sess.spectatorClient == -2) {
+			ent->client->sess.spectatorClient = -1;
+		}
+		return;
+	}
+
 	clientnum = ent->client->sess.spectatorClient;
 	original = clientnum;
+	// check each slot at most once: clientnum never comes back to the -1 or
+	// -2 of such a free spectator, or to a spectatorClient restored from
+	// session data at or past a lowered level.maxclients
+	count = 0;
 	do {
+		count++;
 		clientnum += dir;
 		if ( clientnum >= level.maxclients ) {
 			clientnum = 0;
@@ -794,7 +812,7 @@ void Cmd_FollowCycle_f( gentity_t *ent, int dir ) {
 		ent->client->sess.spectatorClient = clientnum;
 		ent->client->sess.spectatorState = SPECTATOR_FOLLOW;
 		return;
-	} while ( clientnum != original );
+	} while ( clientnum != original && count < level.maxclients );
 
 	// leave it where it was
 }
