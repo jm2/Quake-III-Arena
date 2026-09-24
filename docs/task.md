@@ -25,7 +25,8 @@ and its evidence links, is archived unchanged in
   rerun a PR's checks when `master` moves, and its test-merge ref can lag, so
   after a related merge close and reopen the PR and confirm the run's
   checkout line (`Merge <head> into <base>`) names a current base. A green
-  run from before #312 let #323 break `master`'s link (fixed by #328).
+  run from before #312 let #323 break a host regression's link on `master`
+  (fixed by #328).
 - Engine changes cross-build both products (base and `BUILD_TEAM_ARENA=ON`)
   with the local Retro68 toolchain and add no compiler warnings. Host changes
   run the relevant host checks.
@@ -71,7 +72,7 @@ Land these first: every later PR depends on a CI run that finishes and a ledger 
 
 ## B1 — Regressions and runtime bugs to clear before the first target run
 
-Each blocks or corrupts a normal base-game session. All are host-verifiable except #256.
+Each blocked or corrupted a normal base-game session. Their host-side fixes are merged; the entries still open wait on the first target run, except #301 and #303, which were filed later and do not block a normal session.
 
 - [ ] [#270 — SV_GentityNum bound faults the server on botlib passent -1 traces during map load](https://github.com/jm2/Quake-III-Arena/issues/270) — **critical**; server faults on botlib passent -1 traces while loading maps with suspended items; PR #285 merged; needs target test.
 - [x] [#243 — BSP reference preflight rejects retail q3dm17 (flare surfaces with fogNum 0 and no fogs)](https://github.com/jm2/Quake-III-Arena/issues/243) — **critical**; retail q3dm17 rejected by both BSP loaders; PR #284 merged.
@@ -97,7 +98,7 @@ Each blocks or corrupts a normal base-game session. All are host-verifiable exce
 A launchable application must come out of every build, from a pinned toolchain, before release packaging work.
 
 - [x] [#226 — Default build produces a non-launchable PEF; resources are only compiled in package mode](https://github.com/jm2/Quake-III-Arena/issues/226) — **medium**; default build output is a bare PEF; resources only in package mode; PR #297 merged.
-- [ ] [#225 — Packaging on a macOS host fails because Rez output lives in the resource fork](https://github.com/jm2/Quake-III-Arena/issues/225) — **medium**; macOS-host packaging reads the empty data fork; PR #297 merged.
+- [ ] [#225 — Packaging on a macOS host fails because Rez output lives in the resource fork](https://github.com/jm2/Quake-III-Arena/issues/225) — **medium**; macOS-host packaging reads the empty data fork; PR #297 merged; the macOS `hdiutil` packaging run remains.
 - [ ] [#269 — Toolchain readiness accepts binaries that cannot run, and setup cannot repair them](https://github.com/jm2/Quake-III-Arena/issues/269) — **medium**; readiness accepts a toolchain that cannot run.
 - [ ] [#227 — Retro68 toolchain and Apple SDK inputs are unpinned and unverified](https://github.com/jm2/Quake-III-Arena/issues/227) — **medium**; Retro68 and SDK inputs unpinned.
 - [ ] [#1 — Build scripts accept incomplete Retro68 toolchain and fail on missing prepared OpenGL headers](https://github.com/jm2/Quake-III-Arena/issues/1) — **high**; readiness does not check prepared OpenGL SDK files.
@@ -142,7 +143,7 @@ Remote memory corruption and denial of service reachable from the network come b
 - [x] [#262 — HFS ':' separators bypass qpath and fs_game traversal checks](https://github.com/jm2/Quake-III-Arena/issues/262) — **medium**; HFS : separators bypass traversal checks; PR #322 merged.
 - [ ] [#38 — Rate-limit all connectionless commands fairly per address and globally](https://github.com/jm2/Quake-III-Arena/issues/38) — **medium**; per-address and global connectionless rate limits.
 - [ ] [#39 — Prevent QVMs from modifying protected cvars and engine commands](https://github.com/jm2/Quake-III-Arena/issues/39) — **medium**; protected cvars and engine commands.
-- [ ] [#40 — Validate server-controlled clientNum before native cgame initialization](https://github.com/jm2/Quake-III-Arena/issues/40) — **medium**; clientNum check present; malformed-gamestate tests and index audit remain; PR #321 merged.
+- [ ] [#40 — Validate server-controlled clientNum before native cgame initialization](https://github.com/jm2/Quake-III-Arena/issues/40) — **medium**; clientNum check present; PR #321 merged (index audit); malformed-gamestate fuzzing remains.
 - [x] [#275 — Client echo/print connectionless handlers accept any source address](https://github.com/jm2/Quake-III-Arena/issues/275) — **low**; echo/print accept any sender; PR #315 merged.
 - [ ] [#277 — Mac Sys_StringToAdr copies unbounded hostnames into a 256-byte DNSAddress](https://github.com/jm2/Quake-III-Arena/issues/277) — **low**; unbounded hostnames into a 256-byte DNSAddress.
 - [ ] [#265 — Sys_GetPacket ignores T_MORE, splitting oversize datagrams into two packets](https://github.com/jm2/Quake-III-Arena/issues/265) — **low**; T_MORE datagrams split into two packets.
@@ -157,7 +158,7 @@ Remote memory corruption and denial of service reachable from the network come b
 
 ## B5 — Mac OS 9 platform and target bring-up
 
-Most items need Mac OS 9 hardware with a 3D accelerator (#268). Entries marked needs target test already have code fixes.
+Most items need Mac OS 9 hardware with a 3D accelerator (#268). Entries marked needs target test already have code fixes, except #327, which is an open question for a target experiment.
 
 - [ ] [#268 — Renderer requires accelerated AGL, so Mac OS 9 emulators cannot run acceptance tests](https://github.com/jm2/Quake-III-Arena/issues/268) — **medium**; emulators fail the accelerated-renderer check; define hardware-only checks.
 - [ ] [#258 — Retro68 open() requests read/write for every fopen, so locked or read-only data cannot load](https://github.com/jm2/Quake-III-Arena/issues/258) — **high**; Retro68 open() asks for write access; read-only media fail.
@@ -237,14 +238,15 @@ Team Arena cannot reach its menu today; keep it building (BUILD_TEAM_ARENA=ON) a
 
 ## Next steps
 
-- B0 is done. Every host-fixable B1 item is merged; #270, #233, #237, #256,
-  #236, #248 and #247 wait only on the first target run. #301 and #303 are new.
+- B0 is done. Every B1 item from the review has a merged fix; #270, #233,
+  #237, #256, #236, #248 and #247 wait only on the first target run. #301 and
+  #303 were filed later and are open host fixes.
 - B2 before release packaging: #227 (pin toolchain inputs), #269 (readiness),
   #231, #232, #299.
 - Add 32-bit big-endian CI (#224) and real-content tests (#253) before resuming
   any B6 hardening.
 - B4 next: #306 (a player's chat line overflows the bots' match string), #37,
-  #313, #314, #319, #320, then #36, #38, #39, #277, #265, #318, #326.
+  #313, #314, #319, #320, then #40, #36, #38, #39, #277, #265, #318, #326.
 - First target run (base game, retail data, real hardware): main menu, a bot
   match on q3dm1, disconnect, normal quit, fatal-exit status. Record results
   here and on each `needs target test` issue.
