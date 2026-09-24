@@ -182,7 +182,7 @@ static void CheckPropagated( int n, const char *name ) {
 			"configstring update did not reach another client" );
 	}
 }
-/** Fresh server with CLIENTS connected players; `listen` is a listen server with sv_floodProtect off. */
+/** Fresh server with CLIENTS connected players; `listen` is a listen server, with sv_floodProtect off when it is 1. */
 static void Reset( int listen ) {
 	int i;
 	client_t *cl;
@@ -192,7 +192,7 @@ static void Reset( int listen ) {
 	memset( thinks, 0, sizeof( thinks ) ); memset( gameCommands, 0, sizeof( gameCommands ) );
 	memset( gameNames, 0, sizeof( gameNames ) );
 	svs.time = 100000; sv.timeResidual = 0; sv.state = SS_GAME; sv.serverId = 4242; sv.checksumFeed = 0x5eed;
-	clRunning.integer = listen; dedicated.integer = !listen; floodProtect.integer = !listen; worstWindow = 0;
+	clRunning.integer = listen != 0; dedicated.integer = !listen; floodProtect.integer = listen != 1; worstWindow = 0;
 	for ( i = 0, cl = svs.clients; i < CLIENTS; i++, cl++ ) {	/* ClientConnect, before anyone is primed */
 		cl->netchan.remoteAddress.type = listen && i == NORMAL ? NA_LOOPBACK : NA_IP;
 		cl->netchan.remoteAddress.port = i + 1;
@@ -349,7 +349,8 @@ static void HeldKey( int listen ) {
 	Check( applied[NORMAL] == last, "held-back userinfo applied after the client left" );
 	Check( cl->state == CS_FREE, "zombie slot not freed" );
 }
-/** Dedicated and listen-server configurations; sv_floodProtect must not matter. */
+/** Dedicated and listen-server configurations, the listen server with sv_floodProtect off and on
+    (it also throttles a listen server's remote clients since #320); it must not matter. */
 int main( void ) {
 	int listen;
 	sv_maxclients = &maxclients; com_dedicated = &dedicated; com_cl_running = &clRunning;
@@ -359,7 +360,7 @@ int main( void ) {
 	maxclients.integer = CLIENTS; lanForceRate.integer = 1; svRunning.integer = 1;
 	fps.integer = 1000 / FRAME_MSEC; timeout.integer = 200; zombietime.integer = 2;
 	svs.clients = calloc( CLIENTS, sizeof( client_t ) ); Check( svs.clients != NULL, "allocation" );
-	for ( listen = 0; listen < 2; listen++ ) {
+	for ( listen = 0; listen < 3; listen++ ) {
 		NormalChanges( listen );
 		Flood( FLOODER, FLOOD, listen );
 		/* More changes than MAX_RELIABLE_COMMANDS from a client still in CS_PRIMED. */
