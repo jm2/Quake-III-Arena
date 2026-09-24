@@ -791,6 +791,40 @@ char	*Cvar_InfoString( int bit ) {
 	return info;
 }
 
+// the CS_SYSTEMINFO pak lists that clients read as checksum/name pairs:
+// a retail 1.32c client crashes in FS_ComparePaks on referenced checksums
+// without their names, and FS_PureServerSet*Paks leak the names when the
+// checksums are missing, so each pair is sent whole or not at all
+static const char *cvar_bigInfoPairs[][2] = {
+	{ "sv_paks", "sv_pakNames" },
+	{ "sv_referencedPaks", "sv_referencedPakNames" }
+};
+#define	NUM_BIG_INFO_PAIRS	( (int)( sizeof( cvar_bigInfoPairs ) / sizeof( cvar_bigInfoPairs[0] ) ) )
+
+/*
+=====================
+Cvar_InfoAdd_Big
+
+Returns qfalse, with a warning saying why, if a non-empty value was left out
+=====================
+*/
+static qboolean Cvar_InfoAdd_Big( char *info, const cvar_t *var ) {
+	int		len;
+
+	len = (int)strlen( info );
+	Info_SetValueForKey_Big( info, var->name, var->string );
+	if ( !var->string[0] || (int)strlen( info ) != len ) {
+		return qtrue;
+	}
+	if ( !Info_ValidateKeyValue( var->string ) ) {
+		Com_Printf( "WARNING: %s has a \\, \" or ; in it, left it out of the big info string\n", var->name );
+	} else {
+		Com_Printf( "WARNING: no room for %s (%i chars) in the big info string, left it out\n",
+			var->name, (int)strlen( var->string ) );
+	}
+	return qfalse;
+}
+
 /*
 =====================
 Cvar_InfoString_Big
@@ -799,31 +833,69 @@ Cvar_InfoString_Big
 
   Values that would fit a normal info string go in first and the big
   ones (the pure and referenced pak lists) last, so a pak list that
-  fills the string can never push out a short key such as sv_serverid,
-  and a value that no longer fits is reported. Readers look keys up by
-  name, so the order is not part of the protocol.
+  fills the string can't push out a short key such as sv_serverid.
+  Clients look the keys up by name; the q3_ui postgame menu reads
+  sv_serverid from only the first MAX_INFO_STRING-1 chars, which this
+  order helps. A value that doesn't fit is left out with a warning, and
+  each pak list pair above is sent whole or not at all.
 =====================
 */
 char	*Cvar_InfoString_Big( int bit ) {
 	static char	info[BIG_INFO_STRING];
-	cvar_t	*var;
-	int		pass, len;
+	qboolean	pairDone[NUM_BIG_INFO_PAIRS];
+	cvar_t	*var, *partner;
+	int		pass, pair, len;
 
 	info[0] = 0;
+	Com_Memset( pairDone, 0, sizeof( pairDone ) );
 
 	for ( pass = 0 ; pass < 2 ; pass++ ) {
 		for (var = cvar_vars ; var ; var = var->next) {
 			if ( !(var->flags & bit) ) {
 				continue;
 			}
-			if ( ( strlen( var->string ) >= MAX_INFO_VALUE ) != pass ) {
+
+			// find the other list of a pak list pair
+			partner = NULL;
+			for ( pair = 0 ; pair < NUM_BIG_INFO_PAIRS ; pair++ ) {
+				if ( !Q_stricmp( var->name, cvar_bigInfoPairs[pair][0] ) ) {
+					partner = Cvar_FindVar( cvar_bigInfoPairs[pair][1] );
+					break;
+				}
+				if ( !Q_stricmp( var->name, cvar_bigInfoPairs[pair][1] ) ) {
+					partner = Cvar_FindVar( cvar_bigInfoPairs[pair][0] );
+					break;
+				}
+			}
+			if ( pair < NUM_BIG_INFO_PAIRS && pairDone[pair] ) {
+				continue;	// already went in, or out, with its partner
+			}
+			if ( partner && !(partner->flags & bit) ) {
+				partner = NULL;
+			}
+
+			if ( ( strlen( var->string ) >= MAX_INFO_VALUE
+				|| ( partner && strlen( partner->string ) >= MAX_INFO_VALUE ) ) != pass ) {
 				continue;
 			}
+			if ( pair < NUM_BIG_INFO_PAIRS ) {
+				pairDone[pair] = qtrue;
+			}
+
 			len = (int)strlen( info );
-			Info_SetValueForKey_Big (info, var->name, var->string);
-			if ( var->string[0] && (int)strlen( info ) == len ) {
-				Com_Printf( "WARNING: no room for %s (%i chars) in the big info string, left it out\n",
-					var->name, (int)strlen( var->string ) );
+			if ( !Cvar_InfoAdd_Big( info, var ) ) {
+				if ( partner && partner->string[0] ) {
+					Com_Printf( "WARNING: left %s out of the big info string too, it only goes with %s\n",
+						partner->name, var->name );
+				}
+				continue;
+			}
+			if ( partner && !Cvar_InfoAdd_Big( info, partner ) ) {
+				info[len] = 0;	// take var back out
+				if ( var->string[0] ) {
+					Com_Printf( "WARNING: left %s out of the big info string too, it only goes with %s\n",
+						var->name, partner->name );
+				}
 			}
 		}
 	}

@@ -1,4 +1,5 @@
-/* Issue #303: pak lists that fill CS_SYSTEMINFO must not push sv_serverid and the other short keys out. */
+/* Issue #303: pak lists that fill CS_SYSTEMINFO must not push sv_serverid and the other short keys out,
+   and each checksum/name list pair is sent whole or not at all. */
 #include "q_shared.h"
 #include "qcommon.h"
 
@@ -12,9 +13,10 @@ extern cvar_t *cvar_vars;	/* cvar.c */
 cvar_t *sv_serverid;	/* assigned by SV_Init's systeminfo block */
 cvar_t *sv_pure;
 
-/* The lists SV_SpawnServer fills from the filesystem. */
-static const char *pakListKeys[] = {
-	"sv_paks", "sv_pakNames", "sv_referencedPaks", "sv_referencedPakNames"
+/* The lists SV_SpawnServer fills from the filesystem, as the checksum/name pairs clients read. */
+static const char *pakListPairs[][2] = {
+	{ "sv_paks", "sv_pakNames" },
+	{ "sv_referencedPaks", "sv_referencedPakNames" }
 };
 
 /* Short keys clients act on; without sv_serverid a client reloads the gamestate forever. */
@@ -74,6 +76,32 @@ char *CopyString( const char *in ) {
 
 void Z_Free( void *ptr ) {
 	free( ptr );
+}
+
+void Com_Memset( void *dest, const int val, const size_t count ) {
+	memset( dest, val, count );
+}
+
+/* True if a WARNING line of the last build names key as a whole word. */
+static qboolean Warned( const char *key ) {
+	const char *line, *end, *p;
+	size_t keyLength = strlen( key );
+
+	for ( line = printed ; *line ; line = *end ? end + 1 : end ) {
+		end = strchr( line, '\n' );
+		if ( !end ) {
+			end = line + strlen( line );
+		}
+		if ( strncmp( line, "WARNING: ", 9 ) ) {
+			continue;
+		}
+		for ( p = strstr( line, key ) ; p && p < end ; p = strstr( p + keyLength, key ) ) {
+			if ( p[-1] == ' ' && strchr( " ,\n", p[keyLength] ) ) {
+				return qtrue;
+			}
+		}
+	}
+	return qfalse;
 }
 
 /* Create the CVAR_SYSTEMINFO cvars in engine start-up order. */
@@ -151,9 +179,9 @@ static int SweepPakCounts( const char *name, const char *gamename, int maxPaks, 
 	char sent[BIG_INFO_VALUE];
 	char message[256];
 	char warning[128];
-	const char *built, *value;
-	int i, infoLength, pairLength, firstDrop = -1;
-	qboolean allShort;
+	const char *built, *key, *value;
+	int i, j, infoLength, pairLength, listed, leftOut, firstDrop = -1;
+	qboolean allShort, roomGiven;
 
 	scenario = name;
 	Cvar_Set( "fs_game", Q_stricmp( gamename, BASEGAME ) ? gamename : "" );
@@ -178,31 +206,45 @@ static int SweepPakCounts( const char *name, const char *gamename, int maxPaks, 
 		}
 
 		allShort = qtrue;
-		for ( i = 0 ; i < ARRAY_LEN( pakListKeys ) ; i++ ) {
-			value = Cvar_VariableString( pakListKeys[i] );
-			if ( strlen( value ) >= MAX_INFO_VALUE ) {
-				allShort = qfalse;
+		for ( i = 0 ; i < ARRAY_LEN( pakListPairs ) ; i++ ) {
+			pairLength = listed = leftOut = 0;
+			roomGiven = qfalse;
+			for ( j = 0 ; j < 2 ; j++ ) {
+				key = pakListPairs[i][j];
+				value = Cvar_VariableString( key );
+				if ( strlen( value ) >= MAX_INFO_VALUE ) {
+					allShort = qfalse;
+				}
+				Q_strncpyz( sent, Info_ValueForKey( info, key ), sizeof( sent ) );
+				if ( !value[0] || sent[0] ) {
+					Com_sprintf( message, sizeof( message ), "%s is sent whole and not reported", key );
+					Check( !strcmp( sent, value ) && !Warned( key ), message );
+					listed += value[0] != 0;
+					continue;
+				}
+				Com_sprintf( message, sizeof( message ), "left-out %s is reported", key );
+				Check( Warned( key ), message );
+				Com_sprintf( warning, sizeof( warning ), "WARNING: no room for %s (%i chars)", key, (int)strlen( value ) );
+				roomGiven |= strstr( printed, warning ) != NULL;
+				pairLength += strlen( key ) + strlen( value ) + 2;
+				leftOut++;
+				if ( firstDrop < 0 ) {
+					firstDrop = numPaks;
+				}
+				if ( firstDrop == numPaks ) {
+					Q_strcat( dropped, droppedSize, dropped[0] ? va( " %s", key ) : key );
+				}
 			}
-			Q_strncpyz( sent, Info_ValueForKey( info, pakListKeys[i] ), sizeof( sent ) );
-			Com_sprintf( warning, sizeof( warning ), "WARNING: no room for %s (%i chars)",
-				pakListKeys[i], (int)strlen( value ) );
-			if ( !value[0] || sent[0] ) {
-				Com_sprintf( message, sizeof( message ), "%s is sent whole and not reported", pakListKeys[i] );
-				Check( !strcmp( sent, value ) && !strstr( printed, warning ), message );
+			if ( !leftOut ) {
 				continue;
 			}
-			/* a list is only left out when it can't fit next to everything else, and never silently */
-			pairLength = strlen( pakListKeys[i] ) + strlen( value ) + 2;
-			Com_sprintf( message, sizeof( message ), "%s is left out only when it cannot fit", pakListKeys[i] );
-			Check( infoLength + pairLength >= BIG_INFO_STRING, message );
-			Com_sprintf( message, sizeof( message ), "left-out %s is reported", pakListKeys[i] );
-			Check( strstr( printed, warning ) != NULL, message );
-			if ( firstDrop < 0 ) {
-				firstDrop = numPaks;
-			}
-			if ( firstDrop == numPaks ) {
-				Q_strcat( dropped, droppedSize, dropped[0] ? va( " %s", pakListKeys[i] ) : pakListKeys[i] );
-			}
+			/* a pair goes out together, and only when the two lists can't fit next to everything else */
+			Com_sprintf( message, sizeof( message ), "%s and %s are never sent one without the other",
+				pakListPairs[i][0], pakListPairs[i][1] );
+			Check( !listed, message );
+			Com_sprintf( message, sizeof( message ), "%s and %s are left out only when they cannot fit",
+				pakListPairs[i][0], pakListPairs[i][1] );
+			Check( infoLength + pairLength >= BIG_INFO_STRING && roomGiven, message );
 		}
 
 		/* while every value would fit a normal info string the output is the old one, byte for byte */
@@ -211,6 +253,29 @@ static int SweepPakCounts( const char *name, const char *gamename, int maxPaks, 
 		}
 	}
 	return firstDrop;
+}
+
+/* A value the info string rejects is reported for that reason, and its partner list goes with it. */
+static void TestRejectedValue( void ) {
+	char info[BIG_INFO_STRING];
+
+	scenario = "rejected value";
+	numPaks = 3;
+	Cvar_Set( "fs_game", "" );
+	SetPakLists( BASEGAME, numPaks );
+	Cvar_Set( "sv_pakNames", "mappack-000 map;pack-001 mappack-002" );
+	printedLength = 0;
+	printed[0] = 0;
+	Q_strncpyz( info, Cvar_InfoString_Big( CVAR_SYSTEMINFO ), sizeof( info ) );
+
+	Check( !Info_ValueForKey( info, "sv_pakNames" )[0] && !Info_ValueForKey( info, "sv_paks" )[0],
+		"a rejected list takes its partner out" );
+	Check( Info_ValueForKey( info, "sv_referencedPaks" )[0] && Info_ValueForKey( info, "sv_referencedPakNames" )[0],
+		"the other pair is still sent" );
+	Check( Info_ValueForKey( info, "sv_serverid" )[0] != 0, "sv_serverid is still sent" );
+	Check( strstr( printed, "WARNING: sv_pakNames has a \\, \" or ; in it" ) != NULL, "the rejection reason is given" );
+	Check( !strstr( printed, "no room for" ), "a rejected value is not reported as too big" );
+	Check( Warned( "sv_paks" ), "the partner left out with it is reported" );
 }
 
 int main( void ) {
@@ -227,6 +292,8 @@ int main( void ) {
 	modDrop = SweepPakCounts( "mod", "mymod", 800, dropped, sizeof( dropped ) );
 	Check( modDrop > 0, "mod sweep reaches a count that fills systeminfo" );
 	printf( "mymod: every key fits up to %i pk3s; from %i, left out: %s\n", modDrop - 1, modDrop, dropped );
+
+	TestRejectedValue();
 
 	printf( "Cvar systeminfo regression passed\n" );
 	return 0;
