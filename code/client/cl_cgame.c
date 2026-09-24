@@ -496,7 +496,7 @@ int CL_CgameSystemCalls( int *args ) {
 		Cvar_Update( VMAP(1, vmCvar_t) );
 		return 0;
 	case CG_CVAR_SET:
-		Cvar_Set( VMAS(1), VMASN(2) );
+		Cvar_SetSafe( VMAS(1), VMASN(2) );
 		return 0;
 	case CG_CVAR_VARIABLESTRINGBUFFER:
 		Cvar_VariableStringBuffer( VMAS(1), VMAB(2, args[3]), args[3] );
@@ -533,7 +533,7 @@ int CL_CgameSystemCalls( int *args ) {
 		CL_AddCgameCommand( VMAS(1) );
 		return 0;
 	case CG_REMOVECOMMAND:
-		Cmd_RemoveCommand( VMAS(1) );
+		Cmd_RemoveCommandSafe( VMAS(1) );
 		return 0;
 	case CG_SENDCLIENTCOMMAND:
 		CL_AddReliableCommand( VMAS(1) );

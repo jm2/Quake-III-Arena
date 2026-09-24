@@ -161,6 +161,21 @@ void Cvar_VariableStringBuffer( const char *var_name, char *buffer, int bufsize 
 	}
 }
 
+/*
+============
+Cvar_Flags
+============
+*/
+int Cvar_Flags( const char *var_name ) {
+	cvar_t *var;
+
+	var = Cvar_FindVar( var_name );
+	if ( !var ) {
+		return CVAR_NONEXISTENT;
+	}
+	return var->flags;
+}
+
 
 /*
 ============
@@ -207,9 +222,10 @@ cvar_t *Cvar_Get( const char *var_name, const char *var_value, int flags ) {
 	var = Cvar_FindVar (var_name);
 	if ( var ) {
 		// if the C code is now specifying a variable that the user already
-		// set a value for, take the new value as the reset value
-		if ( ( var->flags & CVAR_USER_CREATED ) && !( flags & CVAR_USER_CREATED )
-			&& var_value[0] ) {
+		// set a value for, take the new value as the reset value, even an
+		// empty one: the cvar is no longer the user's (or a server's to
+		// set, issue #39)
+		if ( ( var->flags & CVAR_USER_CREATED ) && !( flags & CVAR_USER_CREATED ) ) {
 			var->flags &= ~CVAR_USER_CREATED;
 			Z_Free( var->resetString );
 			var->resetString = CopyString( var_value );
@@ -217,6 +233,18 @@ cvar_t *Cvar_Get( const char *var_name, const char *var_value, int flags ) {
 			// ZOID--needs to be set so that cvars the game sets as 
 			// SERVERINFO get sent to clients
 			cvar_modifiedFlags |= flags;
+		}
+
+		// Make sure servers cannot mark engine-added variables as SERVER_CREATED
+		if ( var->flags & CVAR_SERVER_CREATED ) {
+			if ( !( flags & CVAR_SERVER_CREATED ) ) {
+				// the registration's flags decide from now on: the
+				// CVAR_ROM only kept the player off the server's copy, and
+				// retail never had it (/pmove_fixed, set g_synchronousClients)
+				var->flags &= ~( CVAR_SERVER_CREATED | CVAR_ROM );
+			}
+		} else {
+			flags &= ~CVAR_SERVER_CREATED;
 		}
 
 		var->flags |= flags;
@@ -400,6 +428,30 @@ void Cvar_Set( const char *var_name, const char *value) {
 
 /*
 ============
+Cvar_SetSafe
+
+The name matched a protected cvar, so only the value can be long; the
+error message buffer takes MAXPRINTMSG chars with no bound on the format.
+============
+*/
+void Cvar_SetSafe( const char *var_name, const char *value ) {
+	int flags = Cvar_Flags( var_name );
+
+	if ( ( flags != CVAR_NONEXISTENT ) && ( flags & CVAR_PROTECTED ) ) {
+		if ( value ) {
+			Com_Error( ERR_DROP, "Restricted source tried to set "
+				"\"%s\" to \"%.*s\"", var_name, MAX_CVAR_VALUE_STRING, value );
+		} else {
+			Com_Error( ERR_DROP, "Restricted source tried to "
+				"modify \"%s\"", var_name );
+		}
+		return;
+	}
+	Cvar_Set( var_name, value );
+}
+
+/*
+============
 Cvar_SetLatched
 ============
 */
@@ -421,6 +473,22 @@ void Cvar_SetValue( const char *var_name, float value) {
 		Com_sprintf (val, sizeof(val), "%f",value);
 	}
 	Cvar_Set (var_name, val);
+}
+
+/*
+============
+Cvar_SetValueSafe
+============
+*/
+void Cvar_SetValueSafe( const char *var_name, float value ) {
+	char	val[32];
+
+	if ( value == (int)value ) {
+		Com_sprintf (val, sizeof(val), "%i",(int)value);
+	} else {
+		Com_sprintf (val, sizeof(val), "%f",value);
+	}
+	Cvar_SetSafe (var_name, val);
 }
 
 
@@ -954,7 +1022,33 @@ basically a slightly modified Cvar_Get for the interpreted modules
 void	Cvar_Register( vmCvar_t *vmCvar, const char *varName, const char *defaultValue, int flags ) {
 	cvar_t	*cv;
 
-	cv = Cvar_Get( varName, defaultValue, flags );
+	// Don't allow VM to specify a different creator or other internal flags.
+	if ( flags & CVAR_USER_CREATED ) {
+		Com_DPrintf( S_COLOR_YELLOW "WARNING: VM tried to set CVAR_USER_CREATED on cvar '%s'\n", varName );
+		flags &= ~CVAR_USER_CREATED;
+	}
+	if ( flags & CVAR_SERVER_CREATED ) {
+		Com_DPrintf( S_COLOR_YELLOW "WARNING: VM tried to set CVAR_SERVER_CREATED on cvar '%s'\n", varName );
+		flags &= ~CVAR_SERVER_CREATED;
+	}
+	if ( flags & CVAR_PROTECTED ) {
+		Com_DPrintf( S_COLOR_YELLOW "WARNING: VM tried to set CVAR_PROTECTED on cvar '%s'\n", varName );
+		flags &= ~CVAR_PROTECTED;
+	}
+	if ( flags & CVAR_NONEXISTENT ) {
+		Com_DPrintf( S_COLOR_YELLOW "WARNING: VM tried to set CVAR_NONEXISTENT on cvar '%s'\n", varName );
+		flags &= ~CVAR_NONEXISTENT;
+	}
+
+	cv = Cvar_FindVar( varName );
+
+	// Don't modify cvar if it's protected.
+	if ( cv && ( cv->flags & CVAR_PROTECTED ) ) {
+		Com_DPrintf( S_COLOR_YELLOW "WARNING: VM tried to register protected cvar '%s' with value '%s'%s\n",
+			varName, defaultValue, ( flags & ~cv->flags ) != 0 ? " and new flags" : "" );
+	} else {
+		cv = Cvar_Get( varName, defaultValue, flags );
+	}
 	if ( !vmCvar ) {
 		return;
 	}
