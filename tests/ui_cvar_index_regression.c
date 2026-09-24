@@ -101,7 +101,7 @@ static void CheckedSprintf( char *dest, int size, formatArg_t arg, const char *f
 #define WHITE 6	/* the UI's effects color for game color 7 */
 
 static const int teammateClients[TEAMMATES] = { 1, LOCAL_CLIENT, 4 };
-static const char *teammateNames[TEAMMATES] = { "P1", LOCAL_NAME, "P4" };
+static const char *teammateNames[TEAMMATES] = { "P1", LOCAL_NAME, LOCAL_NAME };
 static const int otherTeammateClients[] = { 1, 4 };	/* the teammates but LOCAL_CLIENT */
 /* orders strings with the command each sends client 1: a vtell like the
  * fixture's, one with %% literals, two that retail sends as they are (with %%
@@ -147,15 +147,16 @@ static void Init( void ) {
 	close( saved );
 }
 
-/** The server's player strings: the local client leads the blue team. */
+/** The server's player strings: the local client leads the blue team, and its
+ * teammate 4 has the same name in another color. */
 static void Serve( void ) {
 	int n;
 
 	Q_strncpyz( configStrings[CS_SERVERINFO], "\\sv_maxclients\\8\\g_gametype\\4", MAX_INFO_STRING );
 	for ( n = 0; n < 5; n++ ) {
 		Com_sprintf( configStrings[CS_PLAYERS + n], MAX_INFO_STRING, "\\n\\%s\\t\\%d\\tl\\%d",
-			n == LOCAL_CLIENT ? LOCAL_USERINFO_NAME : va( "P%d", n ), n % 3 ? TEAM_BLUE : TEAM_RED,
-			n == LOCAL_CLIENT );
+			n == LOCAL_CLIENT ? LOCAL_USERINFO_NAME : n == 4 ? "^4" LOCAL_NAME : va( "P%d", n ),
+			n % 3 ? TEAM_BLUE : TEAM_RED, n == LOCAL_CLIENT );
 	}
 }
 
@@ -202,9 +203,12 @@ static void RunOrders( const char *script, const char *orders, const int *client
  * or %d (issue #401): orders, for a teammate and for Everyone, and voiceOrders,
  * for a teammate, refuse it, format and send nothing, and warn developers.
  * voiceOrdersTeam never formats its string: it sends it as it is, for Everyone
- * only. */
+ * only. UI_SendOrders also refuses it from an exact-size heap copy, so ASan
+ * sees a read past a trailing %, which the String_Alloc pool the scripts'
+ * strings come from would hide. */
 static void TestRefused( void ) {
 	static const char *selections[] = { "0", "3" };	/* client 1, and EVERYONE */
+	char *orders;
 	int i;
 
 	Cvar_Set( "developer", "1" );
@@ -225,6 +229,12 @@ static void TestRefused( void ) {
 		checkedFormat = NULL;
 		Check( formattedCount == 0 && !strcmp( executed, i ? va( "%s\n", value ) : "" ), "voiceOrdersTeam" );
 	}
+	orders = malloc( strlen( value ) + 1 );
+	Check( orders != NULL, "allocation" );
+	strcpy( orders, value );
+	executed[0] = 0;
+	Check( !UI_SendOrders( "orders", orders, 1 ) && !executed[0], "UI_SendOrders refuses the string" );
+	free( orders );
 }
 
 /** The selected player cvars after a key on the selected player item. */
@@ -290,10 +300,15 @@ static void TestSelection( int selected ) {
 }
 
 /** color1 (game colors 1-7) as the UI starts with it, then drawn and stepped by
- * the effects item: a value outside the seven colors shows white. */
+ * the effects item: a value outside the seven colors shows white. The cgame
+ * reads color1 with atoi (CG_ColorFromString), so the value followed by "e1" or
+ * "x3" shows its color too: "1e1" is drawn blue and "0x3" white, where atof
+ * would read white and cyan. */
 static void TestEffectsColor( int color ) {
+	static const char *suffixes[] = { "e1", "x3" };
 	rectDef_t rect = { 0, 20, 128, 8 };
 	int expected = color >= 1 && color <= 7 ? uiColors[color - 1] : WHITE;
+	int i;
 
 	SystemInfo_Set( "color1", value );
 	Init();
@@ -303,6 +318,11 @@ static void TestEffectsColor( int color ) {
 	Check( drawnShader == uiInfo.uiDC.Assets.fxPic[expected], "effects color drawn" );
 	UI_Effects_HandleKey( 0, NULL, K_MOUSE1 );
 	Check( Cvar_VariableValue( "color1" ) == uitogamecode[( expected + 1 ) % 7], "next effects color" );
+	for ( i = 0; i < ARRAY_LEN( suffixes ); i++ ) {
+		SystemInfo_Set( "color1", va( "%s%s", value, suffixes[i] ) );
+		Init();
+		Check( uiInfo.effectsColor == expected, va( "effects color from color1 %s%s, as the cgame reads it", value, suffixes[i] ) );
+	}
 }
 
 /** One cvar and value per process: cg_selectedPlayer as a teammate index (or

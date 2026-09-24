@@ -5,7 +5,12 @@
  * the Go button in s_configs) and wrote a NUL there when that byte was '.'.
  * The Demos menu (ui_demo2.c, linked too) compares ".dm3" against names that end
  * in "dm_<protocol>", which are never shorter than it; it must list as before. */
+/* The Load Config menu's compares go through a checker. The byte before the list
+ * is the end of the Go button, in the same static s_configs, so ASan cannot see a
+ * compare that reads it; the '.' there only shows a NUL written over it. */
+#define Q_stricmp CheckedConfigStricmp
 #include "../code/q3_ui/ui_loadconfig.c"
+#undef Q_stricmp
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,6 +30,18 @@ static void Check( int ok, const char *what ) {
 		fprintf( stderr, "q3_ui file list regression failed: %s\n", what );
 		exit( 1 );
 	}
+}
+
+int Q_stricmp( const char *s1, const char *s2 );
+
+/** Q_stricmp for ui_loadconfig.c: a string in s_configs must start in its list. */
+int CheckedConfigStricmp( const char *s1, const char *s2 ) {
+	const char *configs = (const char *)&s_configs, *end = (const char *)( &s_configs + 1 );
+	const char *names = s_configs.names, *namesEnd = names + sizeof( s_configs.names );
+
+	Check( s1 < configs || s1 >= end || ( s1 >= names && s1 < namesEnd ), "config compare reads inside the list" );
+	Check( s2 < configs || s2 >= end || ( s2 >= names && s2 < namesEnd ), "config compare reads inside the list" );
+	return Q_stricmp( s1, s2 );
 }
 
 /** The last byte of s_configs.go, which is the byte right before s_configs.names. */

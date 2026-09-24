@@ -11,13 +11,15 @@ trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 # sends "follow <name>" through ClientCommand. It stubs the engine traps and
 # the game symbols the file's other commands reference. Built for base
 # Quake III and Team Arena (MISSIONPACK), which compile the same g_cmds.c.
+# -fsigned-char as on the PowerPC target (CMakeLists.txt): SanitizeString
+# drops the bytes 0x80 and up as control characters only with a signed char.
 for Q3_TEST_VARIANT in base missionpack; do
     Q3_TEST_FLAGS=()
     if [[ "$Q3_TEST_VARIANT" == missionpack ]]; then
         Q3_TEST_FLAGS=(-DMISSIONPACK)
     fi
     "${CC:-cc}" \
-        -std=gnu99 -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
+        -std=gnu99 -fsigned-char -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
         -fsanitize=address,undefined "${Q3_TEST_FLAGS[@]}" \
         "$Q3_TEST_ROOT/tests/game_client_name_regression.c" \
         "$Q3_TEST_ROOT/code/game/g_cmds.c" \

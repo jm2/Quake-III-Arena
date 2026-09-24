@@ -115,7 +115,8 @@ static void Serve( const char *maxClients ) {
 }
 
 /** The Remove Bots list holds the client numbers of the bots in the first slots
- * slots, in slot order, and nothing after them changes. */
+ * slots, in slot order, and nothing after them changes. It reads each of those
+ * slots once, min(max(sv_maxclients, 0), 64) in all, and no other. */
 static void TestRemoveBots( const char *maxClients, int slots ) {
 	int n, bots = 0;
 
@@ -133,6 +134,9 @@ static void TestRemoveBots( const char *maxClients, int slots ) {
 	Check( removeBotsMenuInfo.numBots == bots, "bot count" );
 	for ( n = bots; n < MAX_BOTS; n++ ) {
 		Check( removeBotsMenuInfo.botClientNums[n] == SENTINEL, "bot client numbers after the list" );
+	}
+	for ( n = 0; n < MAX_CLIENTS; n++ ) {
+		Check( playerReads[n] == ( n < slots ), "Remove Bots reads each slot it covers once" );
 	}
 	Check( outsidePlayerReads == 0, "Remove Bots reads stay in CS_PLAYERS + MAX_CLIENTS" );
 }
