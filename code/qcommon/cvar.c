@@ -792,7 +792,7 @@ char	*Cvar_InfoString( int bit ) {
 }
 
 // the CS_SYSTEMINFO pak lists that clients read as checksum/name pairs.
-// A name list only goes with its checksums: FS_PureServerSet*Paks leak the
+// A name list only goes with its checksums: retail and ioq3 clients leak the
 // names when the checksums are missing. The referenced checksums also need
 // their names, or a retail 1.32c client crashes in FS_ComparePaks. No
 // client (retail, ioq3, Quake3e or this one) reads the loaded names, so

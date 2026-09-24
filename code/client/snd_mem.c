@@ -139,8 +139,8 @@ static void FindNextChunk(char *name)
 	{
 		data_p=last_chunk;
 
-		if (data_p >= iff_end)
-		{	// didn't find the chunk
+		if (iff_end - data_p < 8)
+		{	// didn't find the chunk, or only part of a chunk header is left
 			data_p = NULL;
 			return;
 		}
@@ -152,8 +152,16 @@ static void FindNextChunk(char *name)
 			data_p = NULL;
 			return;
 		}
+		if (iff_chunk_len > iff_end - data_p)
+		{	// a chunk that runs past the end of the file ends with the file
+			iff_chunk_len = (int)(iff_end - data_p);
+		}
 		data_p -= 8;
-		last_chunk = data_p + 8 + ( (iff_chunk_len + 1) & ~1 );
+		last_chunk = data_p + 8 + iff_chunk_len;
+		if ((iff_chunk_len & 1) && last_chunk < iff_end)
+		{	// skip the pad byte after an odd-sized chunk
+			last_chunk++;
+		}
 		if (!strncmp((char *)data_p, name, 4))
 			return;
 	}
@@ -184,7 +192,7 @@ static wavinfo_t GetWavinfo (char *name, byte *wav, int wavlength)
 
 // find "RIFF" chunk
 	FindChunk("RIFF");
-	if (!(data_p && !strncmp((char *)data_p+8, "WAVE", 4)))
+	if (!(data_p && iff_end - data_p >= 12 && !strncmp((char *)data_p+8, "WAVE", 4)))
 	{
 		Com_Printf("Missing RIFF/WAVE chunks\n");
 		return info;
@@ -195,8 +203,8 @@ static wavinfo_t GetWavinfo (char *name, byte *wav, int wavlength)
 // DumpChunks ();
 
 	FindChunk("fmt ");
-	if (!data_p)
-	{
+	if (!data_p || iff_end - data_p < 8 + 16)
+	{	// the 16 bytes of format fields read below must be in the file
 		Com_Printf("Missing fmt chunk\n");
 		return info;
 	}
@@ -222,8 +230,9 @@ static wavinfo_t GetWavinfo (char *name, byte *wav, int wavlength)
 		return info;
 	}
 
-	data_p += 4;
-	info.samples = GetLittleLong () / info.width;
+	// iff_chunk_len is the data length bounded by the end of the file
+	data_p += 8;
+	info.samples = iff_chunk_len / info.width;
 	info.dataofs = data_p - wav;
 
 	return info;

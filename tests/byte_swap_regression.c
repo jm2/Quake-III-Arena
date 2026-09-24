@@ -204,7 +204,7 @@ static void TestWavLittleLong( void ) {
 		uint32_t length = (uint32_t)tops[i] << 24 | 8u;
 
 		if ( tops[i] < 0x80 ) {
-			continue;	// the loader does not bound positive lengths by the file size
+			continue;	// positive lengths are bounded by the file size, not rejected (#347, run_wav_chunk_tests)
 		}
 		BuildWav( wav, 22050, length );
 		lastMessage[0] = '\0';
