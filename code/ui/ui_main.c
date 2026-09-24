@@ -3262,6 +3262,24 @@ static qboolean UI_SendOrders( const char *script, const char *orders, int clien
 	return qtrue;
 }
 
+/*
+===============
+UI_DisplayServer
+
+The server shown on a row of the server list. An empty list selects row -1,
+and a click below the last row selects row numDisplayServers, one past a full
+list. Such a row shows no server, so it names server -1, which the engine
+answers with an empty string, as it did for retail's empty list (where
+displayServers[-1] read currentServer, -1).
+===============
+*/
+static int UI_DisplayServer( int row ) {
+	if ( row < 0 || row >= uiInfo.serverStatus.numDisplayServers ) {
+		return -1;
+	}
+	return uiInfo.serverStatus.displayServers[row];
+}
+
 static void UI_RunMenuScript(char **args) {
 	const char *name, *name2;
 	char buff[1024];
@@ -3438,7 +3456,7 @@ static void UI_RunMenuScript(char **args) {
 			UI_BuildServerDisplayList(qtrue);
 			UI_FeederSelection(FEEDER_SERVERS, 0);
 		} else if (Q_stricmp(name, "ServerStatus") == 0) {
-			trap_LAN_GetServerAddressString(ui_netSource.integer, uiInfo.serverStatus.displayServers[uiInfo.serverStatus.currentServer], uiInfo.serverStatusAddress, sizeof(uiInfo.serverStatusAddress));
+			trap_LAN_GetServerAddressString(ui_netSource.integer, UI_DisplayServer(uiInfo.serverStatus.currentServer), uiInfo.serverStatusAddress, sizeof(uiInfo.serverStatusAddress));
 			UI_BuildServerStatus(qtrue);
 		} else if (Q_stricmp(name, "FoundPlayerServerStatus") == 0) {
 			Q_strncpyz(uiInfo.serverStatusAddress, uiInfo.foundPlayerServerAddresses[uiInfo.currentFoundPlayerServer], sizeof(uiInfo.serverStatusAddress));
@@ -3511,8 +3529,12 @@ static void UI_RunMenuScript(char **args) {
 				trap_Cmd_ExecuteText( EXEC_APPEND, va("callteamvote leader %s\n",uiInfo.teamNames[uiInfo.teamIndex]) );
 			}
 		} else if (Q_stricmp(name, "addBot") == 0) {
+			// botIndex steps up to two past the table the menu showed, and the
+			// server's g_gametype picks the table (UI_GetBotNameByNumber bounds its own)
 			if (trap_Cvar_VariableValue("g_gametype") >= GT_TEAM) {
-				trap_Cmd_ExecuteText( EXEC_APPEND, va("addbot %s %i %s\n", uiInfo.characterList[uiInfo.botIndex].name, uiInfo.skillIndex+1, (uiInfo.redBlue == 0) ? "Red" : "Blue") );
+				if (uiInfo.botIndex >= 0 && uiInfo.botIndex < uiInfo.characterCount) {
+					trap_Cmd_ExecuteText( EXEC_APPEND, va("addbot %s %i %s\n", uiInfo.characterList[uiInfo.botIndex].name, uiInfo.skillIndex+1, (uiInfo.redBlue == 0) ? "Red" : "Blue") );
+				}
 			} else {
 				trap_Cmd_ExecuteText( EXEC_APPEND, va("addbot %s %i %s\n", UI_GetBotNameByNumber(uiInfo.botIndex), uiInfo.skillIndex+1, (uiInfo.redBlue == 0) ? "Red" : "Blue") );
 			}
@@ -3522,7 +3544,7 @@ static void UI_RunMenuScript(char **args) {
 				char addr[MAX_NAME_LENGTH];
 				int res;
 
-				trap_LAN_GetServerInfo(ui_netSource.integer, uiInfo.serverStatus.displayServers[uiInfo.serverStatus.currentServer], buff, MAX_STRING_CHARS);
+				trap_LAN_GetServerInfo(ui_netSource.integer, UI_DisplayServer(uiInfo.serverStatus.currentServer), buff, MAX_STRING_CHARS);
 				name[0] = addr[0] = '\0';
 				Q_strncpyz(name, 	Info_ValueForKey(buff, "hostname"), MAX_NAME_LENGTH);
 				Q_strncpyz(addr, 	Info_ValueForKey(buff, "addr"), MAX_NAME_LENGTH);
@@ -3545,7 +3567,7 @@ static void UI_RunMenuScript(char **args) {
 		} else if (Q_stricmp(name, "deleteFavorite") == 0) {
 			if (ui_netSource.integer == AS_FAVORITES) {
 				char addr[MAX_NAME_LENGTH];
-				trap_LAN_GetServerInfo(ui_netSource.integer, uiInfo.serverStatus.displayServers[uiInfo.serverStatus.currentServer], buff, MAX_STRING_CHARS);
+				trap_LAN_GetServerInfo(ui_netSource.integer, UI_DisplayServer(uiInfo.serverStatus.currentServer), buff, MAX_STRING_CHARS);
 				addr[0] = '\0';
 				Q_strncpyz(addr, 	Info_ValueForKey(buff, "addr"), MAX_NAME_LENGTH);
 				if (strlen(addr) > 0) {
@@ -4288,7 +4310,7 @@ static void UI_BuildServerStatus(qboolean force) {
 		// reset all server status requests
 		trap_LAN_ServerStatus( NULL, NULL, 0);
 	}
-	if (uiInfo.serverStatus.currentServer < 0 || uiInfo.serverStatus.currentServer > uiInfo.serverStatus.numDisplayServers || uiInfo.serverStatus.numDisplayServers == 0) {
+	if (uiInfo.serverStatus.currentServer < 0 || uiInfo.serverStatus.currentServer >= uiInfo.serverStatus.numDisplayServers || uiInfo.serverStatus.numDisplayServers == 0) {
 		return;
 	}
 	if (UI_GetServerStatusInfo( uiInfo.serverStatusAddress, &uiInfo.serverStatusInfo ) ) {
@@ -4587,7 +4609,7 @@ static void UI_FeederSelection(float feederID, int index) {
   } else if (feederID == FEEDER_SERVERS) {
 		const char *mapName = NULL;
 		uiInfo.serverStatus.currentServer = index;
-		trap_LAN_GetServerInfo(ui_netSource.integer, uiInfo.serverStatus.displayServers[index], info, MAX_STRING_CHARS);
+		trap_LAN_GetServerInfo(ui_netSource.integer, UI_DisplayServer(index), info, MAX_STRING_CHARS);
 		uiInfo.serverStatus.currentServerPreview = trap_R_RegisterShaderNoMip(va("levelshots/%s", Info_ValueForKey(info, "mapname")));
 		if (uiInfo.serverStatus.currentServerCinematic >= 0) {
 		  trap_CIN_StopCinematic(uiInfo.serverStatus.currentServerCinematic);
@@ -5728,7 +5750,7 @@ void UI_DrawConnectScreen( qboolean overlay ) {
 	if (!Q_stricmp(cstate.servername,"localhost")) {
 		Text_PaintCenter(centerPoint, yStart + 48, scale, colorWhite, va("Starting up..."), ITEM_TEXTSTYLE_SHADOWEDMORE);
 	} else {
-		strcpy(text, va("Connecting to %s", cstate.servername));
+		Com_sprintf(text, sizeof(text), "Connecting to %s", cstate.servername);
 		Text_PaintCenter(centerPoint, yStart + 48, scale, colorWhite,text , ITEM_TEXTSTYLE_SHADOWEDMORE);
 	}
 
