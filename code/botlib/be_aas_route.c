@@ -1114,9 +1114,9 @@ static qboolean AAS_ValidateRouteCachePayload(aas_routingcache_t *cache)
 		{
 			area = aasworld.portals[i].areanum;
 			if (area <= 0 || area >= aasworld.numareas) return qfalse;
-			// A goal portal's own start entry is never used as a reachability.
-			if (area == cache->areanum) continue;
-			if (cache->traveltimes[i] && cache->reachabilities[i] >= aasworld.areasettings[area].numreachableareas) return qfalse;
+			// Portal starts read this byte even at time 0. Native portal caches never set it.
+			if (cache->reachabilities[i] && (!cache->traveltimes[i] ||
+				cache->reachabilities[i] >= aasworld.areasettings[area].numreachableareas)) return qfalse;
 		}
 	}
 	else
@@ -1968,7 +1968,8 @@ int AAS_PredictRoute(struct aas_predictroute_s *route, int areanum, vec3_t origi
 	for (i = 0; curareanum != goalareanum && (!maxareas || i < maxareas) && i < aasworld.numareas; i++)
 	{
 		reachnum = AAS_AreaReachabilityToGoalArea(curareanum, curorigin, goalareanum, travelflags);
-		if (!reachnum)
+		//a portal start without reachabilities may name the end of the table
+		if (reachnum <= 0 || reachnum >= aasworld.reachabilitysize)
 		{
 			route->stopevent = RSE_NOROUTE;
 			return qfalse;

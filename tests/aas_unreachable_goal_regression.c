@@ -26,6 +26,20 @@ static void EmptyCaches(void) {
     Check(portalCaches[3]&&portalCaches[3]->traveltimes[2]==1&&!portalCaches[3]->traveltimes[1],"goal portal cache keeps only its native start entry");
     Check(Outstanding()==5&&routingcachesize==PhysicalBytes(),"three area and two portal caches own all routing bytes");
 }
+static void ForgedGoalEntry(unsigned short time,unsigned char reach) {
+    /* Issue #307: the goal portal's own start entry follows the same reachability-byte rule. */
+    aas_routingcache_t portal;int offset=sizeof(routecacheheader_t);
+    PitWorld();OriginalInput();memcpy(&portal,input+offset,sizeof(portal));offset+=portal.size;memcpy(&portal,input+offset,sizeof(portal));
+    Check(portal.type==CACHETYPE_PORTAL&&portal.areanum==3,"second native portal cache belongs to the goal portal");
+    ForgeEntry(offset,3,2,time,reach);Check(!AAS_ReadRouteCache()&&!Outstanding()&&!routingcachesize,"forged goal portal start entry is rejected");Cleanup();
+}
+static void PredictBound(void) {
+    /* Issue #307: a portal without reachabilities may be numbered at the end of the reachability table. */
+    aas_predictroute_t route;vec3_t origin={0,0,0};
+    PitWorld();settings[3].firstreachablearea=aasworld.reachabilitysize;
+    Expect(3,4,qtrue,0,aasworld.reachabilitysize,"portal start without reachabilities keeps the native zero-time route");
+    Check(!AAS_PredictRoute(&route,3,origin,4,-1,0,0,RSE_USETRAVELTYPE,0,0,0)&&route.stopevent==RSE_NOROUTE,"route prediction stops before reading past the reachability table");Cleanup();
+}
 int main(void) {
     routecacheheader_t header;int prior;
     PitWorld();Queries();EmptyCaches();prior=requests;Queries();
@@ -35,6 +49,7 @@ int main(void) {
     PitWorld();OriginalInput();
     Check(AAS_ReadRouteCache()&&routingcachesize==expectedBytes&&Outstanding()==5,"reader accepts the writer's empty goal caches");CheckOwnership();EmptyCaches();
     prior=requests;Queries();Check(requests==prior,"loaded caches answer every query");CheckOwnership();Cleanup();
+    ForgedGoalEntry(1,1);ForgedGoalEntry(0,1);PredictBound();
     puts("Native AAS goals without reachabilities keep empty caches, zero-time portal routes and dump round trips (issue #252)");
     return 0;
 }
