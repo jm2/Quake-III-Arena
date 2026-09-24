@@ -6,11 +6,14 @@
  * real zone's own accounting instead: the real functions run with the real
  * tokenizer and zone allocator (CopyString -> S_Malloc, Z_Free), and after
  * every gamestate the small zone must hold exactly the names still stored,
- * and the stored lists must be what ioquake3 stores. */
+ * and the stored lists must be what ioquake3 stores.  Com_Error calls
+ * FS_PureServerSetLoadedPaks( "", "" ) before its recursion guard, so a
+ * stored name whose zone block another bug damaged must fail once. */
 #include Q3_PURE_COMMON_SOURCE
 #include "../code/qcommon/files.c"
 #include "../code/qcommon/unzip.c"
 
+#include <setjmp.h>
 #include <stdarg.h>
 
 #define MAX_WORDS		MAX_STRING_TOKENS
@@ -25,6 +28,9 @@ typedef struct {
 static cvar_t homepath = { .string = "/nonexistent/q3-fs-pure-paks" };
 static char hostileNames[HOSTILE_NAMES * 6 + 1], hostileSums[HOSTILE_NAMES * 8 + 1];
 static int smallBase, mainBase, gamestates;
+static jmp_buf errorFrame;
+static int expectingError, errorDepth, errors, errorLevel;
+static char errorText[1024];
 
 static void Check( int ok, const char *message ) {
 	if ( !ok ) {
@@ -33,16 +39,25 @@ static void Check( int ok, const char *message ) {
 	}
 }
 
-/* Engine imports; a zone failure is ERR_FATAL on the client. */
+/* Engine imports; a zone failure is ERR_FATAL on the client.  An expected
+ * error takes the real Com_Error's first step, which comes before its
+ * com_errorEntered guard, then leaves as the real one does. */
 void QDECL Com_Error( int level, const char *fmt, ... ) {
-	char text[1024];
 	va_list ap;
 
 	va_start( ap, fmt );
-	vsnprintf( text, sizeof( text ), fmt, ap );
+	vsnprintf( errorText, sizeof( errorText ), fmt, ap );
 	va_end( ap );
-	fprintf( stderr, "Com_Error(%d): %s\n", level, text );
-	Check( 0, "unexpected engine error" );
+	if ( !expectingError ) {
+		fprintf( stderr, "Com_Error(%d): %s\n", level, errorText );
+	}
+	Check( expectingError, "unexpected engine error" );
+	Check( ++errorDepth == 1, "Com_Error re-entered before its recursion guard (unbounded on the target)" );
+	FS_PureServerSetLoadedPaks( "", "" );
+	errorLevel = level;
+	errors++;
+	errorDepth--;
+	longjmp( errorFrame, 1 );
 }
 void QDECL Com_Printf( const char *fmt, ... ) { (void)fmt; }
 void QDECL Com_DPrintf( const char *fmt, ... ) { (void)fmt; }
@@ -213,6 +228,50 @@ static void Round( void ) {
 	Check( smallzone->used == smallBase, "small zone back at its baseline" );
 }
 
+/* Another bug overwrote the header id (loaded) or the trailer mark
+ * (referenced) of a stored name's zone block. */
+static int *DamageMark( char *name, qboolean trailer ) {
+	memblock_t *block = (memblock_t *)( (byte *)name - sizeof( memblock_t ) );
+
+	return trailer ? (int *)( (byte *)block + block->size - 4 ) : &block->id;
+}
+
+static void DamagedName( qboolean referenced ) {
+	char **stored = referenced ? fs_serverReferencedPakNames : fs_serverPakNames;
+	static char *name;
+	static int *mark;
+	int i;
+
+	Gamestate( "11 -22 33", "baseq3/mapD baseq3/mapE baseq3/mapF" );
+	name = stored[1];
+	mark = DamageMark( name, referenced );
+	Check( *mark == ZONEID, "zone mark" );
+	*mark = 0;
+	errors = 0;
+	expectingError = 1;
+	if ( !setjmp( errorFrame ) ) {
+		if ( referenced ) {
+			FS_PureServerSetReferencedPaks( "44", "baseq3/mapG" );
+		} else {
+			FS_PureServerSetLoadedPaks( "44", "baseq3/mapG" );
+		}
+		Check( 0, "a damaged name is freed without an error" );
+	}
+	expectingError = 0;
+	Check( errors == 1 && errorLevel == ERR_FATAL && !errorDepth, "one fatal error" );
+	Check( strstr( errorText, referenced ? "wrote past end" : "without ZONEID" ) != NULL, "Z_Free names the damage" );
+	Check( !stored[1], "the damaged name is no longer stored" );
+	for ( i = 0; i < MAX_SEARCH_PATHS; i++ ) {
+		Check( !fs_serverPakNames[i], "Com_Error released the loaded names" );
+	}
+	/* Mend the block so the zone can be checked again. */
+	*mark = ZONEID;
+	Z_Free( name );
+	Check( smallzone->used == smallBase + StoredCost( fs_serverReferencedPakNames ), "zone after the error" );
+	Gamestate( "", "" );
+	Check( smallzone->used == smallBase, "small zone back at its baseline after the error" );
+}
+
 int main( void ) {
 	char *s;
 	int i;
@@ -233,6 +292,8 @@ int main( void ) {
 	for ( i = 0; i < ROUNDS; i++ ) {
 		Round();
 	}
+	DamagedName( qfalse );
+	DamagedName( qtrue );
 	free( smallzone );
 	free( mainzone );
 	printf( "FS pure pak lists release every name over %d gamestates (issue #342)\n", gamestates );

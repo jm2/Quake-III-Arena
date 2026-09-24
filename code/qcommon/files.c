@@ -3661,6 +3661,7 @@ exception of .cfg and .dat files.
 */
 void FS_PureServerSetLoadedPaks( const char *pakSums, const char *pakNames ) {
 	int		i, c, d;
+	char	*name;
 
 	Cmd_TokenizeString( pakSums );
 
@@ -3690,12 +3691,15 @@ void FS_PureServerSetLoadedPaks( const char *pakSums, const char *pakNames ) {
 		}
 	}
 
-	// the last list may have had more names than checksums
+	// the last list may have had more names than checksums. Com_Error
+	// calls this before its recursion guard, so clear each slot before
+	// Z_Free: a damaged name that makes Z_Free fail is not freed again
 	for ( i = 0 ; i < MAX_SEARCH_PATHS ; i++ ) {
-		if (fs_serverPakNames[i]) {
-			Z_Free(fs_serverPakNames[i]);
-		}
+		name = fs_serverPakNames[i];
 		fs_serverPakNames[i] = NULL;
+		if (name) {
+			Z_Free(name);
+		}
 	}
 	if ( pakNames && *pakNames ) {
 		Cmd_TokenizeString( pakNames );
@@ -3722,6 +3726,7 @@ checksums to see if any pk3 files need to be auto-downloaded.
 */
 void FS_PureServerSetReferencedPaks( const char *pakSums, const char *pakNames ) {
 	int		i, c, d = 0;
+	char	*name;
 
 	Cmd_TokenizeString( pakSums );
 
@@ -3735,10 +3740,11 @@ void FS_PureServerSetReferencedPaks( const char *pakSums, const char *pakNames )
 	}
 
 	for ( i = 0 ; i < MAX_SEARCH_PATHS ; i++ ) {
-		if (fs_serverReferencedPakNames[i]) {
-			Z_Free(fs_serverReferencedPakNames[i]);
-		}
+		name = fs_serverReferencedPakNames[i];
 		fs_serverReferencedPakNames[i] = NULL;
+		if (name) {
+			Z_Free(name);
+		}
 	}
 	if ( pakNames && *pakNames ) {
 		Cmd_TokenizeString( pakNames );
