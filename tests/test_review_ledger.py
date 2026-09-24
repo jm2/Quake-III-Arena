@@ -22,7 +22,9 @@ SEVERITY_PATTERN = re.compile(
     r"informational)\*\*")
 CHECKBOX_PATTERN = re.compile(r"^\s*[-*+]\s*\[[^\]]?\]")
 TRACKED_FLOOR = frozenset(range(1, 53)) | frozenset(range(220, 278)) | frozenset(
-    {290, 291, 296, 299, 300, 301, 302, 303, 306, 307, 313, 314, 318, 319, 320, 325, 326, 327})
+    {290, 291, 296, 299, 300, 301, 302, 303, 306, 307, 313, 314, 318, 319, 320, 325, 326, 327,
+     333, 334, 337, 340, 341, 342, 344, 345, 347, 348, 352, 356, 357, 359, 361, 362, 363, 368,
+     370, 373, 375, 376, 377, 378, 379})
 
 
 class ReviewLedgerTests(unittest.TestCase):
