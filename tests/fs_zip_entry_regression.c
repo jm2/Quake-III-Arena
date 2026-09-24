@@ -6,6 +6,8 @@
 #include Q3_ZIP_NATIVE_FIXTURE
 #undef main
 #include <dirent.h>
+#include <signal.h>
+#include <unistd.h>
 
 static int FileOwners(void) {
     DIR *dir = opendir("/proc/self/fd");
@@ -109,8 +111,18 @@ static void MaximumQuery(char *dir) {
 }
 
 static const char *broken[] = {
-    "open-small.pk3", "open-large.pk3", "read-small.pk3", "read-large.pk3"
+    "open-small.pk3", "open-large.pk3", "read-small.pk3", "read-large.pk3",
+    "stored-small.pk3", "stored-large.pk3", "overrun-small.pk3", "overrun-large.pk3"
 };
+static const int brokenStreams[] = {0, 0, 0, 1, 0, 1, 0, 1};
+
+/* An unguarded stored-entry decoder never returns, so bound every broken read. */
+static void BrokenHung(int number) {
+    static const char message[] = "ZIP regression failed: malformed entry read did not finish\n";
+    (void)number;
+    if (write(2, message, sizeof(message) - 1) < 0) _exit(2);
+    _exit(1);
+}
 
 static void Broken(char *dir, int kind, int occupied) {
     char path[1024], payload[12], text[64];
@@ -118,6 +130,8 @@ static void Broken(char *dir, int kind, int occupied) {
     fileHandleData_t saved;
     void *bytes;
     int live, files, n;
+    signal(SIGALRM, BrokenHung);
+    alarm(60);
     Begin();
     Path(path, sizeof(path), dir, broken[kind]);
     search.pack = FS_LoadZipFile(path, "broken.pk3");
@@ -127,13 +141,17 @@ static void Broken(char *dir, int kind, int occupied) {
     files = FileOwners();
     f = 17;
     n = FS_FOpenFileRead("bad.bin", &f, qtrue);
-    if (kind != 3) {
+    if (!brokenStreams[kind]) {
         Check(n == -1 && !f, "failed unzip open or buffered short read clears its handle");
     } else {
         Check(n == 32 * 1024 * 1024 && f > 0 && !fsh[f].buffer,
               "native streamed declared length at buffering cap");
         n = FS_Read(text, sizeof(text), f);
         Check(n < (int)sizeof(text), "truncated streamed payload does not manufacture a full read");
+        if (kind == 5) {
+            Check(n == 6 && !memcmp(text, "native", 6) && FS_Read(text, sizeof(text), f) == 0,
+                  "truncated stored stream returns its data, then a stable end of input");
+        }
         FS_FCloseFile(f);
     }
     if (occupied) Preserved(prior, &saved, payload, live, files);
@@ -152,6 +170,7 @@ static void Broken(char *dir, int kind, int occupied) {
         FS_FCloseFile(prior);
     }
     End();
+    alarm(0);
 }
 
 static void CapGolden(char *dir, int occupied) {
@@ -211,14 +230,14 @@ int main(int argc, char **argv) {
     if (argc > 2) {
         i = atoi(argv[2]);
         if (i < 4) Reject(argv[1], i, 0);
-        else if (i < 8) Broken(argv[1], i - 4, 0);
+        else if (i < 12) Broken(argv[1], i - 4, 0);
         else CapGolden(argv[1], 0);
         return 0;
     }
     CapGolden(argv[1], 1);
     MaximumQuery(argv[1]);
     for (i = 0; i < 4; i++) Reject(argv[1], i, 1);
-    for (i = 0; i < 4; i++) Broken(argv[1], i, 1);
+    for (i = 0; i < 8; i++) Broken(argv[1], i, 1);
     puts("Actual ZIP size/cap/open/truncation paths preserve owners and cleanly retry");
     return 0;
 }
