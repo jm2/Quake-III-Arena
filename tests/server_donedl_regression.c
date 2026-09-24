@@ -1,5 +1,6 @@
 /* Issue #271: repeated donedl commands must not queue unbounded gamestate copies.
-   Issue #314: reconnecting into a slot must release its download. */
+   Issue #314: reconnecting into a slot must release its download.
+   Issue #326: slots that fill the server-wide queue budget must not get an honest client dropped. */
 #include "../code/server/server.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -305,6 +306,85 @@ static void ManyClients( void ) {
 	Check( zonePeak - base <= QUEUE_BUDGET, "peak queued memory within the budget" );
 	puts( "all client slots together stay within the queue budget" );
 }
+/** Count the messages queued on every slot. */
+static int QueuedTotal( void ) {
+	int i, n = 0;
+	for ( i = 0; i < sv_maxclients->integer; i++ ) n += Queued( &svs.clients[i] );
+	return n;
+}
+/** Fill the server-wide budget with forged acknowledges from as few slots as the per-client cap allows. */
+static void PinBudget( int host ) {
+	client_t *cl; int n, first = host, budget = QUEUE_BUDGET / (int)sizeof(netchan_buffer_t);
+	for ( ; QueuedTotal() < budget; host++ ) {
+		n = budget - QueuedTotal() < QUEUE_CAP ? budget - QueuedTotal() : QUEUE_CAP;
+		cl = Connect( host, host ); InitialGamestate( cl );
+		Packet( cl, sv.serverId, 0x7fffff00, "donedl", n, qfalse );
+		Check( cl->state == CS_PRIMED && Queued( cl ) == n, "attacker slot queues without a drop" );
+	}
+	Check( host - first == 32 && ( budget + 1 ) * (int)sizeof(netchan_buffer_t) > QUEUE_BUDGET,
+	       "32 attacker slots fill the budget" );
+}
+/** Add a reliable command the way SV_AddServerCommand does. */
+static void ServerCommand( client_t *cl, const char *text ) {
+	cl->reliableSequence++;
+	Q_strncpyz( cl->reliableCommands[cl->reliableSequence & (MAX_RELIABLE_COMMANDS-1)], text, MAX_STRING_CHARS );
+}
+/** A map change resends the gamestate to an active client whose snapshot is still a fragment train;
+    32 slots holding the budget must not get that one queued gamestate refused. */
+static void PinnedBudgetMapChange( void ) {
+	client_t *cl = Connect( 1, 11 ), *spare; char text[MAX_STRING_CHARS]; int i, snapshot, allocs;
+	InitialGamestate( cl ); Drain( cl );
+	Packet( cl, SERVER_ID, cl->netchan.outgoingSequence - 1, NULL, 0, qtrue );
+	SV_SendClientSnapshot( cl ); snapshot = cl->netchan.outgoingSequence - 1;
+	Check( cl->state == CS_ACTIVE && !cl->netchan.unsentFragments, "active client gets whole snapshots" );
+	PinBudget( 2 );
+	// a burst of long reliable commands (configstring changes at intermission) makes the next snapshot a train
+	for ( i = 0; i < 4; i++ ) {
+		Com_sprintf( text, sizeof(text), "cs %i \"%.1000s\"", i, sv.configstrings[i] ); ServerCommand( cl, text );
+	}
+	SV_SendClientSnapshot( cl );
+	Check( cl->netchan.unsentFragments && !Queued( cl ), "the snapshot is a fragment train" );
+	sv.serverId = sv.restartedServerId = SERVER_ID + 1; cl->state = CS_CONNECTED;	// SV_SpawnServer
+	Packet( cl, SERVER_ID, snapshot, NULL, 0, qtrue );
+	Check( cl->state == CS_PRIMED && Queued( cl ) == 1, "map change queues the gamestate instead of dropping the client" );
+	Drain( cl ); Packet( cl, sv.serverId, cl->netchan.outgoingSequence - 1, NULL, 0, qtrue );
+	Check( cl->state == CS_ACTIVE && begins == 2 && !disconnects, "client enters the new map" );
+	// only the first message is exempt: past it the budget still refuses a slot
+	spare = Connect( 40, 40 ); InitialGamestate( spare ); allocs = queueAllocs;
+	Packet( spare, sv.serverId, 0x7fffff00, "donedl", 2, qfalse );
+	Check( spare->state == CS_ZOMBIE && !strcmp( dropReason, "\"Server netchan queue full\"" ) && queueAllocs == allocs + 1,
+	       "a second queued message is still held to the budget" );
+	Check( QueuedTotal() == QUEUE_BUDGET / (int)sizeof(netchan_buffer_t), "the budget is unchanged" );
+	puts( "filled queue budget does not drop a client at a map change" );
+}
+/** The server retransmits a download block when the last acknowledges are held up past a second;
+    32 slots holding the budget must not get the gamestate queued by donedl behind it refused. */
+static void PinnedBudgetDonedl( void ) {
+	client_t *cl = Connect( 1, 11 ); int block, blocks = DOWNLOAD_BYTES / MAX_DOWNLOAD_BLKSIZE, ack;
+	allowDownload.integer = 1; referencedPaks = DOWNLOAD_PAK;
+	InitialGamestate( cl ); Drain( cl );
+	Packet( cl, SERVER_ID, cl->netchan.outgoingSequence - 1, "download " DOWNLOAD_PAK ".pk3", 1, qfalse );
+	PinBudget( 2 );
+	// one block per snapshot at this rate; all but the last data block are acknowledged in time
+	for ( block = 0; block <= blocks; block++ ) {
+		SV_SendClientSnapshot( cl );
+		Check( cl->downloadXmitBlock == block + 1 && ( block == blocks || cl->netchan.unsentFragments ),
+		       "each data block is a fragment train" );
+		Drain( cl ); ack = cl->netchan.outgoingSequence - 1;
+		if ( block < blocks - 1 ) Packet( cl, SERVER_ID, ack, va( "nextdl %i", block ), 1, qfalse );
+	}
+	svs.time += 1001;
+	SV_SendClientSnapshot( cl );
+	Check( cl->downloadXmitBlock == blocks && cl->netchan.unsentFragments && !Queued( cl ), "last data block is retransmitted" );
+	Packet( cl, SERVER_ID, ack, va( "nextdl %i", blocks - 1 ), 1, qfalse );
+	Packet( cl, SERVER_ID, ack, va( "nextdl %i", blocks ), 1, qfalse );
+	Check( !cl->downloadName[0] && !openFiles, "end-of-file block completes the download" );
+	Packet( cl, SERVER_ID, ack, "donedl", 1, qfalse );
+	Check( cl->state == CS_PRIMED && Queued( cl ) == 1, "donedl queues the gamestate instead of dropping the client" );
+	Drain( cl ); Packet( cl, SERVER_ID, cl->netchan.outgoingSequence - 1, NULL, 0, qtrue );
+	Check( cl->state == CS_ACTIVE && begins == 1 && !disconnects, "client enters the world" );
+	puts( "filled queue budget does not drop a client finishing a download" );
+}
 /** Final messages queued behind a fragment train are released with the client array. */
 static void Shutdown( void ) {
 	client_t *cl = Connect( 1, 11 ); int gamestate;
@@ -332,7 +412,9 @@ int main( int argc, char **argv ) {
 	case 6: MapRestartDuringDownload(); break;
 	case 7: ManyClients(); break;
 	case 8: ReconnectDuringDownload(); break;
-	default: Check( 0, "usage: server-donedl-tests <0-8>" );
+	case 9: PinnedBudgetMapChange(); break;
+	case 10: PinnedBudgetDonedl(); break;
+	default: Check( 0, "usage: server-donedl-tests <0-10>" );
 	}
 	return 0;
 }
