@@ -1,4 +1,5 @@
-/* Actual chat message loader, source parser, chat file loaders and integrity check (issue #300). */
+/* Actual chat message loader, source parser, chat file loaders and integrity check (issue #300),
+   and reply chat bot name lists (issue #423). */
 #define Q3_CHAT_STATE_NO_MAIN
 #include "bot_chat_state_regression.c"
 #include <limits.h>
@@ -283,6 +284,123 @@ static void Integrity(void)
     ChatEnd(); free(message);
 }
 
+/* Reply chat bot name keys (issue #423): BotLoadReplyChat joins a <"name", ...> list with backslashes in a
+   MAX_MESSAGE_SIZE stack buffer, adding the separator only when the names so far are not empty. */
+
+/* A quoted name list whose retail key is 'total' bytes, from names of at most 'piece' characters; 'key' gets
+   the retail join. A separator that reaches 'total' leaves an empty last name. */
+static void NameList(char *list, char *key, int total, int piece)
+{
+    int used = 0, names = 0, length;
+    while (used < total || !names) {
+        if (names) { *list++ = ','; *list++ = ' '; *key++ = '\\'; used++; }
+        length = total - used < piece ? total - used : piece;
+        *list++ = '"'; memset(list, 'a' + names % 26, (size_t)length); memset(key, 'a' + names % 26, (size_t)length);
+        list += length; key += length; *list++ = '"';
+        used += length; names++;
+    }
+    *list = 0; *key = 0;
+}
+
+/* One reply chat with the keys 'keys' (the source between [ and ]); NULL when the loader rejects it. */
+static bot_replychat_t *LoadReplyKeys(const char *keys)
+{
+    static char text[16384];
+    bot_replychat_t *reply;
+    Check(snprintf(text, sizeof(text), "[%s] = 3\n{\n\"Native reply\";\n}\n", keys) < (int)sizeof(text), "reply key source fits");
+    MessageBegin(text); botDeveloper = 1;
+    reply = BotLoadReplyChat("native.c");
+    botDeveloper = 0;
+    if (reply) {
+        Check(!reply->next && reply->priority == 3 && reply->numchatmessages == 1 && !errors &&
+              !strcmp(reply->firstchatmessage->chatmessage, "Native reply"), "fitting reply keys load the reply chat");
+        replychats = reply;
+    }
+    return reply;
+}
+
+/* A single <list> key: 'expected' is its retail key string, NULL for a list that must be rejected.
+   A rejection must be the loader's "reply chat name ..." source error (paused PR #190 words the same
+   bound "reply chat name list exceeds capacity"). */
+static void ReplyNames(const char *list, const char *expected)
+{
+    static char keys[16384];
+    bot_replychat_t *reply;
+    Check(snprintf(keys, sizeof(keys), "<%s>", list) < (int)sizeof(keys), "reply name list fits");
+    reply = LoadReplyKeys(keys);
+    if (expected) Check(reply && reply->keys && !reply->keys->next && reply->keys->flags == RCKFL_BOTNAMES &&
+                        !strcmp(reply->keys->string, expected), "a fitting bot name list loads the retail key bytes");
+    else Check(!reply && errors == 1 && strstr(lastError, "reply chat name"),
+               "an overlong bot name list rejects the reply chat file with a source error");
+    ChatEnd();
+}
+
+/* Name lists whose retail key is 'total' bytes, from one name, from long names and from many short names.
+   MAX_TOKEN - 4 characters is the longest string the lexer reads. */
+static void NameBoundary(int total)
+{
+    static char list[8192], key[4096];
+    int pieces[] = { MAX_TOKEN - 4, 1000, 200, 127, 40, 9, 4 }, i;
+    for (i = 0; i < (int)(sizeof(pieces) / sizeof(pieces[0])); i++) {
+        NameList(list, key, total, pieces[i]);
+        Check((int)strlen(key) == total, "name list key length");
+        ReplyNames(list, total < MAX_MESSAGE_SIZE ? key : NULL);
+    }
+}
+
+static void ReplyNameEdges(void)
+{
+    static char list[4096], key[MAX_MESSAGE_SIZE], first[MAX_MESSAGE_SIZE], second[MAX_MESSAGE_SIZE], keys[4096];
+    const char *expected[4];
+    bot_replychat_t *reply;
+    bot_replychatkey_t *k;
+    int i;
+    ReplyNames("\"Sarge\", \"Grunt\", \"Major\"", "Sarge\\Grunt\\Major");
+    ReplyNames("\"Sarge\"", "Sarge");
+    /* Retail adds no separator while the names so far are empty. */
+    ReplyNames("\"\"", "");
+    ReplyNames("\"\", \"\"", "");
+    ReplyNames("\"\", \"Sarge\"", "Sarge");
+    ReplyNames("\"Sarge\", \"\"", "Sarge\\");
+    Name(key, MAX_MESSAGE_SIZE - 1, 'k'); snprintf(list, sizeof(list), "\"\", \"%s\"", key); ReplyNames(list, key);
+    Name(key, MAX_MESSAGE_SIZE - 2, 'k'); snprintf(list, sizeof(list), "\"%s\", \"\"", key); strcat(key, "\\"); ReplyNames(list, key);
+    /* The bound is per key: two full name keys around string keys all load. */
+    NameList(list, first, MAX_MESSAGE_SIZE - 1, 40);
+    snprintf(keys, sizeof(keys), "\"hello\", <%s>, &\"there\", ", list);
+    NameList(list, second, MAX_MESSAGE_SIZE - 1, 9);
+    Check(strlen(keys) + strlen(list) + 3 < sizeof(keys), "two name keys fit the source");
+    strcat(keys, "<"); strcat(keys, list); strcat(keys, ">");
+    expected[0] = "hello"; expected[1] = first; expected[2] = "there"; expected[3] = second;
+    reply = LoadReplyKeys(keys);
+    Check(reply != NULL, "two full name keys load");
+    /* The loader prepends, so the keys run from the last to the first. */
+    for (i = 4, k = reply->keys; k; k = k->next) {
+        Check(--i >= 0 && !strcmp(k->string, expected[i]), "every reply key keeps its retail bytes");
+        Check(k->flags == (i == 0 ? RCKFL_STRING : i == 2 ? (RCKFL_AND|RCKFL_STRING) : RCKFL_BOTNAMES), "every reply key keeps its retail flags");
+    }
+    Check(i == 0, "every reply key is published");
+    ChatEnd();
+}
+
+/* A trailing separator that makes the key 256 bytes, and a later overlong key after one that loaded. */
+static void ReplyNameOverlongEdges(void)
+{
+    static char list[4096], key[MAX_MESSAGE_SIZE + 8], keys[4096];
+    Name(key, MAX_MESSAGE_SIZE - 1, 'k'); snprintf(list, sizeof(list), "\"%s\", \"\"", key); ReplyNames(list, NULL);
+    NameList(list, key, MAX_MESSAGE_SIZE, 9);
+    snprintf(keys, sizeof(keys), "\"hello\", <\"Sarge\">, <%s>", list);
+    Check(!LoadReplyKeys(keys) && errors == 1 && strstr(lastError, "reply chat name"), "a later overlong name key rejects the file");
+    ChatEnd();
+}
+
+static void ReplyNameLists(int which)
+{
+    if (which == 0) { NameBoundary(MAX_MESSAGE_SIZE - 2); NameBoundary(MAX_MESSAGE_SIZE - 1); ReplyNameEdges(); }
+    else if (which == 1) { NameBoundary(MAX_MESSAGE_SIZE); ReplyNameOverlongEdges(); }
+    else if (which == 2) NameBoundary(MAX_MESSAGE_SIZE + 1);
+    else NameBoundary(2000);
+}
+
 int main(int argc, char **argv)
 {
     int proof;
@@ -293,10 +411,13 @@ int main(int argc, char **argv)
         else if (proof == 2) Loaders();
         else if (proof == 3) ShortEscapes();
         else if (proof == 4) Integrity();
+        else if (proof >= 5 && proof <= 8) ReplyNameLists(proof - 5);
         else RetailLines();
         return 0;
     }
     RetailLines(); Boundaries(); ShortEscapes(); ManyEscapes(); Loaders(); Integrity();
+    ReplyNameLists(0); ReplyNameLists(1); ReplyNameLists(2); ReplyNameLists(3);
     puts("Actual chat message escapes load byte-identically when they fit, reject past MAX_MESSAGE_SIZE with a source error, and keep the integrity check in bounds (issue #300)");
+    puts("Actual reply chat bot name lists load byte-identically up to 255 key bytes and reject longer lists with a source error (issue #423)");
     return 0;
 }
