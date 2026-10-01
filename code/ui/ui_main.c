@@ -5658,7 +5658,7 @@ static void UI_ReadableSize ( char *buf, int bufsize, int value )
 	if (value > 1024*1024*1024 ) { // gigs
 		Com_sprintf( buf, bufsize, "%d", value / (1024*1024*1024) );
 		Com_sprintf( buf+strlen(buf), bufsize-strlen(buf), ".%02d GB", 
-			(value % (1024*1024*1024))*100 / (1024*1024*1024) );
+			(int)( (long long)(value % (1024*1024*1024))*100 / (1024*1024*1024) ) );
 	} else if (value > 1024*1024 ) { // megs
 		Com_sprintf( buf, bufsize, "%d", value / (1024*1024) );
 		Com_sprintf( buf+strlen(buf), bufsize-strlen(buf), ".%02d MB", 
@@ -5670,10 +5670,8 @@ static void UI_ReadableSize ( char *buf, int bufsize, int value )
 	}
 }
 
-// Assumes time is in msec
+// Assumes time is in seconds (in msec it overflowed past 24 days)
 static void UI_PrintTime ( char *buf, int bufsize, int time ) {
-	time /= 1000;  // change to seconds
-
 	if (time > 3600) { // in the hours range
 		Com_sprintf( buf, bufsize, "%d hr %d min", time / 3600, (time % 3600) / 60 );
 	} else if (time > 60) { // mins
@@ -5747,6 +5745,14 @@ void Text_PaintCenter_AutoWrapped(float x, float y, float xmax, float ystep, flo
 	}
 }
 
+// Issue #429: the download size and count are byte counts, never negative where
+// the display is drawn; keeping them so keeps the sums below in range
+static int UI_DownloadCvar( const char *name ) {
+	int value = UI_CvarInt( name );
+
+	return value < 0 ? 0 : value;
+}
+
 static void UI_DisplayDownloadInfo( const char *downloadName, float centerPoint, float yStart, float scale ) {
 	static char dlText[]	= "Downloading:";
 	static char etaText[]	= "Estimated time left:";
@@ -5755,12 +5761,14 @@ static void UI_DisplayDownloadInfo( const char *downloadName, float centerPoint,
 	int downloadSize, downloadCount, downloadTime;
 	char dlSizeBuf[64], totalSizeBuf[64], xferRateBuf[64], dlTimeBuf[64];
 	int xferRate;
+	int elapsed;
 	int leftWidth;
+	long long percent;
 	const char *s;
 
-	downloadSize = trap_Cvar_VariableValue( "cl_downloadSize" );
-	downloadCount = trap_Cvar_VariableValue( "cl_downloadCount" );
-	downloadTime = trap_Cvar_VariableValue( "cl_downloadTime" );
+	downloadSize = UI_DownloadCvar( "cl_downloadSize" );
+	downloadCount = UI_DownloadCvar( "cl_downloadCount" );
+	downloadTime = UI_CvarInt( "cl_downloadTime" );
 
 	leftWidth = 320;
 
@@ -5770,7 +5778,10 @@ static void UI_DisplayDownloadInfo( const char *downloadName, float centerPoint,
 	Text_PaintCenter(centerPoint, yStart + 248, scale, colorWhite, xferText, 0);
 
 	if (downloadSize > 0) {
-		s = va( "%s (%d%%)", downloadName, downloadCount * 100 / downloadSize );
+		// in 64 bits: the count times 100 overflows an int past 21MB
+		// (q3lcc's long long is 32 bits, so a QVM build wraps as retail does)
+		percent = (long long)downloadCount * 100 / downloadSize;
+		s = va( "%s (%d%%)", downloadName, percent < INT_MAX ? (int)percent : INT_MAX );
 	} else {
 		s = downloadName;
 	}
@@ -5784,20 +5795,25 @@ static void UI_DisplayDownloadInfo( const char *downloadName, float centerPoint,
 		Text_PaintCenter(leftWidth, yStart+216, scale, colorWhite, "estimating", 0);
 		Text_PaintCenter(leftWidth, yStart+160, scale, colorWhite, va("(%s of %s copied)", dlSizeBuf, totalSizeBuf), 0);
 	} else {
-		if ((uiInfo.uiDC.realTime - downloadTime) / 1000) {
-			xferRate = downloadCount / ((uiInfo.uiDC.realTime - downloadTime) / 1000);
+		// secs since the download began, from msec modulo 2^32: the client's
+		// clock, and cl_downloadTime with it, wraps negative after 24.8 days
+		elapsed = (int)( (unsigned)uiInfo.uiDC.realTime - (unsigned)downloadTime ) / 1000;
+		if (elapsed) {
+			xferRate = downloadCount / elapsed;
 		} else {
 			xferRate = 0;
 		}
 		UI_ReadableSize( xferRateBuf, sizeof xferRateBuf, xferRate );
 
-		// Extrapolate estimated completion time
-		if (downloadSize && xferRate) {
+		// Extrapolate estimated completion time, unless downloadSize/1024 is 0
+		if (downloadSize >= 1024 && xferRate) {
 			int n = downloadSize / xferRate; // estimated time for entire d/l in secs
 
-			// We do it in K (/1024) because we'd overflow around 4MB
+			// We do it in K (/1024) because we'd overflow around 4MB, and in 64
+			// bits as K times secs still overflows; the quotient is under four
+			// times the secs elapsed, so it fits an int
 			UI_PrintTime ( dlTimeBuf, sizeof dlTimeBuf, 
-				(n - (((downloadCount/1024) * n) / (downloadSize/1024))) * 1000);
+				n - (int)( (long long)(downloadCount/1024) * n / (downloadSize/1024) ) );
 
 			Text_PaintCenter(leftWidth, yStart+216, scale, colorWhite, dlTimeBuf, 0);
 			Text_PaintCenter(leftWidth, yStart+160, scale, colorWhite, va("(%s of %s copied)", dlSizeBuf, totalSizeBuf), 0);
