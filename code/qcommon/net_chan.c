@@ -59,6 +59,8 @@ cvar_t		*showpackets;
 cvar_t		*showdrop;
 cvar_t		*qport;
 
+static unsigned long long	challengeState;
+
 static char *netsrcString[2] = {
 	"client",
 	"server"
@@ -71,10 +73,43 @@ Netchan_Init
 ===============
 */
 void Netchan_Init( int port ) {
+	// seed Netchan_Challenge once, from the clock since startup and where
+	// the stack happens to be
+	challengeState = ( (unsigned long long)Sys_Entropy() << 32 ) ^ (unsigned)Sys_Milliseconds() ^
+		(unsigned long long)(size_t)&port;
+
 	port &= 0xffff;
 	showpackets = Cvar_Get ("showpackets", "0", CVAR_TEMP );
 	showdrop = Cvar_Get ("showdrop", "0", CVAR_TEMP );
 	qport = Cvar_Get ("net_qport", va("%i", port), CVAR_INIT );
+}
+
+/*
+===============
+Netchan_Challenge
+
+A challenge for connection setup, never 0: a client's own, which the
+server echoes, and the server's, which keys protocol 71's checksums.
+rand() won't do: the renderer reseeds it with a constant and the server
+with the clock at each map, so its challenges were close to a constant
+XOR the uptime.  This state is seeded once, by Netchan_Init, each
+challenge stirs in Sys_Entropy again, and only the top half of a
+splitmix64 step goes out.  Classic Mac OS has no entropy source for a
+cryptographic generator
+===============
+*/
+int Netchan_Challenge( void ) {
+	unsigned long long	z;
+	int					challenge;
+
+	do {
+		challengeState += 0x9e3779b97f4a7c15ULL ^ Sys_Entropy();
+		z = challengeState;
+		z = ( z ^ ( z >> 30 ) ) * 0xbf58476d1ce4e5b9ULL;
+		z = ( z ^ ( z >> 27 ) ) * 0x94d049bb133111ebULL;
+		challenge = (int)(unsigned)( ( z ^ ( z >> 31 ) ) >> 32 );
+	} while ( !challenge );
+	return challenge;
 }
 
 /*

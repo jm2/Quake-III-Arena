@@ -218,6 +218,7 @@ typedef struct {
 	( (int)( (unsigned)( challenge ) ^ ( (unsigned)( sequence ) * (unsigned)( challenge ) ) ) )
 
 void Netchan_Init( int qport );
+int Netchan_Challenge( void );
 void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport, int challenge, qboolean compat );
 
 void Netchan_Transmit( netchan_t *chan, int length, const byte *data );
@@ -1030,6 +1031,9 @@ void Sys_LogPrintf( const char *fmt, ... );
 // Sys_Milliseconds should only be used for profiling purposes,
 // any game related timing information should come from event timestamps
 int		Sys_Milliseconds (void);
+
+// the least predictable bits the platform has, for Netchan_Challenge
+unsigned	Sys_Entropy( void );
 
 void	Sys_SnapVector( float *v );
 

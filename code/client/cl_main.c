@@ -1095,9 +1095,9 @@ void CL_Connect_f( void ) {
 	} else {
 		cls.state = CA_CONNECTING;
 
-		// a challengeResponse that echoes this one answers our getchallenge
-		clc.challenge = (int)( ( (unsigned)rand() << 16 ) ^ (unsigned)rand() ^
-			(unsigned)Com_Milliseconds() );
+		// a challengeResponse that echoes this one answers our getchallenge;
+		// it is never 0, the echo of a server that never got it
+		clc.challenge = Netchan_Challenge();
 	}
 
 	cls.keyCatchers = 0;
@@ -1811,9 +1811,10 @@ void CL_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 		if ( cls.state != CA_CONNECTING ) {
 			Com_Printf( "Unwanted challenge response received.  Ignored.\n" );
 		} else {
-			// ioquake3 and Quake3e servers echo our challenge and name their
-			// protocol.  Retail 1.32c servers echo nothing and take protocol
-			// 68, so only their response from the address we asked is believed
+			// ioquake3, Quake3e and this server echo our challenge, or 0 if
+			// they never got it, and name their protocol.  Retail 1.32c
+			// servers echo nothing and take protocol 68, so only their
+			// response from the address we asked is believed
 			s = Cmd_Argv( 3 );
 			compat = !*s || atoi( s ) != com_protocol->integer;
 			s = Cmd_Argv( 2 );

@@ -29,19 +29,19 @@ static void SV_CloseDownload( client_t *cl );
 =================
 SV_ChallengeResponse
 
-Retail 1.32c clients get the bare challenge they ask for.  ioquake3 and
-Quake3e clients send a challenge of their own, which is echoed so they know
-the response answers their getchallenge, with com_protocol so they know
-they can connect with it.  Retail clients ignore both
+ioquake3's three arguments, which it has sent since 2011: the challenge,
+the client's own challenge (0 if it sent none) so that it knows the
+response answers its getchallenge, and com_protocol so that it knows it
+can connect with it.  Retail 1.32c clients read only the first; the rest
+is the one change to what they get from this server.  A bare response
+would be taken, from this server's address, as a retail server's: one
+drawn by a getchallenge spoofed from a protocol 71 client would talk it
+down to protocol 68
 =================
 */
 static void SV_ChallengeResponse( const challenge_t *challenge ) {
-	if ( challenge->clientChallengeSent ) {
-		NET_OutOfBandPrint( NS_SERVER, challenge->adr, "challengeResponse %i %i %i",
-			challenge->challenge, challenge->clientChallenge, com_protocol->integer );
-	} else {
-		NET_OutOfBandPrint( NS_SERVER, challenge->adr, "challengeResponse %i", challenge->challenge );
-	}
+	NET_OutOfBandPrint( NS_SERVER, challenge->adr, "challengeResponse %i %i %i",
+		challenge->challenge, challenge->clientChallenge, com_protocol->integer );
 }
 
 /*
@@ -92,22 +92,19 @@ void SV_GetChallenge( netadr_t from ) {
 		// this is the first time this client has asked for a challenge
 		challenge = &svs.challenges[oldest];
 
-		challenge->challenge = (int)( ( (unsigned)rand() << 16 ) ^
-			(unsigned)rand() ^ (unsigned)svs.time );
+		challenge->challenge = Netchan_Challenge();
 		challenge->adr = from;
 		challenge->firstTime = svs.time;
 		challenge->time = svs.time;
 		challenge->connected = qfalse;
-		challenge->clientChallengeSent = qfalse;
+		challenge->clientChallenge = 0;
 		i = oldest;
 	}
 	// a new challenge request is a new connection attempt
 	challenge->wasrefused = qfalse;
-	// once a client at this address has sent its own challenge, a bare
-	// request, which anyone can spoof from it, still gets the echo: a bare
-	// response from this server would talk that client down to protocol 68
+	// a bare request, which anyone can spoof from the address, leaves the
+	// client's challenge to echo as it is
 	if ( Cmd_Argc() > 1 ) {
-		challenge->clientChallengeSent = qtrue;
 		challenge->clientChallenge = atoi( Cmd_Argv( 1 ) );
 	}
 

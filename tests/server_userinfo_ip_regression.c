@@ -63,6 +63,8 @@ void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport, int
 }
 /* With PR #312, SV_DropClient and reconnects free the client's netchan queue; nothing is queued here. */
 void SV_Netchan_FreeQueue( client_t *client ) { (void)client; }
+/* Every getchallenge here comes from an address that Connect gave a challenge record. */
+int Netchan_Challenge( void ) { Check( 0, "new challenge record" ); return CHALLENGE; }
 /** Capture and count the connectionless replies. */
 void QDECL NET_OutOfBandPrint( netsrc_t sock, netadr_t adr, const char *format, ... ) {
 	va_list argptr;
@@ -259,7 +261,7 @@ int main( void ) {
 	}
 	/* A new challenge request is a new attempt: refused again while the game still overflows, then let in. */
 	GetChallenge( other );
-	Check( !strcmp( reply, "challengeResponse 1234" ), "no challenge after a refusal" );
+	Check( !strcmp( reply, "challengeResponse 1234 0 71" ), "no challenge after a refusal" );
 	Send( other, Userinfo( "", 0 ) );
 	Check( !strcmp( reply, "print\nUserinfo string length exceeded.\n" ) && connects == 2 && disconnects == 2, "new challenge not tried again" );
 	gameFillsUserinfo = 0;

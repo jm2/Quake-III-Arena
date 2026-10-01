@@ -345,6 +345,16 @@ int Sys_Milliseconds( void ) {
     return (int)((now - base) / 1000);
 }
 
+// The least predictable bits classic Mac OS has, for Netchan_Challenge:
+// the microseconds since startup, absolute, unlike Sys_Milliseconds,
+// and the ticks.
+unsigned Sys_Entropy( void ) {
+    UnsignedWide micros;
+
+    Microseconds(&micros);
+    return micros.lo ^ ((unsigned)micros.hi << 16) ^ ((unsigned)TickCount() << 24);
+}
+
 void Sys_PumpEvents( void ) {
     // Basic event loop pump if needed here
     // Usually handled in Sys_GetEvent or main loop

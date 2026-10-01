@@ -21,8 +21,9 @@ Q3_TEST_FLAGS=(-std=gnu99 -fno-omit-frame-pointer -ffunction-sections -fdata-sec
     -Wl,--gc-sections -lm -o "$Q3_TEST_DIR/protocol71-tests"
 # 0 ioquake3's packets, 1 a retail client, 2 a retail server, 3 protocol 71,
 # 4 ioquake3 and Quake3e servers, 5 spoofed setup and timeouts, 6 spoofed
-# sequenced packets, 7 com_protocol 68.
-for Q3_CASE in 0 1 2 3 4 5 6 7; do
+# sequenced packets, 7 com_protocol 68, 8 starved getchallenges and the
+# challenge generator.
+for Q3_CASE in 0 1 2 3 4 5 6 7 8; do
     # LeakSanitizer cannot initialize in the local ptrace sandbox.
     ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 \
     UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 "$Q3_TEST_DIR/protocol71-tests" "$Q3_CASE"

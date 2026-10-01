@@ -58,6 +58,8 @@ int Com_HashKey( char *string, int maxlen ) {
 }
 int Sys_Milliseconds( void ) { return now; }
 int Com_Milliseconds( void ) { return now; }
+/** A clock since startup that has moved on by the next call. */
+unsigned Sys_Entropy( void ) { static unsigned micros = 0x3c6ef372; return micros += 0x2545f491; }
 /** Not single player, no fs_restrict; the client's qport. */
 float Cvar_VariableValue( const char *name ) { return !strcmp( name, "net_qport" ) ? QPORT : 0; }
 char *Cvar_VariableString( const char *name ) { (void)name; return ""; }
@@ -447,7 +449,8 @@ static void IoquakePackets( void ) {
 	Check( Quiet(), "no other datagrams" );
 }
 
-/** A retail 1.32c client: bare getchallenge, protocol 68, XOR encoding.  The server's every byte is master's. */
+/** A retail 1.32c client: bare getchallenge, protocol 68, XOR encoding.  The server's every byte after the
+ * challengeResponse is master's; that one has ioquake3's two more arguments, which retail clients ignore. */
 static void RetailClient( void ) {
 	static byte plain[MAX_MSGLEN], encoded[MAX_MSGLEN], out[MAX_MSGLEN], queuedPlain[MAX_MSGLEN];
 	static message_t m, queued;
@@ -458,7 +461,8 @@ static void RetailClient( void ) {
 	Start( "retail client" );
 	ServerGets( client, "getchallenge" );
 	Check( Server_Challenge( client, &challenge, &refused ), "challenge record" );
-	Check( !strcmp( Text( Next( client ) ), va( "challengeResponse %i", challenge ) ), "bare challengeResponse, as master's" );
+	Check( !strcmp( Text( Next( client ) ), va( "challengeResponse %i 0 71", challenge ) ),
+	       "ioquake3's challengeResponse, whose first argument is all a retail client reads" );
 	ServerGetsConnect( client, RetailConnect( challenge ) );
 	Check( !strcmp( Text( Next( client ) ), "connectResponse" ), "bare connectResponse, as master's" );
 	Check( Server_Connected( 0 ) && Server_ClientCompat( 0 ), "protocol 68 client" );
@@ -894,6 +898,81 @@ static void SpoofedPackets( void ) {
 	Check( Quiet(), "no other datagrams" );
 }
 
+/** A datagram from the server reaching the client at once, the clock unmoved. */
+static void Arrive( const packet_t *p ) {
+	msg_t msg;
+	MSG_Init( &msg, bufData, sizeof( bufData ) ); memcpy( bufData, p->data, p->length ); msg.cursize = p->length;
+	CL_PacketEvent( server, &msg );
+}
+/** A bare getchallenge spoofed from `victim`, 50 msec after the last. */
+static void SpoofGetchallenge( netadr_t victim, int *serverTime ) {
+	msg_t msg;
+	MSG_Init( &msg, bufData, sizeof( bufData ) );
+	memcpy( bufData, OOB "getchallenge", 16 ); msg.cursize = 16;
+	now += 50; *serverTime += 50; Server_SetTime( *serverTime );
+	SV_PacketEvent( victim, &msg );
+}
+/** The reviewer's starvation attack on #458: bare getchallenges spoofed from the client's address, 20 a second,
+ * use up its rate limit (#431), so that its own getchallenge never reaches SV_GetChallenge.  The answers to the
+ * spoofs carry a real challenge, from the server's address; they must not be ones the client takes as a retail
+ * server's, which would connect it with protocol 68. */
+static void Starved( netadr_t victim, const char *name ) {
+	packet_t *p;
+	msg_t msg;
+	int i, serverTime = 100000, answers = 0, challenge;
+	qboolean refused;
+
+	Start( name );
+	for ( i = 0; i < 100; i++ ) SpoofGetchallenge( victim, &serverTime );	/* before the client connects */
+	while ( wireRead < wireCount ) Arrive( &wire[wireRead++] );	/* an idle client ignores them */
+	ClientConnect( "192.0.2.10:27960" ); Resend();
+	p = Next( server );
+	MSG_Init( &msg, bufData, sizeof( bufData ) ); memcpy( bufData, p->data, p->length ); msg.cursize = p->length;
+	now += 10; SV_PacketEvent( victim, &msg );
+	Check( Quiet(), "the client's own getchallenge got through the spoofs" );
+	for ( i = 0; i < 100 && cls.state == CA_CONNECTING; i++ ) {
+		SpoofGetchallenge( victim, &serverTime );
+		while ( wireRead < wireCount ) {
+			p = Next( victim );
+			Check( Server_Challenge( victim, &challenge, &refused )
+			       && !strcmp( Text( p ), va( "challengeResponse %i 0 71", challenge ) ), "answer to a spoofed getchallenge" );
+			Arrive( p );
+			answers++;
+		}
+	}
+	Check( answers >= 3, "spoofs answered" );
+	Check( cls.state == CA_CONNECTING && !clc.compat, "talked down to protocol 68 by a starved getchallenge" );
+	/* once the spoofs stop, the client's own gets through and it connects with protocol 71 */
+	now += 15000;
+	Resend(); p = Next( server ); ToServer( victim, p->data, p->length );
+	Check( Server_Challenge( victim, &challenge, &refused )
+	       && !strcmp( Text( &wire[wireRead] ), va( "challengeResponse %i %i 71", challenge, clc.challenge ) ), "echo" );
+	ToClient( server, wire[wireRead].data, wire[wireRead].length ); wireRead++;
+	Check( cls.state == CA_CHALLENGING && !clc.compat && clc.challenge == challenge, "protocol 71 after the spoofs" );
+	Check( Quiet(), "no other datagrams" );
+}
+
+/** Starved getchallenges, on the LAN and through the authorize server's timeout; and challenges that do not follow
+ * rand(), which the renderer reseeds with a constant, the server with the clock. */
+static void StarvedAndChallenges( void ) {
+	int first, second;
+	qboolean refused;
+
+	Starved( client, "starved getchallenge, LAN" );
+	Starved( wan, "starved getchallenge, authorize timeout" );
+
+	Start( "client challenge" );
+	srand( 1001 ); ClientConnect( "192.0.2.10:27960" ); first = clc.challenge;
+	Start( "client challenge" );
+	srand( 1001 ); ClientConnect( "192.0.2.10:27960" ); second = clc.challenge;
+	Check( first && second && first != second, "client challenges follow rand() and the uptime" );
+	Start( "server challenge" );
+	srand( 1001 ); ServerGets( client, "getchallenge" ); Check( Server_Challenge( client, &first, &refused ), "record" );
+	Start( "server challenge" );
+	srand( 1001 ); ServerGets( client, "getchallenge" ); Check( Server_Challenge( client, &second, &refused ), "record" );
+	Check( first && second && first != second, "server challenges follow rand() and the server time" );
+}
+
 /** com_protocol 68: protocol 68 only, on either side. */
 static void Protocol68Only( void ) {
 	static byte plain[MAX_MSGLEN], out[MAX_MSGLEN];
@@ -961,6 +1040,7 @@ int main( int argc, char **argv ) {
 	case 5: SpoofedSetup(); break;
 	case 6: SpoofedPackets(); break;
 	case 7: Protocol68Only(); break;
+	case 8: StarvedAndChallenges(); break;
 	default: Check( 0, "case" );
 	}
 	printf( "Protocol 71 regressions passed (issue #37): %s\n", scenario );
