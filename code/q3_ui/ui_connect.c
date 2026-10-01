@@ -41,7 +41,7 @@ static void UI_ReadableSize ( char *buf, int bufsize, int value )
 	if (value > 1024*1024*1024 ) { // gigs
 		Com_sprintf( buf, bufsize, "%d", value / (1024*1024*1024) );
 		Com_sprintf( buf+strlen(buf), bufsize-strlen(buf), ".%02d GB", 
-			(value % (1024*1024*1024))*100 / (1024*1024*1024) );
+			(int)( (long long)(value % (1024*1024*1024))*100 / (1024*1024*1024) ) );
 	} else if (value > 1024*1024 ) { // megs
 		Com_sprintf( buf, bufsize, "%d", value / (1024*1024) );
 		Com_sprintf( buf+strlen(buf), bufsize-strlen(buf), ".%02d MB", 
@@ -53,10 +53,8 @@ static void UI_ReadableSize ( char *buf, int bufsize, int value )
 	}
 }
 
-// Assumes time is in msec
+// Assumes time is in seconds (in msec it overflowed past 24 days)
 static void UI_PrintTime ( char *buf, int bufsize, int time ) {
-	time /= 1000;  // change to seconds
-
 	if (time > 3600) { // in the hours range
 		Com_sprintf( buf, bufsize, "%d hr %d min", time / 3600, (time % 3600) / 60 );
 	} else if (time > 60) { // mins
@@ -64,6 +62,22 @@ static void UI_PrintTime ( char *buf, int bufsize, int time ) {
 	} else  { // secs
 		Com_sprintf( buf, bufsize, "%d sec", time );
 	}
+}
+
+// Issue #429: the download cvars are byte counts and a clock reading, never
+// negative as the client sets them; keeping them so keeps the sums below in
+// range. Their floats convert to int as retail does on PowerPC (2^31 and up
+// give INT_MAX), as converting one past the int range is undefined in C.
+static int UI_DownloadCvar( const char *name ) {
+	float value = trap_Cvar_VariableValue( name );
+
+	if ( value >= 2147483648.0f ) {
+		return INT_MAX;
+	}
+	if ( !( value > 0 ) ) {	// also NaN
+		return 0;
+	}
+	return (int)value;
 }
 
 static void UI_DisplayDownloadInfo( const char *downloadName ) {
@@ -76,11 +90,12 @@ static void UI_DisplayDownloadInfo( const char *downloadName ) {
 	int xferRate;
 	int width, leftWidth;
 	int style = UI_LEFT|UI_SMALLFONT|UI_DROPSHADOW;
+	long long percent;
 	const char *s;
 
-	downloadSize = trap_Cvar_VariableValue( "cl_downloadSize" );
-	downloadCount = trap_Cvar_VariableValue( "cl_downloadCount" );
-	downloadTime = trap_Cvar_VariableValue( "cl_downloadTime" );
+	downloadSize = UI_DownloadCvar( "cl_downloadSize" );
+	downloadCount = UI_DownloadCvar( "cl_downloadCount" );
+	downloadTime = UI_DownloadCvar( "cl_downloadTime" );
 
 #if 0 // bk010104
 	fprintf( stderr, "\n\n-----------------------------------------------\n");
@@ -103,7 +118,9 @@ static void UI_DisplayDownloadInfo( const char *downloadName ) {
 	UI_DrawProportionalString( 8, 224, xferText, style, color_white );
 
 	if (downloadSize > 0) {
-		s = va( "%s (%d%%)", downloadName, downloadCount * 100 / downloadSize );
+		// in 64 bits: the count times 100 overflows an int past 21MB
+		percent = (long long)downloadCount * 100 / downloadSize;
+		s = va( "%s (%d%%)", downloadName, percent < INT_MAX ? (int)percent : INT_MAX );
 	} else {
 		s = downloadName;
 	}
@@ -134,12 +151,14 @@ static void UI_DisplayDownloadInfo( const char *downloadName ) {
 
 		UI_ReadableSize( xferRateBuf, sizeof xferRateBuf, xferRate );
 
-		// Extrapolate estimated completion time
-		if (downloadSize && xferRate) {
+		// Extrapolate estimated completion time, unless downloadSize/1024 is 0
+		if (downloadSize >= 1024 && xferRate) {
 			int n = downloadSize / xferRate; // estimated time for entire d/l in secs
 
-			// We do it in K (/1024) because we'd overflow around 4MB
-			n = (n - (((downloadCount/1024) * n) / (downloadSize/1024))) * 1000;
+			// We do it in K (/1024) because we'd overflow around 4MB, and in 64
+			// bits as K times secs still overflows; the quotient is under four
+			// times the secs elapsed, so it fits an int
+			n -= (int)( (long long)(downloadCount/1024) * n / (downloadSize/1024) );
 			
 			UI_PrintTime ( dlTimeBuf, sizeof dlTimeBuf, n ); // bk010104
 				//(n - (((downloadCount/1024) * n) / (downloadSize/1024))) * 1000);
