@@ -206,10 +206,19 @@ typedef struct {
 	int			unsentFragmentStart;
 	int			unsentLength;
 	byte		unsentBuffer[MAX_MSGLEN];
+
+	// protocol 71 puts a checksum of the connection's challenge and the
+	// sequence in each packet's header; compat is retail's protocol 68
+	int			challenge;
+	qboolean	compat;
 } netchan_t;
 
+// ioquake3's NETCHAN_GENCHECKSUM, in unsigned arithmetic that wraps
+#define	NETCHAN_GENCHECKSUM( challenge, sequence ) \
+	( (int)( (unsigned)( challenge ) ^ ( (unsigned)( sequence ) * (unsigned)( challenge ) ) ) )
+
 void Netchan_Init( int qport );
-void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport );
+void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport, int challenge, qboolean compat );
 
 void Netchan_Transmit( netchan_t *chan, int length, const byte *data );
 void Netchan_TransmitNextFragment( netchan_t *chan );
@@ -227,6 +236,12 @@ PROTOCOL
 
 #define	PROTOCOL_VERSION	68
 // 1.31 - 67
+
+// com_protocol's default: ioquake3 and Quake3e's protocol 71, which is 68
+// with a challenge checksum in the netchan header instead of the XOR
+// encoding of the messages.  Retail 1.32c peers, demos and server lists
+// keep PROTOCOL_VERSION
+#define	PROTOCOL_CHECKSUM_VERSION	71
 
 // maintain a list of compatible protocols for demo playing
 // NOTE: that stuff only works with two digits protocols
@@ -762,6 +777,7 @@ extern	cvar_t	*com_sv_running;
 extern	cvar_t	*com_cl_running;
 extern	cvar_t	*com_viewlog;			// 0 = hidden, 1 = visible, 2 = minimized
 extern	cvar_t	*com_version;
+extern	cvar_t	*com_protocol;
 extern	cvar_t	*com_blood;
 extern	cvar_t	*com_buildScript;		// for building release pak files
 extern	cvar_t	*com_journal;

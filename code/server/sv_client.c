@@ -27,6 +27,25 @@ static void SV_CloseDownload( client_t *cl );
 
 /*
 =================
+SV_ChallengeResponse
+
+Retail 1.32c clients get the bare challenge they ask for.  ioquake3 and
+Quake3e clients send a challenge of their own, which is echoed so they know
+the response answers their getchallenge, with com_protocol so they know
+they can connect with it
+=================
+*/
+static void SV_ChallengeResponse( const challenge_t *challenge ) {
+	if ( challenge->clientChallengeSent ) {
+		NET_OutOfBandPrint( NS_SERVER, challenge->adr, "challengeResponse %i %i %i",
+			challenge->challenge, challenge->clientChallenge, com_protocol->integer );
+	} else {
+		NET_OutOfBandPrint( NS_SERVER, challenge->adr, "challengeResponse %i", challenge->challenge );
+	}
+}
+
+/*
+=================
 SV_GetChallenge
 
 A "getchallenge" OOB command has been received
@@ -83,11 +102,13 @@ void SV_GetChallenge( netadr_t from ) {
 	}
 	// a new challenge request is a new connection attempt
 	challenge->wasrefused = qfalse;
+	challenge->clientChallengeSent = Cmd_Argc() > 1;
+	challenge->clientChallenge = atoi( Cmd_Argv( 1 ) );
 
 	// if they are on a lan address, send the challengeResponse immediately
 	if ( Sys_IsLANAddress( from ) ) {
 		challenge->pingTime = svs.time;
-		NET_OutOfBandPrint( NS_SERVER, from, "challengeResponse %i", challenge->challenge );
+		SV_ChallengeResponse( challenge );
 		return;
 	}
 
@@ -112,8 +133,7 @@ void SV_GetChallenge( netadr_t from ) {
 		Com_DPrintf( "authorize server timed out\n" );
 
 		challenge->pingTime = svs.time;
-		NET_OutOfBandPrint( NS_SERVER, challenge->adr, 
-			"challengeResponse %i", challenge->challenge );
+		SV_ChallengeResponse( challenge );
 		return;
 	}
 
@@ -178,8 +198,7 @@ void SV_AuthorizeIpPacket( netadr_t from ) {
 	if ( !Q_stricmp( s, "demo" ) ) {
 		if ( Cvar_VariableValue( "fs_restrict" ) ) {
 			// a demo client connecting to a demo server
-			NET_OutOfBandPrint( NS_SERVER, svs.challenges[i].adr, 
-				"challengeResponse %i", svs.challenges[i].challenge );
+			SV_ChallengeResponse( &svs.challenges[i] );
 			return;
 		}
 		// they are a demo client trying to connect to a real server
@@ -189,8 +208,7 @@ void SV_AuthorizeIpPacket( netadr_t from ) {
 		return;
 	}
 	if ( !Q_stricmp( s, "accept" ) ) {
-		NET_OutOfBandPrint( NS_SERVER, svs.challenges[i].adr, 
-			"challengeResponse %i", svs.challenges[i].challenge );
+		SV_ChallengeResponse( &svs.challenges[i] );
 		return;
 	}
 	if ( !Q_stricmp( s, "unknown" ) ) {
@@ -243,6 +261,7 @@ void SV_DirectConnect( netadr_t from ) {
 	int			version;
 	int			qport;
 	int			challenge;
+	qboolean	compat;
 	char		*password;
 	int			startIndex;
 	char		*denied;
@@ -254,8 +273,14 @@ void SV_DirectConnect( netadr_t from ) {
 
 	Q_strncpyz( userinfo, Cmd_Argv(1), sizeof(userinfo) );
 
+	// retail 1.32c clients connect with protocol 68, ioquake3 and Quake3e
+	// clients with the com_protocol this server named in its challengeResponse
 	version = atoi( Info_ValueForKey( userinfo, "protocol" ) );
-	if ( version != PROTOCOL_VERSION ) {
+	if ( version == PROTOCOL_VERSION ) {
+		compat = qtrue;
+	} else if ( version == com_protocol->integer ) {
+		compat = qfalse;
+	} else {
 		NET_OutOfBandPrint( NS_SERVER, from, "print\nServer uses protocol version %i.\n", PROTOCOL_VERSION );
 		Com_DPrintf ("    rejected connect from version %i\n", version);
 		return;
@@ -440,7 +465,7 @@ gotnewcl:
 	newcl->challenge = challenge;
 
 	// save the address
-	Netchan_Setup (NS_SERVER, &newcl->netchan , from, qport);
+	Netchan_Setup( NS_SERVER, &newcl->netchan, from, qport, challenge, compat );
 	// init the netchan queue
 	newcl->netchan_end_queue = &newcl->netchan_start_queue;
 
@@ -483,8 +508,13 @@ gotnewcl:
 		return;
 	}
 
-	// send the connect packet to the client
-	NET_OutOfBandPrint( NS_SERVER, from, "connectResponse" );
+	// send the connect packet to the client; a protocol 71 client checks
+	// that it is for the challenge it connected with
+	if ( compat ) {
+		NET_OutOfBandPrint( NS_SERVER, from, "connectResponse" );
+	} else {
+		NET_OutOfBandPrint( NS_SERVER, from, "connectResponse %i", challenge );
+	}
 
 	Com_DPrintf( "Going from CS_FREE to CS_CONNECTED for %s\n", newcl->name );
 

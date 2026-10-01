@@ -939,16 +939,16 @@ void SV_PacketEvent( netadr_t from, msg_t *msg ) {
 			continue;
 		}
 
-		// the IP port can't be used to differentiate them, because
-		// some address translating routers periodically change UDP
-		// port assignments
-		if (cl->netchan.remoteAddress.port != from.port) {
-			Com_Printf( "SV_PacketEvent: fixing up a translated port\n" );
-			cl->netchan.remoteAddress.port = from.port;
-		}
-
 		// make sure it is a valid, in sequence packet
 		if (SV_Netchan_Process(cl, msg)) {
+			// the IP port can't be used to differentiate them, because
+			// some address translating routers periodically change UDP
+			// port assignments; only a packet the netchan took may (Quake3e)
+			if (cl->netchan.remoteAddress.port != from.port) {
+				Com_Printf( "SV_PacketEvent: fixing up a translated port\n" );
+				cl->netchan.remoteAddress.port = from.port;
+			}
+
 			// zombie clients still need to do the Netchan_Process
 			// to make sure they don't need to retransmit the final
 			// reliable message, but they don't do any other processing
@@ -959,10 +959,10 @@ void SV_PacketEvent( netadr_t from, msg_t *msg ) {
 		}
 		return;
 	}
-	
-	// if we received a sequenced packet from an address we don't recognize,
-	// send an out of band disconnect packet to it
-	NET_OutOfBandPrint( NS_SERVER, from, "disconnect" );
+
+	// a sequenced packet from an address we don't recognize is dropped: an
+	// out of band disconnect would answer spoofed packets (Quake3e), and
+	// retail clients ignored it anyway, having just counted it as traffic
 }
 
 

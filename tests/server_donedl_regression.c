@@ -28,6 +28,7 @@ cvar_t *com_sv_running = &running;
 cvar_t *sv_maxRate = &zero, *sv_pure = &zero, *sv_padPackets = &zero, *sv_lanForceRate = &zero;
 cvar_t *sv_allowDownload = &allowDownload, *sv_minPing = &zero, *sv_maxPing = &zero, *sv_privateClients = &zero;
 cvar_t *sv_privatePassword = &zero, *com_dedicated = &zero, *com_cl_running = &zero;
+cvar_t *com_protocol = &zero;	/* its clients connect with protocol 68, which is always taken */
 qboolean com_errorEntered;
 extern cvar_t *showpackets, *showdrop;
 

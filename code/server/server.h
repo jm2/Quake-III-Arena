@@ -193,6 +193,8 @@ typedef struct client_s {
 typedef struct {
 	netadr_t	adr;
 	int			challenge;
+	int			clientChallenge;	// the getchallenge's own, to echo
+	qboolean	clientChallengeSent;	// an ioquake3 or Quake3e getchallenge, not a retail one
 	int			time;				// time the last packet was sent to the autherize server
 	int			pingTime;			// time the challenge response was sent to client
 	int			firstTime;			// time the adr was first used, for authorize timeout checks

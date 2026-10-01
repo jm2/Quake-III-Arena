@@ -39,16 +39,19 @@ void QDECL Com_DPrintf( const char *format, ... ) { (void)format; }
 
 /* The sanitizer's global registration keeps the ucmds table, so its other handlers must link. */
 static void Unreachable( void ) { Check( 0, "unrelated server code reached" ); }
-char *Cmd_Argv( int arg ) { (void)arg; Unreachable(); return ""; }
-int Cmd_Argc( void ) { Unreachable(); return 0; }
+/* SV_GetChallenge reads a bare "getchallenge", as retail clients send it; a client's own challenge is
+   echoed with com_protocol, which a bare one never reads. */
+char *Cmd_Argv( int arg ) { Check( arg == 1, "unrelated server code reached" ); return ""; }
+int Cmd_Argc( void ) { return 1; }
+cvar_t *com_protocol;
 void Cmd_TokenizeString( const char *text ) { (void)text; Unreachable(); }
 qboolean NET_IsLocalAddress( netadr_t adr ) { (void)adr; Unreachable(); return qfalse; }
 qboolean NET_CompareBaseAdr( netadr_t a, netadr_t b ) { (void)a; (void)b; Unreachable(); return qfalse; }
 const char *NET_AdrToString( netadr_t a ) { (void)a; Unreachable(); return ""; }
 qboolean NET_StringToAdr( const char *s, netadr_t *a ) { (void)s; (void)a; Unreachable(); return qfalse; }
 cvar_t *Cvar_Get( const char *name, const char *value, int flags ) { (void)name; (void)value; (void)flags; Unreachable(); return NULL; }
-void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport ) {
-	(void)sock; (void)chan; (void)adr; (void)qport; Unreachable();
+void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport, int challenge, qboolean compat ) {
+	(void)sock; (void)chan; (void)adr; (void)qport; (void)challenge; (void)compat; Unreachable();
 }
 void SV_Netchan_FreeQueue( client_t *client ) { (void)client; Unreachable(); }
 void QDECL SV_SendServerCommand( client_t *cl, const char *format, ... ) { (void)cl; (void)format; Unreachable(); }

@@ -158,7 +158,8 @@ typedef struct {
 	int			connectPacketCount;			// for display on connection dialog
 	char		serverMessage[MAX_STRING_TOKENS];	// for display on connection dialog
 
-	int			challenge;					// from the server to use for connecting
+	int			challenge;					// ours until the server's arrives, to use for connecting
+	qboolean	compat;						// protocol 68, not com_protocol (71)
 	int			checksumFeed;				// from the server for checksum calculations
 
 	// these are our reliable messages that go to the server

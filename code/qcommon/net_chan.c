@@ -29,6 +29,7 @@ packet header
 -------------
 4	outgoing sequence.  high bit will be set if this is a fragmented message
 [2	qport (only for client to server)]
+[4	NETCHAN_GENCHECKSUM of the challenge and the sequence (protocol 71 only)]
 [2	fragment start byte]
 [2	fragment length. if < FRAGMENT_SIZE, this is the last fragment]
 
@@ -83,7 +84,7 @@ Netchan_Setup
 called to open a channel to a remote system
 ==============
 */
-void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport ) {
+void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport, int challenge, qboolean compat ) {
 	Com_Memset (chan, 0, sizeof(*chan));
 	
 	chan->sock = sock;
@@ -91,6 +92,8 @@ void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport ) {
 	chan->qport = qport;
 	chan->incomingSequence = 0;
 	chan->outgoingSequence = 1;
+	chan->challenge = challenge;
+	chan->compat = compat;
 }
 
 // TTimo: unused, commenting out to make gcc happy
@@ -201,6 +204,10 @@ void Netchan_TransmitNextFragment( netchan_t *chan ) {
 		MSG_WriteShort( &send, qport->integer );
 	}
 
+	if ( !chan->compat ) {
+		MSG_WriteLong( &send, NETCHAN_GENCHECKSUM( chan->challenge, chan->outgoingSequence ) );
+	}
+
 	// copy the reliable message to the packet first
 	fragmentLength = FRAGMENT_SIZE;
 	if ( chan->unsentFragmentStart  + fragmentLength > chan->unsentLength ) {
@@ -268,12 +275,16 @@ void Netchan_Transmit( netchan_t *chan, int length, const byte *data ) {
 	MSG_InitOOB (&send, send_buf, sizeof(send_buf));
 
 	MSG_WriteLong( &send, chan->outgoingSequence );
-	chan->outgoingSequence++;
 
 	// send the qport if we are a client
 	if ( chan->sock == NS_CLIENT ) {
 		MSG_WriteShort( &send, qport->integer );
 	}
+
+	if ( !chan->compat ) {
+		MSG_WriteLong( &send, NETCHAN_GENCHECKSUM( chan->challenge, chan->outgoingSequence ) );
+	}
+	chan->outgoingSequence++;
 
 	MSG_WriteData( &send, data, length );
 
@@ -305,6 +316,7 @@ that does not fit in msg->maxsize is dropped.
 qboolean Netchan_Process( netchan_t *chan, msg_t *msg ) {
 	int			sequence;
 	int			qport;
+	int			checksum;
 	int			fragmentStart, fragmentLength;
 	qboolean	fragmented;
 
@@ -326,6 +338,20 @@ qboolean Netchan_Process( netchan_t *chan, msg_t *msg ) {
 	// read the qport if we are a server
 	if ( chan->sock == NS_SERVER ) {
 		qport = MSG_ReadShort( msg );
+	}
+
+	// protocol 71: drop a packet that was not sent by the peer which has
+	// the challenge, however well it guessed the address, qport and sequence
+	if ( !chan->compat ) {
+		checksum = MSG_ReadLong( msg );
+		if ( msg->readcount > msg->cursize || checksum != NETCHAN_GENCHECKSUM( chan->challenge, sequence ) ) {
+			if ( showdrop->integer || showpackets->integer ) {
+				Com_Printf( "%s:bad challenge checksum on packet %i\n"
+					, NET_AdrToString( chan->remoteAddress )
+					, sequence );
+			}
+			return qfalse;
+		}
 	}
 
 	// read the fragment information
