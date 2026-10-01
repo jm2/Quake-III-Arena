@@ -666,7 +666,8 @@ static void CG_LoadClientInfo( clientInfo_t *ci ) {
 		}
 	}
 	if( teamname[0] ) {
-		strcat( teamname, "/" );
+		// the server's team name can fill teamname
+		Q_strcat( teamname, sizeof(teamname), "/" );
 	}
 #endif
 	modelloaded = qtrue;
