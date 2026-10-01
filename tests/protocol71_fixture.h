@@ -16,7 +16,8 @@ void Server_Transmit( int n, msg_t *msg );
 qboolean Server_NextFragment( int n );
 /** The message SV_PacketEvent last handed SV_ExecuteClientMessage: its client, read position and bytes. */
 int Server_TakeExecuted( int *n, int *readcount, byte *data );
-/** The challenge record for an address, if there is one. */
+/** The challenge record for an address, if there is one, and how many records there are (MAX_CHALLENGES). */
 qboolean Server_Challenge( netadr_t from, int *challenge, qboolean *refused );
+int Server_Challenges( void );
 void Server_Refuse( netadr_t from );
 void Server_SetTime( int msec );

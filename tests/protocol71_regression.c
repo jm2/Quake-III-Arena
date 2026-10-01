@@ -973,6 +973,32 @@ static void StarvedAndChallenges( void ) {
 	Check( first && second && first != second, "server challenges follow rand() and the server time" );
 }
 
+/** A challenge record that the table recycles for a new address must not echo the last address's challenge: a bare
+ * getchallenge from the new address gets 0. */
+static void RecycledRecord( void ) {
+	netadr_t first = client, later = attacker, other;
+	int i, challenge, records = Server_Challenges(), serverTime = 100000;
+	qboolean refused;
+
+	Start( "recycled challenge record" );
+	ServerGets( first, "getchallenge 77 Quake3Arena" );
+	Check( Server_Challenge( first, &challenge, &refused ) && !strcmp( Text( Next( first ) ), va( "challengeResponse %i 77 71", challenge ) ),
+	       "first address" );
+	for ( i = 1; i < records; i++ ) {	/* the other records, each newer than the first address's */
+		Sys_StringToAdr( va( "10.0.%i.%i", i >> 8, i & 255 ), &other ); other.port = BigShort( 27960 );
+		now += 2000; Server_SetTime( serverTime += 10 );	/* every rate limit bucket leaks empty */
+		ServerGets( other, "getchallenge 5 Quake3Arena" );
+		Check( Server_Challenge( other, &challenge, &refused ) && !Quiet(), "filling the challenge table" );
+		Clear();
+	}
+	now += 2000; Server_SetTime( serverTime += 10 );
+	ServerGets( later, "getchallenge" );
+	Check( !Server_Challenge( first, &challenge, &refused ), "the oldest record was not the one recycled" );
+	Check( Server_Challenge( later, &challenge, &refused ) && !strcmp( Text( Next( later ) ), va( "challengeResponse %i 0 71", challenge ) ),
+	       "recycled record echoed the last address's challenge" );
+	Check( Quiet(), "no other datagrams" );
+}
+
 /** com_protocol 68: protocol 68 only, on either side. */
 static void Protocol68Only( void ) {
 	static byte plain[MAX_MSGLEN], out[MAX_MSGLEN];
@@ -1041,6 +1067,7 @@ int main( int argc, char **argv ) {
 	case 6: SpoofedPackets(); break;
 	case 7: Protocol68Only(); break;
 	case 8: StarvedAndChallenges(); break;
+	case 9: RecycledRecord(); break;
 	default: Check( 0, "case" );
 	}
 	printf( "Protocol 71 regressions passed (issue #37): %s\n", scenario );

@@ -96,6 +96,7 @@ qboolean Server_Challenge( netadr_t from, int *challenge, qboolean *refused ) {
 	}
 	return qfalse;
 }
+int Server_Challenges( void ) { return MAX_CHALLENGES; }
 void Server_Refuse( netadr_t from ) {
 	int i;
 	for ( i = 0; i < MAX_CHALLENGES; i++ ) {
