@@ -64,20 +64,28 @@ static void UI_PrintTime ( char *buf, int bufsize, int time ) {
 	}
 }
 
-// Issue #429: the download cvars are byte counts and a clock reading, never
-// negative as the client sets them; keeping them so keeps the sums below in
-// range. Their floats convert to int as retail does on PowerPC (2^31 and up
-// give INT_MAX), as converting one past the int range is undefined in C.
-static int UI_DownloadCvar( const char *name ) {
+// Issue #429: a cvar's float converted to an int as Team Arena's UI_CvarInt
+// does, saturating as retail does on PowerPC (2^31 and up give INT_MAX, -2^31
+// and below and NaN INT_MIN), as converting one past the int range is
+// undefined in C
+static int UI_DownloadCvarInt( const char *name ) {
 	float value = trap_Cvar_VariableValue( name );
 
 	if ( value >= 2147483648.0f ) {
 		return INT_MAX;
 	}
-	if ( !( value > 0 ) ) {	// also NaN
-		return 0;
+	if ( !( value > INT_MIN ) ) {	// also NaN
+		return INT_MIN;
 	}
 	return (int)value;
+}
+
+// the download size and count are byte counts, never negative where the
+// display is drawn; keeping them so keeps the sums below in range
+static int UI_DownloadCvar( const char *name ) {
+	int value = UI_DownloadCvarInt( name );
+
+	return value < 0 ? 0 : value;
 }
 
 static void UI_DisplayDownloadInfo( const char *downloadName ) {
@@ -88,6 +96,7 @@ static void UI_DisplayDownloadInfo( const char *downloadName ) {
 	int downloadSize, downloadCount, downloadTime;
 	char dlSizeBuf[64], totalSizeBuf[64], xferRateBuf[64], dlTimeBuf[64];
 	int xferRate;
+	int elapsed;
 	int width, leftWidth;
 	int style = UI_LEFT|UI_SMALLFONT|UI_DROPSHADOW;
 	long long percent;
@@ -95,7 +104,7 @@ static void UI_DisplayDownloadInfo( const char *downloadName ) {
 
 	downloadSize = UI_DownloadCvar( "cl_downloadSize" );
 	downloadCount = UI_DownloadCvar( "cl_downloadCount" );
-	downloadTime = UI_DownloadCvar( "cl_downloadTime" );
+	downloadTime = UI_DownloadCvarInt( "cl_downloadTime" );
 
 #if 0 // bk010104
 	fprintf( stderr, "\n\n-----------------------------------------------\n");
@@ -119,6 +128,7 @@ static void UI_DisplayDownloadInfo( const char *downloadName ) {
 
 	if (downloadSize > 0) {
 		// in 64 bits: the count times 100 overflows an int past 21MB
+		// (q3lcc's long long is 32 bits, so a QVM build wraps as retail does)
 		percent = (long long)downloadCount * 100 / downloadSize;
 		s = va( "%s (%d%%)", downloadName, percent < INT_MAX ? (int)percent : INT_MAX );
 	} else {
@@ -139,8 +149,11 @@ static void UI_DisplayDownloadInfo( const char *downloadName ) {
 	  //float elapsedTime = (float)(uis.realtime - downloadTime); // current - start (msecs)
 	  //elapsedTime = elapsedTime * 0.001f; // in seconds
 	  //if ( elapsedTime <= 0.0f ) elapsedTime == 0.0f;
-	  if ( (uis.realtime - downloadTime) / 1000) {
-			xferRate = downloadCount / ((uis.realtime - downloadTime) / 1000);
+	  // secs since the download began, from msec modulo 2^32: the client's
+	  // clock, and cl_downloadTime with it, wraps negative after 24.8 days
+	  elapsed = (int)( (unsigned)uis.realtime - (unsigned)downloadTime ) / 1000;
+	  if ( elapsed ) {
+			xferRate = downloadCount / elapsed;
 		  //xferRate = (int)( ((float)downloadCount) / elapsedTime);
 		} else {
 			xferRate = 0;

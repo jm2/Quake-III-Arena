@@ -5745,8 +5745,8 @@ void Text_PaintCenter_AutoWrapped(float x, float y, float xmax, float ystep, flo
 	}
 }
 
-// Issue #429: the download cvars are byte counts and a clock reading, never
-// negative as the client sets them; keeping them so keeps the sums below in range
+// Issue #429: the download size and count are byte counts, never negative where
+// the display is drawn; keeping them so keeps the sums below in range
 static int UI_DownloadCvar( const char *name ) {
 	int value = UI_CvarInt( name );
 
@@ -5761,13 +5761,14 @@ static void UI_DisplayDownloadInfo( const char *downloadName, float centerPoint,
 	int downloadSize, downloadCount, downloadTime;
 	char dlSizeBuf[64], totalSizeBuf[64], xferRateBuf[64], dlTimeBuf[64];
 	int xferRate;
+	int elapsed;
 	int leftWidth;
 	long long percent;
 	const char *s;
 
 	downloadSize = UI_DownloadCvar( "cl_downloadSize" );
 	downloadCount = UI_DownloadCvar( "cl_downloadCount" );
-	downloadTime = UI_DownloadCvar( "cl_downloadTime" );
+	downloadTime = UI_CvarInt( "cl_downloadTime" );
 
 	leftWidth = 320;
 
@@ -5778,6 +5779,7 @@ static void UI_DisplayDownloadInfo( const char *downloadName, float centerPoint,
 
 	if (downloadSize > 0) {
 		// in 64 bits: the count times 100 overflows an int past 21MB
+		// (q3lcc's long long is 32 bits, so a QVM build wraps as retail does)
 		percent = (long long)downloadCount * 100 / downloadSize;
 		s = va( "%s (%d%%)", downloadName, percent < INT_MAX ? (int)percent : INT_MAX );
 	} else {
@@ -5793,8 +5795,11 @@ static void UI_DisplayDownloadInfo( const char *downloadName, float centerPoint,
 		Text_PaintCenter(leftWidth, yStart+216, scale, colorWhite, "estimating", 0);
 		Text_PaintCenter(leftWidth, yStart+160, scale, colorWhite, va("(%s of %s copied)", dlSizeBuf, totalSizeBuf), 0);
 	} else {
-		if ((uiInfo.uiDC.realTime - downloadTime) / 1000) {
-			xferRate = downloadCount / ((uiInfo.uiDC.realTime - downloadTime) / 1000);
+		// secs since the download began, from msec modulo 2^32: the client's
+		// clock, and cl_downloadTime with it, wraps negative after 24.8 days
+		elapsed = (int)( (unsigned)uiInfo.uiDC.realTime - (unsigned)downloadTime ) / 1000;
+		if (elapsed) {
+			xferRate = downloadCount / elapsed;
 		} else {
 			xferRate = 0;
 		}

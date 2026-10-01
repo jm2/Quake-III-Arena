@@ -8,7 +8,8 @@
  * by downloadSize/1024, which is 0 for a size of 1-1023 bytes once 4096 bytes
  * have arrived and a second has passed; and multiplied the count by 100, which
  * overflows an int past 21 MB, as did UI_ReadableSize's GB hundredths, the
- * time left's K times seconds and the time left in msec.
+ * time left's K times seconds, the time left in msec and the msec elapsed
+ * across the wrap of the client's clock after 24.8 days.
  * Built with -DMISSIONPACK the fixture includes the real ui_main.c, else the
  * real ui_connect.c, and draws the real display with the cvars set as the
  * client sets them, under UBSan with no recovery. Each line of text drawn is
@@ -63,6 +64,15 @@ static const downloadCase_t cases[] = {
 	{ "1610612736", "1048576", "0", 10000, DOWNLOAD_NAME " (0%)|estimating|(1024 KB of 1.50 GB copied)" }, /* master: 1.-2 GB */
 	{ "1073741824", "20971520", "5000", 2102000, DOWNLOAD_NAME " (1%)|29 hr 14 min|(20.00 MB of 1024.00 MB copied)|9 KB/Sec" }, /* master: 30 hr 22 min */
 	{ "104857600", "4097", "5000", 107000, DOWNLOAD_NAME " (0%)|728 hr 8 min|(4 KB of 100.00 MB copied)|40 bytes/Sec" }, /* master: -1673629 sec */
+
+	/* a client up more than 24.8 days, whose clock (and cl_downloadTime) has
+	 * wrapped negative: downloads begun after the wrap, drawn as master draws
+	 * them; one begun before it, whose msec elapsed master overflowed; and a
+	 * time below an int's range */
+	{ "124456672", "10893068", "-1413298560", -1413297510, DOWNLOAD_NAME " (8%)|11 sec|(10.38 MB of 118.69 MB copied)|10.38 MB/Sec" },
+	{ "10485760", "5242880", "-2000000000", -1999990000, DOWNLOAD_NAME " (50%)|10 sec|(5.00 MB of 10.00 MB copied)|512 KB/Sec" },
+	{ "10485760", "5242880", "2147479552", -2147477744, DOWNLOAD_NAME " (50%)|10 sec|(5.00 MB of 10.00 MB copied)|512 KB/Sec" }, /* master: overflows */
+	{ "1024", COUNT_22MB, "-3000000000", 10000, DOWNLOAD_NAME " (2252800%)|638 hr 15 min|(22.00 MB of 1024 bytes copied)|-10 bytes/Sec" }, /* master: float to int, overflows */
 
 	/* the sizes, counts and times of issue #429: rows without a note draw
 	 * the text master draws; a note says what master's arithmetic did */
