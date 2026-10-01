@@ -49,8 +49,11 @@ void AddRemap(const char *oldShader, const char *newShader, float timeOffset) {
 	// up to the first '=', then up to the next ':', then up to the next '@'
 	// into 64-, 64- and 16-byte buffers; an old name with '=' or a new name
 	// with ':' would move those splits and overflow them. Neither name may
-	// hold the '@' that ends an entry, for a client that splits on it first
-	if ( strchr( oldShader, '=' ) || strchr( oldShader, '@' ) || strchr( newShader, ':' ) || strchr( newShader, '@' ) ) {
+	// hold the '@' that ends an entry, for a client that splits on it first,
+	// nor a '"', which would end the quoted "cs" argument the string travels
+	// in, so the client's tokenizer could drop or join parts of it
+	if ( strchr( oldShader, '=' ) || strchr( oldShader, '@' ) || strchr( newShader, ':' ) || strchr( newShader, '@' )
+		|| strchr( oldShader, '"' ) || strchr( newShader, '"' ) ) {
 		G_Printf( "AddRemap: shader name holds a CS_SHADERSTATE separator, remap skipped\n" );
 		return;
 	}

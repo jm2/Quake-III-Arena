@@ -21,7 +21,12 @@
  * '@' into 64-, 64- and 16-byte stack buffers with no bound. Names that fit
  * still overflowed those when the old name held '=' (the new name then
  * starts inside it) or the new name held ':' (the time then starts inside
- * it), and map entity keys can hold either.
+ * it), and map entity keys can hold either. The string also travels to the
+ * client as the quoted argument of a "cs"/"bcs" server command, which the
+ * client rebuilds with Cmd_TokenizeString and Cmd_ArgsFrom(2): a '"' in a
+ * name ends that quoted argument, and the unquoted remainder has C-style
+ * comments stripped and tokens joined, so a name with '"' lets a map drop or
+ * glue parts of other entries into one over-long field.
  *
  * This test links the real g_main.c, g_utils.c, g_spawn.c and g_mem.c. It
  * registers and changes the team name cvars through the real G_RegisterCvars
@@ -32,12 +37,14 @@
  * separators. The long names go into the last slots of the table, so
  * master's strcpy runs off its end under AddressSanitizer. Every case checks
  * the exact CS_SHADERSTATE string the game sets: a name too long for a shader
- * name, an old name with '=' or '@' and a new name with ':' or '@' are
- * skipped with a warning, and other names give the string master gives, byte
- * for byte wherever master's entry was not cut short (the two names and the
- * time in at most 132 characters). Every CS_SHADERSTATE string the game sets
- * also goes through a copy of retail's parser under AddressSanitizer, which
- * must read each expected entry exactly as it was sent.
+ * name, an old name with '=', '@' or '"' and a new name with ':', '@' or '"'
+ * are skipped with a warning, and other names give the string master gives,
+ * byte for byte wherever master's entry was not cut short (the two names and
+ * the time in at most 132 characters). Every CS_SHADERSTATE string the game
+ * sets also goes through copies of retail's "cs"/"bcs" transport
+ * (Cmd_TokenizeString, Cmd_ArgsFrom) and of its CG_ShaderStateChanged parser
+ * under AddressSanitizer, which must deliver and read each expected entry
+ * exactly as it was sent. TestQuoteGluing is the reviewer's worst case.
  */
 #include "../code/game/g_local.h"
 #include <stdarg.h>
@@ -128,11 +135,180 @@ static int RetailShaderStateChanged( const char *configstring, char *lastOld, ch
 	return remaps;
 }
 
+/*
+ * Retail 1.32c's Cmd_TokenizeString and Cmd_ArgsFrom (git show
+ * dbe4ddb:code/qcommon/cmd.c), which a retail client runs on each "cs" and
+ * "bcs0/1/2" server command.
+ */
+static int		cmd_argc;
+static char		*cmd_argv[MAX_STRING_TOKENS];		// points into cmd_tokenized
+static char		cmd_tokenized[BIG_INFO_STRING+MAX_STRING_TOKENS];	// will have 0 bytes inserted
+
+static char *Cmd_Argv( int arg ) {
+	if ( (unsigned)arg >= cmd_argc ) {
+		return "";
+	}
+	return cmd_argv[arg];
+}
+
+static char *Cmd_ArgsFrom( int arg ) {
+	static	char		cmd_args[BIG_INFO_STRING];
+	int		i;
+
+	cmd_args[0] = 0;
+	if (arg < 0)
+		arg = 0;
+	for ( i = arg ; i < cmd_argc ; i++ ) {
+		strcat( cmd_args, cmd_argv[i] );
+		if ( i != cmd_argc-1 ) {
+			strcat( cmd_args, " " );
+		}
+	}
+
+	return cmd_args;
+}
+
+static void Cmd_TokenizeString( const char *text_in ) {
+	const char	*text;
+	char	*textOut;
+
+	// clear previous args
+	cmd_argc = 0;
+
+	if ( !text_in ) {
+		return;
+	}
+
+	text = text_in;
+	textOut = cmd_tokenized;
+
+	while ( 1 ) {
+		if ( cmd_argc == MAX_STRING_TOKENS ) {
+			return;			// this is usually something malicious
+		}
+
+		while ( 1 ) {
+			// skip whitespace
+			while ( *text && *text <= ' ' ) {
+				text++;
+			}
+			if ( !*text ) {
+				return;			// all tokens parsed
+			}
+
+			// skip // comments
+			if ( text[0] == '/' && text[1] == '/' ) {
+				return;			// all tokens parsed
+			}
+
+			// skip /* */ comments
+			if ( text[0] == '/' && text[1] =='*' ) {
+				while ( *text && ( text[0] != '*' || text[1] != '/' ) ) {
+					text++;
+				}
+				if ( !*text ) {
+					return;		// all tokens parsed
+				}
+				text += 2;
+			} else {
+				break;			// we are ready to parse a token
+			}
+		}
+
+		// handle quoted strings
+		if ( *text == '"' ) {
+			cmd_argv[cmd_argc] = textOut;
+			cmd_argc++;
+			text++;
+			while ( *text && *text != '"' ) {
+				*textOut++ = *text++;
+			}
+			*textOut++ = 0;
+			if ( !*text ) {
+				return;		// all tokens parsed
+			}
+			text++;
+			continue;
+		}
+
+		// regular token
+		cmd_argv[cmd_argc] = textOut;
+		cmd_argc++;
+
+		// skip until whitespace, quote, or command
+		while ( *text > ' ' ) {
+			if ( text[0] == '"' ) {
+				break;
+			}
+
+			if ( text[0] == '/' && text[1] == '/' ) {
+				break;
+			}
+
+			// skip /* */ comments
+			if ( text[0] == '/' && text[1] =='*' ) {
+				break;
+			}
+
+			*textOut++ = *text++;
+		}
+
+		*textOut++ = 0;
+
+		if ( !*text ) {
+			return;		// all tokens parsed
+		}
+	}
+}
+
+/**
+ * What a retail client's CL_ConfigstringModified gets for a configstring
+ * the server sends: SV_SetConfigstring sends "cs <index> "<string>"", or
+ * "bcs0", "bcs1" and "bcs2" chunks of 999 characters from 1000 on, which
+ * CL_GetServerCommand joins into "cs <index> "<string>"" again.
+ */
+static const char *RetailReceivedConfigstring( int index, const char *string ) {
+	static char	bigConfigString[BIG_INFO_STRING];
+	char		command[MAX_STRING_CHARS * 2], chunk[MAX_STRING_CHARS];
+	const int	maxChunkSize = MAX_STRING_CHARS - 24;
+	int			sent, remaining;
+	const char	*cmd;
+
+	remaining = strlen( string );
+	if ( remaining < maxChunkSize ) {
+		Com_sprintf( command, sizeof( command ), "cs %i \"%s\"\n", index, string );
+		Cmd_TokenizeString( command );
+	} else {
+		for ( sent = 0 ; remaining > 0 ; sent += maxChunkSize - 1, remaining -= maxChunkSize - 1 ) {
+			cmd = sent == 0 ? "bcs0" : remaining < maxChunkSize ? "bcs2" : "bcs1";
+			Q_strncpyz( chunk, string + sent, maxChunkSize );
+			Com_sprintf( command, sizeof( command ), "%s %i \"%s\"\n", cmd, index, chunk );
+			Cmd_TokenizeString( command );
+			if ( !strcmp( Cmd_Argv( 0 ), "bcs0" ) ) {
+				Com_sprintf( bigConfigString, BIG_INFO_STRING, "cs %s \"%s", Cmd_Argv(1), Cmd_Argv(2) );
+			} else {
+				if ( strlen( bigConfigString ) + strlen( Cmd_Argv( 2 ) ) + 1 >= BIG_INFO_STRING ) {
+					Fail( "bcs exceeded BIG_INFO_STRING" );
+				}
+				strcat( bigConfigString, Cmd_Argv( 2 ) );
+			}
+		}
+		strcat( bigConfigString, "\"" );
+		Cmd_TokenizeString( bigConfigString );
+	}
+	if ( strcmp( Cmd_Argv( 0 ), "cs" ) || atoi( Cmd_Argv( 1 ) ) != index ) {
+		Fail( "the configstring command did not arrive" );
+	}
+	// get everything after "cs <num>"
+	return Cmd_ArgsFrom( 2 );
+}
+
 /* The server keeps a configstring of any length; BuildShaderStateConfig's is at most 4095. */
 static char	shaderState[MAX_STRING_CHARS * 4];
 
 void trap_SetConfigstring( int num, const char *string ) {
-	char	oldShader[MAX_QPATH], newShader[MAX_QPATH], timeText[16];
+	char		oldShader[MAX_QPATH], newShader[MAX_QPATH], timeText[16];
+	const char	*received;
 
 	if ( num != CS_SHADERSTATE ) {
 		Fail( "unexpected configstring" );
@@ -141,9 +317,14 @@ void trap_SetConfigstring( int num, const char *string ) {
 		Fail( "CS_SHADERSTATE is longer than BuildShaderStateConfig's buffer" );
 	}
 	strcpy( shaderState, string );
-	// no case here reaches BuildShaderStateConfig's cap, so a client reads every remap
-	if ( RetailShaderStateChanged( string, oldShader, newShader, timeText ) != remapCount ) {
+	// a retail client receives it through the "cs" command, then parses it;
+	// no case here reaches BuildShaderStateConfig's cap, so it reads every remap
+	received = RetailReceivedConfigstring( num, string );
+	if ( RetailShaderStateChanged( received, oldShader, newShader, timeText ) != remapCount ) {
 		Fail( "a retail client would read a different number of remaps" );
+	}
+	if ( strcmp( received, string ) ) {
+		Fail( "a retail client would receive a different CS_SHADERSTATE" );
 	}
 }
 
@@ -276,10 +457,10 @@ static void AppendEntry( char *expected, int size, const char *oldShader, const 
 
 /** AddRemap's rule: a name that fits a shader name and holds no separator that moves a retail client's split. */
 static qboolean OldNameFits( const char *name ) {
-	return strlen( name ) < MAX_QPATH && !strchr( name, '=' ) && !strchr( name, '@' );
+	return strlen( name ) < MAX_QPATH && !strchr( name, '=' ) && !strchr( name, '@' ) && !strchr( name, '"' );
 }
 static qboolean NewNameFits( const char *name ) {
-	return strlen( name ) < MAX_QPATH && !strchr( name, ':' ) && !strchr( name, '@' );
+	return strlen( name ) < MAX_QPATH && !strchr( name, ':' ) && !strchr( name, '@' ) && !strchr( name, '"' );
 }
 
 /** Fill the first count slots of the table with "sNNN" -> "nNNN" remaps; each CS_SHADERSTATE entry is 16 characters. */
@@ -324,9 +505,11 @@ static void FireEntityRemap( const char *oldShader, const char *newShader ) {
 	gentity_t	*ent;
 	int			i;
 
+	// a value with a '"' is written as a bare word, which COM_Parse reads up to whitespace
 	Com_sprintf( entityString, sizeof( entityString ),
-		"{\n\"classname\" \"trigger_multiple\"\n\"model\" \"*1\"\n\"targetShaderName\" \"%s\"\n\"targetShaderNewName\" \"%s\"\n}\n",
-		oldShader, newShader );
+		"{\n\"classname\" \"trigger_multiple\"\n\"model\" \"*1\"\n\"targetShaderName\" %s%s%s\n\"targetShaderNewName\" %s%s%s\n}\n",
+		strchr( oldShader, '"' ) ? "" : "\"", oldShader, strchr( oldShader, '"' ) ? "" : "\"",
+		strchr( newShader, '"' ) ? "" : "\"", newShader, strchr( newShader, '"' ) ? "" : "\"" );
 
 	memset( g_entities, 0, sizeof( g_entities ) );
 	G_InitMemory();
@@ -386,6 +569,12 @@ static const entityCase_t entityCases[] = {
 	// the other name's separators move no split, so retail reads these as sent
 	{ 12, 12, "textures/o:d", "textures/n=w" },
 	{ 63, 63, "textures/o:d", "textures/n=w" },
+	// an interior '"' ends the "cs" argument, so a retail tokenizer would drop
+	// or glue parts of the string; TestQuoteGluing below is the worst case. A
+	// map value starting with '"' is a quoted token to COM_Parse and carries
+	// no payload, so the reachable case is a '"' inside a bare word.
+	{ 12, 12, "textures/o\"d", "textures/n\"w" },
+	{ 63, 63, "textures/o\"d", "textures/n\"w" },
 };
 #define NUM_ENTITY_CASES	( sizeof( entityCases ) / sizeof( entityCases[0] ) )
 
@@ -450,6 +639,64 @@ static void TestEntityRemaps( void ) {
 				ExpectShaderState( expected, count, warnings + 2 );
 			}
 		}
+	}
+}
+
+/*
+ * The reviewer's worst case: two old names that fit MAX_QPATH and hold no
+ * '=', ':' or '@', but whose tail and head are a quote and a C-comment
+ * delimiter. The first old name ends with a quote then a comment-open, the
+ * second starts with a comment-close then a quote, and each has a short new
+ * name so its entry still carries an '='. The server string is, in effect,
+ * firstOld"<open>=n: 0.00@<close>"secondOld=m: 0.00@. A retail client runs it
+ * through Cmd_TokenizeString: the first quote ends the "cs" argument's quoted
+ * token at firstOld, the comment pair removes =n: 0.00@ between them, and the
+ * tail secondOld=m: 0.00@ is one bare token. Cmd_ArgsFrom(2) rejoins it as
+ * firstOld + ' ' + secondOld=m: 0.00@, whose part before the surviving '=' is
+ * 121 characters, which retail's CG_ShaderStateChanged copies into
+ * originalShader[64]. AddRemap refuses both old names, so the server never
+ * sends it; the test's trap_SetConfigstring runs the real transport and
+ * parser and would report that overflow under AddressSanitizer without the
+ * refusal, and otherwise sees only the empty CS_SHADERSTATE.
+ */
+static void TestQuoteGluing( void ) {
+	char	firstOld[MAX_QPATH], secondOld[MAX_QPATH];
+	int		i;
+
+	testCase = "quote-and-comment gluing";
+	ResetRemaps();
+	// a...a"/* : 60 of 'a', then a quote and a comment-open
+	for ( i = 0 ; i < 60 ; i++ ) {
+		firstOld[i] = 'a';
+	}
+	strcpy( firstOld + 60, "\"/*" );
+	// */"b...b : a comment-close and a quote, then 60 of 'b'
+	strcpy( secondOld, "*/\"" );
+	for ( i = 0 ; i < 60 ; i++ ) {
+		secondOld[3 + i] = 'b';
+	}
+	secondOld[63] = 0;
+	if ( strlen( firstOld ) != 63 || strlen( secondOld ) != 63 ) {
+		Fail( "the worst-case names are not 63 characters" );
+	}
+	if ( OldNameFits( firstOld ) || OldNameFits( secondOld ) ) {
+		Fail( "the worst-case names must be refused" );
+	}
+
+	// both AddRemap calls are refused on the old name, so the table and
+	// CS_SHADERSTATE stay empty and one warning is printed for each
+	FireEntityRemap( firstOld, "textures/n" );
+	FireEntityRemap( secondOld, "textures/m" );
+	if ( remapCount != 0 || shaderState[0] != 0 || remapWarnings != 2 ) {
+		Fail( "the worst-case chain was not refused" );
+	}
+
+	// a short remap whose names each hold a lone '/' or '*' (no quote) is
+	// accepted and still arrives and parses as sent (checked in trap_SetConfigstring)
+	FireEntityRemap( "textures/a/b", "textures/c*d" );
+	FireEntityRemap( "textures/e*f", "textures/g/h" );
+	if ( remapCount != 2 ) {
+		Fail( "a '/' or '*' alone must be accepted" );
 	}
 }
 
@@ -600,6 +847,7 @@ int main( void ) {
 	TestTeamShaders();
 #endif
 	TestEntityRemaps();
+	TestQuoteGluing();
 	TestRemapCount();
 #ifdef MISSIONPACK
 	printf( "AddRemap keeps map entity and team icon shader names in its table, or skips the remap (issue #448, Team Arena)\n" );
