@@ -14,7 +14,14 @@
  * master's; one that doesn't holds back only the download blocks that
  * don't fit, or is cleared as an overflow when its reliable commands and
  * entities alone don't.  Full snapshots are also read by retail's parser,
- * and the downloads must complete with the file served, byte for byte. */
+ * and the downloads must complete with the file served, byte for byte.
+ * Issue #445: a download the server refuses (not referenced, an id or Team
+ * Arena pk3, downloads disabled on a pure server or not, a referenced pk3
+ * missing or empty) behind reliable commands that fill the snapshot to about
+ * 16 KB, swept across the limit the same way: the refusal must be master's
+ * when it fits, wait for a later snapshot when it doesn't, and reach the
+ * client either way, where master's cleared snapshot lost it and left a
+ * retail client on "Downloading..." for good. */
 #include "../code/server/server.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -28,6 +35,8 @@
 #define RETAIL_FRAGMENT_BIT	( 1U << 31 )
 #define SERVER_ID 4380
 #define DOWNLOAD_PAK "baseq3/mapdl"
+#define MISSING_PAK "baseq3/gone"	/* referenced, but not on the server */
+#define EMPTY_PAK "baseq3/empty"	/* referenced, and empty */
 #define FILE_BYTES ( 10 * MAX_DOWNLOAD_BLKSIZE + 700 )	/* 11 data blocks and the empty last one */
 #define COMMANDS 16			/* long reliable commands that fill a snapshot short of the limit */
 #define FAR_ENTITIES 680	/* entities far from their baselines that do */
@@ -37,10 +46,10 @@ server_t sv;
 vm_t *gvm;
 static cvar_t zero = { .string = "" }, maxclients = { .string = "8", .integer = 8 };
 static cvar_t running = { .string = "1", .integer = 1 }, reconnect = { .string = "3", .integer = 3 };
-static cvar_t allowDownload = { .string = "1", .integer = 1 };
+static cvar_t allowDownload = { .string = "1", .integer = 1 }, pure = { .string = "0" };
 cvar_t *sv_maxclients = &maxclients, *sv_reconnectlimit = &reconnect, *sv_floodProtect = &zero;
 cvar_t *com_sv_running = &running, *cl_shownet = &zero;
-cvar_t *sv_maxRate = &zero, *sv_pure = &zero, *sv_padPackets = &zero, *sv_lanForceRate = &zero;
+cvar_t *sv_maxRate = &zero, *sv_pure = &pure, *sv_padPackets = &zero, *sv_lanForceRate = &zero;
 cvar_t *sv_allowDownload = &allowDownload, *sv_minPing = &zero, *sv_maxPing = &zero, *sv_privateClients = &zero;
 cvar_t *sv_privatePassword = &zero, *com_dedicated = &zero, *com_cl_running = &zero;
 qboolean com_errorEntered;
@@ -52,9 +61,11 @@ static byte pvs[MAX_MAP_AREA_BYTES], file[FILE_BYTES];
 static char words[20 * 1024];	/* configstring text */
 static char printed[1 << 16];
 static size_t printedLength;
-static qboolean fileOpen;
+static qboolean fileOpen, emptyOpen;
 static int filePos;
 static const char *scenario = "setup";
+static const char *refusal;	/* the reply master sends to the download asked for, or NULL: it serves the file */
+static int paddingBits;		/* the Huffman code length of the padding char */
 
 /** Stop on the first message a retail client could not take, or that differs from master's. */
 static void Check( int ok, const char *message ) {
@@ -101,24 +112,37 @@ void SV_BotFreeClient( int clientNum ) { (void)clientNum; }
 void SV_Heartbeat_f( void ) {}
 void SV_SetUserinfo( int index, const char *val ) { (void)index; (void)val; }
 void Cvar_Set( const char *name, const char *value ) { (void)name; (void)value; }
-qboolean FS_idPak( char *pak, char *base ) { (void)pak; (void)base; return qfalse; }
+/** The real FS_idPak, for pak0 alone. */
+qboolean FS_idPak( char *pak, char *base ) {
+	char id[MAX_QPATH];
+	Com_sprintf( id, sizeof(id), "%s/pak0", base );
+	return !strcmp( pak, id );
+}
 int FS_FileIsInPAK( const char *name, int *sum ) { (void)name; (void)sum; return -1; }
-/** The one pk3 the level references, served from file[]. */
+/** The one pk3 served, from file[], and an empty one: open, of no length. */
 int FS_SV_FOpenFileRead( const char *name, fileHandle_t *fp ) {
 	*fp = 0;
+	if ( !strcmp( name, EMPTY_PAK ".pk3" ) ) {
+		Check( !emptyOpen, "the empty pk3 is closed before it is opened again" );
+		emptyOpen = qtrue; *fp = 2;
+		return 0;
+	}
 	if ( strcmp( name, DOWNLOAD_PAK ".pk3" ) ) return 0;
 	Check( !fileOpen, "one download at a time" );
 	fileOpen = qtrue; filePos = 0; *fp = 1;
 	return FILE_BYTES;
 }
-void FS_FCloseFile( fileHandle_t f ) { Check( f == 1 && fileOpen, "closed the download" ); fileOpen = qfalse; }
+void FS_FCloseFile( fileHandle_t f ) {
+	if ( f == 2 ) { Check( emptyOpen, "closed the empty pk3" ); emptyOpen = qfalse; return; }
+	Check( f == 1 && fileOpen, "closed the download" ); fileOpen = qfalse;
+}
 int FS_Read( void *buffer, int len, fileHandle_t f ) {
 	Check( f == 1 && fileOpen, "read the download" );
 	if ( len > FILE_BYTES - filePos ) len = FILE_BYTES - filePos;
 	memcpy( buffer, file + filePos, len ); filePos += len;
 	return len;
 }
-const char *FS_ReferencedPakNames( void ) { return DOWNLOAD_PAK; }
+const char *FS_ReferencedPakNames( void ) { return DOWNLOAD_PAK " " MISSING_PAK " " EMPTY_PAK " baseq3/pak0 missionpack/pak0"; }
 const char *FS_LoadedPakPureChecksums( void ) { return ""; }
 qboolean FS_FilenameCompare( const char *a, const char *b ) { return strcmp( a, b ) != 0; }
 
@@ -134,6 +158,7 @@ static struct {
 	int			serverId, serverCommandSequence;
 	int			downloadBlock, downloadCount;	/* downloadBlock < 0: not downloading */
 	byte		download[FILE_BYTES];
+	char		refusal[MAX_STRING_CHARS];	/* the text of a refused download */
 } client;
 
 /** Retail's Netchan_Process: the sequence, then the message, in a buffer of exactly MAX_MSGLEN, so ASan sees an overrun. */
@@ -219,12 +244,18 @@ static int Parse( msg_t *msg ) {
 			break;
 		case svc_download:	/* CL_ParseDownload */
 			block = MSG_ReadShort( msg );
-			if ( !block ) Check( MSG_ReadLong( msg ) == FILE_BYTES, "block zero carries the file size" );
+			blocks++;
+			if ( !block && ( size = MSG_ReadLong( msg ) ) < 0 ) {	/* refused: retail drops with the text */
+				Check( client.downloadBlock == 0, "a refusal answers a download asked for" );
+				Q_strncpyz( client.refusal, MSG_ReadString( msg ), sizeof(client.refusal) );
+				client.downloadBlock = -1;
+				break;
+			}
+			if ( !block ) Check( size == FILE_BYTES, "block zero carries the file size" );
 			size = MSG_ReadShort( msg );
 			Check( size >= 0 && size <= MAX_DOWNLOAD_BLKSIZE, "download block size" );
 			MSG_ReadData( msg, data, size );
-			blocks++;
-			if ( block != client.downloadBlock ) break;	/* a resent block: ignored, not acknowledged */
+			Check( block == client.downloadBlock, "blocks arrive in order, none resent" );
 			Check( client.downloadCount + size <= FILE_BYTES, "download no longer than the file" );
 			memcpy( client.download + client.downloadCount, data, size );
 			client.downloadCount += size;
@@ -321,7 +352,13 @@ static int Master( client_t *cl, const before_t *b, int maxBlocks, msg_t *msg ) 
 	MSG_WriteByte( msg, frame->areabytes ); MSG_WriteData( msg, frame->areabits, frame->areabytes );
 	MSG_WriteDeltaPlayerstate( msg, oldframe ? &oldframe->ps : NULL, &frame->ps );
 	EmitEntities( oldframe, frame, msg );
-	if ( b->downloading ) {
+	if ( b->downloading && b->opening && refusal ) {	/* the refusal, counted as a block */
+		if ( maxBlocks > 0 ) {
+			MSG_WriteByte( msg, svc_download ); MSG_WriteShort( msg, 0 ); MSG_WriteLong( msg, -1 );
+			MSG_WriteString( msg, refusal );
+		}
+		blocks = 1;
+	} else if ( b->downloading ) {
 		n = ( cl->rate * cl->snapshotMsec / 1000 + MAX_DOWNLOAD_BLKSIZE ) / MAX_DOWNLOAD_BLKSIZE;
 		xmit = b->opening ? 0 : b->xmit; clientBlock = b->opening ? 0 : b->clientBlock; sendTime = b->sendTime;
 		while ( n-- && clientBlock != cl->downloadCurrentBlock ) {
@@ -487,6 +524,64 @@ static void DownloadEight( void ) {
 	Check( seen.capped && seen.masterOverflow && !seen.cleared, "blocks held back where master overflows" );
 	Report( scenario );
 }
+/** The downloads a server refuses, with master's reply to each. */
+static const struct { const char *what, *file, *reply; int allow, pure; } refusals[] = {
+	{ "refused: not referenced", "baseq3/unlisted.pk3",
+	  "File \"baseq3/unlisted.pk3\" is not referenced and cannot be downloaded.", 1, 0 },
+	{ "refused: id pk3", "baseq3/pak0.pk3", "Cannot autodownload id pk3 file \"baseq3/pak0.pk3\"", 1, 0 },
+	{ "refused: Team Arena pk3", "missionpack/pak0.pk3", "Cannot autodownload Team Arena file \"missionpack/pak0.pk3\"\n"
+	  "The Team Arena mission pack can be found in your local game store.", 1, 0 },
+	{ "refused: downloads disabled, pure", DOWNLOAD_PAK ".pk3", "Could not download \"" DOWNLOAD_PAK ".pk3\" because "
+	  "autodownloading is disabled on the server.\n\nYou will need to get this file elsewhere before you can connect to "
+	  "this pure server.\n", 0, 1 },
+	{ "refused: downloads disabled", DOWNLOAD_PAK ".pk3", "Could not download \"" DOWNLOAD_PAK ".pk3\" because "
+	  "autodownloading is disabled on the server.\n\nThe server you are connecting to is not a pure server, set "
+	  "autodownload to No in your settings and you might be able to join the game anyway.\n", 0, 0 },
+	{ "refused: missing", MISSING_PAK ".pk3", "File \"" MISSING_PAK ".pk3\" not found on server for autodownloading.\n", 1, 0 },
+	{ "refused: empty", EMPTY_PAK ".pk3", "File \"" EMPTY_PAK ".pk3\" not found on server for autodownloading.\n", 1, 0 },
+};
+/** Ask for a file the server refuses, behind the long reliable commands and `padding` chars more; returns
+    master's size of the first snapshot.  The refusal must reach the client, in a later snapshot when it
+    doesn't fit that one (the client would drop then: it is reused here). */
+static int Refuse( client_t *cl, int base, const char *file, int padding ) {
+	int snapshots = 1, size, i;
+	ClientCommand( va( "download %s", file ) );
+	client.downloadBlock = 0; client.refusal[0] = 0;
+	Reply( cl, qfalse );
+	cl->reliableAcknowledge = cl->reliableSequence = client.serverCommandSequence = base;
+	for ( i = 0; i < COMMANDS; i++ ) ServerCommand( cl, va( "cs %i \"%.960s\"", 700 + i, words + 960 * i ) );
+	ServerCommand( cl, Padding( padding ) );
+	size = Snapshot( cl, qfalse );
+	for ( ; client.downloadBlock >= 0; snapshots++ ) {
+		Check( snapshots < 2, "the refusal arrives with the next snapshot" );
+		svs.time += cl->snapshotMsec;
+		Snapshot( cl, qfalse );
+	}
+	Check( !strcmp( client.refusal, refusal ), "the client gets the refusal" );
+	Check( ( size > RETAIL_MSGLEN ) == ( snapshots > 1 ), "the refusal waits only when it doesn't fit" );
+	Check( !cl->downloadName[0] && !fileOpen, "the server forgets the request once it is refused" );
+	return size;
+}
+/** Each refusal swept across the limit, from a few bytes short of it. */
+static void Refusals( void ) {
+	client_t *cl; int base, padding, size, k;
+	for ( k = 0; k < (int)( sizeof(refusals) / sizeof(refusals[0]) ); k++ ) {
+		memset( &seen, 0, sizeof(seen) );
+		cl = Connect( 20 ); base = cl->reliableSequence;
+		scenario = refusals[k].what; refusal = refusals[k].reply;
+		allowDownload.integer = refusals[k].allow; pure.integer = refusals[k].pure;
+		for ( padding = 0; ; padding++ ) {
+			size = Refuse( cl, base, refusals[k].file, padding );
+			if ( size > MAX_MSGLEN ) break;
+			if ( !padding ) {	/* each padding char adds paddingBits */
+				Check( size <= RETAIL_MSGLEN - 32, "the sweep starts below the limit" );
+				padding = ( RETAIL_MSGLEN - 32 - size ) * 8 / paddingBits;
+			}
+		}
+		Check( seen.capped && seen.retailOverrun && !seen.cleared, "refusals held back where master overruns retail" );
+		Report( scenario );
+	}
+}
 /** An active client that acknowledged everything, with full snapshots. */
 static client_t *Active( void ) {
 	client_t *cl = Connect( 20 );
@@ -576,6 +671,7 @@ int main( int argc, char **argv ) {
 		msg_t msg; byte data[16];
 		MSG_Init( &msg, data, sizeof(data) ); MSG_WriteByte( &msg, 'e' );
 		Check( msg.bit <= 8, "padding char code length" );
+		paddingBits = msg.bit;
 	}
 	switch ( test ) {
 	case 0: Normal(); break;
@@ -583,7 +679,8 @@ int main( int argc, char **argv ) {
 	case 2: DownloadEight(); break;
 	case 3: CommandSweep(); break;
 	case 4: EntitySweep(); break;
-	default: Check( 0, "usage: server-snapshot-budget-tests <0-4>" );
+	case 5: Refusals(); break;
+	default: Check( 0, "usage: server-snapshot-budget-tests <0-5>" );
 	}
 	return 0;
 }

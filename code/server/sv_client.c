@@ -981,7 +981,8 @@ SV_WriteDownloadToClient
 
 Check to see if the client wants a file, open it if needed and start pumping the client
 Fill up msg with data 
-Blocks that would make msg too long for a client wait for later snapshots
+Blocks, or a refusal, that would make msg too long for a client wait for
+later snapshots
 ==================
 */
 void SV_WriteDownloadToClient( client_t *cl , msg_t *msg )
@@ -1029,6 +1030,8 @@ void SV_WriteDownloadToClient( client_t *cl , msg_t *msg )
 
 		if ( !sv_allowDownload->integer || idPack || unreferenced ||
 			( cl->downloadSize = FS_SV_FOpenFileRead( cl->downloadName, &cl->download ) ) <= 0 ) {
+			msg_t	mark;
+
 			// cannot auto-download file
 			if (unreferenced) {
 				Com_Printf("clientDownload: %d : \"%s\" is not referenced and cannot be downloaded.\n",
@@ -1062,10 +1065,24 @@ void SV_WriteDownloadToClient( client_t *cl , msg_t *msg )
 				Com_Printf("clientDownload: %d : \"%s\" file not found on server\n", cl - svs.clients, cl->downloadName);
 				Com_sprintf(errorMessage, sizeof(errorMessage), "File \"%s\" not found on server for autodownloading.\n", cl->downloadName);
 			}
+			mark = *msg;
 			MSG_WriteByte( msg, svc_download );
 			MSG_WriteShort( msg, 0 ); // client is expecting block zero
 			MSG_WriteLong( msg, -1 ); // illegal file size
 			MSG_WriteString( msg, errorMessage );
+
+			// the snapshot must still fit a client: a refusal that doesn't
+			// goes with a later one, and the request stays until then.  An
+			// empty pk3 opened for it is closed, so the next try refuses it
+			// again rather than sending it
+			if ( !SV_MessageFitsClient( msg ) ) {
+				SV_RewindMessage( msg, &mark );
+				if ( cl->download ) {
+					FS_FCloseFile( cl->download );
+					cl->download = 0;
+				}
+				return;
+			}
 
 			*cl->downloadName = 0;
 			return;
