@@ -489,15 +489,15 @@ void CG_PredictPlayerState( void ) {
 		cg.physicsTime = cg.snap->serverTime;
 	}
 
-	if ( pmove_msec.integer < 8 ) {
+	if ( cg_pmoveMsec.integer < 8 ) {
 		trap_Cvar_Set("pmove_msec", "8");
 	}
-	else if (pmove_msec.integer > 33) {
+	else if (cg_pmoveMsec.integer > 33) {
 		trap_Cvar_Set("pmove_msec", "33");
 	}
 
-	cg_pmove.pmove_fixed = pmove_fixed.integer;// | cg_pmove_fixed.integer;
-	cg_pmove.pmove_msec = pmove_msec.integer;
+	cg_pmove.pmove_fixed = cg_pmoveFixed.integer;// | cg_pmove_fixed.integer;
+	cg_pmove.pmove_msec = cg_pmoveMsec.integer;
 
 	// run cmds
 	moved = qfalse;
@@ -578,7 +578,7 @@ void CG_PredictPlayerState( void ) {
 		cg_pmove.gauntletHit = qfalse;
 
 		if ( cg_pmove.pmove_fixed ) {
-			cg_pmove.cmd.serverTime = ((cg_pmove.cmd.serverTime + pmove_msec.integer-1) / pmove_msec.integer) * pmove_msec.integer;
+			cg_pmove.cmd.serverTime = ((cg_pmove.cmd.serverTime + cg_pmoveMsec.integer-1) / cg_pmoveMsec.integer) * cg_pmoveMsec.integer;
 		}
 
 		Pmove (&cg_pmove);

@@ -164,9 +164,12 @@ vmCvar_t	cg_noVoiceText;
 vmCvar_t	cg_hudFiles;
 vmCvar_t 	cg_scorePlum;
 vmCvar_t 	cg_smoothClients;
-vmCvar_t	pmove_fixed;
+// The pmove_fixed and pmove_msec cvars. g_main.c has its own copies; the static
+// build links both modules into one image and keeps one per module, like the
+// retail QVMs (issue #457).
+vmCvar_t	cg_pmoveFixed;
 //vmCvar_t	cg_pmove_fixed;
-vmCvar_t	pmove_msec;
+vmCvar_t	cg_pmoveMsec;
 vmCvar_t	cg_pmove_msec;
 vmCvar_t	cg_cameraMode;
 vmCvar_t	cg_cameraOrbit;
@@ -305,8 +308,8 @@ static cvarTable_t cvarTable[] = { // bk001129
 	{ &cg_smoothClients, "cg_smoothClients", "0", CVAR_USERINFO | CVAR_ARCHIVE},
 	{ &cg_cameraMode, "com_cameraMode", "0", CVAR_CHEAT},
 
-	{ &pmove_fixed, "pmove_fixed", "0", 0},
-	{ &pmove_msec, "pmove_msec", "8", 0},
+	{ &cg_pmoveFixed, "pmove_fixed", "0", 0},
+	{ &cg_pmoveMsec, "pmove_msec", "8", 0},
 	{ &cg_noTaunt, "cg_noTaunt", "0", CVAR_ARCHIVE},
 	{ &cg_noProjectileTrail, "cg_noProjectileTrail", "0", CVAR_ARCHIVE},
 	{ &cg_smallFont, "ui_smallFont", "0.25", CVAR_ARCHIVE},

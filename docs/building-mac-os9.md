@@ -86,16 +86,19 @@ gcc_version=powerpc-apple-macos-gcc (GCC) 12.2.0
 retro68_commit=83b9c8d2c58f8efb0925a305aca1e0edab2e6571
 retro68_submodule=multiversal 25b78f82807a967772797ab3b9d4b86c9137fcdf
 retro68_pinned=yes
+static_modules_ldscript_sha256=<SHA-256 of Quake3.static-modules.x>
 ```
 
 `gcc_version` is the first line of the compiler's `--version`. The commit and
 submodules come from the Retro68 checkout next to the toolchain
 (`tools/Retro68-src` for `tools/Retro68-build`); `unknown` means there is
 none. `retro68_pinned=no` means they are not the ones `retro68-versions.txt`
-pins. The manifest holds no dates or paths, so it changes only with the PEF or
-the toolchain. The PEF itself embeds the source directory (`assert()` messages
-carry `__FILE__`), so the same source built in another directory has another
-`pef_sha256`.
+pins. `static_modules_ldscript_sha256` is the hash of the linker script the
+configure generates from the toolchain's default script to bracket the game
+modules (issue #457). The manifest holds no dates or paths, so it changes only
+with the PEF or the toolchain. The PEF itself embeds the source directory
+(`assert()` messages carry `__FILE__`), so the same source built in another
+directory has another `pef_sha256`.
 
 ## Checking and rebuilding the toolchain
 
