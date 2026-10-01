@@ -812,6 +812,14 @@ void trap_Cvar_VariableStringBuffer( const char *var_name, char *buffer, int buf
 	Q_strncpyz( buffer, nextmapCvar, bufsize );
 }
 
+/* target_location_linkup reads "developer" only for more locations than configstrings (issue #461) */
+int trap_Cvar_VariableIntegerValue( const char *var_name ) {
+	if ( strcmp( var_name, "developer" ) ) {
+		Fail( "unexpected cvar read" );
+	}
+	return 0;
+}
+
 static const char	*testUserinfo = "";
 
 void trap_GetUserinfo( int num, char *buffer, int bufferSize ) {
