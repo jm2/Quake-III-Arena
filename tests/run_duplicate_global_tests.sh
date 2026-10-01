@@ -31,13 +31,11 @@ Q3_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Duplicates that are known to be benign: symbol, then every defining object.
 # The entry must match the defining objects exactly and must still occur.
+# None remain: Sys_LoadDll resets each module's globals on every load (#457),
+# so a global two modules shared would be reset under the other one. cgame's
+# pmove_fixed/pmove_msec vmCvar_ts and UI_ProportionalSizeScale were renamed
+# or made static for that.
 Q3_ALLOWED_DUPLICATES='
-# game and cgame each define this vmCvar_t and register it for the same
-# engine cvar and default, so the shared handle and value suit both modules.
-pmove_fixed cgame/cg_main.c game/g_main.c
-pmove_msec cgame/cg_main.c game/g_main.c
-# Identical copies: (style & UI_SMALLFONT) ? 0.75 (PROP_SMALL_SIZE_SCALE) : 1.0.
-UI_ProportionalSizeScale cgame/cg_drawtools.c q3_ui/ui_atoms.c
 '
 
 Q3_BUILD_DIR=
@@ -78,12 +76,19 @@ else
     # CMakeLists.txt stops the configure unless it finds MakePEF, Rez and the
     # Rez includes under Rez's grandparent directory. Only the application
     # steps run the tools, and host mode never builds them, so stubs that fail
-    # are enough.
+    # are enough. The configure also writes the static module linker script
+    # from `powerpc-apple-macos-ld --verbose` (cmake/Quake3StaticModules.cmake),
+    # so the ld stub prints the parts of Retro68's default script it edits.
     mkdir -p "$Q3_TEST_WORK/retro68/bin" "$Q3_TEST_WORK/retro68/universal/RIncludes"
-    for tool in MakePEF Rez; do
+    for tool in MakePEF Rez powerpc-apple-macos-nm; do
         printf '#!/bin/sh\nexit 1\n' > "$Q3_TEST_WORK/retro68/bin/$tool"
         chmod +x "$Q3_TEST_WORK/retro68/bin/$tool"
     done
+    printf '%s\n' '#!/bin/sh' 'echo =====' 'cat <<EOF' 'SECTIONS' '{' \
+        '  .data 0 : {' '    PROVIDE (_data = .);' '    *(.data)' '    *(.rw)' '    *(.ds)' '  }' \
+        '  .bss : {' '    *(.tocbss)' '    *(.bss)' '    *(COMMON)' '  }' '}' 'EOF' 'echo =====' \
+        > "$Q3_TEST_WORK/retro68/bin/powerpc-apple-macos-ld"
+    chmod +x "$Q3_TEST_WORK/retro68/bin/powerpc-apple-macos-ld"
     : > "$Q3_TEST_WORK/retro68/universal/RIncludes/Types.r"
     : > "$Q3_TEST_WORK/retro68/universal/RIncludes/CodeFragments.r"
     Q3_BUILD_DIR="$Q3_TEST_WORK/build"
@@ -91,6 +96,8 @@ else
             -DCMAKE_C_COMPILER="${CC:-cc}" -DBUILD_TEAM_ARENA=ON \
             -DRETRO68_MAKEPEF="$Q3_TEST_WORK/retro68/bin/MakePEF" \
             -DRETRO68_REZ="$Q3_TEST_WORK/retro68/bin/Rez" \
+            -DRETRO68_LD="$Q3_TEST_WORK/retro68/bin/powerpc-apple-macos-ld" \
+            -DRETRO68_NM="$Q3_TEST_WORK/retro68/bin/powerpc-apple-macos-nm" \
             "-DCMAKE_C_FLAGS=-U__MACOS__ -U__POWERPC__ -fno-common -w -I$Q3_TEST_WORK/gl" \
             > "$Q3_TEST_WORK/cmake.log" 2>&1; then
         cat "$Q3_TEST_WORK/cmake.log" >&2

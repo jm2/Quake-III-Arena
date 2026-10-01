@@ -7,7 +7,11 @@
 #                      when there is no git checkout there;
 #   retro68_submodule  "<path> <commit>" for each of its submodules;
 #   retro68_pinned     "yes" when commit and submodules are the ones
-#                      retro68-versions.txt pins.
+#                      retro68-versions.txt pins;
+#   static_modules_ldscript_sha256
+#                      the SHA-256 of the linker script that brackets the
+#                      static game modules (issue #457), generated from the
+#                      toolchain's default script.
 # The manifest holds no dates or paths, so it changes only with the PEF or the
 # toolchain. The PEF itself embeds the source directory (assert() messages
 # carry __FILE__), so the same source built in another directory has another
@@ -28,6 +32,10 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
         set(pef "${CMAKE_CURRENT_BINARY_DIR}/${name}.pef")
         set(manifest "${CMAKE_CURRENT_BINARY_DIR}/${name}.manifest.txt")
         set(versions "${CMAKE_SOURCE_DIR}/retro68-versions.txt")
+        set(ldscript "")
+        if(TARGET ${name})
+            get_property(ldscript TARGET ${name} PROPERTY QUAKE3_STATIC_MODULES_LDSCRIPT)
+        endif()
         add_custom_command(
             OUTPUT "${name}.manifest.txt"
             COMMAND "${CMAKE_COMMAND}"
@@ -37,8 +45,9 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
                     "-DQ3_MANIFEST_GIT=${GIT_EXECUTABLE}"
                     "-DQ3_MANIFEST_RETRO68_SOURCE=${retro68_tools}/Retro68-src"
                     "-DQ3_MANIFEST_VERSIONS=${versions}"
+                    "-DQ3_MANIFEST_LDSCRIPT=${ldscript}"
                     -P "${QUAKE3_BUILD_MANIFEST_SCRIPT}"
-            DEPENDS "${name}.pef" "${versions}" "${QUAKE3_BUILD_MANIFEST_SCRIPT}"
+            DEPENDS "${name}.pef" "${versions}" "${QUAKE3_BUILD_MANIFEST_SCRIPT}" ${ldscript}
             COMMENT "Recording the build manifest of ${name}"
             VERBATIM)
     endfunction()
@@ -125,4 +134,8 @@ foreach(submodule IN LISTS submodules)
     string(APPEND text "retro68_submodule=${submodule}\n")
 endforeach()
 string(APPEND text "retro68_pinned=${pinned}\n")
+if(Q3_MANIFEST_LDSCRIPT)
+    file(SHA256 "${Q3_MANIFEST_LDSCRIPT}" ldscript_sha256)
+    string(APPEND text "static_modules_ldscript_sha256=${ldscript_sha256}\n")
+endif()
 file(WRITE "${Q3_MANIFEST_OUTPUT}" "${text}")

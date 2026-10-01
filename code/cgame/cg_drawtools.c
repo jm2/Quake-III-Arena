@@ -750,9 +750,12 @@ static void CG_DrawProportionalString2( int x, int y, const char* str, vec4_t co
 /*
 =================
 UI_ProportionalSizeScale
+
+q3_ui/ui_atoms.c defines the same function; static, so the static build keeps
+one per module, like the retail QVMs (issue #457).
 =================
 */
-float UI_ProportionalSizeScale( int style ) {
+static float UI_ProportionalSizeScale( int style ) {
 	if(  style & UI_SMALLFONT ) {
 		return 0.75;
 	}
