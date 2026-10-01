@@ -252,6 +252,8 @@ static void S_PaintChannelFrom16( channel_t *ch, const sfx_t *sc, int count, int
 		vector signed short volume_vec;
 		vector unsigned int volume_shift;
 		int vectorCount, samplesLeft, chunkSamplesLeft;
+#else
+		int chunkEnd;
 #endif
 		leftvol = ch->leftvol*snd_vol;
 		rightvol = ch->rightvol*snd_vol;
@@ -275,7 +277,8 @@ static void S_PaintChannelFrom16( channel_t *ch, const sfx_t *sc, int count, int
 				samp[i].left += (data * leftvol)>>8;
 				samp[i].right += (data * rightvol)>>8;
 	
-				if (sampleOffset == SND_CHUNK_SIZE) {
+				// the next chunk only for another sample: the last has none
+				if (sampleOffset == SND_CHUNK_SIZE && i + 1 < count) {
 					chunk = chunk->next;
 					samples = chunk->sndChunk;
 					sampleOffset = 0;
@@ -357,7 +360,7 @@ static void S_PaintChannelFrom16( channel_t *ch, const sfx_t *sc, int count, int
 					s0 = s1;
 					sampleOffset += 8;
 				}
-				if (sampleOffset == SND_CHUNK_SIZE) {
+				if (sampleOffset == SND_CHUNK_SIZE && i < count) {
 					chunk = chunk->next;
 					samples = chunk->sndChunk;
 					sampleOffset = 0;
@@ -365,12 +368,21 @@ static void S_PaintChannelFrom16( channel_t *ch, const sfx_t *sc, int count, int
 			}
 		}
 #else			
-		for ( i=0 ; i<count ; i++ ) {
-			data  = samples[sampleOffset++];
-			samp[i].left += (data * leftvol)>>8;
-			samp[i].right += (data * rightvol)>>8;
+		for ( i=0 ; i<count ; ) {
+			// paint what is left of this chunk, and take the next chunk only
+			// for another sample: a sound that ends exactly at the end of its
+			// last chunk has none
+			chunkEnd = i + SND_CHUNK_SIZE - sampleOffset;
+			if (chunkEnd > count) {
+				chunkEnd = count;
+			}
+			for ( ; i<chunkEnd ; i++ ) {
+				data  = samples[sampleOffset++];
+				samp[i].left += (data * leftvol)>>8;
+				samp[i].right += (data * rightvol)>>8;
+			}
 
-			if (sampleOffset == SND_CHUNK_SIZE) {
+			if (i < count) {
 				chunk = chunk->next;
 				samples = chunk->sndChunk;
 				sampleOffset = 0;
