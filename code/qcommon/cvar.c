@@ -925,7 +925,9 @@ Cvar_InfoString_Big
   Clients look the keys up by name; the q3_ui postgame menu reads
   sv_serverid from only the first MAX_INFO_STRING-1 chars, which this
   order helps. A value that doesn't fit is left out with a warning, and
-  the pak lists follow the pairing rules above.
+  the pak lists follow the pairing rules above. Like
+  Info_SetValueForKey_Big, the string stops short of BIG_INFO_STRING - 1
+  chars, which a retail 1.32c client can't read.
 =====================
 */
 char	*Cvar_InfoString_Big( int bit ) {
@@ -975,7 +977,7 @@ char	*Cvar_InfoString_Big( int bit ) {
 			// a pair that fits keeps the cvar order
 			len = (int)strlen( info );
 			if ( Info_ValidateKeyValue( var->string ) && Info_ValidateKeyValue( partner->string )
-				&& len + Cvar_InfoLength_Big( var ) + Cvar_InfoLength_Big( partner ) < BIG_INFO_STRING ) {
+				&& len + Cvar_InfoLength_Big( var ) + Cvar_InfoLength_Big( partner ) < BIG_INFO_STRING - 1 ) {
 				Cvar_InfoAdd_Big( info, var );
 				Cvar_InfoAdd_Big( info, partner );
 				continue;
