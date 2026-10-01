@@ -426,8 +426,9 @@ static void PlayerModel_BuildList( void )
 
 			COM_StripExtension(fileptr, skinname, sizeof(skinname));
 
-			// look for icon_????
-			if (!Q_stricmpn(skinname,"icon_",5))
+			// look for icon_????, whose model/skin fits modelskin
+			if (!Q_stricmpn(skinname,"icon_",5) &&
+				strlen(dirptr) + 1 + strlen(skinname + 5) < sizeof(s_playermodel.modelskin))
 			{
 				Com_sprintf( s_playermodel.modelnames[s_playermodel.nummodels++],
 					sizeof( s_playermodel.modelnames[s_playermodel.nummodels] ),

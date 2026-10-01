@@ -166,7 +166,7 @@ static void UI_Mods_LoadMods( void ) {
 
 	numdirs = trap_FS_GetFileList( "$modlist", "", dirlist, sizeof(dirlist) );
 	dirptr  = dirlist;
-	for( i = 0; i < numdirs; i++ ) {
+	for( i = 0; i < numdirs && s_mods.list.numitems < MAX_MODS; i++ ) {
 		dirlen = strlen( dirptr ) + 1;
     descptr = dirptr + dirlen;
   	UI_Mods_ParseInfos( dirptr, descptr);

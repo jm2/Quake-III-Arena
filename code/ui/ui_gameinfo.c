@@ -158,8 +158,12 @@ void UI_LoadArenas( void ) {
 	dirptr  = dirlist;
 	for (i = 0; i < numdirs; i++, dirptr += dirlen+1) {
 		dirlen = strlen(dirptr);
-		strcpy(filename, "scripts/");
-		strcat(filename, dirptr);
+		// pk3 entry names can be too long for filename
+		if ( dirlen >= (int)( sizeof( filename ) - strlen( "scripts/" ) ) ) {
+			trap_Print( va( S_COLOR_RED "file name too long: scripts/%s\n", dirptr ) );
+			continue;
+		}
+		Com_sprintf( filename, sizeof( filename ), "scripts/%s", dirptr );
 		UI_LoadArenasFromFile(filename);
 	}
 	trap_Print( va( "%i arenas parsed\n", ui_numArenas ) );
@@ -269,8 +273,12 @@ void UI_LoadBots( void ) {
 	dirptr  = dirlist;
 	for (i = 0; i < numdirs; i++, dirptr += dirlen+1) {
 		dirlen = strlen(dirptr);
-		strcpy(filename, "scripts/");
-		strcat(filename, dirptr);
+		// pk3 entry names can be too long for filename
+		if ( dirlen >= (int)( sizeof( filename ) - strlen( "scripts/" ) ) ) {
+			trap_Print( va( S_COLOR_RED "file name too long: scripts/%s\n", dirptr ) );
+			continue;
+		}
+		Com_sprintf( filename, sizeof( filename ), "scripts/%s", dirptr );
 		UI_LoadBotsFromFile(filename);
 	}
 	trap_Print( va( "%i bots parsed\n", ui_numBots ) );
