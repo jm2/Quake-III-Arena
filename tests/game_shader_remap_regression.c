@@ -16,16 +16,28 @@
  * which two 63-character names and the time do not fit, so such an entry of
  * CS_SHADERSTATE lost its time and "@" terminator.
  *
+ * Each entry is "old=new:time@", and retail 1.32c's CG_ShaderStateChanged
+ * copies up to the first '=', then up to the next ':', then up to the next
+ * '@' into 64-, 64- and 16-byte stack buffers with no bound. Names that fit
+ * still overflowed those when the old name held '=' (the new name then
+ * starts inside it) or the new name held ':' (the time then starts inside
+ * it), and map entity keys can hold either.
+ *
  * This test links the real g_main.c, g_utils.c, g_spawn.c and g_mem.c. It
  * registers and changes the team name cvars through the real G_RegisterCvars
  * and G_UpdateCvars, calls G_RemapTeamShaders with team names of 48, 49, 50,
- * 63 and 255 characters, and fires remaps from map entity strings, parsed by
- * the real G_ParseSpawnVars and G_ParseField, through G_UseTargets, with
- * names of 1 to 1000 characters. The long names go into the last slots of the
- * table, so master's strcpy runs off its end under AddressSanitizer. Every
- * case checks the exact CS_SHADERSTATE string the game sets: a name too long
- * for a shader name is skipped with a warning, and names that fit give the
- * string master gives, byte for byte.
+ * 63 and 255 characters and with separators, and fires remaps from map
+ * entity strings, parsed by the real G_ParseSpawnVars and G_ParseField,
+ * through G_UseTargets, with names of 1 to 1000 characters and with
+ * separators. The long names go into the last slots of the table, so
+ * master's strcpy runs off its end under AddressSanitizer. Every case checks
+ * the exact CS_SHADERSTATE string the game sets: a name too long for a shader
+ * name, an old name with '=' or '@' and a new name with ':' or '@' are
+ * skipped with a warning, and other names give the string master gives, byte
+ * for byte wherever master's entry was not cut short (the two names and the
+ * time in at most 132 characters). Every CS_SHADERSTATE string the game sets
+ * also goes through a copy of retail's parser under AddressSanitizer, which
+ * must read each expected entry exactly as it was sent.
  */
 #include "../code/game/g_local.h"
 #include <stdarg.h>
@@ -69,10 +81,59 @@ void trap_Error( const char *text ) {
 	Fail( "unexpected error" );
 }
 
+/*
+ * Retail 1.32c's CG_ShaderStateChanged (git show dbe4ddb:code/cgame/cg_servercmds.c),
+ * with its unbounded strncpys into stack buffers, so that AddressSanitizer
+ * reports a CS_SHADERSTATE string that would overflow a retail client. It
+ * returns the number of remaps the client would make, and the last one.
+ */
+static int RetailShaderStateChanged( const char *configstring, char *lastOld, char *lastNew, char *lastTime ) {
+	char originalShader[MAX_QPATH];
+	char newShader[MAX_QPATH];
+	char timeOffset[16];
+	const char *o;
+	char *n,*t;
+	int remaps = 0;
+
+	o = configstring;
+	while (o && *o) {
+		n = strstr(o, "=");
+		if (n && *n) {
+			strncpy(originalShader, o, n-o);
+			originalShader[n-o] = 0;
+			n++;
+			t = strstr(n, ":");
+			if (t && *t) {
+				strncpy(newShader, n, t-n);
+				newShader[t-n] = 0;
+			} else {
+				break;
+			}
+			t++;
+			o = strstr(t, "@");
+			if (o) {
+				strncpy(timeOffset, t, o-t);
+				timeOffset[o-t] = 0;
+				o++;
+				// trap_R_RemapShader( originalShader, newShader, timeOffset );
+				strcpy( lastOld, originalShader );
+				strcpy( lastNew, newShader );
+				strcpy( lastTime, timeOffset );
+				remaps++;
+			}
+		} else {
+			break;
+		}
+	}
+	return remaps;
+}
+
 /* The server keeps a configstring of any length; BuildShaderStateConfig's is at most 4095. */
 static char	shaderState[MAX_STRING_CHARS * 4];
 
 void trap_SetConfigstring( int num, const char *string ) {
+	char	oldShader[MAX_QPATH], newShader[MAX_QPATH], timeText[16];
+
 	if ( num != CS_SHADERSTATE ) {
 		Fail( "unexpected configstring" );
 	}
@@ -80,6 +141,10 @@ void trap_SetConfigstring( int num, const char *string ) {
 		Fail( "CS_SHADERSTATE is longer than BuildShaderStateConfig's buffer" );
 	}
 	strcpy( shaderState, string );
+	// no case here reaches BuildShaderStateConfig's cap, so a client reads every remap
+	if ( RetailShaderStateChanged( string, oldShader, newShader, timeText ) != remapCount ) {
+		Fail( "a retail client would read a different number of remaps" );
+	}
 }
 
 /* A cvar store that behaves as the engine's Cvar_Register, Cvar_Update and Cvar_Set. */
@@ -192,14 +257,29 @@ static void ResetRemaps( void ) {
 	level.time = 0;
 }
 
-/** The CS_SHADERSTATE entry of one remap, as BuildShaderStateConfig writes it. */
+/**
+ * The CS_SHADERSTATE entry of one remap, as BuildShaderStateConfig writes it,
+ * which a retail client must read back as this remap.
+ */
 static void AppendEntry( char *expected, int size, const char *oldShader, const char *newShader, const char *timeText ) {
-	Q_strcat( expected, size, oldShader );
-	Q_strcat( expected, size, "=" );
-	Q_strcat( expected, size, newShader );
-	Q_strcat( expected, size, ":" );
-	Q_strcat( expected, size, timeText );
-	Q_strcat( expected, size, "@" );
+	char	entry[MAX_QPATH * 4];
+	char	readOld[MAX_QPATH], readNew[MAX_QPATH], readTime[16];
+
+	Com_sprintf( entry, sizeof( entry ), "%s=%s:%s@", oldShader, newShader, timeText );
+	if ( RetailShaderStateChanged( entry, readOld, readNew, readTime ) != 1
+		|| strcmp( readOld, oldShader ) || strcmp( readNew, newShader ) || strcmp( readTime, timeText ) ) {
+		fprintf( stderr, "entry \"%s\"\n", entry );
+		Fail( "a retail client would misread a remap" );
+	}
+	Q_strcat( expected, size, entry );
+}
+
+/** AddRemap's rule: a name that fits a shader name and holds no separator that moves a retail client's split. */
+static qboolean OldNameFits( const char *name ) {
+	return strlen( name ) < MAX_QPATH && !strchr( name, '=' ) && !strchr( name, '@' );
+}
+static qboolean NewNameFits( const char *name ) {
+	return strlen( name ) < MAX_QPATH && !strchr( name, ':' ) && !strchr( name, '@' );
 }
 
 /** Fill the first count slots of the table with "sNNN" -> "nNNN" remaps; each CS_SHADERSTATE entry is 16 characters. */
@@ -273,8 +353,10 @@ static void FireEntityRemap( const char *oldShader, const char *newShader ) {
 /* --- map entity remaps: the base game and Team Arena --- */
 
 typedef struct {
-	int		oldLength;
-	int		newLength;
+	int			oldLength;
+	int			newLength;
+	const char	*oldPrefix;		// NULL for "textures/"
+	const char	*newPrefix;		// NULL for "textures/new/"
 } entityCase_t;
 
 static const entityCase_t entityCases[] = {
@@ -291,6 +373,19 @@ static const entityCase_t entityCases[] = {
 	{ 255, 10 },
 	{ 255, 255 },
 	{ 1000, 1000 },
+	// separators: retail reads the new name from the old one's '=', 125
+	// characters into 64, and the time from the new name's ':', 67 into 16
+	{ 63, 63, "a=" },
+	{ 63, 63, NULL, "b:" },
+	{ 1, 12, "=" },
+	{ 12, 1, NULL, ":" },
+	{ 12, 12, "textures/o=d", "textures/n:w" },
+	{ 12, 12, "textures/o@d" },
+	{ 12, 12, NULL, "textures/n@w" },
+	{ 63, 63, "textures/o@d=", "textures/n@w:" },
+	// the other name's separators move no split, so retail reads these as sent
+	{ 12, 12, "textures/o:d", "textures/n=w" },
+	{ 63, 63, "textures/o:d", "textures/n=w" },
 };
 #define NUM_ENTITY_CASES	( sizeof( entityCases ) / sizeof( entityCases[0] ) )
 
@@ -303,15 +398,16 @@ static void TestEntityRemaps( void ) {
 	qboolean	oldFits, newFits;
 
 	for ( c = 0 ; c < NUM_ENTITY_CASES ; c++ ) {
-		MakeName( oldShader, entityCases[c].oldLength, "textures/" );
-		MakeName( newShader, entityCases[c].newLength, "textures/new/" );
-		oldFits = entityCases[c].oldLength < MAX_QPATH;
-		newFits = entityCases[c].newLength < MAX_QPATH;
+		MakeName( oldShader, entityCases[c].oldLength, entityCases[c].oldPrefix ? entityCases[c].oldPrefix : "textures/" );
+		MakeName( newShader, entityCases[c].newLength, entityCases[c].newPrefix ? entityCases[c].newPrefix : "textures/new/" );
+		oldFits = OldNameFits( oldShader );
+		newFits = NewNameFits( newShader );
 
 		// the remap takes the last slot of the table, or the one before it
 		for ( fill = TEST_MAX_SHADER_REMAPS - 1 ; fill >= TEST_MAX_SHADER_REMAPS - 2 ; fill-- ) {
-			snprintf( name, sizeof( name ), "entity remap of %d to %d characters after %d remaps",
-				entityCases[c].oldLength, entityCases[c].newLength, fill );
+			snprintf( name, sizeof( name ), "entity remap of %d characters from %s to %d from %s after %d remaps",
+				entityCases[c].oldLength, entityCases[c].oldPrefix ? entityCases[c].oldPrefix : "textures/",
+				entityCases[c].newLength, entityCases[c].newPrefix ? entityCases[c].newPrefix : "textures/new/", fill );
 			testCase = name;
 			ResetRemaps();
 			FillTable( expected, sizeof( expected ), fill );
@@ -346,10 +442,12 @@ static void TestEntityRemaps( void ) {
 				level.time = 12750;
 				FireEntityRemap( oldShader, MakeName( longShader, 255, "textures/new/" ) );
 				ExpectShaderState( expected, count, warnings + 1 );
-				FireEntityRemap( oldShader, "x" );
+				FireEntityRemap( oldShader, "x:" );
+				ExpectShaderState( expected, count, warnings + 2 );
+				FireEntityRemap( oldShader, "x=" );
 				expected[strlen( expected ) - strlen( newShader ) - strlen( ": 0.00@" )] = 0;
-				Q_strcat( expected, sizeof( expected ), "x:12.75@" );
-				ExpectShaderState( expected, count, warnings + 1 );
+				Q_strcat( expected, sizeof( expected ), "x=:12.75@" );
+				ExpectShaderState( expected, count, warnings + 2 );
 			}
 		}
 	}
@@ -373,17 +471,25 @@ static void TestRemapCount( void ) {
 #ifdef MISSIONPACK
 /* --- Team Arena's team icon remaps --- */
 
+/** Whether G_RemapTeamShaders's icon name for this team fits AddRemap. */
+static qboolean TeamIconFits( const char *team, const char *suffix ) {
+	char	shader[MAX_CVAR_VALUE_STRING + 32];
+
+	Com_sprintf( shader, sizeof( shader ), "team_icon/%s%s", team, suffix );
+	return NewNameFits( shader );
+}
+
 /** The four team icon entries G_RemapTeamShaders sets for these names, or none for a name that does not fit. */
 static void AppendTeamEntries( char *expected, int size, const char *redTeam, const char *blueTeam, const char *timeText ) {
 	char	shader[MAX_CVAR_VALUE_STRING + 32];
 
 	Com_sprintf( shader, sizeof( shader ), "team_icon/%s_red", redTeam );
-	if ( strlen( shader ) < MAX_QPATH ) {
+	if ( TeamIconFits( redTeam, "_red" ) ) {
 		AppendEntry( expected, size, "textures/ctf2/redteam01", shader, timeText );
 		AppendEntry( expected, size, "textures/ctf2/redteam02", shader, timeText );
 	}
 	Com_sprintf( shader, sizeof( shader ), "team_icon/%s_blue", blueTeam );
-	if ( strlen( shader ) < MAX_QPATH ) {
+	if ( TeamIconFits( blueTeam, "_blue" ) ) {
 		AppendEntry( expected, size, "textures/ctf2/blueteam01", shader, timeText );
 		AppendEntry( expected, size, "textures/ctf2/blueteam02", shader, timeText );
 	}
@@ -391,6 +497,10 @@ static void AppendTeamEntries( char *expected, int size, const char *redTeam, co
 
 static const int teamNameLengths[] = { 1, 6, 48, 49, 50, 63, 255 };
 #define NUM_TEAM_NAME_LENGTHS	( sizeof( teamNameLengths ) / sizeof( teamNameLengths[0] ) )
+
+/* A ':' or '@' in the icon name is skipped; an '=' moves no split of a new name. */
+static const char *separatorTeamNames[] = { "Team: Alpha", ":", "Team@Home", "@", "A=B", "=" };
+#define NUM_SEPARATOR_TEAM_NAMES	( sizeof( separatorTeamNames ) / sizeof( separatorTeamNames[0] ) )
 
 static void TestTeamShaders( void ) {
 	static const char	retail[] =
@@ -459,6 +569,26 @@ static void TestTeamShaders( void ) {
 					warnings += 2;
 				}
 				ExpectShaderState( expected, count, warnings );
+			}
+		}
+	}
+
+	// team names with separators, as red and as blue
+	for ( r = 0 ; r < NUM_SEPARATOR_TEAM_NAMES ; r++ ) {
+		for ( b = 0 ; b < 2 ; b++ ) {
+			snprintf( name, sizeof( name ), "%s team name \"%s\"", b ? "blue" : "red", separatorTeamNames[r] );
+			testCase = name;
+			ResetRemaps();
+			Q_strncpyz( g_redteam.string, b ? "Stroggs" : separatorTeamNames[r], sizeof( g_redteam.string ) );
+			Q_strncpyz( g_blueteam.string, b ? separatorTeamNames[r] : "Pagans", sizeof( g_blueteam.string ) );
+			G_RemapTeamShaders();
+
+			expected[0] = 0;
+			AppendTeamEntries( expected, sizeof( expected ), g_redteam.string, g_blueteam.string, " 0.00" );
+			if ( TeamIconFits( separatorTeamNames[r], b ? "_blue" : "_red" ) ) {
+				ExpectShaderState( expected, 4, 0 );
+			} else {
+				ExpectShaderState( expected, 2, 2 );
 			}
 		}
 	}
