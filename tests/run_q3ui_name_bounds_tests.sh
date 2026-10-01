@@ -7,10 +7,11 @@ trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 
 # Found auditing issue #440: the base q3_ui is linked natively, so each fixture
 # includes the real menu source and serves it names from pk3 entries and .arena
-# files, or mod directories, that do not fit the menu's fixed buffers: the
-# Player Model menu (ui_playermodel.c), the single player levelshots
-# (ui_splevel.c) and the Mods menu (ui_mods.c).
-for Q3_TEST_NAME in playermodel_name splevel_levelshot mods_list; do
+# files, mod directories or arenas that do not fit the menu's fixed buffers or
+# lists: the Player Model menu (ui_playermodel.c), the single player levelshots
+# (ui_splevel.c), the Mods menu (ui_mods.c) and the Create and Skirmish map
+# lists (ui_startserver.c).
+for Q3_TEST_NAME in playermodel_name splevel_levelshot mods_list startserver_maps; do
     "${CC:-cc}" \
         -std=gnu99 -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
         -fsanitize=address,undefined \

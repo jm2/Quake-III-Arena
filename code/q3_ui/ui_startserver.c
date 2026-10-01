@@ -260,7 +260,8 @@ static void StartServer_GametypeEvent( void* ptr, int event ) {
 	if( gametype_remap[s_startserver.gametype.curvalue] == GT_FFA ) {
 		matchbits |= ( 1 << GT_SINGLE_PLAYER );
 	}
-	for( i = 0; i < count; i++ ) {
+	// the list holds the first MAX_SERVERMAPS arenas of the game type
+	for( i = 0; i < count && s_startserver.nummaps < MAX_SERVERMAPS; i++ ) {
 		info = UI_GetArenaInfoByNumber( i );
 
 		gamebits = GametypeBits( Info_ValueForKey( info, "type") );
@@ -553,9 +554,11 @@ StartServer_Cache
 void StartServer_Cache( void )
 {
 	int				i;
+	int				count;
 	const char		*info;
 	qboolean		precache;
 	char			picname[64];
+	char			mapname[MAX_NAMELENGTH];
 
 	trap_R_RegisterShaderNoMip( GAMESERVER_BACK0 );	
 	trap_R_RegisterShaderNoMip( GAMESERVER_BACK1 );	
@@ -572,17 +575,26 @@ void StartServer_Cache( void )
 
 	precache = trap_Cvar_VariableValue("com_buildscript");
 
-	s_startserver.nummaps = UI_GetNumArenas();
+	count = UI_GetNumArenas();
+	s_startserver.nummaps = count;
+	if( s_startserver.nummaps > MAX_SERVERMAPS ) {
+		s_startserver.nummaps = MAX_SERVERMAPS;
+	}
 
-	for( i = 0; i < s_startserver.nummaps; i++ ) {
+	// the list holds the first MAX_SERVERMAPS arenas; a build script still
+	// precaches every arena's levelshot
+	for( i = 0; i < count; i++ ) {
 		info = UI_GetArenaInfoByNumber( i );
 
-		Q_strncpyz( s_startserver.maplist[i], Info_ValueForKey( info, "map"), MAX_NAMELENGTH );
-		Q_strupr( s_startserver.maplist[i] );
-		s_startserver.mapGamebits[i] = GametypeBits( Info_ValueForKey( info, "type") );
+		Q_strncpyz( mapname, Info_ValueForKey( info, "map"), MAX_NAMELENGTH );
+		Q_strupr( mapname );
+		if( i < s_startserver.nummaps ) {
+			strcpy( s_startserver.maplist[i], mapname );
+			s_startserver.mapGamebits[i] = GametypeBits( Info_ValueForKey( info, "type") );
+		}
 
 		if( precache ) {
-			Com_sprintf( picname, sizeof(picname), "levelshots/%s", s_startserver.maplist[i] );
+			Com_sprintf( picname, sizeof(picname), "levelshots/%s", mapname );
 			trap_R_RegisterShaderNoMip(picname);
 		}
 	}
