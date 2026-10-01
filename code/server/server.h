@@ -33,6 +33,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #define	MAX_ENT_CLUSTERS	16
 
+// The longest message, with the svc_EOF the netchan adds, that a retail
+// 1.32c client takes whole. Its Netchan_Process only checks a reassembled
+// message against MAX_MSGLEN, then copies it behind the 4 byte sequence
+// number into Com_EventLoop's bufData[MAX_MSGLEN], so a longer one overruns
+// the stack. ioquake3 copies network packets into bufData[MAX_MSGLEN + 1]
+// instead, one byte more; only its loopback uses Com_EventLoop's buffer
+#define	MAX_CLIENT_MSGLEN	( MAX_MSGLEN - 4 )
+
 typedef struct svEntity_s {
 	struct worldSector_s *worldSector;
 	struct svEntity_s *nextEntityInWorldSector;
@@ -306,6 +314,7 @@ void SV_ExecuteClientCommand( client_t *cl, const char *s, qboolean clientOK );
 void SV_ClientThink (client_t *cl, usercmd_t *cmd);
 
 void SV_WriteDownloadToClient( client_t *cl , msg_t *msg );
+qboolean SV_MessageFitsClient( msg_t *msg );
 
 //
 // sv_ccmds.c
