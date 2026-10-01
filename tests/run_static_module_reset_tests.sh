@@ -17,11 +17,10 @@
 #
 # ASan puts redzones between instrumented globals, and the reset copies and
 # zeroes whole brackets, so module objects are built without ASan's global
-# instrumentation; stack, heap and UBSan checks stay on, except two that trip
-# on retail idioms this test is not about: the array bounds check (retail
-# CalculateRanks clears numteamVotingClients[0..3] of an int[2] inside
-# level_locals_t) and clang's null member access check (FOFS() is
-# &((gentity_t *)0)->field).
+# instrumentation; stack, heap and UBSan checks stay on, except two that this
+# test is not about: the array bounds check (CalculateRanks writes past
+# level.numteamVotingClients[2], #463) and clang's null member access check
+# (the retail FOFS() is &((gentity_t *)0)->field).
 set -euo pipefail
 export TMPDIR="${TMPDIR:-/var/tmp}"
 
@@ -124,14 +123,18 @@ xargs -P "$Q3_JOBS" -L 1 bash -c '
     Q3_FLAGS=($Q3_FLAGS_STR); Q3_NO_ASAN_GLOBALS=($Q3_NO_ASAN_GLOBALS_STR)
     q3_compile "$@"' _ < "$Q3_TEST_DIR/objects.txt"
 
-# Each module's data and bss, bracketed, after the program's own.
+# Each module's data and bss, bracketed, after the program's own. 32-bit
+# PowerPC ELF puts small globals in .sdata and .sbss. The check after the link
+# makes sure no other writable section of a module escapes the brackets.
+Q3_BRACKET_DATA='.data .data.* .sdata .sdata.*'
+Q3_BRACKET_BSS='.bss .bss.* .sbss .sbss.* COMMON'
 {
     echo 'SECTIONS'
     echo '{'
     echo '  .q3static.data : {'
     for module in game cgame ui; do
         echo "    . = ALIGN(16); q3static_${module}_data_start = .;"
-        echo "    */m-$module/*.o(.data .data.*)"
+        echo "    */m-$module/*.o($Q3_BRACKET_DATA)"
         echo "    . = ALIGN(16); q3static_${module}_data_end = .;"
     done
     echo '  }'
@@ -142,7 +145,7 @@ xargs -P "$Q3_JOBS" -L 1 bash -c '
     echo '  .q3static.bss (NOLOAD) : {'
     for module in game cgame ui; do
         echo "    . = ALIGN(16); q3static_${module}_bss_start = .;"
-        echo "    */m-$module/*.o(.bss .bss.* COMMON)"
+        echo "    */m-$module/*.o($Q3_BRACKET_BSS)"
         echo "    . = ALIGN(16); q3static_${module}_bss_end = .;"
     done
     echo '  }'
@@ -153,7 +156,68 @@ xargs -P "$Q3_JOBS" -L 1 bash -c '
 "$Q3_CC" -fsanitize=address,undefined -no-pie \
     "$Q3_TEST_DIR"/engine/*.o "$Q3_TEST_DIR"/shared/*.o \
     "$Q3_TEST_DIR"/m-game/*.o "$Q3_TEST_DIR"/m-cgame/*.o "$Q3_TEST_DIR"/m-ui/*.o \
-    -Wl,-T,"$Q3_TEST_DIR/brackets.ld" -lm -o "$Q3_TEST_DIR/static_module_reset"
+    -Wl,-T,"$Q3_TEST_DIR/brackets.ld" -Wl,-Map,"$Q3_TEST_DIR/static_module_reset.map" \
+    -lm -o "$Q3_TEST_DIR/static_module_reset"
+
+# What cmake/static_modules.py check does for the Mac link: every allocated,
+# writable section of a module object must lie in that module's brackets, and
+# nothing else may lie in one. Startup tables and GOTs hold no module state.
+python3 - "$Q3_TEST_DIR" "${READELF:-readelf}" <<'EOF'
+import glob, os, re, subprocess, sys
+work, readelf = sys.argv[1], sys.argv[2]
+stateless = re.compile(r'^\.((preinit_array|init_array|fini_array|ctors|dtors)(\..*)?'
+                       r'|got2?|eh_frame|tm_clone_table)$')
+lines = open(os.path.join(work, 'static_module_reset.map')).read().split('\n')
+start = next(i for i, l in enumerate(lines) if l.startswith('Linker script and memory map'))
+symbols, placed, pending = {}, [], None
+for line in lines[start:]:
+    m = re.match(r'^\s+0x([0-9a-f]+)\s+(q3static_\w+) = ', line)
+    if m:
+        symbols[m.group(2)] = int(m.group(1), 16)
+        continue
+    m = re.match(r'^ (\.\S+|COMMON)\s+0x([0-9a-f]+)\s+0x([0-9a-f]+) (\S+)$', line)
+    if m:
+        placed.append((m.group(1), int(m.group(2), 16), int(m.group(3), 16), m.group(4)))
+        pending = None
+        continue
+    m = re.match(r'^ (\.\S+|COMMON)$', line)
+    if m:
+        pending = m.group(1)
+        continue
+    m = re.match(r'^\s+0x([0-9a-f]+)\s+0x([0-9a-f]+) (\S+)$', line) if pending else None
+    if m:
+        placed.append((pending, int(m.group(1), 16), int(m.group(2), 16), m.group(3)))
+    pending = None
+brackets = {}
+for module in ('game', 'cgame', 'ui'):
+    brackets[module] = [(symbols['q3static_%s_%s_start' % (module, kind)],
+                         symbols['q3static_%s_%s_end' % (module, kind)]) for kind in ('data', 'bss')]
+section = re.compile(r'^\s*\[\s*\d+\]\s+(\S+)\s+\S+\s+[0-9a-f]+\s+[0-9a-f]+\s+([0-9a-f]+)\s+'
+                     r'[0-9a-f]+\s+([A-Za-z]*)\s+\d+\s+\d+\s+\d+\s*$', re.M)
+errors, checked = [], 0
+for module in brackets:
+    for obj in sorted(glob.glob(os.path.join(work, 'm-' + module, '*.o'))):
+        out = subprocess.run([readelf, '-S', '-W', obj], check=True, stdout=subprocess.PIPE).stdout.decode()
+        for m in section.finditer(out):
+            name, size, flags = m.group(1), int(m.group(2), 16), m.group(3)
+            if not size or 'A' not in flags or 'W' not in flags or stateless.match(name):
+                continue
+            checked += 1
+            where = [(a, n) for sec, a, n, f in placed
+                     if sec == name and os.path.realpath(f) == os.path.realpath(obj)]
+            if not where or not all(any(lo <= a and a + n <= hi for lo, hi in brackets[module])
+                                    for a, n in where):
+                errors.append('%s %s (%d bytes) is outside the %s brackets'
+                              % (os.path.relpath(obj, work), name, size, module))
+for sec, a, n, f in placed:
+    if n and '/m-' not in f:
+        for module, ranges in brackets.items():
+            if any(a < hi and lo < a + n for lo, hi in ranges):
+                errors.append('%s %s lies inside the %s brackets' % (f, sec, module))
+if errors or not checked:
+    sys.exit('static module brackets:\n  ' + '\n  '.join(errors or ['no module section was checked']))
+print('static module brackets: %d writable module sections checked' % checked)
+EOF
 
 # LeakSanitizer cannot initialize in the local ptrace sandbox.
 ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 \
