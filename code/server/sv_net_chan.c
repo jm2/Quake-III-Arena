@@ -169,7 +169,9 @@ void SV_Netchan_TransmitNextFragment( client_t *client ) {
 			netchan_buffer_t *netbuf;
 			Com_DPrintf("#462 Netchan_TransmitNextFragment: popping a queued message for transmit\n");
 			netbuf = client->netchan_start_queue;
-			SV_Netchan_Encode( client, &netbuf->msg );
+			if ( client->netchan.compat ) {
+				SV_Netchan_Encode( client, &netbuf->msg );
+			}
 			Netchan_Transmit( &client->netchan, netbuf->msg.cursize, netbuf->msg.data );
 			// pop from queue
 			client->netchan_start_queue = netbuf->next;
@@ -238,7 +240,10 @@ void SV_Netchan_Transmit( client_t *client, msg_t *msg) {	//int length, const by
 		// emit the next fragment of the current message for now
 		Netchan_TransmitNextFragment(&client->netchan);
 	} else {
-		SV_Netchan_Encode( client, msg );
+		// protocol 71's challenge checksum replaces the XOR encoding
+		if ( client->netchan.compat ) {
+			SV_Netchan_Encode( client, msg );
+		}
 		Netchan_Transmit( &client->netchan, msg->cursize, msg->data );
 	}
 }
@@ -253,7 +258,9 @@ qboolean SV_Netchan_Process( client_t *client, msg_t *msg ) {
 	ret = Netchan_Process( &client->netchan, msg );
 	if (!ret)
 		return qfalse;
-	SV_Netchan_Decode( client, msg );
+	if ( client->netchan.compat ) {
+		SV_Netchan_Decode( client, msg );
+	}
 	return qtrue;
 }
 

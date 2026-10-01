@@ -77,8 +77,8 @@ static void ChannelsInit( netchan_t *sender, netchan_t *receiver, netsrc_t sende
 
 	Com_Memset( &address, 0, sizeof(address) );
 	address.type = NA_LOOPBACK;
-	Netchan_Setup( senderSock, sender, address, testQport.integer );
-	Netchan_Setup( senderSock ^ 1, receiver, address, testQport.integer );
+	Netchan_Setup( senderSock, sender, address, testQport.integer, 0, qtrue );
+	Netchan_Setup( senderSock ^ 1, receiver, address, testQport.integer, 0, qtrue );
 }
 
 /*

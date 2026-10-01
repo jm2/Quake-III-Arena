@@ -143,7 +143,10 @@ CL_Netchan_Transmit
 void CL_Netchan_Transmit( netchan_t *chan, msg_t* msg ) {
 	MSG_WriteByte( msg, clc_EOF );
 
-	CL_Netchan_Encode( msg );
+	// protocol 71's challenge checksum replaces the XOR encoding
+	if ( chan->compat ) {
+		CL_Netchan_Encode( msg );
+	}
 	Netchan_Transmit( chan, msg->cursize, msg->data );
 }
 
@@ -161,7 +164,9 @@ qboolean CL_Netchan_Process( netchan_t *chan, msg_t *msg ) {
 	ret = Netchan_Process( chan, msg );
 	if (!ret)
 		return qfalse;
-	CL_Netchan_Decode( msg );
+	if ( chan->compat ) {
+		CL_Netchan_Decode( msg );
+	}
 	newsize += msg->cursize;
 	return qtrue;
 }

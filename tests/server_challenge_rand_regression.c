@@ -1,6 +1,8 @@
-/* Issue #415: SV_GetChallenge and SV_SpawnServer's checksum feed shift rand() left by 16. RAND_MAX is
-   0x7fffffff on glibc and Retro68 newlib, so a signed shift overflows int; the values must stay the
-   bits master's wrapped shift gave. Usage: server_challenge_rand <rand1> <rand2> <time>. */
+/* Issue #415: SV_SpawnServer's checksum feed shifts rand() left by 16. RAND_MAX is 0x7fffffff on glibc and
+   Retro68 newlib, so a signed shift overflows int; the values must stay the bits master's wrapped shift gave.
+   Issue #37: SV_GetChallenge's challenge, which keys protocol 71's checksums, no longer comes from rand(),
+   which every map reseeds from the clock, but from Netchan_Challenge.
+   Usage: server_challenge_rand <rand1> <rand2> <time>. */
 #include "../code/server/sv_client.c"
 #include <stdarg.h>
 #include <stdlib.h>
@@ -39,16 +41,22 @@ void QDECL Com_DPrintf( const char *format, ... ) { (void)format; }
 
 /* The sanitizer's global registration keeps the ucmds table, so its other handlers must link. */
 static void Unreachable( void ) { Check( 0, "unrelated server code reached" ); }
-char *Cmd_Argv( int arg ) { (void)arg; Unreachable(); return ""; }
-int Cmd_Argc( void ) { Unreachable(); return 0; }
+/* SV_GetChallenge reads a bare "getchallenge", as retail clients send it, and answers with ioquake3's three
+   arguments: no client challenge to echo, and com_protocol. */
+char *Cmd_Argv( int arg ) { Check( arg == 1, "unrelated server code reached" ); return ""; }
+int Cmd_Argc( void ) { return 1; }
+static cvar_t protocol = { .integer = 71 };
+cvar_t *com_protocol = &protocol;
+#define CHALLENGE 0x6b8b4567
+int Netchan_Challenge( void ) { return CHALLENGE; }
 void Cmd_TokenizeString( const char *text ) { (void)text; Unreachable(); }
 qboolean NET_IsLocalAddress( netadr_t adr ) { (void)adr; Unreachable(); return qfalse; }
 qboolean NET_CompareBaseAdr( netadr_t a, netadr_t b ) { (void)a; (void)b; Unreachable(); return qfalse; }
 const char *NET_AdrToString( netadr_t a ) { (void)a; Unreachable(); return ""; }
 qboolean NET_StringToAdr( const char *s, netadr_t *a ) { (void)s; (void)a; Unreachable(); return qfalse; }
 cvar_t *Cvar_Get( const char *name, const char *value, int flags ) { (void)name; (void)value; (void)flags; Unreachable(); return NULL; }
-void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport ) {
-	(void)sock; (void)chan; (void)adr; (void)qport; Unreachable();
+void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport, int challenge, qboolean compat ) {
+	(void)sock; (void)chan; (void)adr; (void)qport; (void)challenge; (void)compat; Unreachable();
 }
 void SV_Netchan_FreeQueue( client_t *client ) { (void)client; Unreachable(); }
 void QDECL SV_SendServerCommand( client_t *cl, const char *format, ... ) { (void)cl; (void)format; Unreachable(); }
@@ -103,9 +111,8 @@ int main( int argc, char **argv ) {
 	svs.time = (int)time;
 	randValues[0] = (int)first; randValues[1] = (int)second; randCalls = 0;
 	SV_GetChallenge( from );
-	Check( randCalls == 2, "SV_GetChallenge rand() calls" );
-	Check( IsWrapped( svs.challenges[0].challenge, first, second, time ), "SV_GetChallenge challenge bits" );
-	Com_sprintf( expected, sizeof( expected ), "challengeResponse %i", svs.challenges[0].challenge );
+	Check( !randCalls && svs.challenges[0].challenge == CHALLENGE, "SV_GetChallenge challenge from rand()" );
+	Com_sprintf( expected, sizeof( expected ), "challengeResponse %i 0 71", CHALLENGE );
 	Check( !strcmp( reply, expected ), "challengeResponse text" );
 
 	milliseconds = (int)time;
