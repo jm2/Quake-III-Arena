@@ -455,9 +455,12 @@ char *MSG_ReadString( msg_t *msg ) {
 			c = '.';
 		}
 
-		string[l] = c;
-		l++;
-	} while (l < sizeof(string)-1);
+		// read on to the terminator even when the string is too long,
+		// so the next read starts after it; only what fits is kept
+		if ( l < sizeof(string)-1 ) {
+			string[l++] = c;
+		}
+	} while ( 1 );
 	
 	string[l] = 0;
 	
@@ -479,9 +482,12 @@ char *MSG_ReadBigString( msg_t *msg ) {
 			c = '.';
 		}
 
-		string[l] = c;
-		l++;
-	} while (l < sizeof(string)-1);
+		// read on to the terminator even when the string is too long,
+		// so the next read starts after it; only what fits is kept
+		if ( l < sizeof(string)-1 ) {
+			string[l++] = c;
+		}
+	} while ( 1 );
 	
 	string[l] = 0;
 	
@@ -502,9 +508,12 @@ char *MSG_ReadStringLine( msg_t *msg ) {
 		if ( c == '%' ) {
 			c = '.';
 		}
-		string[l] = c;
-		l++;
-	} while (l < sizeof(string)-1);
+		// read on to the terminator even when the line is too long,
+		// so the next read starts after it; only what fits is kept
+		if ( l < sizeof(string)-1 ) {
+			string[l++] = c;
+		}
+	} while ( 1 );
 	
 	string[l] = 0;
 	
