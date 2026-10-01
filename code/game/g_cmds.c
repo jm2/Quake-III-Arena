@@ -1224,6 +1224,30 @@ static const char *gameNames[] = {
 
 /*
 ==================
+RemoveQuotes
+
+A client already in the game gets a configstring change as the quoted
+argument of a "cs" server command, and reads it back with
+Cmd_TokenizeString and Cmd_ArgsFrom.  A '"' in the string ends that
+argument: the client reads the rest outside the quotes, where it drops
+comments and joins the words with single spaces, so it keeps a
+different string from the one a client that connects later gets in the
+gamestate.
+==================
+*/
+static void RemoveQuotes( char *s ) {
+	char	*out;
+
+	for ( out = s ; *s ; s++ ) {
+		if ( *s != '"' ) {
+			*out++ = *s;
+		}
+	}
+	*out = 0;
+}
+
+/*
+==================
 Cmd_CallVote_f
 ==================
 */
@@ -1334,6 +1358,8 @@ void Cmd_CallVote_f( gentity_t *ent ) {
 	ent->client->ps.eFlags |= EF_VOTED;
 
 	trap_SetConfigstring( CS_VOTE_TIME, va("%i", level.voteTime ) );
+	// show the vote without the quotes it is executed with
+	RemoveQuotes( level.voteDisplayString );
 	trap_SetConfigstring( CS_VOTE_STRING, level.voteDisplayString );	
 	trap_SetConfigstring( CS_VOTE_YES, va("%i", level.voteYes ) );
 	trap_SetConfigstring( CS_VOTE_NO, va("%i", level.voteNo ) );	
