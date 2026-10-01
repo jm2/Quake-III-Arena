@@ -325,8 +325,10 @@ char *G_NewString( const char *string ) {
 	new_p = newb;
 
 	// turn \n into a real linefeed
+	// a backslash that ends the string is copied as it is, so that it
+	// does not take the terminating NUL as its escaped character
 	for ( i=0 ; i< l ; i++ ) {
-		if (string[i] == '\\' && i < l-1) {
+		if (string[i] == '\\' && i < l-2) {
 			i++;
 			if (string[i] == 'n') {
 				*new_p++ = '\n';
