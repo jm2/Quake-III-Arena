@@ -118,7 +118,7 @@ void S_SoundInfo_f(void) {
 		Com_Printf("%5d samplebits\n", dma.samplebits);
 		Com_Printf("%5d submission_chunk\n", dma.submission_chunk);
 		Com_Printf("%5d speed\n", dma.speed);
-		Com_Printf("0x%x dma buffer\n", dma.buffer);
+		Com_Printf("%p dma buffer\n", dma.buffer);
 		if ( s_backgroundFile ) {
 			Com_Printf("Background file: %s\n", s_backgroundLoop );
 		} else {
@@ -1200,7 +1200,7 @@ void S_Update( void ) {
 		ch = s_channels;
 		for (i=0 ; i<MAX_CHANNELS; i++, ch++) {
 			if (ch->thesfx && (ch->leftvol || ch->rightvol) ) {
-				Com_Printf ("%f %f %s\n", ch->leftvol, ch->rightvol, ch->thesfx->soundName);
+				Com_Printf ("%d %d %s\n", ch->leftvol, ch->rightvol, ch->thesfx->soundName);
 				total++;
 			}
 		}
@@ -1336,7 +1336,7 @@ void S_Play_f( void ) {
 	i = 1;
 	while ( i<Cmd_Argc() ) {
 		if ( !Q_strrchr(Cmd_Argv(i), '.') ) {
-			Com_sprintf( name, sizeof(name), "%s.wav", Cmd_Argv(1) );
+			Com_sprintf( name, sizeof(name), "%s.wav", Cmd_Argv(i) );
 		} else {
 			Q_strncpyz( name, Cmd_Argv(i), sizeof(name) );
 		}
