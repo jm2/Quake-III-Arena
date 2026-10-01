@@ -280,8 +280,9 @@ void COM_ParseError( char *format, ... )
 	static char string[4096];
 
 	va_start (argptr, format);
-	vsprintf (string, format, argptr);
+	Q_vsnprintf( string, sizeof(string), format, argptr );
 	va_end (argptr);
+	string[sizeof(string) - 1] = '\0';
 
 	Com_Printf("ERROR: %s, line %d: %s\n", com_parsename, com_lines, string);
 }
@@ -292,8 +293,9 @@ void COM_ParseWarning( char *format, ... )
 	static char string[4096];
 
 	va_start (argptr, format);
-	vsprintf (string, format, argptr);
+	Q_vsnprintf( string, sizeof(string), format, argptr );
 	va_end (argptr);
+	string[sizeof(string) - 1] = '\0';
 
 	Com_Printf("WARNING: %s, line %d: %s\n", com_parsename, com_lines, string);
 }
@@ -946,8 +948,9 @@ char	* QDECL va( char *format, ... ) {
 	index++;
 
 	va_start (argptr, format);
-	vsprintf (buf, format,argptr);
+	Q_vsnprintf( buf, sizeof(string[0]), format, argptr );
 	va_end (argptr);
+	buf[sizeof(string[0]) - 1] = '\0';
 
 	return buf;
 }
