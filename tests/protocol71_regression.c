@@ -472,8 +472,8 @@ static void RetailClient( void ) {
 		ToServer( client, out, n );
 		Check( Executed( plain, length, 6 ), "server decodes retail's packet to the message" );
 	}
-	/* The server's messages: one datagram, then a fragmented one with another queued behind it (#462), which
-	 * is encoded when it goes out.  Retail's header and XOR, byte for byte. */
+	/* The server's messages: one datagram, then a fragmented one with another queued behind it (id's bug 462,
+	 * see SV_Netchan_Transmit), which is encoded when it goes out.  Retail's header and XOR, byte for byte. */
 	for ( i = 0; i < 2; i++ ) {
 		ServerMessage( &m, 2, "print \"news\"", i ? 3000 : 20 );
 		length = WithEOF( &m, svc_EOF, plain );
@@ -645,6 +645,8 @@ static void Protocol71( void ) {
 	ServerGets( wan, "getchallenge 79 Quake3Arena" );
 	Check( Server_Challenge( wan, &n, &refused ) && !refused && !strcmp( Text( Next( wan ) ), va( "challengeResponse %i 79 71", n ) ),
 	       "refusal kept" );
+	ServerGets( wan, "getchallenge" );	/* spoofed from the client's address */
+	Check( !strcmp( Text( Next( wan ) ), va( "challengeResponse %i 79 71", n ) ), "bare answer once the client sent its challenge" );
 
 	/* a listen server's own client connects over the loopback, with protocol 71 and challenge 0 */
 	Start( "protocol 71 loopback" );
@@ -798,7 +800,9 @@ static int Fragment71( byte *out, int sequence, int challenge, int start, int si
 static void SpoofedPackets( void ) {
 	static byte plain[MAX_MSGLEN], out[MAX_MSGLEN];
 	message_t m;
+	packet_t *p;
 	int challenge, length, n, last, sequence, i, start;
+	qboolean refused;
 
 	Start( "spoofed packets" );
 	ConnectBoth(); ServerToClient();
@@ -874,6 +878,19 @@ static void SpoofedPackets( void ) {
 		ToClient( server, out, n );
 	}
 	Check( Parsed( plain, length, 4 ) && clc.netchan.incomingSequence == 4, "fragmented message" );
+	Check( Quiet(), "no other datagrams" );
+
+	/* A bare getchallenge spoofed from the client's address gets its echo too, not a bare challengeResponse
+	 * the client would take, from the server's address, as protocol 68 with a real challenge. */
+	Start( "spoofed getchallenge" );
+	ClientConnect( "192.0.2.10:27960" );
+	Resend(); ClientToServer();	/* the client's getchallenge, whose answer is still on its way */
+	ServerGets( client, "getchallenge" );
+	p = Next( client ); p = Next( client );	/* the spoof's answer overtakes it */
+	Check( Server_Challenge( client, &challenge, &refused )
+	       && !strcmp( Text( p ), va( "challengeResponse %i %i 71", challenge, clc.challenge ) ), "bare answer to a spoofed getchallenge" );
+	ToClient( server, p->data, p->length );
+	Check( cls.state == CA_CHALLENGING && !clc.compat && clc.challenge == challenge, "talked down to protocol 68" );
 	Check( Quiet(), "no other datagrams" );
 }
 

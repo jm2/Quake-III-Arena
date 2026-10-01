@@ -32,7 +32,7 @@ SV_ChallengeResponse
 Retail 1.32c clients get the bare challenge they ask for.  ioquake3 and
 Quake3e clients send a challenge of their own, which is echoed so they know
 the response answers their getchallenge, with com_protocol so they know
-they can connect with it
+they can connect with it.  Retail clients ignore both
 =================
 */
 static void SV_ChallengeResponse( const challenge_t *challenge ) {
@@ -98,12 +98,18 @@ void SV_GetChallenge( netadr_t from ) {
 		challenge->firstTime = svs.time;
 		challenge->time = svs.time;
 		challenge->connected = qfalse;
+		challenge->clientChallengeSent = qfalse;
 		i = oldest;
 	}
 	// a new challenge request is a new connection attempt
 	challenge->wasrefused = qfalse;
-	challenge->clientChallengeSent = Cmd_Argc() > 1;
-	challenge->clientChallenge = atoi( Cmd_Argv( 1 ) );
+	// once a client at this address has sent its own challenge, a bare
+	// request, which anyone can spoof from it, still gets the echo: a bare
+	// response from this server would talk that client down to protocol 68
+	if ( Cmd_Argc() > 1 ) {
+		challenge->clientChallengeSent = qtrue;
+		challenge->clientChallenge = atoi( Cmd_Argv( 1 ) );
+	}
 
 	// if they are on a lan address, send the challengeResponse immediately
 	if ( Sys_IsLANAddress( from ) ) {
