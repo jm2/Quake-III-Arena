@@ -231,9 +231,15 @@ static void UI_SPLevelMenu_SetMenuArena( int n, int level, const char *arenaInfo
 		levelMenuInfo.levelScores[n] = 8;
 	}
 
-	strcpy( levelMenuInfo.levelPicNames[n], va( "levelshots/%s.tga", map ) );
-	if( !trap_R_RegisterShaderNoMip( levelMenuInfo.levelPicNames[n] ) ) {
+	// a levelshot name too long for levelPicNames is too long for a shader
+	if( strlen( map ) >= sizeof( levelMenuInfo.levelPicNames[n] ) - strlen( "levelshots/.tga" ) ) {
 		strcpy( levelMenuInfo.levelPicNames[n], ART_MAP_UNKNOWN );
+	}
+	else {
+		Com_sprintf( levelMenuInfo.levelPicNames[n], sizeof( levelMenuInfo.levelPicNames[n] ), "levelshots/%s.tga", map );
+		if( !trap_R_RegisterShaderNoMip( levelMenuInfo.levelPicNames[n] ) ) {
+			strcpy( levelMenuInfo.levelPicNames[n], ART_MAP_UNKNOWN );
+		}
 	}
 	levelMenuInfo.item_maps[n].shader = 0;
 	if ( selectedArenaSet > currentSet ) {
