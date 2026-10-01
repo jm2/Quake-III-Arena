@@ -885,6 +885,7 @@ extern void			UI_KeyEvent( int key );
 extern void			UI_StartDemoLoop( void );
 extern qboolean		m_entersound;
 void UI_LoadBestScores(const char *map, int game);
+int UI_CvarInt( const char *name );
 extern uiStatic_t	uis;
 
 //
