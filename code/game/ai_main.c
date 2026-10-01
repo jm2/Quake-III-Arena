@@ -534,6 +534,11 @@ void BotSetInfoConfigString(bot_state_t *bs) {
 				leader,
 				carrying,
 				action);
+	// retail's layout gives CS_BOTINFO two slots, so for client 2 this
+	// overwrites CS_ITEMS and from client 7 on CS_MODELS, until the map
+	// ends. It is left as retail and ioquake3 have it: only the
+	// cheat-protected bot_report debug cvar gets here, and no client
+	// reads CS_BOTINFO (issue #461)
   	trap_SetConfigstring (CS_BOTINFO + bs->client, cs);
 }
 

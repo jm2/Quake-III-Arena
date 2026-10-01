@@ -439,12 +439,27 @@ static void target_location_linkup(gentity_t *ent)
 			i++, ent++) {
 		if (ent->classname && !Q_stricmp(ent->classname, "target_location")) {
 			// lets overload some variables!
-			ent->health = n; // use for location marking
-			trap_SetConfigstring( CS_LOCATIONS + n, ent->message );
+			// the cgame reads CS_LOCATIONS + n without a MAX_LOCATIONS
+			// bound, so names that run on into CS_PARTICLES (which nothing
+			// reads) still show. SV_SetConfigstring drops the map for an
+			// index past the last configstring, so a location there keeps
+			// its place in the list but gets no name, and location 0,
+			// which clients show as "unknown"
+			if ( CS_LOCATIONS + n < MAX_CONFIGSTRINGS ) {
+				ent->health = n; // use for location marking
+				trap_SetConfigstring( CS_LOCATIONS + n, ent->message );
+			} else {
+				ent->health = 0;
+			}
 			n++;
 			ent->nextTrain = level.locationHead;
 			level.locationHead = ent;
 		}
+	}
+
+	if ( CS_LOCATIONS + n > MAX_CONFIGSTRINGS && trap_Cvar_VariableIntegerValue( "developer" ) ) {
+		G_Printf( S_COLOR_YELLOW "WARNING: %i of %i target_locations have no configstring left, shown as unknown\n",
+			CS_LOCATIONS + n - MAX_CONFIGSTRINGS, n - 1 );
 	}
 
 	// All linked together now
