@@ -38,17 +38,25 @@ shaderRemap_t remappedShaders[MAX_SHADER_REMAPS];
 void AddRemap(const char *oldShader, const char *newShader, float timeOffset) {
 	int i;
 
+	// the names come from map entity keys and from the Team Arena team name
+	// cvars, which can be longer than a shader name; one that does not fit
+	// cannot name a shader, so skip the remap instead of overflowing the table
+	if ( strlen( oldShader ) >= MAX_QPATH || strlen( newShader ) >= MAX_QPATH ) {
+		G_Printf( "AddRemap: shader name longer than %i characters, remap skipped\n", MAX_QPATH - 1 );
+		return;
+	}
+
 	for (i = 0; i < remapCount; i++) {
 		if (Q_stricmp(oldShader, remappedShaders[i].oldShader) == 0) {
 			// found it, just update this one
-			strcpy(remappedShaders[i].newShader,newShader);
+			Q_strncpyz(remappedShaders[i].newShader, newShader, sizeof(remappedShaders[i].newShader));
 			remappedShaders[i].timeOffset = timeOffset;
 			return;
 		}
 	}
 	if (remapCount < MAX_SHADER_REMAPS) {
-		strcpy(remappedShaders[remapCount].newShader,newShader);
-		strcpy(remappedShaders[remapCount].oldShader,oldShader);
+		Q_strncpyz(remappedShaders[remapCount].newShader, newShader, sizeof(remappedShaders[remapCount].newShader));
+		Q_strncpyz(remappedShaders[remapCount].oldShader, oldShader, sizeof(remappedShaders[remapCount].oldShader));
 		remappedShaders[remapCount].timeOffset = timeOffset;
 		remapCount++;
 	}
@@ -56,12 +64,12 @@ void AddRemap(const char *oldShader, const char *newShader, float timeOffset) {
 
 const char *BuildShaderStateConfig() {
 	static char	buff[MAX_STRING_CHARS*4];
-	char out[(MAX_QPATH * 2) + 5];
+	char out[(MAX_QPATH * 2) + 32];	// two names, the separators and any level time
 	int i;
   
 	memset(buff, 0, MAX_STRING_CHARS);
 	for (i = 0; i < remapCount; i++) {
-		Com_sprintf(out, (MAX_QPATH * 2) + 5, "%s=%s:%5.2f@", remappedShaders[i].oldShader, remappedShaders[i].newShader, remappedShaders[i].timeOffset);
+		Com_sprintf(out, sizeof(out), "%s=%s:%5.2f@", remappedShaders[i].oldShader, remappedShaders[i].newShader, remappedShaders[i].timeOffset);
 		Q_strcat( buff, sizeof( buff ), out);
 	}
 	return buff;
