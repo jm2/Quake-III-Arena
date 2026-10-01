@@ -97,7 +97,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 /*
  * Native modules use the bounded C99 formatter. The legacy QVM libc only
  * exposes vsprintf, so retain its historical fallback until that formatter
- * is upgraded as part of the QVM hardening work.
+ * is upgraded as part of the QVM hardening work. The fallback ignores the
+ * length, so the module print and error functions and va(), which pass their
+ * buffer's size, are bounded only in the native build; a QVM build formats as
+ * retail did, inside the VM's sandbox.
  */
 #ifndef Q_vsnprintf
 #ifdef Q3_VM
