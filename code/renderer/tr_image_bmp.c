@@ -49,7 +49,7 @@ static qboolean R_DecodeBMP( const byte *buffer, unsigned int length, byte **pic
 	     planes != 1 || compression || (depth != 8 && depth != 16 && depth != 24 && depth != 32) ) return qfalse;
 	topDown = (rawHeight & 0x80000000u) != 0;
 	rows = topDown ? 0u - rawHeight : rawHeight;
-	if ( !columns || columns > INT_MAX || !rows || rows > INT_MAX || rows > (R_IMAGE_MAX_BYTES / 4u) / columns ) return qfalse;
+	if ( !R_ImageSizeValid(columns, rows) ) return qfalse;
 	if ( depth == 8 ) {
 		paletteCount = colors ? colors : 256;
 		if ( paletteCount > 256 || !R_ImageBytes(&cursor, paletteCount * 4, &palette) ) return qfalse;
@@ -110,5 +110,5 @@ void R_LoadBMP( const char *name, byte **pic, int *width, int *height ) {
 	if ( !buffer ) return;
 	valid = length >= 0 && R_DecodeBMP( buffer, length, pic, width, height );
 	ri.FS_FreeFile( buffer );
-	if ( !valid ) ri.Error( ERR_DROP, "LoadBMP: malformed or unsupported image (%s)", name );
+	if ( !valid ) ri.Printf( PRINT_WARNING, "WARNING: LoadBMP: %s is malformed, truncated, unsupported or larger than %u pixels\n", name, R_IMAGE_MAX_PIXELS );
 }

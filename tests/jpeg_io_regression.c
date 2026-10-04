@@ -56,7 +56,7 @@ static int Load( int mayDrop ) {
 	loaded=(byte *)1; loadedWidth=loadedHeight=-1; allowDrop=mayDrop;
 	if(!setjmp(dropJump)) R_LoadJPG("test.jpg",&loaded,&loadedWidth,&loadedHeight);
 	allowDrop=0;
-	if(drops) { Check(!loaded && !loadedWidth && !loadedHeight && !live && !fileAllocation,"rejected publication"); return 0; }
+	if(drops || (!loaded && warnings)) { Check(!loaded && !loadedWidth && !loadedHeight && !live && !fileAllocation,"rejected publication"); return 0; }
 	Check(loaded && loadedWidth>0 && loadedHeight>0 && live==1 && reads==1 && fileFrees==1 && !fileAllocation,"success ownership"); return 1;
 }
 /** Assert native top-down decoding, opaque alpha and the small lossy tolerance of a known grayscale image. */
@@ -73,6 +73,8 @@ static void Golden( int columns, int rows, const byte *bottomUp, int tolerance )
 	Free(loaded);
 }
 static void Reject( void ) { Check(!Load(1) && drops==1,"malformed JPEG accepted"); }
+/** An empty or oversized declared size is a warning and no image (issue #42), not ERR_DROP. */
+static void RejectSize( void ) { Check(!Load(0) && !drops && warnings==1,"oversized JPEG not rejected with a warning"); }
 /** Exercise actual source refills at both sides of 4096, without invoking a fake input allocation. */
 static void Source( int length ) {
 	rendererJPEG_t *context; struct jpeg_decompress_struct *info;
@@ -166,7 +168,8 @@ int main( int argc, char **argv ) {
 	memcpy(fixture,original,originalSize); fixture[position+4]=32; Reset(); Reject();
 	memcpy(fixture,original,originalSize);
 	position=-1; for(i=0;i<originalSize-8;i++) if(fixture[i]==255 && fixture[i+1]==192) { position=i; break; } Check(position>=0,"baseline SOF");
-	fixture[position+5]=fixture[position+7]=65000>>8; fixture[position+6]=fixture[position+8]=65000&255; Reset(); Reject();
+	fixture[position+5]=fixture[position+7]=65000>>8; fixture[position+6]=fixture[position+8]=65000&255; Reset(); RejectSize();
+	fixture[position+5]=4096>>8; fixture[position+6]=0; fixture[position+7]=4097>>8; fixture[position+8]=4097&255; Reset(); RejectSize();
 	memcpy(fixture,original,originalSize); fixture[position+7]=fixture[position+8]=255; Reset(); Reject();
 	memcpy(fixture,original,originalSize); fixture[position+7]=fixture[position+8]=0; Reset(); Reject();
 	memcpy(fixture,original,originalSize); Reset(); negativeLength=1; Reject();
