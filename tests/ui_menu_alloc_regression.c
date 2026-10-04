@@ -23,8 +23,9 @@ static void Check( int ok, const char *what ) {
 	}
 }
 
-/* A menu with copies of five items: one of every kind that has type data
- * (list box, edit field, multi list, model; the slider is an edit field), with
+/* A menu with copies of six items: one of every kind that has type data
+ * (list box, edit field, multi lists of strings and of floats, model; the
+ * slider is an edit field), with
  * menu and item strings and scripts. Each @ becomes the menu's name, so menus
  * share no string and every string of a menu takes new pool space. */
 static const char fixtureHead[] =
@@ -36,8 +37,9 @@ static const char fixtureItems[] =
 	"itemDef { name \"@multi\" type 12 text \"@Mode:\" cvar \"ui_@multi\" "
 		"cvarStrList { \"@Free\" \"@ffa\" \"@Team\" \"@tdm\" } visible 1 } "
 	"itemDef { name \"@model\" type 7 asset_model \"models/@/head.md3\" model_fovx 40 visible 1 } "
-	"itemDef { name \"@slider\" type 10 text \"@Volume:\" cvarFloat \"ui_@volume\" 0.5 0 1 visible 1 } ";
-#define FIXTURE_ITEMS 5
+	"itemDef { name \"@slider\" type 10 text \"@Volume:\" cvarFloat \"ui_@volume\" 0.5 0 1 visible 1 } "
+	"itemDef { name \"@floats\" type 12 cvar \"ui_@floats\" cvarFloatList { \"@Low\" 0 \"@High\" 2 } visible 1 } ";
+#define FIXTURE_ITEMS 6
 
 static char source[65536];
 
@@ -78,16 +80,34 @@ static void LimitMemoryPool( int room ) {
 	Check( MEM_POOL_SIZE - allocPoint == room, "memory pool left with the budget" );
 }
 
-/** Leave exactly room bytes of the string pool for what follows. */
+/** Leave exactly room bytes of the string pool for what follows. The filler is
+ * distinct strings of at most FILLER_LENGTH characters, as long as the longest
+ * token or script a menu stores, which keeps hashForString within a 32-bit long. */
+#define FILLER_LENGTH 1000
 static void LimitStringPool( int room ) {
-	static char filler[STRING_POOL_SIZE];
-	int length = STRING_POOL_SIZE - strPoolIndex - room - 1;
+	char filler[FILLER_LENGTH + 1];
+	char digits[16];
+	int serial, length, need;
 
-	/* the filler and its terminator take all but room bytes */
-	Check( room > 0 && length > 0 && length < (int)sizeof( filler ), "string budget" );
-	memset( filler, '#', length );
-	filler[length] = 0;
-	Check( String_Alloc( filler ) != NULL, "string pool filler" );
+	/* a string fits only while one byte of the pool stays free */
+	Check( room > 0 && room <= STRING_POOL_SIZE - strPoolIndex, "string budget" );
+	for ( serial = 0; ( need = STRING_POOL_SIZE - strPoolIndex - room ) > 0; serial++ ) {
+		/* each string takes its length and a terminator; never leave 1 byte,
+		 * which no string can take */
+		length = need - 1;
+		if ( length > FILLER_LENGTH ) {
+			length = need - 1 - FILLER_LENGTH == 1 ? FILLER_LENGTH - 1 : FILLER_LENGTH;
+		}
+		Check( length > 0, "filler length" );
+		/* '#' starts no fixture string; the serial after it makes every
+		 * filler new (only the last one can be too short to hold it all) */
+		memset( filler, '#', length );
+		filler[length] = 0;
+		Com_sprintf( digits, sizeof( digits ), "%d", serial );
+		memcpy( filler + 1, digits, (int)strlen( digits ) < length - 1 ? strlen( digits ) : (size_t)( length - 1 ) );
+		Check( String_Alloc( filler ) != NULL, "string pool filler" );
+		Check( STRING_POOL_SIZE - strPoolIndex == room + need - length - 1, "filler is new" );
+	}
 	Check( STRING_POOL_SIZE - strPoolIndex == room, "string pool left with the budget" );
 }
 
@@ -160,6 +180,9 @@ static void CheckMenuCopies( menuDef_t *menu, const char *name, int copies ) {
 		Check( items[3]->asset == 1 && ( (modelDef_t *)items[3]->typeData )->fov_x == 40, "model" );
 		edit = (editFieldDef_t *)items[4]->typeData;
 		Check( edit->maxVal == 1 && !strcmp( items[4]->cvar, va( "ui_%svolume", name ) ), "slider" );
+		multi = (multiDef_t *)items[5]->typeData;
+		Check( multi->count == 2 && !multi->strDef && !strcmp( multi->cvarList[1], va( "%sHigh", name ) )
+			&& multi->cvarValue[1] == 2, "multi list of floats" );
 	}
 }
 
