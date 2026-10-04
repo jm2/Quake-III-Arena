@@ -29,6 +29,7 @@ packet header
 -------------
 4	outgoing sequence.  high bit will be set if this is a fragmented message
 [2	qport (only for client to server)]
+[4	NETCHAN_GENCHECKSUM of the challenge and the sequence (protocol 71 only)]
 [2	fragment start byte]
 [2	fragment length. if < FRAGMENT_SIZE, this is the last fragment]
 
@@ -58,6 +59,8 @@ cvar_t		*showpackets;
 cvar_t		*showdrop;
 cvar_t		*qport;
 
+static unsigned long long	challengeState;
+
 static char *netsrcString[2] = {
 	"client",
 	"server"
@@ -70,10 +73,43 @@ Netchan_Init
 ===============
 */
 void Netchan_Init( int port ) {
+	// seed Netchan_Challenge once, from the clock since startup and where
+	// the stack happens to be
+	challengeState = ( (unsigned long long)Sys_Entropy() << 32 ) ^ (unsigned)Sys_Milliseconds() ^
+		(unsigned long long)(size_t)&port;
+
 	port &= 0xffff;
 	showpackets = Cvar_Get ("showpackets", "0", CVAR_TEMP );
 	showdrop = Cvar_Get ("showdrop", "0", CVAR_TEMP );
 	qport = Cvar_Get ("net_qport", va("%i", port), CVAR_INIT );
+}
+
+/*
+===============
+Netchan_Challenge
+
+A challenge for connection setup, never 0: a client's own, which the
+server echoes, and the server's, which keys protocol 71's checksums.
+rand() won't do: the renderer reseeds it with a constant and the server
+with the clock at each map, so its challenges were close to a constant
+XOR the uptime.  This state is seeded once, by Netchan_Init, each
+challenge stirs in Sys_Entropy again, and only the top half of a
+splitmix64 step goes out.  Classic Mac OS has no entropy source for a
+cryptographic generator
+===============
+*/
+int Netchan_Challenge( void ) {
+	unsigned long long	z;
+	int					challenge;
+
+	do {
+		challengeState += 0x9e3779b97f4a7c15ULL ^ Sys_Entropy();
+		z = challengeState;
+		z = ( z ^ ( z >> 30 ) ) * 0xbf58476d1ce4e5b9ULL;
+		z = ( z ^ ( z >> 27 ) ) * 0x94d049bb133111ebULL;
+		challenge = (int)(unsigned)( ( z ^ ( z >> 31 ) ) >> 32 );
+	} while ( !challenge );
+	return challenge;
 }
 
 /*
@@ -83,7 +119,7 @@ Netchan_Setup
 called to open a channel to a remote system
 ==============
 */
-void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport ) {
+void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport, int challenge, qboolean compat ) {
 	Com_Memset (chan, 0, sizeof(*chan));
 	
 	chan->sock = sock;
@@ -91,6 +127,8 @@ void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport ) {
 	chan->qport = qport;
 	chan->incomingSequence = 0;
 	chan->outgoingSequence = 1;
+	chan->challenge = challenge;
+	chan->compat = compat;
 }
 
 // TTimo: unused, commenting out to make gcc happy
@@ -201,6 +239,10 @@ void Netchan_TransmitNextFragment( netchan_t *chan ) {
 		MSG_WriteShort( &send, qport->integer );
 	}
 
+	if ( !chan->compat ) {
+		MSG_WriteLong( &send, NETCHAN_GENCHECKSUM( chan->challenge, chan->outgoingSequence ) );
+	}
+
 	// copy the reliable message to the packet first
 	fragmentLength = FRAGMENT_SIZE;
 	if ( chan->unsentFragmentStart  + fragmentLength > chan->unsentLength ) {
@@ -268,12 +310,16 @@ void Netchan_Transmit( netchan_t *chan, int length, const byte *data ) {
 	MSG_InitOOB (&send, send_buf, sizeof(send_buf));
 
 	MSG_WriteLong( &send, chan->outgoingSequence );
-	chan->outgoingSequence++;
 
 	// send the qport if we are a client
 	if ( chan->sock == NS_CLIENT ) {
 		MSG_WriteShort( &send, qport->integer );
 	}
+
+	if ( !chan->compat ) {
+		MSG_WriteLong( &send, NETCHAN_GENCHECKSUM( chan->challenge, chan->outgoingSequence ) );
+	}
+	chan->outgoingSequence++;
 
 	MSG_WriteData( &send, data, length );
 
@@ -305,6 +351,7 @@ that does not fit in msg->maxsize is dropped.
 qboolean Netchan_Process( netchan_t *chan, msg_t *msg ) {
 	int			sequence;
 	int			qport;
+	int			checksum;
 	int			fragmentStart, fragmentLength;
 	qboolean	fragmented;
 
@@ -326,6 +373,20 @@ qboolean Netchan_Process( netchan_t *chan, msg_t *msg ) {
 	// read the qport if we are a server
 	if ( chan->sock == NS_SERVER ) {
 		qport = MSG_ReadShort( msg );
+	}
+
+	// protocol 71: drop a packet that was not sent by the peer which has
+	// the challenge, however well it guessed the address, qport and sequence
+	if ( !chan->compat ) {
+		checksum = MSG_ReadLong( msg );
+		if ( msg->readcount > msg->cursize || checksum != NETCHAN_GENCHECKSUM( chan->challenge, sequence ) ) {
+			if ( showdrop->integer || showpackets->integer ) {
+				Com_Printf( "%s:bad challenge checksum on packet %i\n"
+					, NET_AdrToString( chan->remoteAddress )
+					, sequence );
+			}
+			return qfalse;
+		}
 	}
 
 	// read the fragment information

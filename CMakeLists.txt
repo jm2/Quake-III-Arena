@@ -113,6 +113,18 @@ list(REMOVE_ITEM GAME_SRCS
     "${CMAKE_SOURCE_DIR}/code/game/g_rankings.c"
     "${CMAKE_SOURCE_DIR}/code/game/bg_lib.c"
 )
+# One copy of these serves the engine, game, cgame and ui (each retail QVM had
+# its own). They hold only scratch state, so they live in their own archive,
+# outside the module brackets that Sys_LoadDll resets (issue #457). Built with
+# the game module's definitions, as before the split.
+set(GAME_SHARED_SRCS
+    "${CMAKE_SOURCE_DIR}/code/game/bg_misc.c"
+    "${CMAKE_SOURCE_DIR}/code/game/bg_pmove.c"
+    "${CMAKE_SOURCE_DIR}/code/game/bg_slidemove.c"
+    "${CMAKE_SOURCE_DIR}/code/game/q_math.c"
+    "${CMAKE_SOURCE_DIR}/code/game/q_shared.c"
+)
+list(REMOVE_ITEM GAME_SRCS ${GAME_SHARED_SRCS})
 
 # All module libraries are STATIC, not OBJECT. Retro68's binutils has a known
 # crash when consuming OBJECT libraries at link time (see q3ui_lib comment
@@ -121,6 +133,13 @@ list(REMOVE_ITEM GAME_SRCS
 # this toolchain.
 add_library(game_obj STATIC ${GAME_SRCS})
 target_compile_definitions(game_obj PRIVATE
+    -DvmMain=Game_vmMain
+    -DdllEntry=Game_dllEntry
+    -DGAME_MODULE
+)
+
+add_library(game_shared_obj STATIC ${GAME_SHARED_SRCS})
+target_compile_definitions(game_shared_obj PRIVATE
     -DvmMain=Game_vmMain
     -DdllEntry=Game_dllEntry
     -DGAME_MODULE
@@ -178,6 +197,14 @@ if(BUILD_TEAM_ARENA)
         -DMISSIONPACK
     )
 
+    add_library(game_shared_mp_obj STATIC ${GAME_SHARED_SRCS})
+    target_compile_definitions(game_shared_mp_obj PRIVATE
+        -DvmMain=Game_vmMain
+        -DdllEntry=Game_dllEntry
+        -DGAME_MODULE
+        -DMISSIONPACK
+    )
+
     add_library(cgame_mp_obj STATIC ${CGAME_MP_SRCS})
     target_compile_definitions(cgame_mp_obj PRIVATE
         -DvmMain=CGame_vmMain
@@ -186,8 +213,21 @@ if(BUILD_TEAM_ARENA)
         -DMISSIONPACK
     )
 
-    add_library(ui_mp_obj STATIC ${UI_SRCS})
+    # The Team Arena cgame (cg_newdraw.c) runs the ui module's ui_shared.c
+    # (#459; each retail QVM had its own copy), so ui_shared.c is a shared
+    # archive too and stays outside the ui module's reset bracket (#457).
+    set(UI_MP_SRCS ${UI_SRCS})
+    list(REMOVE_ITEM UI_MP_SRCS "${CMAKE_SOURCE_DIR}/code/ui/ui_shared.c")
+    add_library(ui_mp_obj STATIC ${UI_MP_SRCS})
     target_compile_definitions(ui_mp_obj PRIVATE
+        -DvmMain=UI_vmMain
+        -DdllEntry=UI_dllEntry
+        -DUI_MODULE
+        -DMISSIONPACK
+    )
+
+    add_library(ui_shared_mp_obj STATIC "${CMAKE_SOURCE_DIR}/code/ui/ui_shared.c")
+    target_compile_definitions(ui_shared_mp_obj PRIVATE
         -DvmMain=UI_vmMain
         -DdllEntry=UI_dllEntry
         -DUI_MODULE
@@ -243,6 +283,7 @@ target_link_libraries(Quake3 PUBLIC
     game_obj
     cgame_obj
     q3ui_lib
+    game_shared_obj
     "-Wl,--no-whole-archive"
     -lm
     -lInterfaceLib
@@ -264,6 +305,8 @@ if(BUILD_TEAM_ARENA)
         game_mp_obj
         cgame_mp_obj
         ui_mp_obj
+        game_shared_mp_obj
+        ui_shared_mp_obj
         "-Wl,--no-whole-archive"
         -lm
         -lInterfaceLib
@@ -335,13 +378,16 @@ foreach(resource_source ${QUAKE3_RESOURCE_SOURCES})
 endforeach()
 
 include("${CMAKE_SOURCE_DIR}/cmake/Quake3BuildManifest.cmake")
+include("${CMAKE_SOURCE_DIR}/cmake/Quake3StaticModules.cmake")
 
 function(quake3_add_classic_application target)
     set_target_properties(${target} PROPERTIES OUTPUT_NAME "${target}.xcoff")
+    # The static module check (cmake/Quake3StaticModules.cmake) must pass first.
+    get_property(static_modules_report TARGET ${target} PROPERTY QUAKE3_STATIC_MODULES_REPORT)
     add_custom_command(
         OUTPUT "${target}.pef"
         COMMAND "${RETRO68_MAKEPEF}" "$<TARGET_FILE:${target}>" -o "${target}.pef"
-        DEPENDS ${target}
+        DEPENDS ${target} ${static_modules_report}
         COMMENT "Converting ${target} to PEF"
         VERBATIM)
     add_custom_command(
@@ -363,7 +409,10 @@ function(quake3_add_classic_application target)
                 "${target}.manifest.txt")
 endfunction()
 
+quake3_static_modules(Quake3 game_obj cgame_obj q3ui_lib game_shared_obj)
 quake3_add_classic_application(Quake3)
 if(BUILD_TEAM_ARENA)
+    quake3_static_modules(Quake3_TeamArena game_mp_obj cgame_mp_obj ui_mp_obj
+        game_shared_mp_obj ui_shared_mp_obj)
     quake3_add_classic_application(Quake3_TeamArena)
 endif()

@@ -33,7 +33,7 @@ void *Z_Malloc( int size ) { void *p = calloc( 1, size ); Check( p != NULL, "all
 void Z_Free( void *p ) { free( p ); }
 char *CopyString( const char *in ) { char *out = Z_Malloc( strlen( in ) + 1 ); strcpy( out, in ); return out; }
 /* Kept by the linker for other connectionless commands; none of these tests reach them. */
-cvar_t *com_cl_running;
+cvar_t *com_cl_running, *com_protocol;
 int cl_connectedToPureServer;
 vm_t *uivm;
 void Cvar_Set( const char *name, const char *value ) { (void)name; (void)value; Check( 0, "Cvar_Set" ); }

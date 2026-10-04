@@ -75,6 +75,7 @@ cvar_t	*com_cl_running;
 cvar_t	*com_logfile;		// 1 = buffer log, 2 = flush after each print
 cvar_t	*com_showtrace;
 cvar_t	*com_version;
+cvar_t	*com_protocol;
 cvar_t	*com_blood;
 cvar_t	*com_buildScript;	// for automated data building scripts
 cvar_t	*com_introPlayed;
@@ -2601,6 +2602,10 @@ void Com_Init( char *commandLine ) {
 
 	s = va("%s %s %s", Q3_VERSION, CPUSTRING, __DATE__ );
 	com_version = Cvar_Get ("version", s, CVAR_ROM | CVAR_SERVERINFO );
+	// the protocol offered to ioquake3 and Quake3e peers; 68 is always taken,
+	// and setting this to 68 offers nothing else.  Not in the serverinfo, so
+	// that retail clients get retail's
+	com_protocol = Cvar_Get( "com_protocol", va( "%i", PROTOCOL_CHECKSUM_VERSION ), CVAR_INIT );
 
 	Sys_LogPrintf("Com_Init: Sys_Init\n"); 
 

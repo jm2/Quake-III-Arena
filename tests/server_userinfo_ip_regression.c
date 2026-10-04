@@ -20,6 +20,8 @@ vmCvar_t g_filterBan;
 serverStatic_t svs;
 vm_t *gvm;
 static cvar_t maxclients, reconnectlimit, privatePassword, privateClients, minPing, maxPing, lanForceRate, dedicated;
+static cvar_t protocol = { .integer = PROTOCOL_CHECKSUM_VERSION };
+cvar_t *com_protocol = &protocol;	/* its clients are retail's, with protocol 68 */
 cvar_t *sv_maxclients = &maxclients, *sv_reconnectlimit = &reconnectlimit, *sv_privatePassword = &privatePassword;
 cvar_t *sv_privateClients = &privateClients, *sv_minPing = &minPing, *sv_maxPing = &maxPing;
 cvar_t *sv_lanForceRate = &lanForceRate, *com_dedicated = &dedicated;
@@ -55,11 +57,14 @@ const char *NET_AdrToString( netadr_t a ) {
 qboolean Sys_IsLANAddress( netadr_t adr ) { (void)adr; return qfalse; }
 /* SV_GetChallenge: not single player, and no authorize server (NA_BAD), so it answers once AUTHORIZE_TIMEOUT has passed. */
 float Cvar_VariableValue( const char *name ) { (void)name; return 0; }
-void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport ) {
+void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport, int challenge, qboolean compat ) {
 	memset( chan, 0, sizeof( *chan ) ); chan->sock = sock; chan->remoteAddress = adr; chan->qport = qport; chan->outgoingSequence = 1;
+	chan->challenge = challenge; chan->compat = compat;
 }
 /* With PR #312, SV_DropClient and reconnects free the client's netchan queue; nothing is queued here. */
 void SV_Netchan_FreeQueue( client_t *client ) { (void)client; }
+/* Every getchallenge here comes from an address that Connect gave a challenge record. */
+int Netchan_Challenge( void ) { Check( 0, "new challenge record" ); return CHALLENGE; }
 /** Capture and count the connectionless replies. */
 void QDECL NET_OutOfBandPrint( netsrc_t sock, netadr_t adr, const char *format, ... ) {
 	va_list argptr;
@@ -83,7 +88,7 @@ void Com_Memset( void *dest, const int val, const size_t count ) { memset( dest,
 server_t sv;
 cvar_t *sv_pure;
 static void Unreachable( void ) { Check( 0, "unrelated client command handler reached" ); }
-int Cmd_Argc( void ) { Unreachable(); return 0; }
+int Cmd_Argc( void ) { return 1; }	/* a bare getchallenge, as retail clients send it */
 void Cmd_TokenizeString( const char *text ) { (void)text; Unreachable(); }
 int FS_FileIsInPAK( const char *filename, int *pChecksum ) { (void)filename; (void)pChecksum; Unreachable(); return -1; }
 cvar_t *sv_strictAuth;
@@ -162,7 +167,7 @@ static void Connect( netadr_t from, const char *userinfo ) {
 /** Deliver another "connect" packet to the running server, as the client resends it every 3 s with the same challenge. */
 static void Send( netadr_t from, const char *userinfo ) { argument = userinfo; reply[0] = 0; replies = 0; SV_DirectConnect( from ); }
 /** Deliver a "getchallenge" packet, as a client's /connect or /reconnect does. */
-static void GetChallenge( netadr_t from ) { reply[0] = 0; replies = 0; SV_GetChallenge( from ); }
+static void GetChallenge( netadr_t from ) { argument = ""; reply[0] = 0; replies = 0; SV_GetChallenge( from ); }
 /** Run a server frame `msec` later; free zombies like SV_CheckTimeouts in sv_main.c (sv_zombietime 2). */
 static void Frame( int msec ) {
 	int i;
@@ -256,7 +261,7 @@ int main( void ) {
 	}
 	/* A new challenge request is a new attempt: refused again while the game still overflows, then let in. */
 	GetChallenge( other );
-	Check( !strcmp( reply, "challengeResponse 1234" ), "no challenge after a refusal" );
+	Check( !strcmp( reply, "challengeResponse 1234 0 71" ), "no challenge after a refusal" );
 	Send( other, Userinfo( "", 0 ) );
 	Check( !strcmp( reply, "print\nUserinfo string length exceeded.\n" ) && connects == 2 && disconnects == 2, "new challenge not tried again" );
 	gameFillsUserinfo = 0;

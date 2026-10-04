@@ -5,9 +5,10 @@ Q3_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 Q3_TEST_DIR="$(mktemp -d "${TMPDIR:-/var/tmp}/q3-challenge-rand.XXXXXX")"
 trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 
-# Issue #415: the server challenge, the checksum feed and the update server
-# challenge shift rand() left by 16, and RAND_MAX is 0x7fffffff on glibc and
-# Retro68 newlib. The fixtures include sv_client.c and cl_main.c and stub
+# Issue #415: the checksum feed and the update server challenge shift rand()
+# left by 16, and RAND_MAX is 0x7fffffff on glibc and Retro68 newlib; the
+# server challenge, which did too, now comes from Netchan_Challenge (#37) and
+# must not call rand(). The fixtures include sv_client.c and cl_main.c and stub
 # rand(); SV_SpawnServer needs most of the engine, so its checksum feed
 # statements are taken from sv_init.c itself.
 python3 - "$Q3_TEST_ROOT/code/server/sv_init.c" "$Q3_TEST_DIR/sv_checksum_feed.c" <<'PY_SOURCE'

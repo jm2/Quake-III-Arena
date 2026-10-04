@@ -1094,6 +1094,10 @@ void CL_Connect_f( void ) {
 		cls.state = CA_CHALLENGING;
 	} else {
 		cls.state = CA_CONNECTING;
+
+		// a challengeResponse that echoes this one answers our getchallenge;
+		// it is never 0, the echo of a server that never got it
+		clc.challenge = Netchan_Challenge();
 	}
 
 	cls.keyCatchers = 0;
@@ -1569,7 +1573,9 @@ void CL_CheckForResend( void ) {
 		if ( !Sys_IsLANAddress( clc.serverAddress ) ) {
 			CL_RequestAuthorization();
 		}
-		NET_OutOfBandPrint(NS_CLIENT, clc.serverAddress, "getchallenge");
+		// ioquake3 and Quake3e servers echo our challenge and name their
+		// protocol; retail 1.32c servers ignore the arguments
+		NET_OutOfBandPrint( NS_CLIENT, clc.serverAddress, "getchallenge %i Quake3Arena", clc.challenge );
 		break;
 		
 	case CA_CHALLENGING:
@@ -1577,7 +1583,10 @@ void CL_CheckForResend( void ) {
 		port = Cvar_VariableValue ("net_qport");
 
 		Q_strncpyz( info, Cvar_InfoString( CVAR_USERINFO ), sizeof( info ) );
-		Info_SetValueForKey( info, "protocol", va("%i", PROTOCOL_VERSION ) );
+		if ( com_protocol->integer == PROTOCOL_VERSION ) {
+			clc.compat = qtrue;
+		}
+		Info_SetValueForKey( info, "protocol", va("%i", clc.compat ? PROTOCOL_VERSION : com_protocol->integer ) );
 		Info_SetValueForKey( info, "qport", va("%i", port ) );
 		Info_SetValueForKey( info, "challenge", va("%i", clc.challenge ) );
 		
@@ -1593,39 +1602,6 @@ void CL_CheckForResend( void ) {
 		Com_Error( ERR_FATAL, "CL_CheckForResend: bad cls.state" );
 	}
 }
-
-/*
-===================
-CL_DisconnectPacket
-
-Sometimes the server can drop the client and the netchan based
-disconnect can be lost.  If the client continues to send packets
-to the server, the server will send out of band disconnect packets
-to the client so it doesn't have to wait for the full timeout period.
-===================
-*/
-void CL_DisconnectPacket( netadr_t from ) {
-	if ( cls.state < CA_AUTHORIZING ) {
-		return;
-	}
-
-	// if not from our server, ignore it
-	if ( !NET_CompareAdr( from, clc.netchan.remoteAddress ) ) {
-		return;
-	}
-
-	// if we have received packets within three seconds, ignore it
-	// (it might be a malicious spoof)
-	if ( cls.realtime - clc.lastPacketTime < 3000 ) {
-		return;
-	}
-
-	// drop the connection
-	Com_Printf( "Server disconnected for unknown reason\n" );
-	Cvar_Set("com_errorMessage", "Server disconnected for unknown reason\n" );
-	CL_Disconnect( qtrue );
-}
-
 
 /*
 ===================
@@ -1817,6 +1793,7 @@ Responses to broadcasts, etc
 void CL_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 	char	*s;
 	char	*c;
+	qboolean	compat;
 
 	MSG_BeginReadingOOB( msg );
 	MSG_ReadLong( msg );	// skip the -1
@@ -1834,11 +1811,25 @@ void CL_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 		if ( cls.state != CA_CONNECTING ) {
 			Com_Printf( "Unwanted challenge response received.  Ignored.\n" );
 		} else {
+			// ioquake3, Quake3e and this server echo our challenge, or 0 if
+			// they never got it, and name their protocol.  Retail 1.32c
+			// servers echo nothing and take protocol 68, so only their
+			// response from the address we asked is believed
+			s = Cmd_Argv( 3 );
+			compat = !*s || atoi( s ) != com_protocol->integer;
+			s = Cmd_Argv( 2 );
+			if ( *s ? atoi( s ) != clc.challenge : ( !compat || !NET_CompareAdr( from, clc.serverAddress ) ) ) {
+				Com_DPrintf( "challengeResponse without our challenge.  Ignored.\n" );
+				return;
+			}
+
 			// start sending challenge repsonse instead of challenge request packets
 			clc.challenge = atoi(Cmd_Argv(1));
+			clc.compat = compat;
 			cls.state = CA_CHALLENGING;
 			clc.connectPacketCount = 0;
 			clc.connectTime = -99999;
+			clc.lastPacketTime = cls.realtime;
 
 			// take this address as the new server address.  This allows
 			// a server proxy to hand off connections to multiple servers
@@ -1858,15 +1849,23 @@ void CL_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 			Com_Printf ("connectResponse packet while not connecting.  Ignored.\n");
 			return;
 		}
-		if ( !NET_CompareBaseAdr( from, clc.serverAddress ) ) {
+		if ( !NET_CompareAdr( from, clc.serverAddress ) ) {
 			Com_Printf( "connectResponse from a different address.  Ignored.\n" );
 			Com_Printf( "%s should have been %s\n", NET_AdrToString( from ), 
 				NET_AdrToString( clc.serverAddress ) );
 			return;
 		}
-		Netchan_Setup (NS_CLIENT, &clc.netchan, from, Cvar_VariableValue( "net_qport" ) );
+		// protocol 71 servers send our challenge back, and so do ioquake3
+		// and Quake3e servers in protocol 68; retail 1.32c servers do not
+		s = Cmd_Argv( 1 );
+		if ( *s ? atoi( s ) != clc.challenge : !clc.compat ) {
+			Com_Printf( "connectResponse without our challenge.  Ignored.\n" );
+			return;
+		}
+		Netchan_Setup( NS_CLIENT, &clc.netchan, from, Cvar_VariableValue( "net_qport" ), clc.challenge, clc.compat );
 		cls.state = CA_CONNECTED;
 		clc.lastPacketSentTime = -9999;		// send first packet immediately
+		clc.lastPacketTime = cls.realtime;	// the timeout runs from now
 		return;
 	}
 
@@ -1882,12 +1881,9 @@ void CL_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 		return;
 	}
 
-	// a disconnect message from the server, which will happen if the server
-	// dropped the connection but it is still getting packets from us
-	if (!Q_stricmp(c, "disconnect")) {
-		CL_DisconnectPacket( from );
-		return;
-	}
+	// an out of band disconnect is ignored, as in ioquake3 and Quake3e:
+	// anyone can spoof one.  Retail's never took effect, having just
+	// counted as traffic from the server
 
 	// echo request from server
 	if ( !Q_stricmp(c, "echo") ) {
@@ -1945,8 +1941,8 @@ A packet has arrived from the main event loop
 void CL_PacketEvent( netadr_t from, msg_t *msg ) {
 	int		headerBytes;
 
-	clc.lastPacketTime = cls.realtime;
-
+	// only packets from the server refresh clc.lastPacketTime, so that
+	// spoofed ones cannot hold a dead connection open (Quake3e)
 	if ( msg->cursize >= 4 && *(int *)msg->data == -1 ) {
 		CL_ConnectionlessPacket( from, msg );
 		return;

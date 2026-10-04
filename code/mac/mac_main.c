@@ -9,6 +9,7 @@
 #include "../game/g_public.h"
 #include "../cgame/cg_public.h"
 #include "../ui/ui_public.h"
+#include "../qcommon/vm_static.h"
 
 // Export structs
 typedef struct {
@@ -343,6 +344,16 @@ int Sys_Milliseconds( void ) {
         base = now;
     }
     return (int)((now - base) / 1000);
+}
+
+// The least predictable bits classic Mac OS has, for Netchan_Challenge:
+// the microseconds since startup, absolute, unlike Sys_Milliseconds,
+// and the ticks.
+unsigned Sys_Entropy( void ) {
+    UnsignedWide micros;
+
+    Microseconds(&micros);
+    return micros.lo ^ ((unsigned)micros.hi << 16) ^ ((unsigned)TickCount() << 24);
 }
 
 void Sys_PumpEvents( void ) {
@@ -1003,26 +1014,61 @@ extern void UI_dllEntry( int (QDECL *syscallptr)( int arg,... ) );
 extern void CGame_dllEntry( int (QDECL *syscallptr)( int arg,... ) );
 extern void Game_dllEntry( int (QDECL *syscallptr)( int arg,... ) );
 
+// Every load of a module starts from a fresh image, as a retail QVM load did
+// (issue #457). The linker script from cmake/static_modules.py brackets each
+// module's initialized and zero-initialized data.
+extern unsigned char q3static_game_data_start[], q3static_game_data_end[];
+extern unsigned char q3static_game_bss_start[], q3static_game_bss_end[];
+extern unsigned char q3static_cgame_data_start[], q3static_cgame_data_end[];
+extern unsigned char q3static_cgame_bss_start[], q3static_cgame_bss_end[];
+extern unsigned char q3static_ui_data_start[], q3static_ui_data_end[];
+extern unsigned char q3static_ui_bss_start[], q3static_ui_bss_end[];
+
+static vmStaticModule_t sys_staticModules[] = {
+	{ "qagame", q3static_game_data_start, q3static_game_data_end,
+		q3static_game_bss_start, q3static_game_bss_end },
+	{ "cgame", q3static_cgame_data_start, q3static_cgame_data_end,
+		q3static_cgame_bss_start, q3static_cgame_bss_end },
+	{ "ui", q3static_ui_data_start, q3static_ui_data_end,
+		q3static_ui_bss_start, q3static_ui_bss_end },
+};
+#define SYS_STATIC_MODULES	( (int)( sizeof( sys_staticModules ) / sizeof( sys_staticModules[0] ) ) )
+
+// The handle is the module's vmStaticModule_t, so Sys_UnloadDll can mark it
+// unloaded. VM_Create calls this only when no VM of that name exists, after
+// VM_Free has unloaded the previous one (VM_Restart frees, then creates).
 void *Sys_LoadDll( const char *name, char *fqpath, int (QDECL **entryPoint)(int, ...), int (*systemcalls)(int, ...) ) { 
+	vmStaticModule_t	*module;
+	const char			*error;
+
+	module = VM_FindStaticModule( sys_staticModules, SYS_STATIC_MODULES, name );
+	if ( !module ) {
+		return NULL;
+	}
+	error = VM_LoadStaticModule( module );
+	if ( error ) {
+		Com_Error( ERR_FATAL, "Sys_LoadDll( %s ): %s", name, error );
+	}
+
 	if ( !Q_stricmp( name, "ui" ) ) {
 		*entryPoint = (int (QDECL *)(int, ...))UI_vmMain;
 		UI_dllEntry( (int (QDECL *)( int, ...))systemcalls );
-		return (void *)UI_vmMain;
+		return module;
 	}
 	if ( !Q_stricmp( name, "cgame" ) ) {
 		*entryPoint = (int (QDECL *)(int, ...))CGame_vmMain;
 		CGame_dllEntry( (int (QDECL *)( int, ...))systemcalls );
-		return (void *)CGame_vmMain;
+		return module;
 	}
-	if ( !Q_stricmp( name, "qagame" ) ) {
-		*entryPoint = (int (QDECL *)(int, ...))Game_vmMain;
-		Game_dllEntry( (int (QDECL *)( int, ...))systemcalls );
-		return (void *)Game_vmMain;
-	}
-
-	return NULL; 
+	*entryPoint = (int (QDECL *)(int, ...))Game_vmMain;
+	Game_dllEntry( (int (QDECL *)( int, ...))systemcalls );
+	return module;
 }
-void Sys_UnloadDll( void *dllHandle ) {}
+void Sys_UnloadDll( void *dllHandle ) {
+	if ( dllHandle ) {
+		VM_UnloadStaticModule( (vmStaticModule_t *)dllHandle );
+	}
+}
 
 // Round velocity vectors for network determinism (trap_SnapVector from
 // bg_pmove). A no-op here causes client prediction to disagree with the
@@ -1088,6 +1134,14 @@ int main( int argc, char **argv ) {
     int i;
     char commandLine[1024];
     size_t commandLength;
+    const char *error;
+
+    // Save each module's initialized data before any module code runs.
+    error = VM_InitStaticModules( sys_staticModules, SYS_STATIC_MODULES );
+    if ( error ) {
+        fprintf( stderr, "Quake3: %s\n", error );
+        return 1;
+    }
 
     Sys_LogPrintf("main: START\n");
 
