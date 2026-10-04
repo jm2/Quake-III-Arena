@@ -33,7 +33,9 @@ for Q3_SHADER_CONFIGURATION in sanitizer release-fast-math; do
         "${Q3_SHADER_FLAGS[@]}" -fsanitize=address,undefined -c)
     "${Q3_COMPILE[@]}" -DQ3_PARITY_SIDE=1 "$Q3_TEST_ROOT/tests/shader_retail_parity_regression.c" -o "$Q3_TEST_DIR/master.o"
     # The retail parser exports ParseSort and infoParms; rename them beside the real ones.
-    "${Q3_COMPILE[@]}" -w -DQ3_PARITY_SIDE=2 -DParseSort=RetailParseSort -DinfoParms=retailInfoParms \
+    # Zero-initialize retail locals: retail reads an uninitialized color for a
+    # malformed rgbGen const, and zero is the deterministic value master uses.
+    "${Q3_COMPILE[@]}" -w -ftrivial-auto-var-init=zero -DQ3_PARITY_SIDE=2 -DParseSort=RetailParseSort -DinfoParms=retailInfoParms \
         "$Q3_TEST_ROOT/tests/shader_retail_parity_regression.c" -o "$Q3_TEST_DIR/retail.o"
     "${Q3_COMPILE[@]}" "$Q3_TEST_ROOT/tests/shader_retail_parity_regression.c" -o "$Q3_TEST_DIR/main.o"
     "${CC:-cc}" "${Q3_SHADER_FLAGS[@]}" -fsanitize=address,undefined \

@@ -162,11 +162,45 @@ static qboolean ShaderFloat( const char *token, float *output ) {
 }
 
 /*
+Retail 1.32c stores an atof overflow ("1e39", "1e400") as the float the
+conversion rounds to, normally +/-inf. Only fields whose every later use is
+float math (texture coordinates, sort comparisons) keep that value; NaN still
+rejects. Fields that reach a float-to-int conversion or table index (waveform
+phase/frequency, rotation, deform, sky, fog, sun, clamp and animation values)
+reject overflow with ShaderFloat. The rounding is done explicitly because a C
+conversion of an out-of-range double to float is undefined.
+*/
+static qboolean ShaderOverflowFloat( const char *token, float *output ) {
+	double value = atof( token );
+	uint64_t bits = ShaderNumberBits( value );
+	unsigned int result;
+
+	if ( ShaderFloatValue( value, output ) ) return qtrue;
+	if ( !token[0] || ( ( bits & UINT64_C(0x7ff0000000000000) ) == UINT64_C(0x7ff0000000000000) &&
+		( bits & UINT64_C(0x000fffffffffffff) ) ) ) {
+		return ShaderFloat( token, output );
+	}
+	// below the midpoint 2^128 - 2^103 the value rounds to FLT_MAX, otherwise to inf
+	if ( ShaderFinite(value) && ( value < 0 ? -value : value ) < (double)FLT_MAX + ldexp( 1.0, 103 ) ) {
+		*output = value < 0 ? -FLT_MAX : FLT_MAX;
+		return qtrue;
+	}
+	result = 0x7f800000u | ( ( bits >> 63 ) ? 0x80000000u : 0 );
+	Com_Memcpy( output, &result, sizeof(*output) );
+	return qtrue;
+}
+
+/*
 ===============
 ParseVector
+
+Returns qtrue for a complete vector. As in retail 1.32c, a missing parenthesis
+or element only warns and keeps the elements already read; callers decide
+whether that rejects. *invalid is set for a non-finite element (or one beyond
+float range, unless overflow is set), which always rejects.
 ===============
 */
-static qboolean ParseVector( char **text, int count, float *v ) {
+static qboolean ParseVector( char **text, int count, float *v, qboolean overflow, qboolean *invalid ) {
 	char	*token;
 	int		i;
 
@@ -183,10 +217,18 @@ static qboolean ParseVector( char **text, int count, float *v ) {
 			ri.Printf( PRINT_WARNING, "WARNING: missing vector element in shader '%s'\n", shader.name );
 			return qfalse;
 		}
+		if ( overflow ) {
+			if ( !ShaderOverflowFloat( token, &v[i] ) ) {
+				*invalid = qtrue;
+				return qfalse;
+			}
+			continue;
+		}
 		{
 			double value = atof( token );
 			if ( !ShaderFinite(value) || value < -FLT_MAX || value > FLT_MAX ) {
 				ri.Printf( PRINT_WARNING, "WARNING: non-finite vector in shader '%s'\n", shader.name );
+				*invalid = qtrue;
 				return qfalse;
 			}
 			v[i] = (float)value;
@@ -425,33 +467,6 @@ static qboolean ParseWaveForm( char **text, waveForm_t *wave )
 
 
 /*
-Retail 1.32c stores an atof overflow in a scroll speed ("1e39", "1e400") as the
-float the conversion rounds to, normally +/-inf. Scrolling only feeds float
-texture coordinate math, so keep that value instead of rejecting the shader.
-NaN still rejects. The rounding is done explicitly because a C conversion of
-an out-of-range double to float is undefined.
-*/
-static qboolean ShaderScrollFloat( const char *token, float *output ) {
-	double value = atof( token );
-	uint64_t bits = ShaderNumberBits( value );
-	unsigned int result;
-
-	if ( ShaderFloatValue( value, output ) ) return qtrue;
-	if ( !token[0] || ( ( bits & UINT64_C(0x7ff0000000000000) ) == UINT64_C(0x7ff0000000000000) &&
-		( bits & UINT64_C(0x000fffffffffffff) ) ) ) {
-		return ShaderFloat( token, output );
-	}
-	// below the midpoint 2^128 - 2^103 the value rounds to FLT_MAX, otherwise to inf
-	if ( ShaderFinite(value) && ( value < 0 ? -value : value ) < (double)FLT_MAX + ldexp( 1.0, 103 ) ) {
-		*output = value < 0 ? -FLT_MAX : FLT_MAX;
-		return qtrue;
-	}
-	result = 0x7f800000u | ( ( bits >> 63 ) ? 0x80000000u : 0 );
-	Com_Memcpy( output, &result, sizeof(*output) );
-	return qtrue;
-}
-
-/*
 Retail 1.32c claims the texture modifier slot before parsing it, so a missing
 parameter or an unknown modifier only warns and keeps the partly filled slot.
 Retail leaves the fields it did not read (including the type) holding whatever
@@ -495,14 +510,14 @@ static qboolean ParseTexMod( char *_text, shaderStage_t *stage )
 			ri.Printf( PRINT_WARNING, "WARNING: missing tcMod turb parms in shader '%s'\n", shader.name );
 			return PublishTexMod( stage, tmi );
 		}
-		if ( !ShaderFloat( token, &tmi->wave.base ) ) return qfalse;
+		if ( !ShaderOverflowFloat( token, &tmi->wave.base ) ) return qfalse;
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing tcMod turb in shader '%s'\n", shader.name );
 			return PublishTexMod( stage, tmi );
 		}
-		if ( !ShaderFloat( token, &tmi->wave.amplitude ) ) return qfalse;
+		if ( !ShaderOverflowFloat( token, &tmi->wave.amplitude ) ) return qfalse;
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
@@ -531,7 +546,7 @@ static qboolean ParseTexMod( char *_text, shaderStage_t *stage )
 			ri.Printf( PRINT_WARNING, "WARNING: missing scale parms in shader '%s'\n", shader.name );
 			return PublishTexMod( stage, tmi );
 		}
-		if ( !ShaderFloat( token, &tmi->scale[0] ) ) return qfalse;
+		if ( !ShaderOverflowFloat( token, &tmi->scale[0] ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
@@ -539,7 +554,7 @@ static qboolean ParseTexMod( char *_text, shaderStage_t *stage )
 			ri.Printf( PRINT_WARNING, "WARNING: missing scale parms in shader '%s'\n", shader.name );
 			return PublishTexMod( stage, tmi );
 		}
-		if ( !ShaderFloat( token, &tmi->scale[1] ) ) return qfalse;
+		if ( !ShaderOverflowFloat( token, &tmi->scale[1] ) ) return qfalse;
 		tmi->type = TMOD_SCALE;
 	}
 	//
@@ -553,14 +568,14 @@ static qboolean ParseTexMod( char *_text, shaderStage_t *stage )
 			ri.Printf( PRINT_WARNING, "WARNING: missing scale scroll parms in shader '%s'\n", shader.name );
 			return PublishTexMod( stage, tmi );
 		}
-		if ( !ShaderScrollFloat( token, &tmi->scroll[0] ) ) return qfalse;
+		if ( !ShaderOverflowFloat( token, &tmi->scroll[0] ) ) return qfalse;
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
 		{
 			ri.Printf( PRINT_WARNING, "WARNING: missing scale scroll parms in shader '%s'\n", shader.name );
 			return PublishTexMod( stage, tmi );
 		}
-		if ( !ShaderScrollFloat( token, &tmi->scroll[1] ) ) return qfalse;
+		if ( !ShaderOverflowFloat( token, &tmi->scroll[1] ) ) return qfalse;
 		tmi->type = TMOD_SCROLL;
 	}
 	//
@@ -582,7 +597,7 @@ static qboolean ParseTexMod( char *_text, shaderStage_t *stage )
 			ri.Printf( PRINT_WARNING, "WARNING: missing stretch parms in shader '%s'\n", shader.name );
 			return PublishTexMod( stage, tmi );
 		}
-		if ( !ShaderFloat( token, &tmi->wave.base ) ) return qfalse;
+		if ( !ShaderOverflowFloat( token, &tmi->wave.base ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
@@ -590,7 +605,7 @@ static qboolean ParseTexMod( char *_text, shaderStage_t *stage )
 			ri.Printf( PRINT_WARNING, "WARNING: missing stretch parms in shader '%s'\n", shader.name );
 			return PublishTexMod( stage, tmi );
 		}
-		if ( !ShaderFloat( token, &tmi->wave.amplitude ) ) return qfalse;
+		if ( !ShaderOverflowFloat( token, &tmi->wave.amplitude ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
@@ -621,7 +636,7 @@ static qboolean ParseTexMod( char *_text, shaderStage_t *stage )
 			ri.Printf( PRINT_WARNING, "WARNING: missing transform parms in shader '%s'\n", shader.name );
 			return PublishTexMod( stage, tmi );
 		}
-		if ( !ShaderFloat( token, &tmi->matrix[0][0] ) ) return qfalse;
+		if ( !ShaderOverflowFloat( token, &tmi->matrix[0][0] ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
@@ -629,7 +644,7 @@ static qboolean ParseTexMod( char *_text, shaderStage_t *stage )
 			ri.Printf( PRINT_WARNING, "WARNING: missing transform parms in shader '%s'\n", shader.name );
 			return PublishTexMod( stage, tmi );
 		}
-		if ( !ShaderFloat( token, &tmi->matrix[0][1] ) ) return qfalse;
+		if ( !ShaderOverflowFloat( token, &tmi->matrix[0][1] ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
@@ -637,7 +652,7 @@ static qboolean ParseTexMod( char *_text, shaderStage_t *stage )
 			ri.Printf( PRINT_WARNING, "WARNING: missing transform parms in shader '%s'\n", shader.name );
 			return PublishTexMod( stage, tmi );
 		}
-		if ( !ShaderFloat( token, &tmi->matrix[1][0] ) ) return qfalse;
+		if ( !ShaderOverflowFloat( token, &tmi->matrix[1][0] ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
@@ -645,7 +660,7 @@ static qboolean ParseTexMod( char *_text, shaderStage_t *stage )
 			ri.Printf( PRINT_WARNING, "WARNING: missing transform parms in shader '%s'\n", shader.name );
 			return PublishTexMod( stage, tmi );
 		}
-		if ( !ShaderFloat( token, &tmi->matrix[1][1] ) ) return qfalse;
+		if ( !ShaderOverflowFloat( token, &tmi->matrix[1][1] ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
@@ -653,7 +668,7 @@ static qboolean ParseTexMod( char *_text, shaderStage_t *stage )
 			ri.Printf( PRINT_WARNING, "WARNING: missing transform parms in shader '%s'\n", shader.name );
 			return PublishTexMod( stage, tmi );
 		}
-		if ( !ShaderFloat( token, &tmi->translate[0] ) ) return qfalse;
+		if ( !ShaderOverflowFloat( token, &tmi->translate[0] ) ) return qfalse;
 
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] == 0 )
@@ -661,7 +676,7 @@ static qboolean ParseTexMod( char *_text, shaderStage_t *stage )
 			ri.Printf( PRINT_WARNING, "WARNING: missing transform parms in shader '%s'\n", shader.name );
 			return PublishTexMod( stage, tmi );
 		}
-		if ( !ShaderFloat( token, &tmi->translate[1] ) ) return qfalse;
+		if ( !ShaderOverflowFloat( token, &tmi->translate[1] ) ) return qfalse;
 
 		tmi->type = TMOD_TRANSFORM;
 	}
@@ -931,9 +946,12 @@ static qboolean ParseStage( shaderStage_t *stage, char **text )
 			}
 			else if ( !Q_stricmp( token, "const" ) )
 			{
-				vec3_t	color;
+				// retail leaves unread elements uninitialized; they are zero here
+				vec3_t	color = { 0, 0, 0 };
+				qboolean invalid = qfalse;
 
-				if ( !ParseVector( text, 3, color ) ||
+				ParseVector( text, 3, color, qfalse, &invalid );
+				if ( invalid ||
 				     !ShaderColorByte( color[0], qtrue, &stage->constantColor[0] ) ||
 				     !ShaderColorByte( color[1], qtrue, &stage->constantColor[1] ) ||
 				     !ShaderColorByte( color[2], qtrue, &stage->constantColor[2] ) ) {
@@ -1004,7 +1022,6 @@ static qboolean ParseStage( shaderStage_t *stage, char **text )
 			{
 				double value;
 				token = COM_ParseExt( text, qfalse );
-				if ( !token[0] ) return qfalse;
 				value = atof( token );
 				if ( !ShaderColorByte( value, qfalse, &stage->constantColor[3] ) ) return qfalse;
 				stage->alphaGen = AGEN_CONST;
@@ -1079,10 +1096,12 @@ static qboolean ParseStage( shaderStage_t *stage, char **text )
 			}
 			else if ( !Q_stricmp( token, "vector" ) )
 			{
-				if ( !ParseVector( text, 3, stage->bundle[0].tcGenVectors[0] ) ||
-				     !ParseVector( text, 3, stage->bundle[0].tcGenVectors[1] ) ) {
-					return qfalse;
-				}
+				// texture coordinate generation is float math only, so overflow keeps retail's inf
+				qboolean invalid = qfalse;
+
+				ParseVector( text, 3, stage->bundle[0].tcGenVectors[0], qtrue, &invalid );
+				if ( !invalid ) ParseVector( text, 3, stage->bundle[0].tcGenVectors[1], qtrue, &invalid );
+				if ( invalid ) return qfalse;
 
 				stage->bundle[0].tcGen = TCGEN_VECTOR;
 			}
@@ -1352,12 +1371,13 @@ Like retail 1.32c, a missing parameter only warns and keeps the parameters
 already read: the outer box images are loaded and the cloud height is kept,
 but the shader does not become a sky. *cloudLayer is set when a cloud height
 was read, so the caller can build the cloud texture coordinates (retail does
-that here as soon as the height is read).
+that here as soon as the height is read). A box name too long for MAX_QPATH
+is truncated by Com_sprintf with its overflow message, as in retail.
 ===============
 */
 static qboolean ParseSkyParms( char **text, qboolean *cloudLayer ) {
 	static const char *suf[6] = {"rt", "bk", "lf", "ft", "up", "dn"};
-	char outer[MAX_QPATH], inner[MAX_QPATH], pathname[MAX_QPATH];
+	char outer[MAX_TOKEN_CHARS], inner[MAX_TOKEN_CHARS], pathname[MAX_QPATH];
 	char *token;
 	float height = 0;
 	int i, count;
@@ -1368,7 +1388,6 @@ static qboolean ParseSkyParms( char **text, qboolean *cloudLayer ) {
 		ri.Printf( PRINT_WARNING, "WARNING: 'skyParms' missing parameter in shader '%s'\n", shader.name );
 		return qtrue;
 	}
-	if ( strlen(token) >= MAX_QPATH - 7 ) return qfalse;
 	Q_strncpyz( outer, token, sizeof(outer) );
 	count = 1;
 	token = COM_ParseExt( text, qfalse );
@@ -1378,7 +1397,6 @@ static qboolean ParseSkyParms( char **text, qboolean *cloudLayer ) {
 		count = 2;
 		token = COM_ParseExt( text, qfalse );
 		if ( token[0] ) {
-			if ( strlen(token) >= MAX_QPATH - 7 ) return qfalse;
 			Q_strncpyz( inner, token, sizeof(inner) );
 			count = 3;
 		}
@@ -1448,7 +1466,7 @@ static qboolean ParseSort( char **text ) {
 	} else if ( !Q_stricmp( token, "underwater" ) ) {
 		shader.sort = SS_UNDERWATER;
 	} else {
-		if ( !ShaderFloat( token, &shader.sort ) ) return qfalse;
+		if ( !ShaderOverflowFloat( token, &shader.sort ) ) return qfalse;
 	}
 	return qtrue;
 }
@@ -1577,7 +1595,10 @@ static qboolean ParseSun( char **text, vec3_t light, vec3_t direction ) {
 	float values[6], a, b, lengthSquared;
 	int i;
 	for ( i = 0; i < 6; i++ ) {
-		if ( !ShaderFloat( COM_ParseExt(text, qfalse), &values[i] ) ) return qfalse;
+		const char *token = COM_ParseExt( text, qfalse );
+		// a missing value reads as atof("") = 0, as in retail
+		if ( !token[0] ) values[i] = 0;
+		else if ( !ShaderFloat( token, &values[i] ) ) return qfalse;
 	}
 	VectorCopy( values, light );
 	lengthSquared = DotProduct( light, light );
@@ -1670,7 +1691,7 @@ static qboolean ParseShader( char **text )
 		}
 		else if ( !Q_stricmp( token, "clampTime" ) ) {
 			token = COM_ParseExt( text, qfalse );
-      if ( !ShaderFloat( token, &shader.clampTime ) ) return qfalse;
+      if ( token[0] && !ShaderFloat( token, &shader.clampTime ) ) return qfalse;
     }
 		// skip stuff that only the q3map needs
 		else if ( !Q_stricmpn( token, "q3map", 5 ) ) {
@@ -1713,17 +1734,19 @@ static qboolean ParseShader( char **text )
 		// fogParms
 		else if ( !Q_stricmp( token, "fogParms" ) ) 
 		{
-			if ( !ParseVector( text, 3, shader.fogParms.color ) ) {
+			qboolean invalid = qfalse;
+
+			if ( !ParseVector( text, 3, shader.fogParms.color, qfalse, &invalid ) ) {
 				return qfalse;
 			}
 
 			token = COM_ParseExt( text, qfalse );
 			if ( !token[0] ) 
 			{
+				// retail keeps the color and the current depth
 				ri.Printf( PRINT_WARNING, "WARNING: missing parm for 'fogParms' keyword in shader '%s'\n", shader.name );
-				return qfalse;
 			}
-			if ( !ShaderFloat( token, &shader.fogParms.depthForOpaque ) ) return qfalse;
+			else if ( !ShaderFloat( token, &shader.fogParms.depthForOpaque ) ) return qfalse;
 			{
 				int i;
 				for ( i = 0; i < 3; i++ ) {
@@ -1733,7 +1756,7 @@ static qboolean ParseShader( char **text )
 			}
 
 			// skip any old gradient directions
-			SkipRestOfLine( text );
+			if ( token[0] ) SkipRestOfLine( text );
 			continue;
 		}
 		// portal

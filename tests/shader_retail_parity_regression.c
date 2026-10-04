@@ -102,7 +102,15 @@ static void QDECL Print( int level, const char *format, ... ) {
 	Log( "print %d: %s", level, line );
 }
 void QDECL Com_Error( int level, const char *format, ... ) { (void)level; (void)format; Fail( "unexpected error/drop" ); }
-void QDECL Com_Printf( const char *format, ... ) { (void)format; }
+/* Com_sprintf reports truncated sky paths through Com_Printf. */
+void QDECL Com_Printf( const char *format, ... ) {
+	char line[4096];
+	va_list args;
+	va_start( args, format );
+	vsnprintf( line, sizeof(line), format, args );
+	va_end( args );
+	Log( "console: %s", line );
+}
 static int Video( const char *name, int x, int y, int width, int height, int flags ) {
 	Log( "cinematic %s %d %d %d %d %d\n", name, x, y, width, height, flags );
 	return 0;
@@ -262,13 +270,13 @@ static void StageCase( const char *label, const char *lines, int mustAccept ) {
 	int bad;
 	snprintf( body, sizeof(body), "{\n{\nmap textures/parity/base.tga\n%s\nblendFunc add\n}\n}\nfollowing\n", lines );
 	bad = Compare( label, "parity/stage", LIGHTMAP_NONE, body );
-	if ( mustAccept && !master.accepted ) { fprintf( stderr, "%s: master falls back to the default material\n", label ); if ( !bad ) failures++; }
+	if ( mustAccept && !master.accepted ) { fprintf( stderr, "%s: master falls back to the default material\n%s", label, logs[0] ); if ( !bad ) failures++; }
 }
 static void ShaderCase( const char *label, const char *lines, int mustAccept ) {
 	int bad;
 	snprintf( body, sizeof(body), "{\n%s\n{\nmap textures/parity/base.tga\n}\n}\nfollowing\n", lines );
 	bad = Compare( label, "parity/shader", LIGHTMAP_NONE, body );
-	if ( mustAccept && !master.accepted ) { fprintf( stderr, "%s: master falls back to the default material\n", label ); if ( !bad ) failures++; }
+	if ( mustAccept && !master.accepted ) { fprintf( stderr, "%s: master falls back to the default material\n%s", label, logs[0] ); if ( !bad ) failures++; }
 }
 
 /* Every argument prefix of a complete form, from none to all but the last. */
@@ -289,6 +297,70 @@ static void Prefixes( const char *keyword, const char *complete, int stage ) {
 		snprintf( label, sizeof(label), "'%s'", line );
 		if ( stage ) StageCase( label, line, 1 );
 		else ShaderCase( label, line, 1 );
+	}
+}
+
+/* Item groups added after the first pass: other missing values, malformed
+   vectors, long sky names and float-only overflow fields. */
+static void MoreConstructs( void ) {
+	static const char *overflow[] = { "1e39", "-1e39", "1e400", "3.4028235e38", "-3.40282356e38", "3.4028236e38" };
+	/* A read past the end of a line takes the next line's token (COM_ParseExt
+	   skips the newline), so some malformed forms make both parsers reject. */
+	static const char *vectors[] = { "", "bad", "( 0.1 0.2 )", "( 0.1 0.2 0.3", "( 0.25", "(", "( 0.1 0.2 0.3 ) extra", "( 0.5 0.25 0.75 )" };
+	static const int vectorsAccepted[] = { 1, 1, 1, 1, 1, 1, 0, 1 };
+	static const char *tcVectors[] = { "", "bad bad", "( 1 0 0 )", "( 1 0 0 ) bad", "( 1 0", "( 0.5 0.25 )", "( 1 0 0 ) ( 0 1", "( 1 0 0 ) ( 0 1 0 )" };
+	static const int tcVectorsAccepted[] = { 0, 1, 0, 1, 0, 0, 1, 1 };
+	static const int lengths[] = { 50, 56, 57, 58, 62, 63, 64, 100, 1000 };
+	char line[2048], label[2560], name[1024];
+	int i, j;
+
+	ShaderCase( "'clampTime'", "clampTime", 1 );
+	ShaderCase( "'clampTime 12.5'", "clampTime 12.5", 1 );
+	ShaderCase( "'fogParms ( 0.2 0.3 0.4 )'", "fogParms ( 0.2 0.3 0.4 )", 1 );
+	ShaderCase( "'fogParms' without depth then a depth", "fogParms ( 0.2 0.3 0.4 ) 128\nfogParms ( 0.5 0.6 0.7 )", 1 );
+	ShaderCase( "'fogParms ( 0.2 0.3 )' (retail rejects)", "fogParms ( 0.2 0.3 )", 0 );
+	ShaderCase( "'fogParms' (retail rejects)", "fogParms", 0 );
+	snprintf( body, sizeof(body), "{\nsurfaceparm fog\nfogParms ( 0.1 0.2 0.3 )\n}\nfollowing\n" );
+	Compare( "stage-less fog without depth", "parity/fog", LIGHTMAP_NONE, body );
+	for ( i = 0; i <= 6; i++ ) {
+		static const char *sun[] = { "1", "-2", "3", "100", "45", "60" };
+		snprintf( line, sizeof(line), "q3map_sun" );
+		for ( j = 0; j < i; j++ ) { strcat( line, " " ); strcat( line, sun[j] ); }
+		snprintf( label, sizeof(label), "'%s'", line );
+		ShaderCase( label, line, i >= 5 );
+	}
+	StageCase( "'alphaGen const'", "alphaGen const", 1 );
+	StageCase( "'alphaGen const 0.5'", "alphaGen const 0.5", 1 );
+	for ( i = 0; i < (int)(sizeof(vectors) / sizeof(vectors[0])); i++ ) {
+		snprintf( line, sizeof(line), "rgbGen const %s", vectors[i] );
+		snprintf( label, sizeof(label), "'%s'", line );
+		StageCase( label, line, vectorsAccepted[i] );
+	}
+	for ( i = 0; i < (int)(sizeof(tcVectors) / sizeof(tcVectors[0])); i++ ) {
+		snprintf( line, sizeof(line), "tcGen vector %s", tcVectors[i] );
+		snprintf( label, sizeof(label), "'%s'", line );
+		StageCase( label, line, tcVectorsAccepted[i] );
+	}
+	/* long sky box names: Com_sprintf truncates each face path to MAX_QPATH */
+	for ( i = 0; i < (int)(sizeof(lengths) / sizeof(lengths[0])); i++ ) {
+		memset( name, 'x', lengths[i] ); name[lengths[i]] = 0;
+		for ( j = 0; j < 4; j++ ) {
+			snprintf( line, sizeof(line), j == 0 ? "skyparms %s 512 -" : j == 1 ? "skyparms - 512 %s" : j == 2 ? "skyparms %s 512 %s" : "skyparms %s", name, name );
+			snprintf( label, sizeof(label), "skyparms with a %d-byte name (form %d)", lengths[i], j );
+			ShaderCase( label, line, 1 );
+		}
+	}
+	/* overflow in float-only fields keeps retail's float */
+	for ( i = 0; i < (int)(sizeof(overflow) / sizeof(overflow[0])); i++ ) {
+		const char *forms[] = { "tcMod scale %s 1", "tcMod scale 1 %s", "tcMod transform %s 0 0 1 0 0", "tcMod transform 1 %s 0 1 0 0", "tcMod transform 1 0 %s 1 0 0", "tcMod transform 1 0 0 %s 0 0", "tcMod transform 1 0 0 1 %s 0", "tcMod transform 1 0 0 1 0 %s", "tcMod turb %s 0.1 0 1", "tcMod turb 0 %s 0 1", "tcMod stretch sin %s 0.1 0 1", "tcMod stretch sin 1 %s 0 1", "tcGen vector ( %s 0 0 ) ( 0 1 0 )", "tcGen vector ( 1 0 0 ) ( 0 0 %s )" };
+		for ( j = 0; j < (int)(sizeof(forms) / sizeof(forms[0])); j++ ) {
+			snprintf( line, sizeof(line), forms[j], overflow[i] );
+			snprintf( label, sizeof(label), "'%s'", line );
+			StageCase( label, line, 1 );
+		}
+		snprintf( line, sizeof(line), "sort %s", overflow[i] );
+		snprintf( label, sizeof(label), "'%s'", line );
+		ShaderCase( label, line, 1 );
 	}
 }
 
@@ -406,6 +478,7 @@ int main( int argc, char **argv ) {
 	tr.defaultImage = Image( "*default" ); tr.whiteImage = Image( "*white" ); tr.scratchImage[0] = Image( "*scratch" );
 	tr.numLightmaps = 1; tr.lightmaps[0] = Image( "*lightmap0" );
 	Constructs();
+	MoreConstructs();
 	before = compared;
 	names = Corpus( argc - 1, argv + 1 );
 	if ( failures ) { fprintf( stderr, "Shader retail parity failed: %d of %d definitions differ from retail 1.32c\n", failures, compared ); return 1; }

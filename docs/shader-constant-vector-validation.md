@@ -7,15 +7,19 @@ through an integer byte copy so release -ffast-math cannot discard finiteness
 validation. Read a volatile integer representation before masking to stop
 Clang from folding even the initial non-volatile bit test into fast-math
 assumptions. Constant RGB and both texture
-vectors now propagate parser failure instead of using incomplete/uninitialized
-vector data. Fog vectors already propagated failure and share the finite check.
+vectors reject non-finite components. (Since the 2026-10-04 retail-parity fix a
+malformed constant RGB or texture vector warns and keeps the elements read, as
+retail 1.32c does, with zero instead of retail's uninitialized rest, and an
+overflowing texture-vector element keeps retail's infinite float because it
+only feeds texture coordinates.) Fog vectors already propagated failure and
+share the finite check.
 
 Validate constants before byte conversion and saturate finite out-of-range
 colors to 0–255. Clamp before multiplication so finite extreme inputs cannot
 overflow the scale. Preserve the historical distinction: RGB scales in float
 precision, alpha scales in double precision; valid normalized colors retain
-native truncation/rounding. A missing/non-finite alpha constant rejects the
-shader. Ordinary legacy atof prefix/fallback behavior is retained.
+native truncation/rounding. A non-finite alpha constant rejects the
+shader; a missing one reads as zero, as in retail (2026-10-04). Ordinary legacy atof prefix/fallback behavior is retained.
 
 ## Validation
 

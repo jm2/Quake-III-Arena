@@ -5,8 +5,10 @@ float parsing and waveform/modifier/deformation semantics. Return and propagate
 failure for non-finite/out-of-native-float-range waveform fields, texture
 modifiers and deformations. (Since the 2026-10-04 retail-parity fix, missing
 parameters and unknown modifiers/deformations warn and keep retail 1.32c's
-partial result instead, and an overflowing scroll speed keeps retail's
-infinite float.) Stage numeric animation/portal values use
+partial result instead, and an overflowing scale, scroll, transform or
+turb/stretch base/amplitude keeps retail's infinite float because those only
+feed texture coordinates; fields reaching a table index or integer conversion
+still reject overflow.) Stage numeric animation/portal values use
 the same checked conversion. Finite checks use the integer representation that
 survives release fast-math assumptions.
 
