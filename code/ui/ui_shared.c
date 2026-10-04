@@ -197,11 +197,10 @@ const char *String_Alloc(const char *p) {
 		strcpy(&strPool[strPoolIndex], p);
 		strPoolIndex += len + 1;
 
-		str = strHandle[hash];
-		last = str;
-		while (str && str->next) {
-			last = str;
-			str = str->next;
+		// append after the real tail; stopping one node short orphaned it
+		last = strHandle[hash];
+		while (last && last->next) {
+			last = last->next;
 		}
 
 		str  = UI_Alloc(sizeof(stringDef_t));
