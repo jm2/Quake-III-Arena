@@ -2249,6 +2249,15 @@ void *CL_RefMalloc( int size ) {
 	return Z_TagMalloc( size, TAG_RENDERER );
 }
 
+/*
+============
+CL_RefTryMalloc
+============
+*/
+void *CL_RefTryMalloc( int size ) {
+	return Z_TryTagMalloc( size, TAG_RENDERER );
+}
+
 int CL_ScaledMilliseconds(void) {
 	return Sys_Milliseconds()*com_timescale->value;
 }
@@ -2274,6 +2283,7 @@ void CL_InitRef( void ) {
 	ri.Milliseconds = CL_ScaledMilliseconds;
 	ri.Malloc = CL_RefMalloc;
 	ri.Free = Z_Free;
+	ri.TryMalloc = CL_RefTryMalloc;
 #ifdef HUNK_DEBUG
 	ri.Hunk_AllocDebug = Hunk_AllocDebug;
 #else
