@@ -118,6 +118,10 @@ typedef struct directive_s
 //files one source may include in total; a file including the next one
 //twice gives 2^depth includes without ever exceeding the depth
 #define MAX_SOURCE_INCLUDES			256
+//open #if/#ifdef/#ifndef blocks in one source; on the Mac each costs 44 bytes
+//of the zone (a 16-byte indent_t plus botlib and zone headers) for 6 bytes of
+//text, so this holds one source to about 180 KB; retail data nests 1 deep
+#define MAX_SOURCE_INDENTS			4096
 //tokens one #if/#elif/$evalint/$evalfloat expression may collect; the
 //evaluator uses at most 64 values and 64 operators
 #define MAX_EXPRESSION_TOKENS		1024
@@ -199,6 +203,11 @@ int PC_PushIndent(source_t *source, int type, int skip)
 {
 	indent_t *indent;
 
+	if (source->numindents >= MAX_SOURCE_INDENTS)
+	{
+		SourceError(source, "more than %d nested conditionals", MAX_SOURCE_INDENTS);
+		return qfalse;
+	} //end if
 	indent = (indent_t *) GetMemory(sizeof(indent_t));
 	if (!indent)
 	{
@@ -211,6 +220,7 @@ int PC_PushIndent(source_t *source, int type, int skip)
 	source->skip += indent->skip;
 	indent->next = source->indentstack;
 	source->indentstack = indent;
+	source->numindents++;
 	return qtrue;
 } //end of the function PC_PushIndent
 //============================================================================
@@ -236,6 +246,7 @@ void PC_PopIndent(source_t *source, int *type, int *skip)
 	*skip = indent->skip;
 	source->indentstack = source->indentstack->next;
 	source->skip -= indent->skip;
+	source->numindents--;
 	FreeMemory(indent);
 } //end of the function PC_PopIndent
 //============================================================================
@@ -3635,8 +3646,10 @@ void FreeSource(source_t *source)
 #define MAX_SOURCEFILES		64
 
 source_t *sourceFiles[MAX_SOURCEFILES];
+//module that opened each handle, so one module's shutdown frees only its own
+static int sourceFileOwners[MAX_SOURCEFILES];
 
-int PC_LoadSourceHandle(const char *filename)
+int PC_LoadSourceHandle(const char *filename, int owner)
 {
 	source_t *source;
 	int i;
@@ -3653,6 +3666,7 @@ int PC_LoadSourceHandle(const char *filename)
 	if (!source)
 		return 0;
 	sourceFiles[i] = source;
+	sourceFileOwners[i] = owner;
 	return i;
 } //end of the function PC_LoadSourceHandle
 //============================================================================
@@ -3749,3 +3763,27 @@ void PC_CheckOpenSourceHandles(void)
 		} //end if
 	} //end for
 } //end of the function PC_CheckOpenSourceHandles
+//============================================================================
+// frees the handles a module left open; called when its VM shuts down or
+// restarts, since a leaked handle keeps its slot and its live tokens
+//
+// Parameter:			-
+// Returns:				-
+// Changes Globals:		-
+//============================================================================
+void PC_FreeSourceHandles(int owner)
+{
+	int i;
+
+	for (i = 1; i < MAX_SOURCEFILES; i++)
+	{
+		if (sourceFiles[i] && sourceFileOwners[i] == owner)
+		{
+#ifdef BOTLIB
+			botimport.Print(PRT_WARNING, "freeing %s left open in precompiler\n", sourceFiles[i]->filename);
+#endif	//BOTLIB
+			FreeSource(sourceFiles[i]);
+			sourceFiles[i] = NULL;
+		} //end if
+	} //end for
+} //end of the function PC_FreeSourceHandles
