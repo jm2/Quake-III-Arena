@@ -74,7 +74,7 @@ static qboolean R_DecodeTGA( const byte *buffer, unsigned int length, byte **pic
 	depth = pixelFormat[0]; rle = format[2] == 10;
 	if ( format[1] || (format[2] != 2 && format[2] != 3 && format[2] != 10) ||
 	     (depth != 24 && depth != 32 && !(format[2] == 3 && depth == 8)) ||
-	     !columns || !rows || rows > (R_IMAGE_MAX_BYTES / 4u) / columns ) return qfalse;
+	     !R_ImageSizeValid(columns, rows) ) return qfalse;
 	preflight = cursor;
 	if ( !R_TGAPixels(&preflight, columns, rows, depth / 8, rle, NULL) ) return qfalse;
 	output = ri.Malloc( columns * rows * 4 );
@@ -98,7 +98,7 @@ void R_LoadTGA( const char *name, byte **pic, int *width, int *height ) {
 	if ( !buffer ) return;
 	valid = length >= 0 && R_DecodeTGA( buffer, length, &output, &columns, &rows, &topDown );
 	ri.FS_FreeFile(buffer);
-	if ( !valid ) { ri.Error( ERR_DROP, "LoadTGA: malformed or unsupported image (%s)", name ); return; }
+	if ( !valid ) { ri.Printf( PRINT_WARNING, "WARNING: LoadTGA: %s is malformed, truncated, unsupported or larger than %u pixels\n", name, R_IMAGE_MAX_PIXELS ); return; }
 	if ( topDown ) ri.Printf( PRINT_WARNING, "WARNING: '%s' TGA file header declares top-down image, ignoring\n", name );
 	*pic = output;
 	if ( width ) *width = columns;

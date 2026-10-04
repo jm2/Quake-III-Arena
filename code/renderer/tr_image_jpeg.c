@@ -39,7 +39,7 @@ typedef struct {
 typedef struct {
 	union { struct jpeg_compress_struct encode; struct jpeg_decompress_struct decode; } info;
 	rendererJPEGError_t error;
-	qboolean compress;
+	qboolean compress, oversized;
 	byte *input, *pixels, *row, *encoded;
 	unsigned int capacity, length;
 } rendererJPEG_t;
@@ -98,10 +98,11 @@ static void R_JPEGRelease( rendererJPEG_t *context ) {
 /** Release all ownership before recoverable load errors or nonfatal screenshot failure warnings. */
 static void R_JPEGRecover( rendererJPEG_t *context, const char *name ) {
 	char message[JMSG_LENGTH_MAX];
-	qboolean compress = context->compress;
+	qboolean compress = context->compress, oversized = context->oversized;
 	memcpy(message, context->error.message, sizeof(message)); message[sizeof(message)-1] = 0;
 	R_JPEGRelease(context);
 	if ( compress ) ri.Printf(PRINT_WARNING, "SaveJPG: %s (%s)\n", message, name);
+	else if ( oversized ) ri.Printf(PRINT_WARNING, "WARNING: LoadJPG: %s (%s)\n", message, name);
 	else ri.Error(ERR_DROP, "LoadJPG: %s (%s)", message, name);
 }
 
@@ -109,6 +110,13 @@ static void R_JPEGRecover( rendererJPEG_t *context, const char *name ) {
 static qboolean R_JPEGDimensions( unsigned int columns, unsigned int rows ) {
 	return columns && rows && columns <= JPEG_MAX_DIMENSION && rows <= JPEG_MAX_DIMENSION &&
 	       rows <= (R_IMAGE_MAX_BYTES / 4u) / columns;
+}
+
+/** Reject an empty or oversized file image before libjpeg allocates for it, with a warning rather than an error. */
+static void R_JPEGLoadSize( rendererJPEG_t *context, unsigned int columns, unsigned int rows ) {
+	if ( R_ImageSizeValid(columns, rows) ) return;
+	context->oversized = qtrue;
+	R_JPEGFail(context, "empty image or more than 4096x4096 pixels");
 }
 
 /** Decode a length-aware source and publish opaque RGBA only after all JPEG operations finish. */
@@ -134,10 +142,10 @@ void R_LoadJPG( const char *name, byte **pic, int *width, int *height ) {
 	jpeg_create_decompress(info);
 	jpeg_mem_src(info, input, length);
 	if ( jpeg_read_header(info, TRUE) != JPEG_HEADER_OK ) R_JPEGFail(context, "invalid image header");
-	if ( !R_JPEGDimensions(info->image_width, info->image_height) ) R_JPEGFail(context, "invalid image dimensions");
+	R_JPEGLoadSize(context, info->image_width, info->image_height);
 	info->out_color_space = info->jpeg_color_space == JCS_GRAYSCALE ? JCS_GRAYSCALE : JCS_RGB;
 	jpeg_calc_output_dimensions(info);
-	if ( !R_JPEGDimensions(info->output_width, info->output_height) ) R_JPEGFail(context, "invalid output dimensions");
+	R_JPEGLoadSize(context, info->output_width, info->output_height);
 	components = info->out_color_space == JCS_GRAYSCALE ? 1 : 3;
 	if ( !jpeg_start_decompress(info) || info->output_components != components ) R_JPEGFail(context, "unsupported output format");
 	columns = info->output_width; rows = info->output_height;
