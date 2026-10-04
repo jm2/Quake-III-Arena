@@ -2,16 +2,21 @@
 
 This #46 step preserves commercial 1.32c renderer/QVM interfaces, native valid
 float parsing and waveform/modifier/deformation semantics. Return and propagate
-failure for incomplete/non-finite/out-of-native-float-range waveform fields,
-texture modifiers and deformations. Stage numeric animation/portal values use
+failure for non-finite/out-of-native-float-range waveform fields, texture
+modifiers and deformations. (Since the 2026-10-04 retail-parity fix, missing
+parameters and unknown modifiers/deformations warn and keep retail 1.32c's
+partial result instead, and an overflowing scroll speed keeps retail's
+infinite float.) Stage numeric animation/portal values use
 the same checked conversion. Finite checks use the integer representation that
 survives release fast-math assumptions.
 
 Build each texture modifier in cleared local storage and publish its array slot
 only after complete successful parsing. Check the existing modifier count before
-access and reject unknown/incomplete modifiers. Bound the assembled tcMod line
-before copying, instead of silently truncating it. Excess modifiers/deformations
-produce native default shader fallback rather than processing an invalid slot.
+access; unknown/incomplete modifiers publish their cleared, partly filled slot
+as retail does (2026-10-04). Bound the assembled tcMod line
+before copying, instead of silently truncating it. Excess modifiers
+produce native default shader fallback rather than processing an invalid slot;
+excess deformations are ignored with retail's warning (2026-10-04).
 
 Check deformation spread's reciprocal fits the native float before conversion.
 Distinguish actual signed zero by bits, retaining the native spread-100 warning/

@@ -4,7 +4,9 @@ This #46 step preserves commercial 1.32c shader formats and public renderer/QVM
 interfaces. Validate complete sky outer/cloud/inner parameters and full suffixed
 image paths before imports. Retain native six-face order/wrap modes, missing-image
 fallback and zero-height default 512. Reject non-finite/out-of-native-float-range
-cloud, sort, clamp-time and fog-depth values and missing required parameters.
+cloud, sort, clamp-time and fog-depth values and missing clamp-time/fog-depth
+parameters. A missing sort or sky parameter warns and keeps retail 1.32c's
+partial result (2026-10-04 retail-parity fix).
 Retain named/numeric sorts and ordinary legacy atof-to-zero behavior. Saturate
 finite out-of-range fog colors to normalized bounds before later byte conversion.
 
@@ -25,10 +27,10 @@ every truncated prefix, finite-source length overflow and retained old sun state
 on bad inputs or a later invalid shader parameter.
 
 Sky checks isolate only graphics imports while executing actual parse bodies:
-invalid/truncated/non-finite/oversize complete paths produce no image/cloud
-imports. Exact valid 12-face names/order, maximum 63-byte suffixed paths,
-one cloud initialization and zero-height defaults remain native. Fog/clamp/sort
-missing/non-finite/overflow fields reject and finite extreme fog colors clamp.
+invalid/non-finite/oversize paths produce no image/cloud imports; truncated
+ones import retail's outer-box prefix (2026-10-04). Exact valid 12-face names/order, maximum 63-byte suffixed paths,
+one cloud initialization and zero-height defaults remain native. Fog/clamp
+missing and fog/clamp/sort non-finite/overflow fields reject and finite extreme fog colors clamp.
 Public invalid metadata caches native fallback, retains prior sun and the
 following valid definition. All normal/optimized stage goldens, waveform/modifier/deformation and archive
 isolation/ownership checks remain intact.
