@@ -126,6 +126,8 @@ typedef struct {
 	// dynamic memory allocator for things that need to be freed
 	void	*(*Malloc)( int bytes );
 	void	(*Free)( void *buf );
+	// like Malloc, but NULL rather than a fatal error when the zone is full
+	void	*(*TryMalloc)( int bytes );
 
 	cvar_t	*(*Cvar_Get)( const char *name, const char *value, int flags );
 	void	(*Cvar_Set)( const char *name, const char *value );
