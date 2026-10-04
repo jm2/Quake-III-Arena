@@ -2972,6 +2972,9 @@ static void UI_LoadMods() {
 		uiInfo.modList[uiInfo.modCount].modName = String_Alloc(dirptr);
 		uiInfo.modList[uiInfo.modCount].modDescr = String_Alloc(descptr);
     dirptr += dirlen + strlen(descptr) + 1;
+		if (!uiInfo.modList[uiInfo.modCount].modName || !uiInfo.modList[uiInfo.modCount].modDescr) {
+			break;	// string pool full, list only the mods that fit
+		}
 		uiInfo.modCount++;
 		if (uiInfo.modCount >= MAX_MODS) {
 			break;
@@ -3029,6 +3032,10 @@ static void UI_LoadMovies() {
 			}
 			Q_strupr(moviename);
 			uiInfo.movieList[i] = String_Alloc(moviename);
+			if (!uiInfo.movieList[i]) {
+				uiInfo.movieCount = i;	// string pool full, list only the movies that fit
+				break;
+			}
 			moviename += len + 1;
 		}
 	}
@@ -3066,6 +3073,10 @@ static void UI_LoadDemos() {
 			}
 			Q_strupr(demoname);
 			uiInfo.demoList[i] = String_Alloc(demoname);
+			if (!uiInfo.demoList[i]) {
+				uiInfo.demoCount = i;	// string pool full, list only the demos that fit
+				break;
+			}
 			demoname += len + 1;
 		}
 	}
@@ -4882,6 +4893,10 @@ static qboolean Character_Parse(char **p) {
 	  } else {
         uiInfo.characterList[uiInfo.characterCount].base = String_Alloc(va("%s",tempStr));
 	  }
+      // string pool full: fail like a String_Parse that could not store its token
+      if (!uiInfo.characterList[uiInfo.characterCount].imageName || !uiInfo.characterList[uiInfo.characterCount].base) {
+        return qfalse;
+      }
 
       Com_Printf("Loaded %s character %s.\n", uiInfo.characterList[uiInfo.characterCount].base, uiInfo.characterList[uiInfo.characterCount].name);
       uiInfo.characterCount++;

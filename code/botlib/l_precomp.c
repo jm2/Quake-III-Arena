@@ -110,6 +110,11 @@ typedef struct directive_s
 #define DEFINEHASHSIZE		1024
 
 #define TOKEN_HEAP_SIZE		4096
+//tokens macro expansion may copy between two tokens read from a script;
+//only a macro cycle, an exponential expansion or a single expansion
+//longer than this reaches it
+#define MAX_SOURCE_TOKEN_WORK		TOKEN_HEAP_SIZE
+#define MAX_SOURCE_INCLUDE_DEPTH	64
 
 int numtokens;
 /*
@@ -231,15 +236,22 @@ void PC_PopIndent(source_t *source, int *type, int *skip)
 int PC_PushScript(source_t *source, script_t *script)
 {
 	script_t *s;
+	int depth = 0;
 
 	for (s = source->scriptstack; s; s = s->next)
 	{
+		depth++;
 		if (!Q_stricmp(s->filename, script->filename))
 		{
 			SourceError(source, "%s recursively included", script->filename);
 			return qfalse;
 		} //end if
 	} //end for
+	if (depth >= MAX_SOURCE_INCLUDE_DEPTH)
+	{
+		SourceError(source, "more than %d active source files", MAX_SOURCE_INCLUDE_DEPTH);
+		return qfalse;
+	} //end if
 	//push the script on the script stack
 	script->next = source->scriptstack;
 	source->scriptstack = script;
@@ -314,6 +326,44 @@ void PC_FreeToken(token_t *token)
 // Returns:					-
 // Changes Globals:		-
 //============================================================================
+static void PC_DiscardSourceTokens(source_t *source)
+{
+	token_t *t;
+
+	while(source->tokens)
+	{
+		t = source->tokens;
+		source->tokens = t->next;
+		PC_FreeToken(t);
+	} //end while
+} //end of the function PC_DiscardSourceTokens
+//============================================================================
+// charges one token copied by macro expansion; reading a token from a
+// script resets the budget, so only expansion that never consumes
+// source text (a macro cycle or an exponential expansion) exhausts it;
+// every queued token was copied, so this also bounds the queue
+//
+// Parameter:				-
+// Returns:					-
+// Changes Globals:		-
+//============================================================================
+static int PC_ConsumeTokenWork(source_t *source)
+{
+	if (source->tokenwork >= MAX_SOURCE_TOKEN_WORK)
+	{
+		SourceError(source, "macro expansion exceeds %d tokens (recursive define?)", MAX_SOURCE_TOKEN_WORK);
+		PC_DiscardSourceTokens(source);
+		return qfalse;
+	} //end if
+	source->tokenwork++;
+	return qtrue;
+} //end of the function PC_ConsumeTokenWork
+//============================================================================
+//
+// Parameter:				-
+// Returns:					-
+// Changes Globals:		-
+//============================================================================
 static int PC_SourceErrorFlag(source_t *source, int mask)
 {
 	script_t *script;
@@ -340,7 +390,11 @@ int PC_ReadSourceToken(source_t *source, token_t *token)
 	while(!source->tokens)
 	{
 		//if there's a token to read from the script
-		if (PS_ReadToken(source->scriptstack, token)) return qtrue;
+		if (PS_ReadToken(source->scriptstack, token))
+		{
+			source->tokenwork = 0;
+			return qtrue;
+		} //end if
 		if (PC_SourceErrorFlag(source, SCFL_LEXERROR)) return qfalse;
 		//if at the end of the script
 		if (EndOfScript(source->scriptstack))
@@ -900,6 +954,7 @@ int PC_ExpandDefine(source_t *source, token_t *deftoken, define_t *define,
 		{
 			for (pt = parms[parmnum]; pt; pt = pt->next)
 			{
+				if (!PC_ConsumeTokenWork(source)) goto cleanup;
 				t = PC_CopyToken(pt);
 				if (!t) goto cleanup;
 				//add the token to the list
@@ -929,6 +984,7 @@ int PC_ExpandDefine(source_t *source, token_t *deftoken, define_t *define,
 						SourceError(source, "can't stringize tokens");
 						goto cleanup;
 					} //end if
+					if (!PC_ConsumeTokenWork(source)) goto cleanup;
 					t = PC_CopyToken(&token);
 				} //end if
 				else
@@ -939,6 +995,7 @@ int PC_ExpandDefine(source_t *source, token_t *deftoken, define_t *define,
 			} //end if
 			else
 			{
+				if (!PC_ConsumeTokenWork(source)) goto cleanup;
 				t = PC_CopyToken(dt);
 			} //end else
 			//add the token to the list
@@ -3061,12 +3118,15 @@ int QuakeCMacro(source_t *source)
 } //end of the function QuakeCMacro
 #endif //QUAKEC
 //============================================================================
+// reads the next token with directives and macros resolved, but returns a
+// string as soon as it is read, before the conditional skip check, so that
+// PC_ReadToken can concatenate it with the strings behind it
 //
 // Parameter:				-
 // Returns:					-
 // Changes Globals:		-
 //============================================================================
-int PC_ReadToken(source_t *source, token_t *token)
+static int PC_ReadTokenOrString(source_t *source, token_t *token)
 {
 	define_t *define;
 
@@ -3096,31 +3156,8 @@ int PC_ReadToken(source_t *source, token_t *token)
 				continue;
 			} //end if
 		} //end if
-		// recursively concatenate strings that are behind each other still resolving defines
-		if (token->type == TT_STRING)
-		{
-			token_t newtoken;
-			unsigned int errorsequence = source->errorsequence;
-			if (PC_ReadToken(source, &newtoken))
-			{
-				if (newtoken.type == TT_STRING)
-				{
-					token->string[strlen(token->string)-1] = '\0';
-					if (strlen(token->string) + strlen(newtoken.string+1) + 1 >= MAX_TOKEN)
-					{
-						SourceError(source, "string longer than MAX_TOKEN %d\n", MAX_TOKEN);
-						return qfalse;
-					}
-					strcat(token->string, newtoken.string+1);
-				}
-				else
-				{
-					PC_UnreadToken(source, &newtoken);
-				}
-			}
-			else if (PC_SourceErrorFlag(source, SCFL_LEXERROR) ||
-					source->errorsequence != errorsequence) return qfalse;
-		} //end if
+		//strings are concatenated by the caller
+		if (token->type == TT_STRING) return qtrue;
 		//if skipping source because of conditional compilation
 		if (source->skip) continue;
 		//if the token is a name
@@ -3140,6 +3177,54 @@ int PC_ReadToken(source_t *source, token_t *token)
 				continue;
 			} //end if
 		} //end if
+		//copy token for unreading
+		Com_Memcpy(&source->token, token, sizeof(token_t));
+		//found a token
+		return qtrue;
+	} //end while
+} //end of the function PC_ReadTokenOrString
+//============================================================================
+//
+// Parameter:				-
+// Returns:					-
+// Changes Globals:		-
+//============================================================================
+int PC_ReadToken(source_t *source, token_t *token)
+{
+	token_t newtoken;
+	unsigned int errorsequence;
+
+	while(1)
+	{
+		if (!PC_ReadTokenOrString(source, token)) return qfalse;
+		if (token->type != TT_STRING) return qtrue;
+		// concatenate strings that are behind each other still resolving defines;
+		// this loop gives the same result as the original recursion, which used
+		// one stack frame per string and overflowed the stack on long runs
+		while(1)
+		{
+			errorsequence = source->errorsequence;
+			if (!PC_ReadTokenOrString(source, &newtoken))
+			{
+				if (PC_SourceErrorFlag(source, SCFL_LEXERROR) ||
+						source->errorsequence != errorsequence) return qfalse;
+				break;
+			} //end if
+			if (newtoken.type != TT_STRING)
+			{
+				PC_UnreadToken(source, &newtoken);
+				break;
+			} //end if
+			token->string[strlen(token->string)-1] = '\0';
+			if (strlen(token->string) + strlen(newtoken.string+1) + 1 >= MAX_TOKEN)
+			{
+				SourceError(source, "string longer than MAX_TOKEN %d\n", MAX_TOKEN);
+				return qfalse;
+			} //end if
+			strcat(token->string, newtoken.string+1);
+		} //end while
+		//if skipping source because of conditional compilation
+		if (source->skip) continue;
 		//copy token for unreading
 		Com_Memcpy(&source->token, token, sizeof(token_t));
 		//found a token
