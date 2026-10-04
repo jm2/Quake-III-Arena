@@ -142,14 +142,24 @@ aside).
 ### Rebuilding on a host with GCC 16
 
 `setup_retro68.sh` builds Retro68's GCC 12.2 with the host's default compiler.
-With GCC 16 (Fedora 44) that fails: its C23/C++20 defaults break libcody
-(`u8` literals) and `gcc/system.h` (`<memory>` against the `safe-ctype.h`
-macros). Setting `CC`/`CXX` does not help, because `build-toolchain.bash`
-overwrites them from its `--host-c-compiler`/`--host-cxx-compiler` options.
-Building everything with Clang is not enough either: the Clang-built PowerPC
-`ld` segfaults on large links such as Quake3. The toolchain in use since
-2026-09-23 (Retro68 `83b9c8d2c5`, GCC 12.2.0) was rebuilt as follows, and
-builds PEFs byte-identical to the previous toolchain's:
+GCC 16 (Fedora 44) defaults to C++20, which GCC 12.2's host build fails under:
+libcody's `u8` literals become `char8_t`, and `<memory>`, which
+`gcc/system.h` includes after `safe-ctype.h`, now pulls in `<locale>` and
+clashes with its `toupper`/`isalpha` macros. Binutils, hfsutils and the
+Retro68 host tools build as they are. Setting `CC`/`CXX` does not help,
+because `build-toolchain.bash` overwrites them from its
+`--host-c-compiler`/`--host-cxx-compiler` options, but it keeps `CXXFLAGS`.
+So when the host `g++` defaults to a C++ newer than C++17, `setup_retro68.sh`
+and `setup_retro68.ps1` build with `CXXFLAGS="-O2 -std=gnu++11"` and say so
+(C++11, because libcody's `configure` accepts no other `-std`; a `-std` you
+set in `CXXFLAGS` yourself is kept). Retro68's CMake projects add `-std=gnu++17`
+after it, and GCC's target libraries do not use `CXXFLAGS`.
+
+Before setup did this, the toolchain in use since 2026-09-23 (Retro68
+`83b9c8d2c5`, GCC 12.2.0) was rebuilt by hand. Building everything with
+Clang was not enough: the Clang-built PowerPC `ld` segfaults on large links
+such as Quake3. It was rebuilt as follows, and builds PEFs byte-identical to
+the previous toolchain's:
 
 ```sh
 SRC=$PWD/tools/Retro68-src
@@ -191,7 +201,11 @@ In PowerShell:
 .\build_mac.ps1 --base-only
 ```
 
-Use `--team-arena` for the expansion. The scripts parse successfully under
+Use `--team-arena` for the expansion. Like `setup_retro68.sh`, the setup
+script runs `build-toolchain.bash` from `tools\Retro68-work` and moves an
+earlier `tools\Retro68-build` and `tools\Retro68-work` aside before a full
+build. A `unar` it has to build goes to `tools\unar-bin`, not into the
+toolchain prefix. The scripts parse successfully under
 PowerShell, but this review has not completed a native Windows toolchain/build
 run; that remains required.
 

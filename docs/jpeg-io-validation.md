@@ -9,7 +9,8 @@ and the unused, unsafe standalone `jload.c` implementation is removed.
 
 The renderer owns JPEG state in a heap context with a private error manager.
 Decoder/library errors return via setjmp/longjmp, destroy even partial codec
-state and release input/output buffers before ERR_DROP. Missing files stay
+state and release input/output buffers before a warning; the image then
+loads as no image (the default image), never ERR_DROP. Missing files stay
 quiet. Successful loading publishes dimensions and opaque RGBA only after
 finishing the complete decode. Standard RGB library rows and grayscale rows
 expand backwards within a single checked RGBA allocation; screenshots strip
@@ -22,9 +23,10 @@ is reused. Growth preserves all encoded bytes and has an explicit signed
 allocator limit. Only finished encoding calls FS_WriteFile, once, with its
 actual byte count; the preliminary one-byte screenshot write is removed.
 There is no global byte-count state. Allocation failures returned by the
-import API clean up without publishing a partial screenshot. The engine's
-normal zone allocator still treats actual heap exhaustion as fatal; this
-change does not introduce a general nonfatal allocator.
+import API clean up without publishing a partial screenshot. JPEG code and
+the bundled libjpeg allocate through `ri.TryMalloc` (`Z_TryTagMalloc`), which
+returns NULL instead of a fatal error when the zone is full; other zone
+callers still treat exhaustion as fatal.
 
 Dimensions and buffer products reserve 4096 bytes below INT_MAX for native
 allocator headers/alignment, also used by BMP/TGA output bounds. JPEG's native

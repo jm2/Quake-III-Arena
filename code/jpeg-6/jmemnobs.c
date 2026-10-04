@@ -8,7 +8,8 @@
  * This file provides a really simple implementation of the system-
  * dependent portion of the JPEG memory manager.  This implementation
  * assumes that no backing-store files are needed: all required space
- * can be obtained from ri.Malloc().
+ * can be obtained from ri.TryMalloc(), which returns NULL rather than a fatal
+ * zone error, so libjpeg reports JERR_OUT_OF_MEMORY through error_exit.
  * This is very portable in the sense that it'll compile on almost anything,
  * but you'd better have lots of main memory (or virtual memory) if you want
  * to process big images.
@@ -27,7 +28,7 @@ extern refimport_t ri;
 
 /*
  * Memory allocation and ri.Freeing are controlled by the regular library
- * routines ri.Malloc() and ri.Free().
+ * routines ri.TryMalloc() and ri.Free().
  */
 
 GLOBAL void *
@@ -35,7 +36,7 @@ jpeg_get_small (j_common_ptr cinfo, size_t sizeofobject)
 {
   (void)cinfo;
   if (sizeofobject > R_IMAGE_MAX_BYTES) return NULL;
-  return (void *) ri.Malloc((int)sizeofobject);
+  return (void *) ri.TryMalloc((int)sizeofobject);
 }
 
 GLOBAL void
@@ -57,7 +58,7 @@ jpeg_get_large (j_common_ptr cinfo, size_t sizeofobject)
 {
   (void)cinfo;
   if (sizeofobject > R_IMAGE_MAX_BYTES) return NULL;
-  return (void FAR *) ri.Malloc((int)sizeofobject);
+  return (void FAR *) ri.TryMalloc((int)sizeofobject);
 }
 
 GLOBAL void

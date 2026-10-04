@@ -141,7 +141,15 @@ void FreeWeightConfig2(weightconfig_t *config)
 //===========================================================================
 void FreeWeightConfig(weightconfig_t *config)
 {
-	if (!LibVarGetValue("bot_reloadcharacters")) return;
+	int i;
+
+	//a cached weight config may be shared by other bots and is freed by
+	//BotShutdownWeights, only free a private config here,
+	//whatever bot_reloadcharacters is now
+	for (i = 0; i < MAX_WEIGHT_FILES; i++)
+	{
+		if (weightFileList[i] == config) return;
+	} //end for
 	FreeWeightConfig2(config);
 } //end of the function FreeWeightConfig
 //===========================================================================

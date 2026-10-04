@@ -1110,6 +1110,32 @@ void *S_Malloc( int size ) {
 
 /*
 ========================
+Z_TryTagMalloc
+
+Like Z_TagMalloc, but returns NULL instead of raising ERR_FATAL when no free
+block can hold the request, for callers that can reject their input (such as
+the JPEG decoder).  Z_TagMalloc takes any free block that is large enough, so
+the check is exact for the call that follows it.
+========================
+*/
+void *Z_TryTagMalloc( int size, int tag ) {
+	memzone_t	*zone = tag == TAG_SMALL ? smallzone : mainzone;
+	memblock_t	*block;
+	int			blockSize = Z_AllocationSize( size );
+
+	if ( !tag || blockSize < 0 ) {
+		return NULL;
+	}
+	for ( block = zone->blocklist.next ; block != &zone->blocklist ; block = block->next ) {
+		if ( !block->tag && block->size >= blockSize ) {
+			return Z_TagMalloc( size, tag );
+		}
+	}
+	return NULL;
+}
+
+/*
+========================
 Z_CheckHeap
 ========================
 */
