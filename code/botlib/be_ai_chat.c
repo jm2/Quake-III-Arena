@@ -2444,10 +2444,20 @@ bot_chat_t *BotLoadInitialChat(char *chatfile, char *chatname)
 void BotFreeChatFile(int chatstate)
 {
 	bot_chatstate_t *cs;
+	int n;
 
 	cs = BotChatStateFromHandle(chatstate);
 	if (!cs) return;
-	if (cs->chat) FreeMemory(cs->chat);
+	if (cs->chat)
+	{
+		//a cached chat may be shared by other chat states and is freed
+		//by BotShutdownChatAI, only free a private chat here
+		for (n = 0; n < MAX_CLIENTS; n++)
+		{
+			if (ichatdata[n] && ichatdata[n]->chat == cs->chat) break;
+		} //end for
+		if (n >= MAX_CLIENTS) FreeMemory(cs->chat);
+	} //end if
 	cs->chat = NULL;
 } //end of the function BotFreeChatFile
 //===========================================================================
@@ -3149,10 +3159,8 @@ void BotFreeChatState(int handle)
 		return;
 	} //end if
 	cs = botchatstates[handle];
-	if (LibVarGetValue("bot_reloadcharacters"))
-	{
-		BotFreeChatFile(handle);
-	} //end if
+	//frees only a private chat, whatever bot_reloadcharacters is now
+	BotFreeChatFile(handle);
 	//free all the console messages left in the chat state
 	for (h = BotNextConsoleMessage(handle, &m); h; h = BotNextConsoleMessage(handle, &m))
 	{
