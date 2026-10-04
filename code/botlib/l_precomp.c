@@ -115,6 +115,17 @@ typedef struct directive_s
 //longer than this reaches it
 #define MAX_SOURCE_TOKEN_WORK		TOKEN_HEAP_SIZE
 #define MAX_SOURCE_INCLUDE_DEPTH	64
+//files one source may include in total; a file including the next one
+//twice gives 2^depth includes without ever exceeding the depth
+#define MAX_SOURCE_INCLUDES			256
+//tokens one #if/#elif/$evalint/$evalfloat expression may collect; the
+//evaluator uses at most 64 values and 64 operators
+#define MAX_EXPRESSION_TOKENS		1024
+//token copies alive at once (definitions, macro arguments, expressions and
+//queued expansion); a copy takes about 1.1 KB of the zone on the Mac, so this
+//holds them to about 4.3 MB of its 16 MB zone (the size of the token heap the
+//original code declared)
+#define MAX_LIVE_TOKENS				TOKEN_HEAP_SIZE
 
 int numtokens;
 /*
@@ -338,6 +349,23 @@ static void PC_DiscardSourceTokens(source_t *source)
 	} //end while
 } //end of the function PC_DiscardSourceTokens
 //============================================================================
+// charges one token copy against the live token budget
+//
+// Parameter:				-
+// Returns:					-
+// Changes Globals:		-
+//============================================================================
+static int PC_ReserveToken(source_t *source)
+{
+	if (numtokens >= MAX_LIVE_TOKENS)
+	{
+		SourceError(source, "preprocessor holds more than %d tokens", MAX_LIVE_TOKENS);
+		PC_DiscardSourceTokens(source);
+		return qfalse;
+	} //end if
+	return qtrue;
+} //end of the function PC_ReserveToken
+//============================================================================
 // charges one token copied by macro expansion; reading a token from a
 // script resets the budget, so only expansion that never consumes
 // source text (a macro cycle or an exponential expansion) exhausts it;
@@ -356,8 +384,26 @@ static int PC_ConsumeTokenWork(source_t *source)
 		return qfalse;
 	} //end if
 	source->tokenwork++;
-	return qtrue;
+	return PC_ReserveToken(source);
 } //end of the function PC_ConsumeTokenWork
+//============================================================================
+// charges one token collected by an expression
+//
+// Parameter:				-
+// Returns:					-
+// Changes Globals:		-
+//============================================================================
+static int PC_ReserveExpressionToken(source_t *source, int *numexpressiontokens)
+{
+	if (*numexpressiontokens >= MAX_EXPRESSION_TOKENS)
+	{
+		SourceError(source, "expression longer than %d tokens", MAX_EXPRESSION_TOKENS);
+		PC_DiscardSourceTokens(source);
+		return qfalse;
+	} //end if
+	(*numexpressiontokens)++;
+	return PC_ReserveToken(source);
+} //end of the function PC_ReserveExpressionToken
 //============================================================================
 //
 // Parameter:				-
@@ -531,6 +577,7 @@ int PC_ReadDefineParms(source_t *source, define_t *define, token_t **parms, int 
 			if (numparms < define->numparms)
 			{
 				//
+				if (!PC_ReserveToken(source)) return qfalse;
 				t = PC_CopyToken(&token);
 				if (!t) return qfalse;
 				t->next = NULL;
@@ -1127,6 +1174,11 @@ int PC_Directive_include(source_t *source)
 
 	if (source->skip > 0) return qtrue;
 	//
+	if (source->numincludes >= MAX_SOURCE_INCLUDES)
+	{
+		SourceError(source, "more than %d included files", MAX_SOURCE_INCLUDES);
+		return qfalse;
+	} //end if
 	if (!PC_ReadSourceToken(source, &token))
 	{
 		SourceError(source, "#include without file name");
@@ -1221,6 +1273,7 @@ int PC_Directive_include(source_t *source)
 		FreeScript(script);
 		return qfalse;
 	} //end if
+	source->numincludes++;
 	return qtrue;
 } //end of the function PC_Directive_include
 //============================================================================
@@ -1423,6 +1476,7 @@ int PC_Directive_define(source_t *source)
 					goto failed;
 				} //end if
 				//add the define parm
+				if (!PC_ReserveToken(source)) goto failed;
 				t = PC_CopyToken(&token);
 				if (!t)
 				{
@@ -1462,6 +1516,7 @@ int PC_Directive_define(source_t *source)
 	last = NULL;
 	do
 	{
+		if (!PC_ReserveToken(source)) goto failed;
 		t = PC_CopyToken(&token);
 		if (!t)
 		{
@@ -1675,6 +1730,7 @@ define_t *PC_CopyDefine(source_t *source, define_t *define)
 	newdefine->tokens = NULL;
 	for (lasttoken = NULL, token = define->tokens; token; token = token->next)
 	{
+		if (!PC_ReserveToken(source)) goto failure;
 		newtoken = PC_CopyToken(token);
 		if (!newtoken) goto failure;
 		newtoken->next = NULL;
@@ -1686,6 +1742,7 @@ define_t *PC_CopyDefine(source_t *source, define_t *define)
 	newdefine->parms = NULL;
 	for (lasttoken = NULL, token = define->parms; token; token = token->next)
 	{
+		if (!PC_ReserveToken(source)) goto failure;
 		newtoken = PC_CopyToken(token);
 		if (!newtoken) goto failure;
 		newtoken->next = NULL;
@@ -2479,7 +2536,7 @@ int PC_Evaluate(source_t *source, signed long int *intvalue,
 	token_t token, *firsttoken, *lasttoken;
 	token_t *t, *nexttoken;
 	define_t *define;
-	int defined = qfalse, result = qfalse;
+	int defined = qfalse, result = qfalse, numexpressiontokens = 0;
 	unsigned int errorsequence = source->errorsequence;
 
 	firsttoken = lasttoken = NULL;
@@ -2501,6 +2558,7 @@ int PC_Evaluate(source_t *source, signed long int *intvalue,
 			if (defined)
 			{
 				defined = qfalse;
+				if (!PC_ReserveExpressionToken(source, &numexpressiontokens)) goto cleanup;
 				t = PC_CopyToken(&token);
 				if (!t)
 				{
@@ -2515,6 +2573,7 @@ int PC_Evaluate(source_t *source, signed long int *intvalue,
 			else if (!strcmp(token.string, "defined"))
 			{
 				defined = qtrue;
+				if (!PC_ReserveExpressionToken(source, &numexpressiontokens)) goto cleanup;
 				t = PC_CopyToken(&token);
 				if (!t)
 				{
@@ -2545,6 +2604,7 @@ int PC_Evaluate(source_t *source, signed long int *intvalue,
 		//if the token is a number or a punctuation
 		else if (token.type == TT_NUMBER || token.type == TT_PUNCTUATION)
 		{
+			if (!PC_ReserveExpressionToken(source, &numexpressiontokens)) goto cleanup;
 			t = PC_CopyToken(&token);
 			if (!t)
 			{
@@ -2595,7 +2655,7 @@ cleanup:
 int PC_DollarEvaluate(source_t *source, signed long int *intvalue,
 												double *floatvalue, int integer)
 {
-	int indent = 0, defined = qfalse, result = qfalse;
+	int indent = 0, defined = qfalse, result = qfalse, numexpressiontokens = 0;
 	unsigned int errorsequence = source->errorsequence;
 	token_t token, *firsttoken, *lasttoken;
 	token_t *t, *nexttoken;
@@ -2631,6 +2691,7 @@ int PC_DollarEvaluate(source_t *source, signed long int *intvalue,
 			if (defined)
 			{
 				defined = qfalse;
+				if (!PC_ReserveExpressionToken(source, &numexpressiontokens)) goto cleanup;
 				t = PC_CopyToken(&token);
 				if (!t)
 				{
@@ -2645,6 +2706,7 @@ int PC_DollarEvaluate(source_t *source, signed long int *intvalue,
 			else if (!strcmp(token.string, "defined"))
 			{
 				defined = qtrue;
+				if (!PC_ReserveExpressionToken(source, &numexpressiontokens)) goto cleanup;
 				t = PC_CopyToken(&token);
 				if (!t)
 				{
@@ -2678,6 +2740,7 @@ int PC_DollarEvaluate(source_t *source, signed long int *intvalue,
 			if (*token.string == '(') indent++;
 			else if (*token.string == ')') indent--;
 			if (indent <= 0) break;
+			if (!PC_ReserveExpressionToken(source, &numexpressiontokens)) goto cleanup;
 			t = PC_CopyToken(&token);
 			if (!t)
 			{

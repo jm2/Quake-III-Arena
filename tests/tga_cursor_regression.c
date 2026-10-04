@@ -1,6 +1,5 @@
 /* Issue #42: actual portable TGA loader, complete header/ID/raw/RLE preflight and ownership. */
 #include "../code/renderer/tr_image_tga.c"
-#include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,7 +10,6 @@ static const byte colors[4][4]={{255,0,0,17},{0,255,0,33},{0,0,255,129},{31,31,3
 static int fixtureSize, inputAlignment, reads, frees, allocations, warnings, failAllocation, missing, reportedNegative, expectedError;
 static byte *fileAllocation, *fileBuffer, *outputAllocation, *rejectPic;
 static int rejectWidth,rejectHeight;
-static jmp_buf errorJump;
 
 /** Stop on any pixel, allocation, publication or ownership failure. */
 static void Check( int ok, const char *message ) { if(!ok) { fprintf(stderr,"TGA regression failed: %s\n",message); exit(1); } }
@@ -29,13 +27,11 @@ static void *Allocate( int size ) {
 	outputAllocation=malloc(size); Check(outputAllocation!=NULL,"output allocation"); memset(outputAllocation,0xcd,size); return outputAllocation;
 }
 static void FreeOutput( void *buffer ) { Check(buffer==outputAllocation,"output ownership"); free(buffer); outputAllocation=NULL; }
-/** Check cleanup before the engine longjmp; post-jump published-state storage is static. */
-static void QDECL Error( int level, const char *format, ... ) {
-	(void)format; Check(expectedError && level==ERR_DROP && reads==frees && !fileAllocation && !outputAllocation,"ownership before error"); longjmp(errorJump,1);
-}
-/** A successful top-down declaration retains the old warning and native output row order. */
+/** Bad image data is a warning and no image (issue #42), never an engine error. */
+static void QDECL Error( int level, const char *format, ... ) { (void)level; (void)format; Check(0,"engine error for bad TGA data"); }
+/** A rejection warns after all cleanup; a top-down declaration retains the old warning and native row order. */
 static void QDECL Print( int level, const char *format, ... ) {
-	(void)format; Check(!expectedError && level==PRINT_WARNING && reads==frees && !fileAllocation && outputAllocation,"ownership before orientation warning"); warnings++;
+	(void)format; Check(level==PRINT_WARNING && reads==frees && !fileAllocation && (expectedError ? !outputAllocation : outputAllocation!=NULL),"ownership before warning"); warnings++;
 }
 static void LE( int position, unsigned int value ) { fixture[position]=value; fixture[position+1]=value>>8; }
 static void Header( int type, int depth, unsigned int columns, unsigned int rows, int id, int attributes ) {
@@ -59,8 +55,8 @@ static void Valid( const byte *golden, int columns, int rows, int nullable ) {
 /** Malformed data is rejected before output allocation or publication, releasing its file. */
 static void Reject( int expectedAllocations ) {
 	rejectPic=(byte *)1; rejectWidth=rejectHeight=-1; reads=frees=allocations=warnings=0; expectedError=1;
-	if(!setjmp(errorJump)) { R_LoadTGA("bad.tga",&rejectPic,&rejectWidth,&rejectHeight); Check(0,"invalid TGA accepted"); }
-	Check(!rejectPic && !rejectWidth && !rejectHeight && reads==1 && frees==1 && allocations==expectedAllocations && !warnings,"rejected state"); expectedError=0;
+	R_LoadTGA("bad.tga",&rejectPic,&rejectWidth,&rejectHeight);
+	Check(!rejectPic && !rejectWidth && !rejectHeight && reads==1 && frees==1 && allocations==expectedAllocations && warnings==1,"rejected state"); expectedError=0;
 }
 static void Truncations( int complete ) { int i; for(i=0;i<complete;i++) { fixtureSize=i; Reject(0); } fixtureSize=complete; }
 
@@ -110,7 +106,7 @@ int main( void ) {
 	fixture[2]=3; fixture[16]=16; Reject(0); fixture[2]=2; fixture[16]=24;
 	LE(12,0); Reject(0); LE(12,1); LE(14,0); Reject(0); LE(14,1);
 	LE(12,65535); LE(14,65535); Reject(0); LE(12,32768); LE(14,16384); Reject(0);
-	LE(12,32767); Reject(0); /* valid arithmetic, but no complete raw payload */
+	LE(12,32767); Reject(0); LE(12,4096); LE(14,4096); Reject(0); /* largest size, but no complete raw payload */
 	LE(12,1); LE(14,1); failAllocation=1; Reject(1); failAllocation=0; reportedNegative=1; Reject(0); reportedNegative=0;
 	missing=1; reads=frees=allocations=warnings=0; expectedError=0; pic=(byte *)1;
 	{ int width=-1,height=-1; R_LoadTGA("missing.tga",&pic,&width,&height); Check(!pic && !width && !height && reads==1 && !frees && !allocations && !warnings,"missing file"); }

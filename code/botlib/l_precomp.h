@@ -106,6 +106,7 @@ typedef struct source_s
 	indent_t *indentstack;					//stack with indents
 	unsigned int errorsequence;			//private diagnostic generation for lookahead
 	unsigned int tokenwork;					//macro expansion work since the last script token
+	int numincludes;						//files included over the life of the source
 	int skip;								// > 0 if skipping conditional code
 	token_t token;							//last read token
 } source_t;

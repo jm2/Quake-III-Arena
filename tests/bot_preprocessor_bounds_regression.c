@@ -4,7 +4,10 @@
    through the real LoadSourceFile/PC_LoadSourceHandle paths of l_precomp.c and
    l_script.c.  Every case runs on a 1 MiB thread stack (the Mac OS 9 application
    stack has no guard page) under an alarm, so the original code fails by stack
-   overflow, by a hang, or by accepting an unbounded include chain. */
+   overflow, by a hang, or by accepting an unbounded include chain.  The
+   allocator fails past 64 MiB of live memory, so a case that would exhaust the
+   Mac's 16 MiB zone ends the original code in a fatal error instead of using
+   gigabytes of host memory. */
 #include <pthread.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -20,6 +23,7 @@
 #define FIXTURE_STACK (1024 * 1024)
 #define MAX_FILES 160
 #define MAX_TEXT (512 * 1024)
+#define MEMORY_CAP (64UL * 1024 * 1024)
 
 botlib_import_t botimport;
 extern int numtokens;
@@ -30,7 +34,7 @@ static char *fileNames[MAX_FILES], *fileTexts[MAX_FILES];
 static int numFiles, openText[64];
 static char text[MAX_TEXT];
 static int onlyCase = -1;
-static size_t used;
+static size_t used, liveBytes, peakBytes;
 
 static void Check(int condition, const char *message)
 {
@@ -41,9 +45,29 @@ static void Check(int condition, const char *message)
 	}
 }
 
-void *GetMemory(unsigned long size) {void *p = malloc(size); if (p) liveOwners++; return p;}
-void *GetClearedMemory(unsigned long size) {void *p = calloc(1, size); if (p) liveOwners++; return p;}
-void FreeMemory(void *p) {if (p) liveOwners--; free(p);}
+/* each block carries its size so live and peak usage can be measured */
+void *GetMemory(unsigned long size)
+{
+	size_t *p;
+	if (size > MEMORY_CAP - liveBytes) return NULL;
+	p = malloc(size + 16);
+	if (!p) return NULL;
+	*p = size;
+	liveBytes += size;
+	if (liveBytes > peakBytes) peakBytes = liveBytes;
+	liveOwners++;
+	return (char *)p + 16;
+}
+void *GetClearedMemory(unsigned long size) {void *p = GetMemory(size); if (p) memset(p, 0, size); return p;}
+void FreeMemory(void *p)
+{
+	size_t *block;
+	if (!p) return;
+	block = (size_t *)((char *)p - 16);
+	liveBytes -= *block;
+	liveOwners--;
+	free(block);
+}
 void *GetHunkMemory(unsigned long size) {return GetMemory(size);}
 void *GetClearedHunkMemory(unsigned long size) {return GetClearedMemory(size);}
 #ifndef Com_Memcpy
@@ -133,6 +157,7 @@ static source_t *Load(const char *name)
 	source_t *source;
 	errors = warnings = 0;
 	lastError[0] = '\0';
+	peakBytes = liveBytes;
 	PC_SetBaseFolder("");
 	source = LoadSourceFile(name);
 	Check(source != NULL, "crafted source loads");
@@ -168,13 +193,16 @@ static int ReadUntilFailure(source_t *source, int limit)
 	while (count < limit && PC_ReadToken(source, &token)) count++;
 	return count;
 }
-static void ExpectBoundedFailure(source_t *source, int published, int limit, const char *message)
+static void ExpectFailure(source_t *source, int published, int limit, const char *message, const char *diagnostic)
 {
 	Check(published < limit, message);
-	Check(errors == 1 && strstr(lastError, "macro expansion exceeds") != NULL,
-		"one bounded expansion diagnostic");
+	Check(errors == 1 && strstr(lastError, diagnostic) != NULL, "one bounded diagnostic");
 	Check(PC_SourceHasError(source), "source keeps its error state");
 	Check(!source->tokens, "queued expansion candidates are released on failure");
+}
+static void ExpectBoundedFailure(source_t *source, int published, int limit, const char *message)
+{
+	ExpectFailure(source, published, limit, message, "macro expansion exceeds");
 }
 
 /* --- adjacent strings ----------------------------------------------------- */
@@ -391,35 +419,206 @@ static void Goldens(void)
 	Check(ReadUntilFailure(source, 30000) == 20000 && !errors, "every ordinary token is published");
 	Finish(source);
 
+	/* about 1000 live token copies at most on retail data (342 measured);
+	   4000 fit the live token budget */
 	caseName = "large definitions, skipped block and header";
 	Begin();
 	Append("#define BIG");
-	for (i = 0; i < 4000; i++) Append(" b");
+	for (i = 0; i < 1000; i++) Append(" b");
 	Append("\n#define HUGE");
-	for (i = 0; i < 5000; i++) Append(" h");
+	for (i = 0; i < 1000; i++) Append(" h");
 	Append("\n#if 0\n");
 	for (i = 0; i < 5000; i++) Append("itemDef { name skipped rect 0 0 1 1 }\n");
 	Append("#endif\n");
-	for (i = 0; i < 3000; i++) Append("#define LOCAL_%d %d\n", i, i);
-	Append("LOCAL_2999 BIG end\n");
+	for (i = 0; i < 1000; i++) Append("#define LOCAL_%d %d\n", i, i);
+	Append("LOCAL_999 BIG end\n");
 	AddFile("large.txt", text);
 	source = Load("large.txt");
-	Expect(source, TT_NUMBER, "2999");
-	for (i = 0; i < 4000; i++) Expect(source, TT_NAME, "b");
+	Expect(source, TT_NUMBER, "999");
+	for (i = 0; i < 1000; i++) Expect(source, TT_NAME, "b");
 	Expect(source, TT_NAME, "end");
 	ExpectEnd(source);
 	Finish(source);
 
-	caseName = "single expansion beyond the budget";
+	caseName = "single definition beyond the live token budget";
 	Begin();
 	Append("#define HUGE");
 	for (i = 0; i < 5000; i++) Append(" h");
 	Append("\nmarker HUGE\n");
 	AddFile("huge.txt", text);
 	source = Load("huge.txt");
-	Expect(source, TT_NAME, "marker");
-	ExpectBoundedFailure(source, ReadUntilFailure(source, 1), 1, "a 5000-token expansion is rejected");
+	ExpectFailure(source, ReadUntilFailure(source, 1), 1, "a 5000-token definition is rejected",
+		"preprocessor holds more than 4096 tokens");
 	Finish(source);
+
+	caseName = "single expansion beyond the live token budget";
+	Begin();
+	Append("#define HUGE");
+	for (i = 0; i < 3000; i++) Append(" h");
+	Append("\nmarker HUGE\n");
+	AddFile("huge.txt", text);
+	source = Load("huge.txt");
+	Expect(source, TT_NAME, "marker");
+	ExpectFailure(source, ReadUntilFailure(source, 1), 1, "a 3000-token expansion of a 3000-token definition is rejected",
+		"preprocessor holds more than 4096 tokens");
+	Finish(source);
+}
+
+/* --- resource budgets (follow-up to #469) --------------------------------- */
+
+static void ExpectBudgetFailure(source_t *source, int published, int limit, const char *message, const char *diagnostic)
+{
+	ExpectFailure(source, published, limit, message, diagnostic);
+	Check(peakBytes < 8 * 1024 * 1024, "the failing source stays far below the Mac zone");
+}
+
+static void Budgets(void)
+{
+	char name[64], body[128];
+	source_t *source;
+	int i, j, hash;
+
+	if (Want(10))
+	{
+		/* each file includes the next one twice: 2^40 includes, depth 42 */
+		caseName = "include fan-out";
+		for (i = 0; i <= 40; i++)
+		{
+			snprintf(name, sizeof(name), "fan%d.h", i);
+			if (i < 40) snprintf(body, sizeof(body), "#include \"fan%d.h\"\n#include \"fan%d.h\"\n", i + 1, i + 1);
+			else snprintf(body, sizeof(body), "leaf\n");
+			AddFile(name, body);
+		}
+		AddFile("fan.txt", "first\n#include \"fan0.h\"\nafter\n");
+		source = Load("fan.txt");
+		Expect(source, TT_NAME, "first");
+		ExpectBudgetFailure(source, ReadUntilFailure(source, 1 << 20), 256, "fan-out stops after 256 includes",
+			"more than 256 included files");
+		Finish(source);
+	}
+	if (Want(11))
+	{
+		caseName = "256 sequential includes";
+		AddFile("one.h", "leaf\n");
+		Begin();
+		for (i = 0; i < 256; i++) Append("#include \"one.h\"\n");
+		Append("end\n");
+		AddFile("seq.txt", text);
+		source = Load("seq.txt");
+		for (i = 0; i < 256; i++) Expect(source, TT_NAME, "leaf");
+		Expect(source, TT_NAME, "end");
+		ExpectEnd(source);
+		Finish(source);
+
+		caseName = "257 sequential includes";
+		AddFile("one.h", "leaf\n");
+		Begin();
+		for (i = 0; i < 257; i++) Append("#include \"one.h\"\n");
+		Append("end\n");
+		AddFile("seq.txt", text);
+		source = Load("seq.txt");
+		ExpectFailure(source, ReadUntilFailure(source, 1000), 257, "the 257th include fails",
+			"more than 256 included files");
+		Finish(source);
+	}
+	for (hash = 1; hash >= 0; hash--)
+	{
+		/* 600 copies of a 199-token macro: 120,000 copied operands in one
+		   expression, where the evaluator can use 64 values */
+		if (!Want(hash ? 12 : 13)) continue;
+		caseName = hash ? "#if operand list" : "$evalint operand list";
+		Begin();
+		Append("#define A 1");
+		for (i = 0; i < 99; i++) Append(" + 1");
+		Append(hash ? "\nmarker\n#if A" : "\nmarker $evalint(A");
+		for (i = 1; i < 600; i++) Append(" + A");
+		Append(hash ? "\nyes\n#endif\ntail\n" : ") tail\n");
+		AddFile("operands.txt", text);
+		source = Load("operands.txt");
+		Expect(source, TT_NAME, "marker");
+		ExpectBudgetFailure(source, ReadUntilFailure(source, 1), 1, "the operand list stops at the expression budget",
+			"expression longer than 1024 tokens");
+		Finish(source);
+	}
+	if (Want(14))
+	{
+		/* (((... defined X ...))) with 1024 and 1025 tokens */
+		caseName = "1024-token expression";
+		Begin();
+		Append("#if ");
+		for (i = 0; i < 511; i++) Append("(");
+		Append("defined X");
+		for (i = 0; i < 511; i++) Append(")");
+		Append("\nno\n#endif\nend\n");
+		AddFile("expr.txt", text);
+		source = Load("expr.txt");
+		Expect(source, TT_NAME, "end");
+		ExpectEnd(source);
+		Finish(source);
+
+		caseName = "1025-token expression";
+		Begin();
+		Append("#if ");
+		for (i = 0; i < 511; i++) Append("(");
+		Append("!defined X");
+		for (i = 0; i < 511; i++) Append(")");
+		Append("\nyes\n#endif\nend\n");
+		AddFile("expr.txt", text);
+		source = Load("expr.txt");
+		ExpectFailure(source, ReadUntilFailure(source, 1), 1, "a 1025-token expression is rejected",
+			"expression longer than 1024 tokens");
+		Finish(source);
+	}
+	if (Want(15))
+	{
+		/* 1000 definitions of 100 tokens: 100,000 retained copies (about
+		   110 MB on the Mac, where the zone has 16 MB) */
+		caseName = "retained definitions";
+		Begin();
+		for (i = 0; i < 1000; i++)
+		{
+			Append("#define D%d", i);
+			for (j = 0; j < 100; j++) Append(" 1");
+			Append("\n");
+		}
+		Append("marker\n");
+		AddFile("defines.txt", text);
+		source = Load("defines.txt");
+		ExpectBudgetFailure(source, ReadUntilFailure(source, 1), 1, "definitions stop at the live token budget",
+			"preprocessor holds more than 4096 tokens");
+		Finish(source);
+	}
+	if (Want(16))
+	{
+		caseName = "100000-token macro argument";
+		Begin();
+		Append("#define F(x) x\nmarker F(");
+		for (i = 0; i < 100000; i++) Append(" 1");
+		Append(") tail\n");
+		AddFile("argument.txt", text);
+		source = Load("argument.txt");
+		Expect(source, TT_NAME, "marker");
+		ExpectBudgetFailure(source, ReadUntilFailure(source, 1), 1, "the argument stops at the live token budget",
+			"preprocessor holds more than 4096 tokens");
+		Finish(source);
+	}
+	if (Want(17))
+	{
+		/* conditionals nest through a heap list and never recurse; memory
+		   is linear in the source text, so nesting depth needs no cap */
+		caseName = "30000 nested conditionals";
+		Begin();
+		for (i = 0; i < 30000; i++) Append("#if 1\n");
+		Append("x\n");
+		for (i = 0; i < 30000; i++) Append("#endif\n");
+		Append("end\n");
+		AddFile("nest.txt", text);
+		source = Load("nest.txt");
+		Expect(source, TT_NAME, "x");
+		Expect(source, TT_NAME, "end");
+		ExpectEnd(source);
+		Finish(source);
+	}
 }
 
 static void *Run(void *argument)
@@ -429,6 +628,7 @@ static void *Run(void *argument)
 	if (which == 0 || which == 2) MacroCycles();
 	if (which == 0 || which == 3) Includes();
 	if (which == 0 || which == 4) Goldens();
+	if (which == 0 || which == 5) Budgets();
 	return NULL;
 }
 
@@ -463,6 +663,6 @@ int main(int argc, char **argv)
 		fprintf(stderr, "%d bot preprocessor bounds check(s) failed\n", failures);
 		return 1;
 	}
-	puts("Bot preprocessor adjacent strings, macro cycles and include depth are bounded (issue #48)");
+	puts("Bot preprocessor adjacent strings, macro cycles, includes, expressions and live tokens are bounded (issue #48)");
 	return 0;
 }

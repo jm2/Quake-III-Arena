@@ -1,16 +1,14 @@
-/* Issue #42: actual portable BMP file loader, exact inputs/outputs and ownership before errors. */
+/* Issue #42: actual portable BMP file loader, exact inputs/outputs and ownership before warnings. */
 #include "../code/renderer/tr_image_bmp.c"
-#include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 refimport_t ri;
 static byte fixture[4096];
-static int fixtureSize, reads, frees, allocations, failAllocation, inputAlignment, missing, expectedError;
+static int fixtureSize, reads, frees, allocations, failAllocation, inputAlignment, missing, expectedError, warnings;
 static byte *fileAllocation, *fileBuffer, *outputAllocation, *rejectPic;
 static int rejectWidth, rejectHeight;
-static jmp_buf errorJump;
 
 /** Fail immediately if layout, ownership or publication differs from the required behavior. */
 static void Check( int ok, const char *message ) { if(!ok) { fprintf(stderr,"BMP regression failed: %s\n",message); exit(1); } }
@@ -31,10 +29,11 @@ static void *Allocate( int size ) {
 	outputAllocation=malloc(size); Check(outputAllocation!=NULL,"output allocation"); memset(outputAllocation,0xcd,size); return outputAllocation;
 }
 static void FreeOutput( void *buffer ) { Check(buffer==outputAllocation,"output ownership"); free(buffer); outputAllocation=NULL; }
-static void QDECL Error( int level, const char *format, ... ) {
-	(void)format; Check(expectedError && level==ERR_DROP && reads==frees && !fileAllocation && !outputAllocation,"ownership before error"); longjmp(errorJump,1);
+/** Bad image data is a warning and no image (issue #42), never an engine error. */
+static void QDECL Error( int level, const char *format, ... ) { (void)level; (void)format; Check(0,"engine error for bad BMP data"); }
+static void QDECL Print( int level, const char *format, ... ) {
+	(void)format; Check(expectedError && level==PRINT_WARNING && reads==frees && !fileAllocation && !outputAllocation,"ownership before warning"); warnings++;
 }
-static void QDECL Print( int level, const char *format, ... ) { (void)level; (void)format; }
 /** Encode metadata without host endian/alignment dependencies. */
 static void LE( int position, unsigned int value, int bytes ) { int i; for(i=0;i<bytes;i++) fixture[position+i]=value>>(8*i); }
 /** Describe a Windows BI_RGB bitmap with explicit palette and pixel offsets. */
@@ -52,12 +51,12 @@ static void Valid( const byte *golden, int columns, int rows, int nullable ) {
 	Check(nullable || (width==columns && height==rows),"published dimensions");
 	Check(reads==1 && frees==1 && allocations==1 && !fileAllocation,"success ownership"); FreeOutput(pic);
 }
-/** Reject before output publication and release every owned input/output before ERR_DROP. */
+/** Reject before output publication and release every owned input/output before the warning. */
 static void Reject( int expectedAllocations ) {
 	rejectPic=(byte *)1; rejectWidth=rejectHeight=-1;
-	expectedError=1; reads=frees=allocations=0;
-	if(!setjmp(errorJump)) { R_LoadBMP("test.bmp",&rejectPic,&rejectWidth,&rejectHeight); Check(0,"invalid BMP accepted"); }
-	Check(!rejectPic && !rejectWidth && !rejectHeight && reads==1 && frees==1 && allocations==expectedAllocations,"rejected output/state"); expectedError=0;
+	expectedError=1; reads=frees=allocations=warnings=0;
+	R_LoadBMP("test.bmp",&rejectPic,&rejectWidth,&rejectHeight);
+	Check(!rejectPic && !rejectWidth && !rejectHeight && reads==1 && frees==1 && allocations==expectedAllocations && warnings==1,"rejected output/state"); expectedError=0;
 }
 /** Every truncation updates its declared file size so row/palette/header checks actually execute. */
 static void Truncations( int complete ) {
