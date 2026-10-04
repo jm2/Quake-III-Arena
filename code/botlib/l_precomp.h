@@ -107,6 +107,7 @@ typedef struct source_s
 	unsigned int errorsequence;			//private diagnostic generation for lookahead
 	unsigned int tokenwork;					//macro expansion work since the last script token
 	int numincludes;						//files included over the life of the source
+	int numindents;							//conditionals open on indentstack
 	int skip;								// > 0 if skipping conditional code
 	token_t token;							//last read token
 } source_t;
@@ -180,9 +181,10 @@ typedef struct pc_token_s
 #endif //BSPC
 
 //
-int PC_LoadSourceHandle(const char *filename);
+int PC_LoadSourceHandle(const char *filename, int owner);
 int PC_FreeSourceHandle(int handle);
 int PC_ReadTokenHandle(int handle, pc_token_t *pc_token);
 int PC_SourceFileAndLine(int handle, char *filename, int *line);
 void PC_CheckOpenSourceHandles(void);
+void PC_FreeSourceHandles(int owner);
 #endif // __L_PRECOMP_H
