@@ -205,29 +205,23 @@ if(BUILD_TEAM_ARENA)
         -DMISSIONPACK
     )
 
-    add_library(cgame_mp_obj STATIC ${CGAME_MP_SRCS})
+    # Like retail's cgame_ta QVM, the Team Arena cgame has its own copy of
+    # code/ui/ui_shared.c, built with -DCGAME, so its HUD menus, string pool
+    # and display context are not the ui module's (#459). In the cgame its
+    # globals get CGUI_ names (code/ui/ui_shared_cgame.h), and each copy lies
+    # in its own module's reset bracket (#457).
+    add_library(cgame_mp_obj STATIC ${CGAME_MP_SRCS}
+        "${CMAKE_SOURCE_DIR}/code/ui/ui_shared.c")
     target_compile_definitions(cgame_mp_obj PRIVATE
         -DvmMain=CGame_vmMain
         -DdllEntry=CGame_dllEntry
         -DCGAME_MODULE
+        -DCGAME
         -DMISSIONPACK
     )
 
-    # The Team Arena cgame (cg_newdraw.c) runs the ui module's ui_shared.c
-    # (#459; each retail QVM had its own copy), so ui_shared.c is a shared
-    # archive too and stays outside the ui module's reset bracket (#457).
-    set(UI_MP_SRCS ${UI_SRCS})
-    list(REMOVE_ITEM UI_MP_SRCS "${CMAKE_SOURCE_DIR}/code/ui/ui_shared.c")
-    add_library(ui_mp_obj STATIC ${UI_MP_SRCS})
+    add_library(ui_mp_obj STATIC ${UI_SRCS})
     target_compile_definitions(ui_mp_obj PRIVATE
-        -DvmMain=UI_vmMain
-        -DdllEntry=UI_dllEntry
-        -DUI_MODULE
-        -DMISSIONPACK
-    )
-
-    add_library(ui_shared_mp_obj STATIC "${CMAKE_SOURCE_DIR}/code/ui/ui_shared.c")
-    target_compile_definitions(ui_shared_mp_obj PRIVATE
         -DvmMain=UI_vmMain
         -DdllEntry=UI_dllEntry
         -DUI_MODULE
@@ -306,7 +300,6 @@ if(BUILD_TEAM_ARENA)
         cgame_mp_obj
         ui_mp_obj
         game_shared_mp_obj
-        ui_shared_mp_obj
         "-Wl,--no-whole-archive"
         -lm
         -lInterfaceLib
@@ -413,6 +406,6 @@ quake3_static_modules(Quake3 game_obj cgame_obj q3ui_lib game_shared_obj)
 quake3_add_classic_application(Quake3)
 if(BUILD_TEAM_ARENA)
     quake3_static_modules(Quake3_TeamArena game_mp_obj cgame_mp_obj ui_mp_obj
-        game_shared_mp_obj ui_shared_mp_obj)
+        game_shared_mp_obj)
     quake3_add_classic_application(Quake3_TeamArena)
 endif()

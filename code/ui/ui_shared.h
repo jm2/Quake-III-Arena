@@ -28,6 +28,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "keycodes.h"
 
 #include "../../ui/menudef.h"
+#include "ui_shared_cgame.h"
 
 #define MAX_MENUNAME 32
 #define MAX_ITEMTEXT 64
