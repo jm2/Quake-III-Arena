@@ -8,7 +8,7 @@
 refimport_t ri;
 static byte fixture[131072];
 static int fixtureSize, encodedEnd, inputAlignment, reads, frees, allocations, warnings, failAllocation, missing, reportedNegative;
-static int retailAccepted, retailRejected, retailUnsafe;
+static int retailLoaded, retailFatal, retailRejected, retailUnsafe;
 static byte *fileAllocation, *fileBuffer, *outputAllocation;
 
 /** Stop on wrong pixels, allocation bounds, ownership or publication. */
@@ -35,16 +35,28 @@ static void QDECL Print( int level, const char *format, ... ) {
 }
 static void QDECL Error( int level, const char *format, ... ) { (void)level; (void)format; Check(0,"PCX error became fatal"); }
 
-enum { RETAIL_REJECT, RETAIL_ACCEPT, RETAIL_UNSAFE };
+enum { RETAIL_REJECT, RETAIL_LOADED, RETAIL_FATAL, RETAIL_UNSAFE };
+/* Win32 1.32c's ZONEID trash marker as stored little-endian at the end of every zone block. */
+static const byte zoneMarker[4] = { 0x11, 0x4a, 0x1d, 0x00 };
 /**
  * Reference model: dbe4ddb's LoadPCX followed by LoadPCX32 (code/renderer/tr_image.c), kept
  * statement for statement, on a copy that has FS_ReadFile's trailing NUL. xmax/ymax are the
- * unsigned shorts of little-endian retail (LittleShort is a no-op there). Every header, palette,
- * RLE read and pixel write is checked; one id would make out of bounds returns RETAIL_UNSAFE.
+ * unsigned shorts of little-endian retail (LittleShort is a no-op there). Header, palette and
+ * RLE reads are checked; a read id would make out of bounds returns RETAIL_UNSAFE.
+ *
+ * Pixels go to a model of id's ri.Malloc block: Z_TagMalloc (dbe4ddb common.c) makes the block
+ * (n + sizeof(memblock_t) + 4 + 3) & ~3 bytes, with a 20-byte header in release builds and the
+ * ZONEID marker in its last 4 bytes, so n + ((-n) & 3) bytes are writable before the marker.
+ * An overshoot inside that slack is silent and the image loads (RETAIL_LOADED). One that
+ * changes the marker makes LoadPCX32's ri.Free(pic8) raise "Z_Free: memory block wrote past
+ * end" (RETAIL_FATAL). The exception is a first-fit free block within MINFRAGMENT (64) bytes of
+ * the request, whose leftover stays attached and moves the marker up to 64 bytes further; that
+ * depends on heap state, so it counts as fatal, the usual case with a large zone. Either way the
+ * displayed pixels are the first n bytes, the overshoot dropped.
  */
 static int RetailLoadPCX32( const byte *file, int len, byte **pic, int *width, int *height ) {
 	byte *copy, *raw, *out, *pix, *palette, *pic32;
-	int x, y, dataByte, runLength, xmax, ymax, size, i, c, p, verdict = RETAIL_UNSAFE;
+	int x, y, dataByte, runLength, xmax, ymax, size, usable, i, c, p, verdict = RETAIL_UNSAFE;
 	*pic = NULL; *width = *height = 0;
 	if ( len < 12 ) return RETAIL_UNSAFE; /* header fields read past the file */
 	copy = malloc( len + 1 ); Check(copy!=NULL,"reference file"); memcpy( copy, file, len ); copy[len] = 0;
@@ -54,7 +66,10 @@ static int RetailLoadPCX32( const byte *file, int len, byte **pic, int *width, i
 		free( copy ); return RETAIL_REJECT;
 	}
 	size = (ymax+1) * (xmax+1);
-	out = malloc( size ); Check(out!=NULL,"reference pixels");
+	usable = ( ( size + 20 + 4 + 3 ) & ~3 ) - 20 - 4;
+	/* A run starts inside a row and is at most 63 long, so writes end before size + 63. */
+	out = malloc( size + 64 ); Check(out!=NULL && usable + 4 <= size + 64,"reference pixels");
+	memset( out, 0xcd, size + 64 ); memcpy( out + usable, zoneMarker, 4 );
 	pix = out;
 	if ( len < 768 ) goto done; /* Com_Memcpy of the palette from before the file */
 	palette = copy + len - 768;
@@ -69,10 +84,8 @@ static int RetailLoadPCX32( const byte *file, int len, byte **pic, int *width, i
 				dataByte = *raw++;
 			} else
 				runLength = 1;
-			while(runLength-- > 0) {
-				if ( (pix - out) + x >= size ) goto done; /* heap overflow */
+			while(runLength-- > 0)
 				pix[x++] = dataByte;
-			}
 		}
 	}
 	if ( raw - copy > len ) { verdict = RETAIL_REJECT; goto done; } /* "PCX file %s was malformed" */
@@ -86,22 +99,28 @@ static int RetailLoadPCX32( const byte *file, int len, byte **pic, int *width, i
 		pic32[3] = 255;
 		pic32 += 4;
 	}
-	*width = xmax+1; *height = ymax+1; verdict = RETAIL_ACCEPT;
+	*width = xmax+1; *height = ymax+1;
+	/* Writes are contiguous from inside the buffer, so any write past the marker also changes it. */
+	verdict = memcmp( out + usable, zoneMarker, 4 ) ? RETAIL_FATAL : RETAIL_LOADED;
 done:
 	free( out ); free( copy );
 	return verdict;
 }
 
-/** The engine loader must publish retail's dimensions and RGBA, or reject when retail does or is unsafe. */
+/**
+ * The engine loader must publish retail's dimensions and RGBA for files retail loads, load the
+ * same clamped pixels for files retail hit ERR_FATAL on, and reject when retail rejects or is unsafe.
+ */
 static int Compare( int expected, const char *message ) {
 	byte *reference, *pic=(byte *)1; int referenceWidth, referenceHeight, width=-1, height=-1, verdict;
 	verdict = RetailLoadPCX32(fixture,fixtureSize,&reference,&referenceWidth,&referenceHeight);
 	reads=frees=allocations=warnings=0; R_LoadPCX("compare.pcx",&pic,&width,&height);
-	if(verdict==RETAIL_ACCEPT) {
+	if(verdict==RETAIL_LOADED || verdict==RETAIL_FATAL) {
 		Check(pic && pic==outputAllocation && width==referenceWidth && height==referenceHeight,message);
 		Check(!memcmp(pic,reference,width*height*4),message);
 		Check(reads==1 && frees==1 && allocations==1 && !warnings && !fileAllocation,"retail success ownership");
-		FreeOutput(pic); free(reference); retailAccepted++;
+		FreeOutput(pic); free(reference);
+		if(verdict==RETAIL_LOADED) retailLoaded++; else retailFatal++;
 	} else {
 		Check(!pic && !width && !height && reads==1 && frees==1 && !allocations && warnings==1 && !fileAllocation,message);
 		if(verdict==RETAIL_UNSAFE) retailUnsafe++; else retailRejected++;
@@ -157,57 +176,71 @@ int main( void ) {
 		/* Odd width with a padded bytes_per_line: retail reads the pad as the next row's first pixel. */
 		Header(0,0,2,1,4); Encoded(1); Encoded(2); Encoded(3); Encoded(99); Encoded(4); Encoded(5); Encoded(6); Encoded(98); Footer();
 		Golden(golden,1); Golden(golden+4,2); Golden(golden+8,3); Golden(golden+12,99); Golden(golden+16,4); Golden(golden+20,5);
-		Valid(golden,3,2,0); Valid(golden,3,2,1); Compare(RETAIL_ACCEPT,"odd padded width"); Prefixes();
+		Valid(golden,3,2,0); Valid(golden,3,2,1); Compare(RETAIL_LOADED,"odd padded width"); Prefixes();
 		/* xmin/ymin are ignored: the size is xmax+1 by ymax+1 even when the origin is past it. */
 		Header(2,1,4,2,4); Runs(5,7); Run(5,8); Run(5,9); Footer();
 		for(i=0;i<15;i++) Golden(golden+i*4,7+i/5);
-		Valid(golden,5,3,0); Compare(RETAIL_ACCEPT,"nonzero origin"); Prefixes();
+		Valid(golden,5,3,0); Compare(RETAIL_LOADED,"nonzero origin"); Prefixes();
 		Header(17,23,2,1,4); Run(3,200); Run(3,201); Footer();
 		for(i=0;i<6;i++) Golden(golden+i*4,200+i/3);
-		Valid(golden,3,2,0); Compare(RETAIL_ACCEPT,"origin beyond maxima");
+		Valid(golden,3,2,0); Compare(RETAIL_LOADED,"origin beyond maxima");
 		/* A run past a row end is dropped when id's overshoot lands inside its buffer. */
 		Header(0,0,1,1,2); Run(3,17); Run(1,18); Footer();
 		Golden(golden,17); Golden(golden+4,17); Golden(golden+8,18); Golden(golden+12,12);
-		Valid(golden,2,2,0); Compare(RETAIL_ACCEPT,"run crosses a row into the marker");
+		Valid(golden,2,2,0); Compare(RETAIL_LOADED,"run crosses a row into the marker");
 		Header(0,0,0,2,1); Run(3,5); Encoded(6); Encoded(7); Footer();
 		Golden(golden,5); Golden(golden+4,6); Golden(golden+8,7);
-		Valid(golden,1,3,0); Compare(RETAIL_ACCEPT,"run spans several narrow rows"); Prefixes();
+		Valid(golden,1,3,0); Compare(RETAIL_LOADED,"run spans several narrow rows"); Prefixes();
 		/* Zero-length runs are no-ops; a short stream continues into the marker and palette. */
-		Header(0,0,0,0,1); Encoded(0xc0); Encoded(17); Footer(); Golden(golden,12); Valid(golden,1,1,0); Compare(RETAIL_ACCEPT,"zero run");
-		Header(0,0,0,0,1); Encoded(0xc1); Footer(); Golden(golden,12); Valid(golden,1,1,0); Compare(RETAIL_ACCEPT,"run value is the marker");
-		Header(0,0,1,0,2); Encoded(17); Footer(); Golden(golden,17); Golden(golden+4,12); Valid(golden,2,1,0); Compare(RETAIL_ACCEPT,"literal is the marker");
-		Header(0,0,0,0,1); Encoded(12); Footer(); Golden(golden,12); Valid(golden,1,1,0); Compare(RETAIL_ACCEPT,"marker as pixel"); Prefixes();
-		/* A run past the end of the last row would overflow id's heap buffer. */
-		Header(0,0,2,0,4); Run(4,12); Footer(); Compare(RETAIL_UNSAFE,"last-row overshoot"); Reject(0);
-		Header(0,0,2,1,4); Encoded(1); Encoded(2); Encoded(3); Encoded(99); Run(3,200); Footer(); Compare(RETAIL_UNSAFE,"padded last row overshoot");
-		Header(0,0,0,0,65535); Runs(65535,31); Footer(); Compare(RETAIL_UNSAFE,"huge stride run"); Reject(0);
+		Header(0,0,0,0,1); Encoded(0xc0); Encoded(17); Footer(); Golden(golden,12); Valid(golden,1,1,0); Compare(RETAIL_LOADED,"zero run");
+		Header(0,0,0,0,1); Encoded(0xc1); Footer(); Golden(golden,12); Valid(golden,1,1,0); Compare(RETAIL_LOADED,"run value is the marker");
+		Header(0,0,1,0,2); Encoded(17); Footer(); Golden(golden,17); Golden(golden+4,12); Valid(golden,2,1,0); Compare(RETAIL_LOADED,"literal is the marker");
+		Header(0,0,0,0,1); Encoded(12); Footer(); Golden(golden,12); Valid(golden,1,1,0); Compare(RETAIL_LOADED,"marker as pixel"); Prefixes();
+		/* Odd widths whose pad byte joins the last run: retail writes past n into Z_TagMalloc's slack. */
+		Header(0,0,2,0,4); Run(4,12); Footer(); for(i=0;i<3;i++) Golden(golden+i*4,12);
+		Valid(golden,3,1,0); Compare(RETAIL_LOADED,"3x1 pad in last run"); Prefixes();
+		Header(0,0,2,1,4); Encoded(1); Encoded(2); Run(2,3); Encoded(4); Encoded(5); Run(2,6); Footer();
+		for(i=0;i<6;i++) Golden(golden+i*4,i+1);
+		Valid(golden,3,2,0); Compare(RETAIL_LOADED,"3x2 pad in each row's last run"); Prefixes();
+		Header(0,0,4,2,6); for(j=0;j<3;j++) { Run(4,10+j); Run(2,20+j); } Footer();
+		for(j=0;j<3;j++) for(i=0;i<5;i++) Golden(golden+(j*5+i)*4,i<4?10+j:20+j);
+		Valid(golden,5,3,0); Compare(RETAIL_LOADED,"5x3 pad in each row's last run");
+		Header(0,0,2,1,4); Encoded(1); Encoded(2); Encoded(3); Encoded(99); Run(3,200); Footer();
+		Golden(golden,1); Golden(golden+4,2); Golden(golden+8,3); Golden(golden+12,99); Golden(golden+16,200); Golden(golden+20,200);
+		Valid(golden,3,2,0); Compare(RETAIL_LOADED,"shifted pad, last run in slack");
+		/* Overshoot past the slack was ERR_FATAL in retail; it loads clamped here, deliberately. */
+		Header(0,0,2,3,4); for(j=0;j<4;j++) Run(4,30+j); Footer();
+		for(j=0;j<4;j++) for(i=0;i<3;i++) Golden(golden+(j*3+i)*4,30+j);
+		Valid(golden,3,4,0); Compare(RETAIL_FATAL,"3x4 pad overshoots the zone marker");
+		Header(0,0,0,0,65535); Runs(65535,31); Footer(); Golden(golden,31);
+		Valid(golden,1,1,0); Compare(RETAIL_FATAL,"huge stride run");
 	}
 	inputAlignment=0;
 	Header(0,0,255,0,256); for(i=0;i<256;i++) { if(i>=192) Run(1,i); else Encoded(i); Golden(golden+i*4,i); } Footer();
-	Valid(golden,256,1,0); Compare(RETAIL_ACCEPT,"all palette indices");
+	Valid(golden,256,1,0); Compare(RETAIL_LOADED,"all palette indices");
 	/* The axis limit is on xmax/ymax themselves, independent of xmin/ymin. */
 	Header(0,0,1023,0,1024); Runs(1024,40); Footer(); for(i=0;i<1024;i++) Golden(golden+i*4,40);
-	Valid(golden,1024,1,0); Compare(RETAIL_ACCEPT,"xmax 1023");
-	LE(4,5); Valid(golden,1024,1,0); Compare(RETAIL_ACCEPT,"xmax 1023 with xmin");
+	Valid(golden,1024,1,0); Compare(RETAIL_LOADED,"xmax 1023");
+	LE(4,5); Valid(golden,1024,1,0); Compare(RETAIL_LOADED,"xmax 1023 with xmin");
 	LE(8,1024); Compare(RETAIL_REJECT,"xmax 1024 with xmin"); LE(4,0); Compare(RETAIL_REJECT,"xmax 1024");
 	Header(0,0,0,1023,1); for(i=0;i<1024;i++) Encoded(i%192); Footer(); for(i=0;i<1024;i++) Golden(golden+i*4,i%192);
-	Valid(golden,1,1024,0); Compare(RETAIL_ACCEPT,"ymax 1023");
-	LE(6,1000); Valid(golden,1,1024,0); Compare(RETAIL_ACCEPT,"ymax 1023 with ymin");
+	Valid(golden,1,1024,0); Compare(RETAIL_LOADED,"ymax 1023");
+	LE(6,1000); Valid(golden,1,1024,0); Compare(RETAIL_LOADED,"ymax 1023 with ymin");
 	LE(10,1024); Compare(RETAIL_REJECT,"ymax 1024");
 	Header(0,0,1023,1023,1024);
 	for(j=0;j<1024;j++) Runs(1024,j%256);
 	Footer(); large=malloc(1024*1024*4); Check(large!=NULL,"golden max allocation");
 	for(j=0;j<1024;j++) for(i=0;i<1024;i++) Golden(large+(j*1024+i)*4,j%256);
-	Valid(large,1024,1024,0); Compare(RETAIL_ACCEPT,"1024 square"); free(large);
+	Valid(large,1024,1024,0); Compare(RETAIL_LOADED,"1024 square"); free(large);
 	Header(0,0,1023,1023,1024); Run(63,1); Footer(); Compare(RETAIL_UNSAFE,"stream past the file"); Reject(0);
 	/* Header fields retail ignores: color_planes, bytes_per_line, xmin/ymin, palette marker. */
 	Header(0,0,1,1,2); Encoded(1); Encoded(2); Encoded(3); Encoded(4); Footer();
 	for(i=0;i<4;i++) Golden(golden+i*4,i+1);
-	fixture[65]=0; Valid(golden,2,2,0); Compare(RETAIL_ACCEPT,"zero planes");
-	fixture[65]=3; Valid(golden,2,2,0); Compare(RETAIL_ACCEPT,"three planes"); fixture[65]=1;
-	LE(66,0); Valid(golden,2,2,0); Compare(RETAIL_ACCEPT,"zero stride"); LE(66,1); Compare(RETAIL_ACCEPT,"short stride"); LE(66,2);
+	fixture[65]=0; Valid(golden,2,2,0); Compare(RETAIL_LOADED,"zero planes");
+	fixture[65]=3; Valid(golden,2,2,0); Compare(RETAIL_LOADED,"three planes"); fixture[65]=1;
+	LE(66,0); Valid(golden,2,2,0); Compare(RETAIL_LOADED,"zero stride"); LE(66,1); Compare(RETAIL_LOADED,"short stride"); LE(66,2);
 	LE(4,1); Valid(golden,2,2,0); LE(4,0); LE(6,1); Valid(golden,2,2,0); LE(6,0);
-	fixture[fixtureSize-769]=11; Valid(golden,2,2,0); Compare(RETAIL_ACCEPT,"no palette marker"); fixture[fixtureSize-769]=12;
+	fixture[fixtureSize-769]=11; Valid(golden,2,2,0); Compare(RETAIL_LOADED,"no palette marker"); fixture[fixtureSize-769]=12;
 	/* Malformed metadata and lengths still reject cleanly. */
 	fixture[0]=9; Reject(0); fixture[0]=10; fixture[1]=4; Reject(0); fixture[1]=5;
 	fixture[2]=0; Reject(0); fixture[2]=1; fixture[3]=4; Reject(0); fixture[3]=8;
@@ -230,8 +263,8 @@ int main( void ) {
 		if(Random(2) && length>768) fixture[length-769]=12;
 		fixtureSize=length; inputAlignment=Random(4); Compare(-1,"random retail differential");
 	}
-	Check(retailAccepted>1000 && retailRejected>100 && retailUnsafe>1000,"differential coverage");
-	printf("PCX retail parity (%d accepted, %d rejected, %d unsafe-in-retail rejected), RLE, palette and ownership regressions passed (issues #42, #475)\n",
-		retailAccepted,retailRejected,retailUnsafe);
+	Check(retailLoaded>1000 && retailFatal>1000 && retailRejected>100 && retailUnsafe>100,"differential coverage");
+	printf("PCX retail parity (%d retail-loaded identical, %d retail-fatal loaded clamped, %d rejected, %d unsafe-in-retail rejected), RLE, palette and ownership regressions passed (issues #42, #475)\n",
+		retailLoaded,retailFatal,retailRejected,retailUnsafe);
 	return 0;
 }

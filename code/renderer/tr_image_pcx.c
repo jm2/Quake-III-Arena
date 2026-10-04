@@ -29,19 +29,19 @@ extern refimport_t ri;
 /**
  * Decode rows exactly as 1.32c's LoadPCX: every row restarts at x=0 and takes runs until it
  * reaches columns, ignoring bytes_per_line, so stream padding becomes the next row's pixels.
- * A run may overshoot its row; id wrote the excess into the following rows, which those rows
- * then overwrite, so it is dropped here. An excess that would pass the end of id's buffer
- * (heap corruption in 1.32c) and a read past the file (id's malformed check) are rejected.
- * id also accepted zero-length runs (0xc0 plus a value byte) as no-ops, and so does this.
+ * A run may overshoot its row. id wrote the excess into the following rows, which those rows
+ * then overwrite, or past the last row into its Z_TagMalloc block; it is dropped here. Within
+ * the block's 4-byte rounding slack retail loaded the image with these same pixels; beyond it,
+ * hitting the ZONEID trash marker, LoadPCX32's ri.Free raised ERR_FATAL. Loading those files
+ * clamped is a deliberate, safe divergence. A read past the file (id's malformed check) is
+ * rejected. id also accepted zero-length runs (0xc0 plus a value byte) as no-ops, as does this.
  */
 static qboolean R_PCXRows( imageCursor_t *cursor, unsigned int columns, unsigned int rows,
                           const byte *palette, byte *output ) {
-	unsigned int row, column, run, room, visible, i;
+	unsigned int row, column, run, visible, i;
 	const byte *token, *value;
 	byte *pixel;
 	for ( row = 0; row < rows; row++ ) {
-		/* Pixels from this row's start to the end of id's (ymax+1)*(xmax+1) buffer. */
-		room = ( rows - row ) * columns;
 		column = 0;
 		while ( column < columns ) {
 			if ( !R_ImageBytes(cursor, 1, &token) ) return qfalse;
@@ -50,7 +50,6 @@ static qboolean R_PCXRows( imageCursor_t *cursor, unsigned int columns, unsigned
 				run = *token & 0x3f;
 				if ( !R_ImageBytes(cursor, 1, &value) ) return qfalse;
 			}
-			if ( run > room - column ) return qfalse;
 			if ( output ) {
 				visible = run < columns - column ? run : columns - column;
 				pixel = output + (row * columns + column) * 4;
