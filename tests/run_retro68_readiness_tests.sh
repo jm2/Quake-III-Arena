@@ -711,8 +711,11 @@ set_version() {
 # make_setup_root DIR: make_root plus the Retro68 sources at the pinned
 # commit, SDK archives pinned by their digests, an earlier work tree and the
 # host commands setup_retro68.sh runs before it builds. The stub
-# build-toolchain.bash records its arguments and whether the install
-# directory still exists, then stops setup with status 42.
+# build-toolchain.bash refuses, as the real one does, to run from its source
+# directory or to do a full build into a prefix that is not empty (status 1).
+# Otherwise it records its arguments, whether the install directory still
+# exists, its working directory and CXXFLAGS, then stops setup with status
+# 42. The stub g++ defaults to C++ $Q3_STUB_CPLUSPLUS (201703L if unset).
 make_setup_root() {
     local root="$1" tool
     make_root "$root"
@@ -727,10 +730,24 @@ make_setup_root() {
 #!/bin/bash
 prefix=""
 for arg in "\$@"; do case "\$arg" in --prefix=*) prefix="\${arg#--prefix=}";; esac; done
-{ echo "args: \$*"; if [ -e "\$prefix" ]; then echo "prefix kept"; else echo "prefix removed"; fi; } > "$root/build-toolchain.called"
+if [ "\$(pwd -P)" = "\$(cd "\$(dirname "\$0")" && pwd -P)" ]; then
+    echo "Please do not invoke build-toolchain.bash from the source directory."
+    exit 1
+fi
+case " \$* " in
+    *" --skip-thirdparty "*) ;;
+    *) if [ -d "\$prefix" ] && [ -n "\$(ls -A "\$prefix")" ]; then
+           echo "\$prefix is not empty, cannot install to there."
+           exit 1
+       fi ;;
+esac
+{ echo "args: \$*"; if [ -e "\$prefix" ]; then echo "prefix kept"; else echo "prefix removed"; fi
+  echo "pwd: \$(pwd -P)"; echo "cxxflags: \${CXXFLAGS-}"; } > "$root/build-toolchain.called"
 exit 42
 EOF
     chmod +x "$root/upstream/build-toolchain.bash"
+    printf '#!/bin/sh\ncat > /dev/null\necho "${Q3_STUB_CPLUSPLUS:-201703L}"\n' > "$root/stubs/g++"
+    chmod +x "$root/stubs/g++"
     for tool in bison flex makeinfo ruby sleep; do
         printf '#!/bin/sh\nexit 0\n' > "$root/stubs/$tool"
         chmod +x "$root/stubs/$tool"
@@ -752,7 +769,9 @@ case "$out" in
            : > "$out/MPW/Interfaces&Libraries/Interfaces/CIncludes/Types.h" ;;
     *) mkdir -p "$out/OpenGL SDK/Libraries" "$out/OpenGL SDK/Headers"
        : > "$out/OpenGL SDK/Libraries/OpenGLLibraryStub"
-       : > "$out/OpenGL SDK/Headers/gl.h" ;;
+       : > "$out/OpenGL SDK/Libraries/OpenGLLibraryStub.rsrc"
+       : > "$out/OpenGL SDK/Headers/gl.h"
+       : > "$out/OpenGL SDK/Headers/agl.h" ;;
 esac
 EOF
     } > "$root/stubs/unar"
@@ -1028,6 +1047,58 @@ check "setup_retro68.sh extracted the matching download from tools/" \
     bash -c 'cmp -s "$1/good.sit" "$1/tools/$2" && [ ! -e "$1/tools/$2.part" ] &&
         grep -q -F "unar -q -f tools/$2 " "$1/unar.called"' _ "$ROOT" "$Q3_MPW_FILE"
 
+# ---- hosts whose C++ compiler defaults to C++20 (issue #387) ----
+
+# GCC 16 defaults to C++20, under which GCC 12.2's host build fails, and
+# build-toolchain.bash overwrites CC and CXX but keeps CXXFLAGS. A fresh setup
+# must build in C++11 there (libcody's configure accepts no other -std), from
+# the work tree, and leave older compilers and a -std the user chose alone.
+# cxxflags_were ROOT FLAGS: build-toolchain.bash ran with CXXFLAGS=FLAGS.
+cxxflags_were() {
+    grep -q -x -F "cxxflags: $2" "$1/build-toolchain.called" || {
+        echo "  build-toolchain.bash ran with:"; sed 's/^/    /' "$1/build-toolchain.called" 2> /dev/null
+        return 1
+    }
+}
+# fresh_setup_root ROOT: tools/ holds only the SDK archives.
+fresh_setup_root() {
+    make_setup_root "$1"
+    rm -rf "$1/tools/Retro68-src" "$1/tools/Retro68-build" "$1/tools/Retro68-work"
+}
+
+fresh_setup_root "$ROOT"
+export Q3_STUB_CPLUSPLUS=202002L
+(unset CXXFLAGS; run_setup "$ROOT"; echo "$Q3_STATUS" > "$ROOT/status")
+Q3_STATUS="$(cat "$ROOT/status")"
+expect "setup_retro68.sh pins C++11 when the host g++ defaults to C++20" 42 \
+    "defaults to C++ 202002, which GCC 12.2 does not" "CXXFLAGS=-O2 -std=gnu++11"
+check "setup_retro68.sh passes CXXFLAGS=\"-O2 -std=gnu++11\" to build-toolchain.bash" \
+    cxxflags_were "$ROOT" "-O2 -std=gnu++11"
+check "setup_retro68.sh runs build-toolchain.bash from tools/Retro68-work" \
+    grep -q -x -F "pwd: $(cd "$ROOT/tools" && pwd -P)/Retro68-work" "$ROOT/build-toolchain.called"
+
+fresh_setup_root "$ROOT"
+(export CXXFLAGS="-pipe"; run_setup "$ROOT"; echo "$Q3_STATUS" > "$ROOT/status")
+Q3_STATUS="$(cat "$ROOT/status")"
+expect "setup_retro68.sh adds the dialect to the user's CXXFLAGS" 42 "CXXFLAGS=-pipe -std=gnu++11"
+check "setup_retro68.sh keeps the user's other CXXFLAGS" cxxflags_were "$ROOT" "-pipe -std=gnu++11"
+
+fresh_setup_root "$ROOT"
+(export CXXFLAGS="-O1 -std=c++11"; run_setup "$ROOT"; echo "$Q3_STATUS" > "$ROOT/status")
+Q3_STATUS="$(cat "$ROOT/status")"
+expect "setup_retro68.sh keeps a -std the user set" 42 "keeping CXXFLAGS=-O1 -std=c++11"
+check "setup_retro68.sh passes the user's -std unchanged" cxxflags_were "$ROOT" "-O1 -std=c++11"
+
+fresh_setup_root "$ROOT"
+export Q3_STUB_CPLUSPLUS=201703L
+(unset CXXFLAGS; run_setup "$ROOT"; echo "$Q3_STATUS" > "$ROOT/status")
+Q3_STATUS="$(cat "$ROOT/status")"
+expect "setup_retro68.sh builds a C++17 host as before" 42 "Step 5: Building Retro68"
+check "setup_retro68.sh sets no CXXFLAGS for a host g++ that defaults to C++17" \
+    bash -c 'cxx=$(grep "^cxxflags:" "$1"); [ "$cxx" = "cxxflags: " ] && ! grep -q "GCC 12.2 does not" "$2"' \
+    _ "$ROOT/build-toolchain.called" "$Q3_OUT"
+unset Q3_STUB_CPLUSPLUS
+
 check "no scratch files are left behind" \
     bash -c '[ -z "$(ls -A "$1")" ]' _ "$Q3_CHECK_TMP"
 
@@ -1057,7 +1128,7 @@ make_ps_setup_root() {
 run_ps_setup() {
     local root="$1" tmp="${2:-$Q3_CHECK_TMP}"
     Q3_STATUS=0
-    (cd "$root" && TMPDIR="$tmp" PATH="$root/stubs:$PATH" \
+    (cd "$root" && unset CXXFLAGS && TMPDIR="$tmp" PATH="$root/stubs:$PATH" \
         pwsh -NoProfile -NonInteractive -File ./setup_retro68.ps1) > "$Q3_OUT" 2>&1 || Q3_STATUS=$?
 }
 
@@ -1181,6 +1252,22 @@ if command -v pwsh > /dev/null 2>&1; then
     check "setup_retro68.ps1 left the working toolchain in place" \
         test -x "$ROOT/tools/Retro68-build/bin/powerpc-apple-macos-gcc.exe"
 
+    # Under pwsh on Linux or macOS the tools have no .exe suffix. A re-run
+    # against such a complete toolchain must accept it, not move it aside
+    # and rebuild (issue #387 review).
+    make_ps_setup_root "$ROOT"
+    rm -f "$ROOT"/tools/Retro68-build/bin/*.exe
+    run_ps_setup "$ROOT"
+    expect "setup_retro68.ps1 accepts a complete toolchain without .exe names" 0 \
+        "Retro68 toolchain check passed" "Retro68 appears to be installed"
+    # The check's probes log to calls.log in the toolchain, so compare the
+    # rest of it.
+    check "setup_retro68.ps1 neither moved nor rebuilt a complete toolchain without .exe names" \
+        bash -c '[ ! -e "$1/build-toolchain.called" ] && [ ! -e "$1/git.log" ] &&
+            [ -z "$(find "$1/tools" -maxdepth 1 -name "Retro68-*.*-*")" ] &&
+            [ -x "$1/tools/Retro68-build/bin/powerpc-apple-macos-gcc" ] &&
+            [ -f "$1/tools/Retro68-work/gcc-build-ppc/cc1.o" ]' _ "$ROOT"
+
     make_ps_setup_root "$ROOT"
     Q3_BEFORE="$(snapshot "$ROOT/tools/Retro68-build"; snapshot "$ROOT/tools/Retro68-work")"
     run_ps_setup "$ROOT" "$Q3_TMP_MISSING"
@@ -1222,6 +1309,61 @@ if command -v pwsh > /dev/null 2>&1; then
         at_pinned_commit "$ROOT/tools/Retro68-src"
     check "a fresh setup_retro68.ps1 ran the pinned checkout's build-toolchain.bash" \
         grep -q -x "prefix removed" "$ROOT/build-toolchain.called"
+    # Issue #387: build-toolchain.bash refuses to run from its source
+    # directory, and to build into a prefix that holds anything, such as the
+    # unar the ps1 used to install there.
+    check "a fresh setup_retro68.ps1 runs build-toolchain.bash from tools/Retro68-work" \
+        grep -q -x -F "pwd: $(cd "$ROOT/tools" && pwd -P)/Retro68-work" "$ROOT/build-toolchain.called"
+    check "a fresh setup_retro68.ps1 sets no CXXFLAGS for a host g++ that defaults to C++17" \
+        grep -q -x "cxxflags: " "$ROOT/build-toolchain.called"
+
+    make_ps_setup_root "$ROOT"
+    rm -rf "$ROOT/tools/Retro68-src" "$ROOT/tools/Retro68-build" "$ROOT/tools/Retro68-work"
+    Q3_STATUS=0
+    (cd "$ROOT" && unset CXXFLAGS && Q3_STUB_CPLUSPLUS=202002L TMPDIR="$Q3_CHECK_TMP" PATH="$ROOT/stubs:$PATH" \
+        pwsh -NoProfile -NonInteractive -File ./setup_retro68.ps1) > "$Q3_OUT" 2>&1 || Q3_STATUS=$?
+    expect "setup_retro68.ps1 pins C++11 when the host g++ defaults to C++20" 1 \
+        "defaults to C++ 202002, which GCC 12.2 does not" "Build failed."
+    check "setup_retro68.ps1 passes CXXFLAGS=\"-O2 -std=gnu++11\" to build-toolchain.bash" \
+        cxxflags_were "$ROOT" "-O2 -std=gnu++11"
+
+    # An earlier incomplete build: a prefix holding only unar, as the ps1 left
+    # it, and a work tree. Both are moved aside, never deleted, and unar is
+    # found in tools/unar-bin, where the ps1 now installs the one it builds.
+    make_ps_setup_root "$ROOT"
+    rm -rf "$ROOT/tools/Retro68-build"
+    mkdir -p "$ROOT/tools/Retro68-build/bin" "$ROOT/tools/unar-bin"
+    mv "$ROOT/stubs/unar" "$ROOT/tools/unar-bin/unar"
+    cp -p "$ROOT/tools/unar-bin/unar" "$ROOT/tools/Retro68-build/bin/unar.exe"
+    run_ps_setup "$ROOT"
+    expect "setup_retro68.ps1 moves an incomplete prefix aside and builds" 1 \
+        "Moved $ROOT/tools/Retro68-build to" "Build failed."
+    check "setup_retro68.ps1 builds into an empty prefix after an incomplete build" \
+        grep -q -x "prefix removed" "$ROOT/build-toolchain.called"
+    check "setup_retro68.ps1 kept the incomplete prefix and work tree as *.previous-<UTC time>" \
+        bash -c 'set -- "$1"/tools/Retro68-build.previous-*; [ -x "$1/bin/unar.exe" ] || exit 1
+            set -- "${1%/tools/*}"/tools/Retro68-work.previous-*; [ -f "$1/gcc-build-ppc/cc1.o" ]' _ "$ROOT"
+    check "setup_retro68.ps1 uses the unar in tools/unar-bin" \
+        grep -q -F "unar -f" "$ROOT/unar.called"
+
+    # A build that succeeds: MakeImport runs powerpc-apple-macos-as from PATH,
+    # as the real one does, so the toolchain's bin must be on it.
+    make_ps_setup_root "$ROOT"
+    rm -rf "$ROOT/tools/Retro68-src" "$ROOT/tools/Retro68-build" "$ROOT/tools/Retro68-work"
+    cat > "$ROOT/upstream/build-toolchain.bash" <<'EOF'
+#!/bin/bash
+for arg in "$@"; do case "$arg" in --prefix=*) prefix="${arg#--prefix=}";; esac; done
+mkdir -p "$prefix/bin" "$prefix/powerpc-apple-macos/include"
+printf '#!/bin/sh\nexit 0\n' > "$prefix/bin/powerpc-apple-macos-as"
+printf '#!/bin/sh\ncommand -v powerpc-apple-macos-as > /dev/null || { echo "exec: No such file or directory"; echo "powerpc-apple-macos-as failed."; exit 1; }\necho "!<arch>" > "$2"\n' > "$prefix/bin/MakeImport"
+chmod +x "$prefix/bin/powerpc-apple-macos-as" "$prefix/bin/MakeImport"
+EOF
+    run_ps_setup "$ROOT"
+    expect "setup_retro68.ps1 generates the OpenGL import library after a build" 0 \
+        "Retro68 installed to"
+    check "setup_retro68.ps1 installed the prepared OpenGL headers and import library" \
+        bash -c '[ -f "$1/tools/Retro68-build/powerpc-apple-macos/include/agl.h" ] &&
+            [ -s "$1/tools/Retro68-src/InterfacesAndLibraries/SharedLibraries/libOpenGLLibraryStub.a" ]' _ "$ROOT"
 
     make_ps_setup_root "$ROOT"
     echo "$Q3_UPSTREAM" > "$ROOT/tools/Retro68-src/.git/stub-head"
