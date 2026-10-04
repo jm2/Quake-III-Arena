@@ -513,6 +513,11 @@ static void Upload32( unsigned *data,
 		scaled_height >>= 1;
 
 	if ( scaled_width != width || scaled_height != height ) {
+		// rounding up can quadruple the loader's byte count; keep the
+		// temp allocation size from overflowing int
+		if ( scaled_height > ( 0x7fffffff / 4 ) / scaled_width ) {
+			ri.Error( ERR_DROP, "Upload32: %ix%i is too large", scaled_width, scaled_height );
+		}
 		resampledBuffer = ri.Hunk_AllocateTempMemory( scaled_width * scaled_height * 4 );
 		ResampleTexture (data, width, height, resampledBuffer, scaled_width, scaled_height);
 		data = resampledBuffer;
@@ -529,16 +534,6 @@ static void Upload32( unsigned *data,
 	}
 
 	//
-	// clamp to minimum size
-	//
-	if (scaled_width < 1) {
-		scaled_width = 1;
-	}
-	if (scaled_height < 1) {
-		scaled_height = 1;
-	}
-
-	//
 	// clamp to the current upper OpenGL limit
 	// scale both axis down equally so we don't have to
 	// deal with a half mip resampling
@@ -547,6 +542,17 @@ static void Upload32( unsigned *data,
 		|| scaled_height > glConfig.maxTextureSize ) {
 		scaled_width >>= 1;
 		scaled_height >>= 1;
+	}
+
+	//
+	// clamp to minimum size, after the upper limit so an extreme
+	// aspect ratio can't halve a dimension to 0 (as Quake3e does)
+	//
+	if (scaled_width < 1) {
+		scaled_width = 1;
+	}
+	if (scaled_height < 1) {
+		scaled_height = 1;
 	}
 
 	scaledBuffer = ri.Hunk_AllocateTempMemory( sizeof( unsigned ) * scaled_width * scaled_height );
