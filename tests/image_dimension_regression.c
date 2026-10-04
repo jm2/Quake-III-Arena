@@ -116,10 +116,12 @@ static void BMP( unsigned int columns, unsigned int rawHeight, unsigned int payl
 	LE(18, columns, 4); LE(22, rawHeight, 4); LE(26, 1, 2); LE(28, 8, 2);
 	fixture[54] = 10; fixture[55] = 20; fixture[56] = 30;
 }
-/** Version 5 8-bit PCX whose scanlines are runs of colour 0, then the 0x0c palette marker. */
+/**
+ * Version 5 8-bit PCX whose scanlines are runs of colour 0, then the 0x0c palette marker.
+ * Like retail 1.32c (#475), rows are xmax+1 pixels whatever xmin is.
+ */
 static void PCX( unsigned int xmin, unsigned int xmax, unsigned int ymax, unsigned int lines ) {
-	unsigned int bytesPerLine = xmax - xmin + 1, line, left, run;
-	if ( xmax < xmin ) bytesPerLine = 1;
+	unsigned int bytesPerLine = xmax + 1, line, left, run;
 	fixtureSize = 0; Reserve(128 + 769); memset(fixture, 0, 128); fixtureSize = 128;
 	fixture[0] = 0x0a; fixture[1] = 5; fixture[2] = 1; fixture[3] = 8;
 	LE(4, xmin, 2); LE(6, 0, 2); LE(8, xmax, 2); LE(10, ymax, 2); fixture[65] = 1; LE(66, bytesPerLine, 2);
@@ -171,8 +173,10 @@ int main( void ) {
 	/* PCX keeps the retail 1024-per-side limit. */
 	PCX(0, 1024, 0, 1); Reject(R_LoadPCX, "PCX 1025 wide");
 	PCX(0, 0, 1024, 1025); Reject(R_LoadPCX, "PCX 1025 tall");
-	PCX(10, 5, 0, 1); Reject(R_LoadPCX, "PCX xmax below xmin");
-	PCX(0, 63, 63, 63); Reject(R_LoadPCX, "PCX scanlines one short of its declared height");
+	/* Retail ignores xmin (#475): xmax below xmin is a 6x1 image, never a negative or wrapped size. */
+	PCX(10, 5, 0, 1); Accept(R_LoadPCX, "PCX xmax below xmin sized from xmax", 6, 1, paletteColor);
+	/* Retail lets a short stream run on into the palette; a missing row longer than it reads past the file. */
+	PCX(0, 1023, 63, 63); Reject(R_LoadPCX, "PCX scanlines one short of its declared height");
 	PCX(0, 1023, 1023, 1024); Accept(R_LoadPCX, "PCX 1024x1024 at the retail limit", 1024, 1024, paletteColor);
 
 	/* JPEG: a valid stream from the real encoder with its frame size rewritten. */
