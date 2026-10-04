@@ -352,7 +352,7 @@ static void MacroCycles(void)
 		PS_SetBaseFolder("");
 		errors = 0;
 		lastError[0] = '\0';
-		handle = PC_LoadSourceHandle("ui/cycle.menu");
+		handle = PC_LoadSourceHandle("ui/cycle.menu", PC_OWNER_UI);
 		Check(handle > 0, "menu handle loads");
 		for (i = 0; i < 4; i++) Check(PC_ReadTokenHandle(handle, &pctoken), "menu prefix tokens");
 		Check(!PC_ReadTokenHandle(handle, &pctoken) && errors == 1 && strstr(lastError, "macro expansion exceeds"),
@@ -472,10 +472,21 @@ static void ExpectBudgetFailure(source_t *source, int published, int limit, cons
 	Check(peakBytes < 8 * 1024 * 1024, "the failing source stays far below the Mac zone");
 }
 
+/* the directive fails after its expression, which may leave the next
+   line's first token unread; FreeSource releases it */
+static void ExpectNestingFailure(source_t *source, const char *message)
+{
+	Check(!ReadUntilFailure(source, 10), message);
+	Check(errors == 1 && strstr(lastError, "more than 4096 nested conditionals") != NULL,
+		"one nesting diagnostic");
+	Check(PC_SourceHasError(source), "source keeps its error state");
+}
+
 static void Budgets(void)
 {
 	char name[64], body[128];
 	source_t *source;
+	size_t loaded;
 	int i, j, hash;
 
 	if (Want(10))
@@ -604,19 +615,62 @@ static void Budgets(void)
 	}
 	if (Want(17))
 	{
-		/* conditionals nest through a heap list and never recurse; memory
-		   is linear in the source text, so nesting depth needs no cap */
-		caseName = "30000 nested conditionals";
+		/* conditionals nest through a heap list and never recurse, but each
+		   open one costs a zone block (44 bytes on the Mac) for 6 bytes of
+		   text: 4096 may be open in one source, retail nests 1 deep */
+		caseName = "4096 nested conditionals";
 		Begin();
-		for (i = 0; i < 30000; i++) Append("#if 1\n");
+		for (i = 0; i < 4096; i++) Append(i & 1 ? "#ifndef NOPE\n" : "#if 1\n");
 		Append("x\n");
-		for (i = 0; i < 30000; i++) Append("#endif\n");
+		for (i = 0; i < 4096; i++) Append("#endif\n");
 		Append("end\n");
 		AddFile("nest.txt", text);
 		source = Load("nest.txt");
 		Expect(source, TT_NAME, "x");
 		Expect(source, TT_NAME, "end");
 		ExpectEnd(source);
+		Finish(source);
+
+		caseName = "4097 nested conditionals";
+		Begin();
+		for (i = 0; i < 4097; i++) Append("#if 1\n");
+		Append("x\n");
+		for (i = 0; i < 4097; i++) Append("#endif\n");
+		Append("end\n");
+		AddFile("nest.txt", text);
+		source = Load("nest.txt");
+		ExpectNestingFailure(source, "the 4097th open conditional fails");
+		Finish(source);
+
+		/* the count follows the stack: an included file's unclosed
+		   conditionals are closed at its end, so 2 x 3000 never reach it */
+		caseName = "unclosed conditionals closed by the end of each include";
+		Begin();
+		for (i = 0; i < 3000; i++) Append("#if 1\n");
+		Append("leaf\n");
+		AddFile("open.h", text);
+		AddFile("twice.txt", "#if 1\n#include \"open.h\"\n#include \"open.h\"\n#endif\nend\n");
+		source = Load("twice.txt");
+		Expect(source, TT_NAME, "leaf");
+		Expect(source, TT_NAME, "leaf");
+		Expect(source, TT_NAME, "end");
+		ExpectEnd(source);
+		Finish(source);
+	}
+	if (Want(18))
+	{
+		/* 80,000 nested conditionals (480 KB, skipped) took about 3.5 MB of
+		   the Mac zone with no cap, so a .menu of about 2 MB filled its 16 MB */
+		caseName = "80000 nested conditionals";
+		Begin();
+		for (i = 0; i < 80000; i++) Append("#if 0\n");
+		Append("x\n");
+		AddFile("deep.txt", text);
+		source = Load("deep.txt");
+		loaded = liveBytes;
+		peakBytes = liveBytes;
+		ExpectNestingFailure(source, "deep nesting stops at the cap");
+		Check(peakBytes - loaded < 256 * 1024, "open conditionals stay far below the Mac zone");
 		Finish(source);
 	}
 }
@@ -663,6 +717,6 @@ int main(int argc, char **argv)
 		fprintf(stderr, "%d bot preprocessor bounds check(s) failed\n", failures);
 		return 1;
 	}
-	puts("Bot preprocessor adjacent strings, macro cycles, includes, expressions and live tokens are bounded (issue #48)");
+	puts("Bot preprocessor adjacent strings, macro cycles, includes, expressions, conditionals and live tokens are bounded (issue #48)");
 	return 0;
 }

@@ -154,6 +154,14 @@ static int Script_FreeSource(int handle) {
 	return 1;
 }
 
+static void Script_FreeAllSources(void) {
+	int i;
+
+	for (i = 1; i < MAX_SCRIPT_HANDLES; i++) {
+		Script_FreeSource(i);
+	}
+}
+
 // Use our simple parser instead of botlib? Set to 1 to bypass botlib
 #define USE_SIMPLE_SCRIPT_PARSER 1
 
@@ -1258,7 +1266,7 @@ int CL_UISystemCalls( int *args ) {
 			return 0;
 		}
 		{
-			int handle = botlib_export->PC_LoadSourceHandle( VMAS(1) );
+			int handle = botlib_export->PC_LoadSourceHandle( VMAS(1), PC_OWNER_UI );
 			printf("UI_PC_LOAD_SOURCE: Got handle=%d\n", handle);
 			fflush(stdout);
 			return handle;
@@ -1369,6 +1377,14 @@ void CL_ShutdownUI( void ) {
 	VM_Call( uivm, UI_SHUTDOWN );
 	VM_Free( uivm );
 	uivm = NULL;
+	// free the script handles it left open (a .menu after an error)
+#if USE_SIMPLE_SCRIPT_PARSER
+	Script_FreeAllSources();
+#else
+	if ( botlib_export ) {
+		botlib_export->PC_FreeSourceHandles( PC_OWNER_UI );
+	}
+#endif
 }
 
 /*
