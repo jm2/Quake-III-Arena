@@ -177,8 +177,14 @@ void UI_LoadArenas( void ) {
 		uiInfo.mapList[uiInfo.mapCount].cinematic = -1;
 		uiInfo.mapList[uiInfo.mapCount].mapLoadName = String_Alloc(Info_ValueForKey(ui_arenaInfos[n], "map"));
 		uiInfo.mapList[uiInfo.mapCount].mapName = String_Alloc(Info_ValueForKey(ui_arenaInfos[n], "longname"));
+		if (!uiInfo.mapList[uiInfo.mapCount].mapLoadName || !uiInfo.mapList[uiInfo.mapCount].mapName) {
+			break;	// string pool full, list only the maps that fit
+		}
 		uiInfo.mapList[uiInfo.mapCount].levelShot = -1;
 		uiInfo.mapList[uiInfo.mapCount].imageName = String_Alloc(va("levelshots/%s", uiInfo.mapList[uiInfo.mapCount].mapLoadName));
+		if (!uiInfo.mapList[uiInfo.mapCount].imageName) {
+			break;
+		}
 		uiInfo.mapList[uiInfo.mapCount].typeBits = 0;
 
 		type = Info_ValueForKey( ui_arenaInfos[n], "type" );
