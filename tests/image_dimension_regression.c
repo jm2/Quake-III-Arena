@@ -142,7 +142,7 @@ int main( void ) {
 	static const byte tgaColor[4] = { 10, 20, 30, 255 }, paletteColor[4] = { 30, 20, 10, 255 };
 	byte gray[8 * 8 * 4], *original;
 	int originalSize, i;
-	ri.FS_ReadFile = Read; ri.FS_FreeFile = FreeFile; ri.FS_WriteFile = Write; ri.Malloc = Allocate; ri.Free = FreeAllocation;
+	ri.FS_ReadFile = Read; ri.FS_FreeFile = FreeFile; ri.FS_WriteFile = Write; ri.Malloc = Allocate; ri.TryMalloc = Allocate; ri.Free = FreeAllocation;
 	ri.Error = Error; ri.Printf = Print;
 
 	/* TGA: run-length data makes the declared size nearly free for the file. */

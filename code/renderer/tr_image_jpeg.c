@@ -39,7 +39,7 @@ typedef struct {
 typedef struct {
 	union { struct jpeg_compress_struct encode; struct jpeg_decompress_struct decode; } info;
 	rendererJPEGError_t error;
-	qboolean compress, oversized;
+	qboolean compress;
 	byte *input, *pixels, *row, *encoded;
 	unsigned int capacity, length;
 } rendererJPEG_t;
@@ -65,7 +65,7 @@ static void R_JPEGOutputMessage( j_common_ptr info ) {
 
 /** Store cleanup state on the heap so libjpeg longjmps never invalidate modified automatic data. */
 static rendererJPEG_t *R_JPEGContext( qboolean compress ) {
-	rendererJPEG_t *context = ri.Malloc(sizeof(*context));
+	rendererJPEG_t *context = ri.TryMalloc(sizeof(*context));
 	if ( !context ) return NULL;
 	memset(context, 0, sizeof(*context)); context->compress = compress;
 	jpeg_std_error(&context->error.pub);
@@ -95,15 +95,17 @@ static void R_JPEGRelease( rendererJPEG_t *context ) {
 	ri.Free(context);
 }
 
-/** Release all ownership before recoverable load errors or nonfatal screenshot failure warnings. */
+/**
+ * Release all ownership, then warn: a bad image loads as no image (the caller uses the default
+ * image) and a failed screenshot writes nothing, as in ioquake3 d8fd07b6 and Quake3e cl_jpeg.c.
+ */
 static void R_JPEGRecover( rendererJPEG_t *context, const char *name ) {
 	char message[JMSG_LENGTH_MAX];
-	qboolean compress = context->compress, oversized = context->oversized;
+	qboolean compress = context->compress;
 	memcpy(message, context->error.message, sizeof(message)); message[sizeof(message)-1] = 0;
 	R_JPEGRelease(context);
 	if ( compress ) ri.Printf(PRINT_WARNING, "SaveJPG: %s (%s)\n", message, name);
-	else if ( oversized ) ri.Printf(PRINT_WARNING, "WARNING: LoadJPG: %s (%s)\n", message, name);
-	else ri.Error(ERR_DROP, "LoadJPG: %s (%s)", message, name);
+	else ri.Printf(PRINT_WARNING, "WARNING: LoadJPG: %s (%s)\n", message, name);
 }
 
 /** Validate RGBA and row arithmetic while reserving signed native allocator bookkeeping space. */
@@ -115,7 +117,6 @@ static qboolean R_JPEGDimensions( unsigned int columns, unsigned int rows ) {
 /** Reject an empty or oversized file image before libjpeg allocates for it, with a warning rather than an error. */
 static void R_JPEGLoadSize( rendererJPEG_t *context, unsigned int columns, unsigned int rows ) {
 	if ( R_ImageSizeValid(columns, rows) ) return;
-	context->oversized = qtrue;
 	R_JPEGFail(context, "empty image or more than 4096x4096 pixels");
 }
 
@@ -133,9 +134,9 @@ void R_LoadJPG( const char *name, byte **pic, int *width, int *height ) {
 	if ( height ) *height = 0;
 	length = ri.FS_ReadFile(name, (void **)&input);
 	if ( !input ) return;
-	if ( length < 0 ) { ri.FS_FreeFile(input); ri.Error(ERR_DROP, "LoadJPG: invalid file length (%s)", name); return; }
+	if ( length < 0 ) { ri.FS_FreeFile(input); ri.Printf(PRINT_WARNING, "WARNING: LoadJPG: invalid file length (%s)\n", name); return; }
 	context = R_JPEGContext(qfalse);
-	if ( !context ) { ri.FS_FreeFile(input); ri.Error(ERR_DROP, "LoadJPG: context allocation failed (%s)", name); return; }
+	if ( !context ) { ri.FS_FreeFile(input); ri.Printf(PRINT_WARNING, "WARNING: LoadJPG: context allocation failed (%s)\n", name); return; }
 	context->input = input;
 	if ( setjmp(context->error.jump) ) { R_JPEGRecover(context, name); return; }
 	info = &context->info.decode;
@@ -149,7 +150,7 @@ void R_LoadJPG( const char *name, byte **pic, int *width, int *height ) {
 	components = info->out_color_space == JCS_GRAYSCALE ? 1 : 3;
 	if ( !jpeg_start_decompress(info) || info->output_components != components ) R_JPEGFail(context, "unsupported output format");
 	columns = info->output_width; rows = info->output_height;
-	context->pixels = ri.Malloc(columns * rows * 4);
+	context->pixels = ri.TryMalloc(columns * rows * 4);
 	if ( !context->pixels ) R_JPEGFail(context, "pixel allocation failed");
 	while ( info->output_scanline < rows ) {
 		row = context->pixels + columns * components * info->output_scanline;
@@ -181,7 +182,7 @@ void R_LoadJPG( const char *name, byte **pic, int *width, int *height ) {
 static void R_JPEGInitDestination( j_compress_ptr info ) {
 	rendererJPEGDest_t *destination = (rendererJPEGDest_t *)info->dest;
 	rendererJPEG_t *context = destination->owner;
-	context->capacity = 4096; context->encoded = ri.Malloc(context->capacity);
+	context->capacity = 4096; context->encoded = ri.TryMalloc(context->capacity);
 	if ( !context->encoded ) R_JPEGFail(context, "encoded allocation failed");
 	destination->pub.next_output_byte = context->encoded;
 	destination->pub.free_in_buffer = context->capacity;
@@ -195,7 +196,7 @@ static boolean R_JPEGGrowDestination( j_compress_ptr info ) {
 	byte *encoded;
 	if ( context->capacity >= R_IMAGE_MAX_BYTES ) R_JPEGFail(context, "encoded image exceeds allocator capacity");
 	capacity = context->capacity > R_IMAGE_MAX_BYTES / 2 ? R_IMAGE_MAX_BYTES : context->capacity * 2;
-	encoded = ri.Malloc(capacity);
+	encoded = ri.TryMalloc(capacity);
 	if ( !encoded ) R_JPEGFail(context, "encoded growth allocation failed");
 	memcpy(encoded, context->encoded, context->capacity);
 	destination->pub.next_output_byte = encoded + context->capacity;
@@ -233,7 +234,7 @@ void SaveJPG( char *name, int quality, int columns, int rows, unsigned char *ima
 	info->dest = &destination->pub;
 	info->image_width = columns; info->image_height = rows; info->input_components = 3; info->in_color_space = JCS_RGB;
 	jpeg_set_defaults(info); jpeg_set_quality(info, quality, TRUE);
-	context->row = ri.Malloc(columns * 3);
+	context->row = ri.TryMalloc(columns * 3);
 	if ( !context->row ) R_JPEGFail(context, "RGB row allocation failed");
 	jpeg_start_compress(info, TRUE);
 	while ( info->next_scanline < (unsigned int)rows ) {

@@ -847,6 +847,8 @@ void *S_Malloc( int size );			// NOT 0 filled memory only for small allocations
 #endif
 // Native allocation cost, or -1 when header/trailer/alignment cannot fit.
 int Z_AllocationSize( int size );
+// Z_TagMalloc that returns NULL, not ERR_FATAL, when the zone has no room.
+void *Z_TryTagMalloc( int size, int tag );
 void Z_Free( void *ptr );
 void Z_FreeTags( int tag );
 int Z_AvailableMemory( void );
