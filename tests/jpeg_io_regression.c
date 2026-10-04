@@ -15,9 +15,9 @@ static int fixtureSize, originalSize, alignment, missing, negativeLength, reads,
 static void *owned[512];
 static int ownedSize[512];
 static byte *fileAllocation, *fileBuffer, *loaded;
-static int loadedWidth,loadedHeight,developerMessages;
+static int loadedWidth,loadedHeight,consoleMessages;
 static size_t liveBytes,peakBytes,zoneBytes=ZONE_BYTES;
-static char lastWarning[1024];
+static char lastWarning[1024],firstMessage[1024];
 
 /** Fail on wrong ownership, pixels or unexpected allocation size. */
 static void Check( int ok, const char *message ) { if(!ok) { fprintf(stderr,"JPEG regression failed: %s\n",message); exit(1); } }
@@ -60,15 +60,18 @@ static void Write( const char *name, const void *buffer, int length ) {
 static void QDECL Error( int level, const char *format, ... ) {
 	(void)format; Check(0,level==ERR_FATAL?"ERR_FATAL from JPEG data":"ERR_DROP from JPEG data (must warn and load no image)");
 }
-/** Every warning comes after all ownership is released; libjpeg's own warnings stay developer-only. */
+/** Every warning comes after all ownership is released; libjpeg's own messages print as retail's jerror.c output_message did. */
 static void QDECL Print( int level, const char *format, ... ) {
 	va_list args;
 	if(level==PRINT_WARNING) {
 		Check(!live && !fileAllocation,"cleanup before warning"); warnings++;
 		va_start(args,format); vsnprintf(lastWarning,sizeof(lastWarning),format,args); va_end(args);
-	} else { Check(level==PRINT_DEVELOPER,"unexpected JPEG message category"); developerMessages++; }
+	} else {
+		Check(level==PRINT_ALL,"libjpeg message not PRINT_ALL as in retail");
+		if(!consoleMessages++) { va_start(args,format); vsnprintf(firstMessage,sizeof(firstMessage),format,args); va_end(args); }
+	}
 }
-static void Reset( void ) { Check(!live && !fileAllocation,"previous operation leaked"); reads=fileFrees=writes=warnings=allocationCalls=failAt=missing=negativeLength=developerMessages=0; peakBytes=0; lastWarning[0]=0; }
+static void Reset( void ) { Check(!live && !fileAllocation,"previous operation leaked"); reads=fileFrees=writes=warnings=allocationCalls=failAt=missing=negativeLength=consoleMessages=0; peakBytes=0; lastWarning[0]=firstMessage[0]=0; }
 /** A prefix may recover through a true-EOF EOI; otherwise one warning, no image, and everything released once. */
 static int Load( void ) {
 	loaded=(byte *)1; loadedWidth=loadedHeight=-1;
@@ -79,7 +82,7 @@ static int Load( void ) {
 /** Assert native top-down decoding, opaque alpha and the small lossy tolerance of a known grayscale image. */
 static void Golden( int columns, int rows, const byte *bottomUp, int tolerance ) {
 	int row,column,channel,expected,actual;
-	Check(Load() && loadedWidth==columns && loadedHeight==rows,"decoded dimensions");
+	Check(Load() && loadedWidth==columns && loadedHeight==rows && !consoleMessages,"decoded dimensions without messages");
 	for(row=0;row<rows;row++) for(column=0;column<columns;column++) {
 		for(channel=0;channel<3;channel++) {
 			expected=bottomUp[((rows-1-row)*columns+column)*4+channel]; actual=loaded[(row*columns+column)*4+channel];
@@ -162,6 +165,17 @@ static int Marker( int code ) {
 	int i; for(i=0;i+1<originalSize;i++) if(original[i]==255 && original[i+1]==code) return i;
 	Check(0,"marker in encoded fixture"); return -1;
 }
+/** Insert count zero bytes before offset, as libjpeg's next_marker skips them with one warning. */
+static void Extraneous( int offset, int count ) {
+	memmove(fixture+offset+count,fixture+offset,fixtureSize-offset); memset(fixture+offset,0,count); fixtureSize+=count;
+}
+/** Retail printed only the first corrupt-data warning per image, at PRINT_ALL as "%s\n", and kept decoding. */
+static void Console( const char *message ) {
+	if(!Load() || loadedWidth!=8 || loadedHeight!=16 || consoleMessages!=1 || strcmp(firstMessage,message)) {
+		fprintf(stderr,"console messages: %d, first: %s",consoleMessages,firstMessage); Check(0,message);
+	}
+	Free(loaded);
+}
 /** Restore the real encoder stream, optionally with a new frame size, before one corruption. */
 static void Fixture( int frameColumns, int frameRows ) {
 	int sof=Marker(0xc0);
@@ -188,8 +202,13 @@ static void Corrupt( void ) {
 	Fixture(1,65535); RejectWith("Maximum supported image dimension is 65500 pixels");
 	/* A huge progressive frame stops before libjpeg sizes its whole-image coefficient buffers. */
 	Fixture(4096,4096); fixture[sof+1]=0xc2; RejectWith("Requested feature was omitted at compile time"); Check(peakBytes<1048576,"progressive frame rejected before large buffers");
-	/* A truncated scan decodes with libjpeg's gray fill and one developer message, as retail does. */
-	Fixture(-1,-1); fixtureSize=scan+2; Check(Load() && loadedWidth==8 && loadedHeight==16 && developerMessages==1 && loaded[3]==255,"truncated scan decodes like retail"); Free(loaded);
+	/* A truncated scan decodes with libjpeg's gray fill and prints one console message, as retail does. */
+	Fixture(-1,-1); fixtureSize=scan+2; Check(Load() && loadedWidth==8 && loadedHeight==16 && loaded[3]==255,"truncated scan decodes like retail"); Free(loaded);
+	Fixture(-1,-1); fixtureSize=scan+2; Console("Premature end of JPEG file\n");
+	/* Stray bytes between header markers load in retail with the first warning only, never a prefix or a later warning. */
+	Fixture(-1,-1); Extraneous(dqt,3); Console("Corrupt JPEG data: 3 extraneous bytes before marker 0xdb\n");
+	Fixture(-1,-1); Extraneous(sof,5); Extraneous(dqt,3); Console("Corrupt JPEG data: 3 extraneous bytes before marker 0xdb\n");
+	Fixture(-1,-1); Extraneous(sof,5); Extraneous(dqt,3); fixtureSize=scan+10; Console("Corrupt JPEG data: 3 extraneous bytes before marker 0xdb\n");
 	/* A valid header whose image cannot fit the zone: the pixel buffer, then libjpeg's own rows. */
 	Fixture(2048,2048); RejectWith("pixel allocation failed");
 	zoneBytes=24u*1024u*1024u; Fixture(2048,2048); Check(Load() && loadedWidth==2048 && loadedHeight==2048 && peakBytes>2048u*2048u*4u,"2048x2048 fits a 24 MiB zone"); Free(loaded);

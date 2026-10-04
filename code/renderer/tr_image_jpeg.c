@@ -56,21 +56,14 @@ static void R_JPEGErrorExit( j_common_ptr info ) {
 	longjmp(error->jump, 1);
 }
 
-/** Keep recoverable decoder warnings visible without selecting the fatal default handler. */
-static void R_JPEGOutputMessage( j_common_ptr info ) {
-	char message[JMSG_LENGTH_MAX];
-	(*info->err->format_message)(info, message);
-	ri.Printf(PRINT_DEVELOPER, "JPEG: %s\n", message);
-}
-
 /** Store cleanup state on the heap so libjpeg longjmps never invalidate modified automatic data. */
 static rendererJPEG_t *R_JPEGContext( qboolean compress ) {
 	rendererJPEG_t *context = ri.TryMalloc(sizeof(*context));
 	if ( !context ) return NULL;
 	memset(context, 0, sizeof(*context)); context->compress = compress;
+	/* Keep libjpeg's retail output_message and emit_message: the first corrupt-data warning per image prints to the console. */
 	jpeg_std_error(&context->error.pub);
 	context->error.pub.error_exit = R_JPEGErrorExit;
-	context->error.pub.output_message = R_JPEGOutputMessage;
 	if ( compress ) context->info.encode.err = &context->error.pub;
 	else context->info.decode.err = &context->error.pub;
 	return context;
