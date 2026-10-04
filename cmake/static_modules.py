@@ -20,12 +20,16 @@ where each module's data lives. This script provides those addresses.
             archives, the shared archives and the engine objects: XCOFF ld
             merges same-named uninitialized globals (as common symbols) and
             keeps one of two same-named functions without a diagnostic, so
-            such a symbol would be shared across a module reset.
+            such a symbol would be shared across a module reset. And fail
+            when a module archive uses a symbol that another module archive
+            defines: each retail module was its own QVM and could not reach
+            another module's code or data.
 
 Code shared with the engine or another module stays out of the brackets and
-is never reset. That is bg_*.c, q_shared.c and q_math.c (one copy serves the
-engine and every module and holds only scratch state) and, in Team Arena,
-code/ui/ui_shared.c (the Team Arena cgame uses the ui module's copy, #459).
+is never reset. That is bg_*.c, q_shared.c and q_math.c: one copy serves the
+engine and every module and holds only scratch state. The Team Arena cgame
+and ui each link their own code/ui/ui_shared.c, as retail's QVMs did (#459),
+so each copy is reset with its module.
 """
 import argparse
 import os
@@ -176,24 +180,30 @@ def parse_map(path):
     return sections, symbols, loads
 
 
+def member_of(file):
+    m = re.match(r'^.*\(([^()]+)\)$', file)
+    return m.group(1) if m else os.path.basename(file)
+
+
 def archive_of(file):
     m = re.match(r'^(.*)\(([^()]+)\)$', file)
     return os.path.basename(m.group(1)) if m else None
 
 
-def global_definitions(nm, paths):
-    """Map symbol -> set of paths that define it globally."""
+def global_definitions(nm, paths, undefined=False):
+    """Map symbol -> set of paths that define it globally (or use it, undefined)."""
     defined = {}
     for i in range(0, len(paths), 64):
         batch = paths[i:i + 64]
         try:
-            out = subprocess.run([nm, '-A', '--defined-only'] + batch, check=True,
+            out = subprocess.run([nm, '-A', '--undefined-only' if undefined else '--defined-only']
+                                 + batch, check=True,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.decode('latin-1')
         except (OSError, subprocess.CalledProcessError) as e:
             fail('%s failed: %s' % (nm, e))
         for line in out.split('\n'):
             m = re.match(r'^(.*?):(?:[^:\s]+:)?\s*[0-9a-fA-F]*\s+([A-Z])\s+(\S+)$', line)
-            if not m or m.group(2) in 'UNW':
+            if not m or m.group(2) in ('NW' if undefined else 'UNW'):
                 continue
             path = m.group(1)
             for candidate in batch:
@@ -221,6 +231,7 @@ def check(args):
 
     errors = []
     totals = {}
+    copies = {}
     for out, sec, addr, size, file in sections:
         if not size:
             continue
@@ -235,6 +246,9 @@ def check(args):
                               % (out, sec, addr, size, file, module, kind or out))
             else:
                 totals[(module, kind)] = totals.get((module, kind), 0) + size
+                member = member_of(file)
+                copies.setdefault(member, {}).setdefault(module, {})
+                copies[member][module][kind] = copies[member][module].get(kind, 0) + size
         elif kind:
             # .text, .data and .bss each start at address 0 in the XCOFF image,
             # so only sections of the same output section can overlap.
@@ -254,10 +268,19 @@ def check(args):
     labels = {path: name for name, path in modules}
     labels.update({path: 'shared ' + os.path.basename(path) for path in shared})
     labels.update({path: 'engine' for path in engine})
-    for symbol, where in sorted(global_definitions(args.nm, paths + engine).items()):
+    defined = global_definitions(args.nm, paths + engine)
+    for symbol, where in sorted(defined.items()):
         owners = sorted({labels[p] for p in where})
         if len(owners) > 1:
             errors.append('%s is defined in more than one module: %s' % (symbol, ', '.join(owners)))
+    # No module may reach into another one (the Team Arena cgame used the ui
+    # module's ui_shared.c, #459).
+    module_paths = [path for _, path in modules]
+    for symbol, where in sorted(global_definitions(args.nm, module_paths, undefined=True).items()):
+        definers = {labels[p] for p in defined.get(symbol, ()) if p in labels and p in module_paths}
+        for user in sorted({labels[p] for p in where} - definers):
+            for definer in sorted(definers):
+                errors.append('the %s module uses %s from the %s module' % (user, symbol, definer))
 
     if errors:
         for e in errors[:50]:
@@ -272,6 +295,13 @@ def check(args):
             report.append('%s %s 0x%08x-0x%08x %d bytes' % (name, kind, lo, hi, hi - lo))
         snapshot += ranges[(name, 'data')][1] - ranges[(name, 'data')][0]
     report.append('snapshot %d bytes' % snapshot)
+    # Source files more than one module links its own copy of, each inside
+    # its own module's brackets (code/ui/ui_shared.c in Team Arena, #459).
+    for member, per in sorted(copies.items()):
+        if len(per) > 1:
+            report.append('copy %s: %s' % (member, '; '.join(
+                '%s data %d bss %d bytes' % (name, per[name].get('data', 0), per[name].get('bss', 0))
+                for name, _ in modules if name in per)))
     text = '\n'.join(report) + '\n'
     sys.stdout.write(text)
     if args.output:

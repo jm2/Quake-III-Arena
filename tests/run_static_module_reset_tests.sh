@@ -10,6 +10,13 @@
 # cmake/static_modules.py writes the XCOFF equivalent), and runs
 # tests/static_module_reset_regression.c.
 #
+# Issue #459: then builds the Team Arena cgame and ui the same way, each with
+# its own code/ui/ui_shared.c (the cgame's renamed by ui_shared_cgame.h), and
+# runs tests/static_module_reset_ta_regression.c. After each link the runner
+# checks what cmake/static_modules.py checks on the Mac: every writable
+# section of a module lies in its own brackets, no global is defined by two
+# modules, and no module uses another module's symbols.
+#
 # The modules talk to a stub engine. The real *_syscalls.c pass pointers
 # through int varargs, so the runner generates a weak default for every trap
 # of each module's *_syscalls.c instead, and the test overrides the traps the
@@ -64,10 +71,20 @@ if len(seen) < 50:
 EOF
 }
 
-mkdir -p "$Q3_TEST_DIR/m-game" "$Q3_TEST_DIR/m-cgame" "$Q3_TEST_DIR/m-ui" "$Q3_TEST_DIR/shared" "$Q3_TEST_DIR/engine"
+q3_mkdirs() {
+    local work="$1" d
+    shift
+    for d in "$@"; do
+        mkdir -p "$work/$d"
+    done
+}
+q3_mkdirs "$Q3_TEST_DIR" m-game m-cgame m-ui shared engine
+q3_mkdirs "$Q3_TEST_DIR/ta" m-cgame m-ui shared engine
 q3_trap_stubs "$C/game/g_syscalls.c" "$C/game/g_local.h" "$Q3_TEST_DIR/game_traps.c"
 q3_trap_stubs "$C/cgame/cg_syscalls.c" "$C/cgame/cg_local.h" "$Q3_TEST_DIR/cgame_traps.c"
 q3_trap_stubs "$C/q3_ui/ui_syscalls.c" "$C/q3_ui/ui_local.h" "$Q3_TEST_DIR/ui_traps.c"
+q3_trap_stubs "$C/ui/ui_syscalls.c" "$C/ui/ui_local.h" "$Q3_TEST_DIR/ta/ui_traps.c"
+Q3_TA=(-DMISSIONPACK)
 
 # "output source flags..." per line, the sources as CMakeLists.txt groups them.
 {
@@ -102,6 +119,33 @@ q3_trap_stubs "$C/q3_ui/ui_syscalls.c" "$C/q3_ui/ui_local.h" "$Q3_TEST_DIR/ui_tr
     echo "engine/test_cgame.o $T test ${Q3_CGAME[*]} -DQ3_TEST_CGAME"
     echo "engine/test_ui.o $T test ${Q3_UI[*]} -DQ3_TEST_UI"
     echo "engine/test_main.o $T test"
+
+    # Team Arena: the cgame with cg_newdraw.c, -DCGAME and its own
+    # ui_shared.c; the ui with code/ui, ui_shared.c included.
+    for b in bg_misc bg_pmove bg_slidemove q_math q_shared; do
+        echo "ta/shared/$b.o $C/game/$b.c module ${Q3_GAME[*]} ${Q3_TA[*]}"
+    done
+    for f in "$C"/cgame/*.c "$C"/ui/ui_shared.c; do
+        b="$(basename "$f" .c)"
+        case "$b" in
+            cg_syscalls) ;;
+            *) echo "ta/m-cgame/$b.o $f module ${Q3_CGAME[*]} -DCGAME ${Q3_TA[*]}";;
+        esac
+    done
+    for f in "$C"/ui/*.c; do
+        b="$(basename "$f" .c)"
+        case "$b" in
+            ui_syscalls) ;;
+            *) echo "ta/m-ui/$b.o $f module ${Q3_UI[*]} ${Q3_TA[*]}";;
+        esac
+    done
+    echo "ta/engine/cgame_traps.o $Q3_TEST_DIR/cgame_traps.c module ${Q3_CGAME[*]} -DCGAME ${Q3_TA[*]}"
+    echo "ta/engine/ui_traps.o $Q3_TEST_DIR/ta/ui_traps.c module ${Q3_UI[*]} ${Q3_TA[*]}"
+    echo "ta/engine/vm_static.o $C/qcommon/vm_static.c test"
+    T="$Q3_TEST_ROOT/tests/static_module_reset_ta_regression.c"
+    echo "ta/engine/test_cgame.o $T test ${Q3_CGAME[*]} -DCGAME ${Q3_TA[*]} -DQ3_TEST_CGAME"
+    echo "ta/engine/test_ui.o $T test ${Q3_UI[*]} ${Q3_TA[*]} -DQ3_TEST_UI"
+    echo "ta/engine/test_main.o $T test ${Q3_TA[*]}"
 } > "$Q3_TEST_DIR/objects.txt"
 
 # Module code is retail code: its warnings are not this test's business.
@@ -123,51 +167,60 @@ xargs -P "$Q3_JOBS" -L 1 bash -c '
     Q3_FLAGS=($Q3_FLAGS_STR); Q3_NO_ASAN_GLOBALS=($Q3_NO_ASAN_GLOBALS_STR)
     q3_compile "$@"' _ < "$Q3_TEST_DIR/objects.txt"
 
-# Each module's data and bss, bracketed, after the program's own. 32-bit
+# q3_link <dir> <program> <module>...: links <dir>'s objects into <program>
+# with each module's data and bss, bracketed, after the program's own. 32-bit
 # PowerPC ELF puts small globals in .sdata and .sbss. The check after the link
 # makes sure no other writable section of a module escapes the brackets.
-Q3_BRACKET_DATA='.data .data.* .sdata .sdata.*'
-Q3_BRACKET_BSS='.bss .bss.* .sbss .sbss.* COMMON'
-{
-    echo 'SECTIONS'
-    echo '{'
-    echo '  .q3static.data : {'
-    for module in game cgame ui; do
-        echo "    . = ALIGN(16); q3static_${module}_data_start = .;"
-        echo "    */m-$module/*.o($Q3_BRACKET_DATA)"
-        echo "    . = ALIGN(16); q3static_${module}_data_end = .;"
+q3_link() {
+    local work="$1" program="$2" module
+    shift 2
+    local data='.data .data.* .sdata .sdata.*' bss='.bss .bss.* .sbss .sbss.* COMMON'
+    {
+        echo 'SECTIONS'
+        echo '{'
+        echo '  .q3static.data : {'
+        for module in "$@"; do
+            echo "    . = ALIGN(16); q3static_${module}_data_start = .;"
+            echo "    */m-$module/*.o($data)"
+            echo "    . = ALIGN(16); q3static_${module}_data_end = .;"
+        done
+        echo '  }'
+        echo '}'
+        echo 'INSERT AFTER .data;'
+        echo 'SECTIONS'
+        echo '{'
+        echo '  .q3static.bss (NOLOAD) : {'
+        for module in "$@"; do
+            echo "    . = ALIGN(16); q3static_${module}_bss_start = .;"
+            echo "    */m-$module/*.o($bss)"
+            echo "    . = ALIGN(16); q3static_${module}_bss_end = .;"
+        done
+        echo '  }'
+        echo '}'
+        echo 'INSERT AFTER .bss;'
+    } > "$work/brackets.ld"
+    local objects=("$work"/engine/*.o "$work"/shared/*.o)
+    for module in "$@"; do
+        objects+=("$work/m-$module"/*.o)
     done
-    echo '  }'
-    echo '}'
-    echo 'INSERT AFTER .data;'
-    echo 'SECTIONS'
-    echo '{'
-    echo '  .q3static.bss (NOLOAD) : {'
-    for module in game cgame ui; do
-        echo "    . = ALIGN(16); q3static_${module}_bss_start = .;"
-        echo "    */m-$module/*.o($Q3_BRACKET_BSS)"
-        echo "    . = ALIGN(16); q3static_${module}_bss_end = .;"
-    done
-    echo '  }'
-    echo '}'
-    echo 'INSERT AFTER .bss;'
-} > "$Q3_TEST_DIR/brackets.ld"
-
-"$Q3_CC" -fsanitize=address,undefined -no-pie \
-    "$Q3_TEST_DIR"/engine/*.o "$Q3_TEST_DIR"/shared/*.o \
-    "$Q3_TEST_DIR"/m-game/*.o "$Q3_TEST_DIR"/m-cgame/*.o "$Q3_TEST_DIR"/m-ui/*.o \
-    -Wl,-T,"$Q3_TEST_DIR/brackets.ld" -Wl,-Map,"$Q3_TEST_DIR/static_module_reset.map" \
-    -lm -o "$Q3_TEST_DIR/static_module_reset"
+    "$Q3_CC" -fsanitize=address,undefined -no-pie "${objects[@]}" \
+        -Wl,-T,"$work/brackets.ld" -Wl,-Map,"$work/$program.map" -lm -o "$work/$program"
+    q3_check_brackets "$work" "$program" "$@"
+}
 
 # What cmake/static_modules.py check does for the Mac link: every allocated,
 # writable section of a module object must lie in that module's brackets, and
-# nothing else may lie in one. Startup tables and GOTs hold no module state.
-python3 - "$Q3_TEST_DIR" "${READELF:-readelf}" <<'EOF'
+# nothing else may lie in one; no global symbol may be defined by two modules,
+# and no module may use a symbol another module defines. Startup tables and
+# GOTs hold no module state. Prints which objects more than one module links
+# its own copy of (ui_shared.o in Team Arena, #459) and where each copy lies.
+q3_check_brackets() {
+    python3 - "${READELF:-readelf}" "${NM:-nm}" "$@" <<'EOF'
 import glob, os, re, subprocess, sys
-work, readelf = sys.argv[1], sys.argv[2]
+readelf, nm, work, program, modules = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5:]
 stateless = re.compile(r'^\.((preinit_array|init_array|fini_array|ctors|dtors)(\..*)?'
                        r'|got2?|eh_frame|tm_clone_table)$')
-lines = open(os.path.join(work, 'static_module_reset.map')).read().split('\n')
+lines = open(os.path.join(work, program + '.map')).read().split('\n')
 start = next(i for i, l in enumerate(lines) if l.startswith('Linker script and memory map'))
 symbols, placed, pending = {}, [], None
 for line in lines[start:]:
@@ -189,12 +242,13 @@ for line in lines[start:]:
         placed.append((pending, int(m.group(1), 16), int(m.group(2), 16), m.group(3)))
     pending = None
 brackets = {}
-for module in ('game', 'cgame', 'ui'):
+for module in modules:
     brackets[module] = [(symbols['q3static_%s_%s_start' % (module, kind)],
                          symbols['q3static_%s_%s_end' % (module, kind)]) for kind in ('data', 'bss')]
 section = re.compile(r'^\s*\[\s*\d+\]\s+(\S+)\s+\S+\s+[0-9a-f]+\s+[0-9a-f]+\s+([0-9a-f]+)\s+'
                      r'[0-9a-f]+\s+([A-Za-z]*)\s+\d+\s+\d+\s+\d+\s*$', re.M)
-errors, checked = [], 0
+errors, checked, copies = [], 0, {}
+defined, used = {}, {}
 for module in brackets:
     for obj in sorted(glob.glob(os.path.join(work, 'm-' + module, '*.o'))):
         out = subprocess.run([readelf, '-S', '-W', obj], check=True, stdout=subprocess.PIPE).stdout.decode()
@@ -209,16 +263,40 @@ for module in brackets:
                                     for a, n in where):
                 errors.append('%s %s (%d bytes) is outside the %s brackets'
                               % (os.path.relpath(obj, work), name, size, module))
+            copies.setdefault(os.path.basename(obj), {}).setdefault(module, []).extend(where)
+        out = subprocess.run([nm, obj], check=True, stdout=subprocess.PIPE).stdout.decode()
+        for m in re.finditer(r'^\s*[0-9a-f]*\s+([A-Za-z])\s+(\S+)$', out, re.M):
+            kind, name = m.group(1), m.group(2)
+            if kind == 'U':
+                used.setdefault(name, set()).add(module)
+            elif kind.isupper() and kind not in 'NW':
+                defined.setdefault(name, set()).add(module)
 for sec, a, n, f in placed:
     if n and '/m-' not in f:
         for module, ranges in brackets.items():
             if any(a < hi and lo < a + n for lo, hi in ranges):
                 errors.append('%s %s lies inside the %s brackets' % (f, sec, module))
+for name, where in sorted(defined.items()):
+    if len(where) > 1:
+        errors.append('%s is defined in more than one module: %s' % (name, ', '.join(sorted(where))))
+    for user in sorted(used.get(name, set()) - where):
+        errors.append('the %s module uses %s from the %s module' % (user, name, ', '.join(sorted(where))))
 if errors or not checked:
-    sys.exit('static module brackets:\n  ' + '\n  '.join(errors or ['no module section was checked']))
-print('static module brackets: %d writable module sections checked' % checked)
+    sys.exit('%s: static module brackets:\n  ' % program + '\n  '.join(errors or ['no module section was checked']))
+print('%s: static module brackets: %d writable module sections checked' % (program, checked))
+for obj, per in sorted(copies.items()):
+    if len(per) > 1:
+        print('%s: one copy of %s per module: %s' % (program, obj, '; '.join(
+            '%s %s' % (module, ', '.join('0x%x+%d' % w for w in sorted(per[module])))
+            for module in modules if module in per)))
 EOF
+}
+
+q3_link "$Q3_TEST_DIR" static_module_reset game cgame ui
+q3_link "$Q3_TEST_DIR/ta" static_module_reset_ta cgame ui
 
 # LeakSanitizer cannot initialize in the local ptrace sandbox.
-ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 \
-UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 "$Q3_TEST_DIR/static_module_reset"
+export ASAN_OPTIONS=detect_leaks=0:halt_on_error=1
+export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
+"$Q3_TEST_DIR/static_module_reset"
+"$Q3_TEST_DIR/ta/static_module_reset_ta"
