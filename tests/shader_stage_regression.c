@@ -153,12 +153,13 @@ static void FastAlpha(void) {
 	registered=R_FindShader("tests/lightmapped",0,qtrue);Check(!registered->defaultShader && registered->numUnfoggedPasses==1 && registered->stages[0]->alphaGen==AGEN_SKIP && registered->optimalStageIteratorFunc==RB_StageIteratorLightmappedMultitexture,"actual collapsed lightmapped registration retains its specialized iterator after alpha skip");
 	qglActiveTextureARB=NULL;r_ignoreFastPath=&one;Release();tr.whiteImage=&white;
 }
+static unsigned int FloatBits(float value) { unsigned int bits;memcpy(&bits,&value,sizeof(bits));return bits; }
 static void ConstantVectors(int proof) {
     int mode,i;char body[512],*text;shader_t *registered;
     const char *bad[]={"nan","inf","-inf","1e400","1e39","-1e39"};
     const char *broken[]={"bad", "( 0.1 0.2 )", "( 0.1 0.2 0.3 bad", "( 0.1\n", "( \"\" 0.2 0.3 )"};
     if(proof>=0) {
-        ResetParser();text=proof==0?"map $whiteimage\nrgbGen const ( nan 0.2 0.3 )\n}":proof==1?"map $whiteimage\nalphaGen const nan\n}":"map $whiteimage\ntcGen vector bad bad\n}";
+        ResetParser();text=proof==0?"map $whiteimage\nrgbGen const ( nan 0.2 0.3 )\n}":proof==1?"map $whiteimage\nalphaGen const nan\n}":"map $whiteimage\ntcGen vector ( nan 0 0 ) ( 0 1 0 )\n}";
         Check(!ParseStage(&stages[0],&text),"non-finite constants and malformed tc vectors must reject");return;
     }
     for(mode=0;mode<6;mode++) {
@@ -166,18 +167,21 @@ static void ConstantVectors(int proof) {
         if(ParseStage(&stages[0],&text)) {fprintf(stderr,"Accepted invalid RGB component: %s\n",bad[mode]);Check(0,"non-finite/out-of-float-range RGB vectors reject before byte conversion");}
         if(mode<4) {ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nalphaGen const %s\n}",bad[mode]);text=body;Check(!ParseStage(&stages[0],&text),"non-finite alpha rejects before byte conversion");}
         ResetParser();snprintf(body,sizeof(body),"map $whiteimage\ntcGen vector ( 0 1 %s ) ( 1 0 0 )\n}",bad[mode]);text=body;
-        Check(!ParseStage(&stages[0],&text),"non-finite/overflow first texture vector rejects");
+        /* Texture vectors only feed float math, so overflow keeps retail's infinite float; NaN rejects. */
+        Check(ParseStage(&stages[0],&text)==(mode!=0) && (!mode || FloatBits(stages[0].bundle[0].tcGenVectors[0][2])==((mode==2 || mode==5)?0xff800000u:0x7f800000u)),"non-finite first texture vector rejects, overflow keeps retail's float");
         ResetParser();snprintf(body,sizeof(body),"map $whiteimage\ntcGen vector ( 0 1 0 ) ( 1 %s 0 )\n}",bad[mode]);text=body;
-        Check(!ParseStage(&stages[0],&text),"non-finite/overflow second texture vector rejects");
+        Check(ParseStage(&stages[0],&text)==(mode!=0) && (!mode || FloatBits(stages[0].bundle[0].tcGenVectors[1][1])==((mode==2 || mode==5)?0xff800000u:0x7f800000u)),"non-finite second texture vector rejects, overflow keeps retail's float");
     }
     for(mode=0;mode<5;mode++) {
+        /* Retail warns and keeps the elements read (zero for the rest); the quoted empty
+           element leaves "0.2" for the stage parser, which rejects it as in retail. */
         ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nrgbGen const %s\n}",broken[mode]);text=body;
-        Check(!ParseStage(&stages[0],&text),"malformed constant RGB propagates vector failure");
+        Check(ParseStage(&stages[0],&text)==(mode<4) && (mode==4 || (stages[0].rgbGen==CGEN_CONST && stages[0].constantColor[0]==(mode?25:0) && stages[0].constantColor[2]==(mode==2?76:0))),"malformed constant RGB keeps retail's partial color");
         ResetParser();snprintf(body,sizeof(body),"map $whiteimage\ntcGen vector %s bad\n}",broken[mode]);text=body;
-        Check(!ParseStage(&stages[0],&text),"malformed texture vector propagates failure");
+        Check(ParseStage(&stages[0],&text)==(mode<4) && (mode==4 || (stages[0].bundle[0].tcGen==TCGEN_VECTOR && stages[0].bundle[0].tcGenVectors[0][0]==(mode?0.1f:0))),"malformed texture vector keeps retail's partial vector");
     }
-    ResetParser();text="map $whiteimage\ntcGen vector bad bad\n}";Check(!ParseStage(&stages[0],&text),"both missing texture parentheses reject");
-    ResetParser();text="map $whiteimage\nalphaGen const\n}";Check(!ParseStage(&stages[0],&text),"missing alpha constant rejects");
+    ResetParser();text="map $whiteimage\ntcGen vector bad bad\n}";Check(ParseStage(&stages[0],&text) && stages[0].bundle[0].tcGen==TCGEN_VECTOR,"both missing texture parentheses warn like retail");
+    ResetParser();text="map $whiteimage\nalphaGen const\n}";Check(ParseStage(&stages[0],&text) && stages[0].alphaGen==AGEN_CONST && !stages[0].constantColor[3],"missing alpha constant reads as zero like retail");
     for(i=0;i<=512;i++) {
         float value=(float)i/512.0f;double a=(double)i/512.0;byte rgb=(byte)(255.0f*value),alpha=(byte)(255.0*a);
         ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nrgbGen const ( %.9g %.9g %.9g )\nalphaGen const %.17g\n}",value,value,value,a);text=body;
@@ -194,7 +198,7 @@ static void ConstantVectors(int proof) {
     Check(ParseStage(&stages[0],&text) && stages[0].constantColor[3]==255 && stages[0].bundle[0].tcGen==TCGEN_VECTOR && stages[0].bundle[0].tcGenVectors[0][0]<0 && stages[0].bundle[0].tcGenVectors[0][2]>0,"large finite alpha clamps and full finite texture vector range remains accepted");
     for(mode=0;mode<4;mode++) {
         Release();tr.whiteImage=&white;
-        snprintf(archive,sizeof(archive),"tests/material\n{\n{\nmap $whiteimage\n%s\n}\n}\ntests/following\n{\n{\nmap $whiteimage\n}\n}\n",mode==0?"rgbGen const bad":mode==1?"rgbGen const ( nan 0 0 )":mode==2?"alphaGen const nan":"tcGen vector bad bad");
+        snprintf(archive,sizeof(archive),"tests/material\n{\n{\nmap $whiteimage\n%s\n}\n}\ntests/following\n{\n{\nmap $whiteimage\n}\n}\n",mode==0?"rgbGen const ( 1e39 0 0 )":mode==1?"rgbGen const ( nan 0 0 )":mode==2?"alphaGen const nan":"tcGen vector ( nan 0 0 ) ( 0 1 0 )");
         s_shaderText=archive;registered=R_FindShader("tests/material",LIGHTMAP_NONE,qtrue);Check(registered->defaultShader,"actual invalid constant/vector definition caches default fallback");
         i=allocations;Check(R_FindShader("tests/material",LIGHTMAP_NONE,qtrue)==registered && i==allocations,"invalid vector fallback cache reuse");
         Check(!R_FindShader("tests/following",LIGHTMAP_NONE,qtrue)->defaultShader,"following definition survives malformed constant/vector");
@@ -217,7 +221,7 @@ static void WaveModifiers(int proof) {
     const char *broken[]={"turb 0.2 0.3 0.4","scale 0.5","scroll 0.5","stretch sin 0.2 0.3 0.4","transform 1 2 3 4 5","rotate","missingType"};
     const char *deforms[]={"projectionShadow","autosprite","autosprite2","text7","bulge 1.5 -2.5 3.5","wave 2 sin 0.2 0.3 0.4 0.5","normal 0.5 0.25","move 1 -2 3 sin 0.2 0.3 0.4 0.5"};
     if(proof>=0 && proof<4) {
-        const char *bodies[]={"map $whiteimage\nrgbGen wave sin 0.2 0.3\n}","map $whiteimage\nrgbGen wave sin nan 0.3 0.4 0.5\n}","map $whiteimage\ntcMod scale nan 1\n}","map $whiteimage\ntcMod scale 0.5\n}"};
+        const char *bodies[]={"map $whiteimage\nrgbGen wave sin 0.2 nan\n}","map $whiteimage\nrgbGen wave sin nan 0.3 0.4 0.5\n}","map $whiteimage\ntcMod scale nan 1\n}","map $whiteimage\ntcMod scroll 0.5 nan\n}"};
         ResetParser();text=(char*)bodies[proof];Check(!ParseStage(&stages[0],&text),"invalid/missing waveform/modifier fields must reject");return;
     }
     for(i=0;i<7;i++) {
@@ -239,14 +243,25 @@ static void WaveModifiers(int proof) {
             ResetParser();strcpy(body,count?"{\ndeformVertexes ":"map $whiteimage\ntcMod ");
             for(k=0;k<wordCount;k++) {strcat(body,k==j?bad[mode]:words[k]);strcat(body," ");}
             strcat(body,count?"\n{\nmap $whiteimage\n}\n}\n":"\n}");text=body;
+            if(!count && mode && ((i==0 && j<=2) || i==1 || i==2 || (i==3 && (j==2 || j==3)) || i==4)) {
+                /* Float-only fields (turb/stretch base and amplitude, scale, scroll,
+                   transform) keep retail's overflowing float; only NaN rejects. */
+                texModInfo_t *t=&texMods[0][0];
+                float *field=i==0?(j==1?&t->wave.base:&t->wave.amplitude):i==1?&t->scale[j-1]:i==2?&t->scroll[j-1]:i==3?(j==2?&t->wave.base:&t->wave.amplitude):j<=2?&t->matrix[0][j-1]:j<=4?&t->matrix[1][j-3]:&t->translate[j-5];
+                Check(ParseStage(&stages[0],&text) && stages[0].bundle[0].numTexMods==1 && t->type!=TMOD_NONE,"overflowing float-only modifier field parses like retail");
+                Check(FloatBits(*field)==((mode==2 || mode==5)?0xff800000u:0x7f800000u),"overflowing float-only modifier field keeps retail's infinite float");
+                continue;
+            }
             Check(!(count?ParseShader(&text):ParseStage(&stages[0],&text)),"each numeric field in every modifier/deformation type rejects non-finite/overflow");
             if(!count)Check(!stages[0].bundle[0].numTexMods,"invalid numeric modifier never publishes staging");
         }
     }
     for(count=0;count<4;count++) {
         const char *partial[]={"sin","sin 0.2","sin 0.2 0.3","sin 0.2 0.3 0.4"};
-        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nrgbGen wave %s\n}",partial[count]);text=body;Check(!ParseStage(&stages[0],&text),"all incomplete RGB waveform prefixes reject");
-        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nalphaGen wave %s\n}",partial[count]);text=body;Check(!ParseStage(&stages[0],&text),"all incomplete alpha waveform prefixes reject");
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nrgbGen wave %s\n}",partial[count]);text=body;
+        Check(ParseStage(&stages[0],&text) && stages[0].rgbGen==CGEN_WAVEFORM && stages[0].rgbWave.func==GF_SIN && stages[0].rgbWave.base==(count?0.2f:0) && !stages[0].rgbWave.frequency,"incomplete RGB waveform prefixes keep retail's partial waveform");
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nalphaGen wave %s\n}",partial[count]);text=body;
+        Check(ParseStage(&stages[0],&text) && stages[0].alphaGen==AGEN_WAVEFORM && stages[0].alphaWave.func==GF_SIN && stages[0].alphaWave.amplitude==(count>1?0.3f:0) && !stages[0].alphaWave.frequency,"incomplete alpha waveform prefixes keep retail's partial waveform");
     }
     ResetParser();memset(&texMods[0][0],0xa5,sizeof(texMods[0][0]));text="map $whiteimage\ntcMod scale 0.5 -0.25\n}";
     Check(ParseStage(&stages[0],&text) && NumericFingerprint(&texMods[0][0],sizeof(texMods[0][0]))==tcGolden[1],"complete modifier staging clears stale unused fields");
@@ -258,11 +273,11 @@ static void WaveModifiers(int proof) {
         ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nrgbGen wave sin %s %s %s %s\n}",i==0?bad[mode]:"0.2",i==1?bad[mode]:"0.3",i==2?bad[mode]:"0.4",i==3?bad[mode]:"0.5");text=body;
         Check(!ParseStage(&stages[0],&text),"every non-finite/overflow RGB waveform field rejects");
         ResetParser();snprintf(body,sizeof(body),"map $whiteimage\nalphaGen wave sin %s %s %s %s\n}",i==0?bad[mode]:"0.2",i==1?bad[mode]:"0.3",i==2?bad[mode]:"0.4",i==3?bad[mode]:"0.5");text=body;Check(!ParseStage(&stages[0],&text),"every non-finite/overflow alpha waveform field rejects");
-        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\ntcMod turb %s %s %s %s\n}",i==0?bad[mode]:"0.2",i==1?bad[mode]:"0.3",i==2?bad[mode]:"0.4",i==3?bad[mode]:"0.5");text=body;Check(!ParseStage(&stages[0],&text),"every non-finite/overflow turbulent modifier field rejects");
+        ResetParser();snprintf(body,sizeof(body),"map $whiteimage\ntcMod turb %s %s %s %s\n}",i==0?bad[mode]:"0.2",i==1?bad[mode]:"0.3",i==2?bad[mode]:"0.4",i==3?bad[mode]:"0.5");text=body;Check(ParseStage(&stages[0],&text)==(mode && i<2),"turbulent phase/frequency (table index) and NaN reject; base/amplitude keep retail's float");
     }
     for(i=0;i<7;i++) {
         ResetParser();snprintf(body,sizeof(body),"map $whiteimage\ntcMod %s\n}",broken[i]);text=body;
-        Check(!ParseStage(&stages[0],&text) && !stages[0].bundle[0].numTexMods,"incomplete/unknown modifier does not publish a slot");
+        Check(ParseStage(&stages[0],&text) && stages[0].bundle[0].numTexMods==1 && texMods[0][0].type==TMOD_NONE,"incomplete/unknown modifier keeps retail's claimed slot with the cleared type");
     }
     for(count=0;count<=TR_MAX_TEXMODS+1;count++) {
         ResetParser();strcpy(body,"map $whiteimage\n");for(i=0;i<count;i++)strcat(body,"tcMod scroll 0.5 -0.25\n");strcat(body,"}");text=body;
@@ -276,13 +291,13 @@ static void WaveModifiers(int proof) {
         ResetParser();snprintf(body,sizeof(body),"{\ndeformVertexes bulge 1 %s 3\n{\nmap $whiteimage\n}\n}",bad[mode]);text=body;Check(!ParseShader(&text),"invalid deformation field rejects");
     }
     ResetParser();text="{\ndeformVertexes wave 1e-320 sin 0 1 0 1\n{\nmap $whiteimage\n}\n}";Check(!ParseShader(&text),"overflowed reciprocal deformation spread rejects");
-    ResetParser();text="{\ndeformVertexes normal 0.5\n{\nmap $whiteimage\n}\n}";Check(!ParseShader(&text),"missing deformation field rejects");
+    ResetParser();text="{\ndeformVertexes normal 0.5\n{\nmap $whiteimage\n}\n}";Check(ParseShader(&text) && shader.numDeforms==1 && shader.deforms[0].deformation==DEFORM_NONE && shader.deforms[0].deformationWave.amplitude==0.5f,"missing deformation field keeps retail's claimed deform");
     for(count=0;count<=MAX_SHADER_DEFORMS+1;count++) {
         ResetParser();strcpy(body,"{\n");for(i=0;i<count;i++)strcat(body,"deformVertexes autosprite\n");strcat(body,"{\nmap $whiteimage\n}\n}\n");text=body;
-        Check(ParseShader(&text)==(count<=MAX_SHADER_DEFORMS),"deformation cap falls back before out-of-range access");
+        Check(ParseShader(&text) && shader.numDeforms==(count<MAX_SHADER_DEFORMS?count:MAX_SHADER_DEFORMS),"deformations past the cap are ignored before out-of-range access");
     }
     for(mode=0;mode<4;mode++) {
-        Release();tr.whiteImage=&white;snprintf(archive,sizeof(archive),"tests/material\n{\n%s\n{\nmap $whiteimage\n%s\n}\n}\ntests/following\n{\n{\nmap $whiteimage\n}\n}\n",mode==3?"deformVertexes wave 1e-320 sin 0 1 0 1":"",mode==0?"rgbGen wave sin nan 0.3 0.4 0.5":mode==1?"tcMod scale nan 1":mode==2?"tcMod scale 0.5":"");
+        Release();tr.whiteImage=&white;snprintf(archive,sizeof(archive),"tests/material\n{\n%s\n{\nmap $whiteimage\n%s\n}\n}\ntests/following\n{\n{\nmap $whiteimage\n}\n}\n",mode==3?"deformVertexes wave 1e-320 sin 0 1 0 1":"",mode==0?"rgbGen wave sin nan 0.3 0.4 0.5":mode==1?"tcMod scale nan 1":mode==2?"tcMod scroll 0.5 nan":"");
         s_shaderText=archive;registered=R_FindShader("tests/material",LIGHTMAP_NONE,qtrue);Check(registered->defaultShader,"invalid numeric/modifier shader uses native fallback");
         i=allocations;Check(R_FindShader("tests/material",LIGHTMAP_NONE,qtrue)==registered && i==allocations,"invalid numeric/modifier fallback cached");Check(!R_FindShader("tests/following",LIGHTMAP_NONE,qtrue)->defaultShader,"following definition survives numeric/modifier fallback");
     }
@@ -310,7 +325,7 @@ static void Metadata(int proof) {
             snprintf(body,sizeof(body),"{\nq3map_sun %s %s %s %s %s %s\n{\nmap $whiteimage\n}\n}",i==0?bad[mode]:"1",i==1?bad[mode]:"2",i==2?bad[mode]:"3",i==3?bad[mode]:"100",i==4?bad[mode]:"45",i==5?bad[mode]:"60");text=body;
             Check(!ParseShader(&text),"every non-finite/overflow sun parameter rejects");Check(!memcmp(tr.sunLight,oldLight,sizeof(oldLight)) && !memcmp(tr.sunDirection,oldDirection,sizeof(oldDirection)),"rejected sun parameters retain renderer state");
         }
-        ResetParser();snprintf(body,sizeof(body),"{\nsort %s\n{\nmap $whiteimage\n}\n}",bad[mode]);text=body;Check(!ParseShader(&text),"invalid numeric sort rejects");
+        ResetParser();snprintf(body,sizeof(body),"{\nsort %s\n{\nmap $whiteimage\n}\n}",bad[mode]);text=body;Check(ParseShader(&text)==(mode!=0) && (!mode || FloatBits(shader.sort)==((mode==2 || mode==5)?0xff800000u:0x7f800000u)),"NaN sort rejects; overflow keeps retail's float (sorting only compares floats)");
         ResetParser();snprintf(body,sizeof(body),"{\nclampTime %s\n{\nmap $whiteimage\n}\n}",bad[mode]);text=body;Check(!ParseShader(&text),"invalid clamp time rejects");
         ResetParser();snprintf(body,sizeof(body),"{\nfogParms ( 0.2 0.3 0.4 ) %s\n{\nmap $whiteimage\n}\n}",bad[mode]);text=body;Check(!ParseShader(&text),"invalid fog depth rejects");
         ResetParser();traceImages=1;imageFinds=0;skyInitializations=0;snprintf(body,sizeof(body),"{\nskyparms outer %s inner\n}",bad[mode]);text=body;Check(!ParseShader(&text) && !imageFinds && !skyInitializations,"invalid sky number rejects before imports");traceImages=0;
@@ -320,16 +335,20 @@ static void Metadata(int proof) {
     ResetParser();text="{\nq3map_sun 3.4e38 3.4e38 3.4e38 100 45 60\n{\nmap $whiteimage\n}\n}";
     Check(!ParseShader(&text),"finite-source sun length overflow rejects");
     for(mode=0;mode<6;mode++) {
-        const char *partial[]={"","1","1 2","1 2 3","1 2 3 100","1 2 3 100 45"};ResetParser();snprintf(body,sizeof(body),"{\nq3map_sun %s\n{\nmap $whiteimage\n}\n}",partial[mode]);text=body;Check(!ParseShader(&text),"every truncated sun prefix rejects");
+        /* A missing value reads as zero like retail; shorter prefixes consume the next line's tokens and reject as in retail. */
+        const char *partial[]={"","1","1 2","1 2 3","1 2 3 100","1 2 3 100 45"};ResetParser();snprintf(body,sizeof(body),"{\nq3map_sun %s\n{\nmap $whiteimage\n}\n}",partial[mode]);text=body;Check(ParseShader(&text)==(mode==5) && (mode<5 || (tr.sunDirection[2]==0 && tr.sunDirection[0]>0.7f)),"truncated sun prefixes match retail");
     }
     for(mode=0;mode<4;mode++) {
         const char *partial[]={"skyparms","skyparms outer","skyparms outer 512","skyparms outer 512 \"\""};
-        ResetParser();traceImages=1;imageFinds=0;skyInitializations=0;snprintf(body,sizeof(body),"{\n%s\n}",partial[mode]);text=body;Check(!ParseShader(&text) && !imageFinds && !skyInitializations,"incomplete sky rejects before imports");traceImages=0;
+        /* Retail imports the outer box and keeps the cloud height, but an incomplete sky is not a sky. */
+        ResetParser();traceImages=1;imageFinds=0;skyInitializations=0;snprintf(body,sizeof(body),"{\n%s\n}",partial[mode]);text=body;Check(!ParseShader(&text) && imageFinds==(mode?6:0) && !shader.isSky && shader.sky.cloudHeight==(mode>1?512:0) && !skyInitializations,"stage-less incomplete sky imports retail's prefix but still rejects");traceImages=0;
+        ResetParser();traceImages=1;imageFinds=0;skyInitializations=0;snprintf(body,sizeof(body),"{\n%s\n{\nmap $whiteimage\n}\n}",partial[mode]);text=body;Check(ParseShader(&text) && imageFinds==(mode?6:0) && !shader.isSky && skyInitializations==(mode>1) && (mode<2 || skyHeight==512),"incomplete sky with a stage keeps retail's prefix");traceImages=0;
     }
     for(mode=0;mode<2;mode++) {
         ResetParser();traceImages=1;imageFinds=0;skyInitializations=0;memset(path,'x',57);path[57]=0;
         snprintf(body,sizeof(body),"{\nskyparms %s 512 %s\n}",mode?"outer":path,mode?path:"inner");text=body;
-        Check(!ParseShader(&text) && !imageFinds && !skyInitializations,"oversize completed sky image path rejects before imports");traceImages=0;
+        /* Retail's Com_sprintf truncates the face path to MAX_QPATH - 1 bytes. */
+        Check(ParseShader(&text) && imageFinds==12 && strlen(imageNames[mode?6:0])==MAX_QPATH-1 && !strncmp(imageNames[mode?11:5],path,57) && !strcmp(imageNames[mode?11:5]+57,"_dn.tg"),"oversize sky image path is truncated like retail");traceImages=0;
     }
     for(mode=0;mode<2;mode++) {
         ResetParser();traceImages=1;imageFinds=0;skyInitializations=0;snprintf(body,sizeof(body),"{\nskyparms outer %s inner\n}",mode?"0":"512");text=body;
@@ -349,9 +368,9 @@ static void Metadata(int proof) {
         Check(!R_FindShader("tests/following",LIGHTMAP_NONE,qtrue)->defaultShader,"following definition survives invalid metadata");
     }
     Release();tr.whiteImage=&white;
-    ResetParser();text="{\nsort\n{\nmap $whiteimage\n}\n}";Check(!ParseShader(&text),"missing sort parameter rejects");
-    ResetParser();text="{\nclampTime\n{\nmap $whiteimage\n}\n}";Check(!ParseShader(&text),"missing clamp time rejects");
-    ResetParser();text="{\nfogParms ( 0.2 0.3 0.4 )\n{\nmap $whiteimage\n}\n}";Check(!ParseShader(&text),"missing fog depth rejects");
+    ResetParser();text="{\nsort additive\nsort\n{\nmap $whiteimage\n}\n}";Check(ParseShader(&text) && shader.sort==SS_BLEND1,"missing sort parameter keeps the current sort like retail");
+    ResetParser();text="{\nclampTime 3\nclampTime\n{\nmap $whiteimage\n}\n}";Check(ParseShader(&text) && shader.clampTime==3,"missing clamp time keeps the current value like retail");
+    ResetParser();text="{\nfogParms ( 0.2 0.3 2 )\n{\nmap $whiteimage\n}\n}";Check(ParseShader(&text) && !shader.fogParms.depthForOpaque && shader.fogParms.color[0]==0.2f && shader.fogParms.color[2]==1,"missing fog depth keeps retail's color (still clamped) and depth");
 }
 static void PublicInputs(int proof) {
     int before,i,kind;char name[MAX_QPATH+8],alias[MAX_QPATH],*text;shader_t *material,*source,*target;
@@ -430,11 +449,24 @@ static void RejectedFallback(void) {
     }
 }
 
+/* Constructs retail 1.32c accepted with a warning register as real materials. */
+static void RetailTolerance(void) {
+    const char *bodies[]={"{\n{\nmap $whiteimage\ntcMod scale 0.5\ntcMod rotate\ntcMod bogus\ntcMod scroll 1e39 1\n}\n}","{\n{\nmap $whiteimage\ntcMod turb 1\ntcMod stretch sin\ntcMod transform 1 2\n}\n}","{\n{\nmap $whiteimage\nrgbGen wave sin 1\nalphaGen wave\n}\n}","{\ndeformVertexes wave 10\ndeformVertexes bulge 1\ndeformVertexes move 1 2 3 sin\ndeformVertexes normal\ndeformVertexes bogus\n{\nmap $whiteimage\n}\n}","{\ndeformVertexes autosprite\ndeformVertexes autosprite2\ndeformVertexes text0\ndeformVertexes projectionShadow\n{\nmap $whiteimage\n}\n}","{\nsort\nskyparms\n{\nmap $whiteimage\n}\n}","{\nskyparms - 1024\n{\nmap $whiteimage\n}\n}","{\nclampTime\nfogParms ( 0.2 0.3 0.4 )\nq3map_sun 1 2 3 100 45\nsort 1e39\n{\nmap $whiteimage\n}\n}","{\n{\nmap $whiteimage\nalphaGen const\nrgbGen const bad\ntcGen vector bad bad\ntcMod scale 1e39 -1e39\ntcMod transform 1e39 0 0 1 0 1e400\n}\n}"};
+    shader_t *material;size_t i;
+    for(i=0;i<sizeof(bodies)/sizeof(bodies[0]);i++) {
+        Release();tr.defaultImage=tr.whiteImage=&white;snprintf(archive,sizeof(archive),"tests/tolerated\n%s\ntests/following\n{\n{\nmap $whiteimage\n}\n}\n",bodies[i]);s_shaderText=archive;
+        material=R_FindShader("tests/tolerated",LIGHTMAP_NONE,qtrue);
+        Check(!material->defaultShader && material->explicitlyDefined && material->numUnfoggedPasses==1 && !material->isSky,"retail-tolerated construct registers its own material");
+        Check(!R_FindShader("tests/following",LIGHTMAP_NONE,qtrue)->defaultShader,"following definition survives a retail-tolerated construct");
+    }
+    Release();tr.whiteImage=&white;
+}
+
 int main(int argc,char **argv) {
 	int i;char *text;ri.Printf=Print;ri.Hunk_Alloc=Allocate;ri.CIN_PlayCinematic=Video;ri.Error=Com_Error;tr.defaultImage=tr.whiteImage=&white;
 	for(i=0;i<MAX_SHADERTEXT_HASH;i++)shaderTextHashTable[i]=emptyHash;
 	if(argc>1) {int proof=atoi(argv[1]);if(proof==102){MissingFallback();return 0;}if(proof==101){RejectedFallback();return 0;}if(proof==100){CloudPublication();return 0;}if(proof<3)ConstantVectors(proof);else if(proof<8)WaveModifiers(proof-3);else if(proof<13)Metadata(proof-8);else PublicInputs(proof-13);Release();return 0;}
-	PublicInputs(-1);CloudPublication();RejectedFallback();MissingFallback();Metadata(-1);WaveModifiers(-1);ConstantVectors(-1);AlphaIdentity();AlphaWaves();FastAlpha();NativeStages();TailCases();
+	PublicInputs(-1);RetailTolerance();CloudPublication();RejectedFallback();MissingFallback();Metadata(-1);WaveModifiers(-1);ConstantVectors(-1);AlphaIdentity();AlphaWaves();FastAlpha();NativeStages();TailCases();
 	ResetParser();text="{\nsurfaceParm fog\n}\n";Check(ParseShader(&text),"native zero-stage fog remains valid");
 	ResetParser();text="{\nskyparms - 512 -\n}\n";Check(ParseShader(&text) && shader.isSky,"native zero-stage sky remains valid");
 	Registration();
