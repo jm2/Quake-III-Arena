@@ -5,7 +5,10 @@ botlib_import_t botimport;
 static source_t source;
 static script_t primary;
 static token_t inputs[12];
-static void *owners[16];
+#ifndef Q3_INCLUDE_MAX_OWNERS
+#define Q3_INCLUDE_MAX_OWNERS 16
+#endif
+static void *owners[Q3_INCLUDE_MAX_OWNERS];
 static int liveOwners, inputCount, inputPosition, reads, lookups, errors, warnings, scriptReleases;
 static char paths[4][MAX_TOKEN];
 static const char *foundPath;
@@ -15,10 +18,10 @@ void *GetMemory(unsigned long size) {
 #ifdef Q3_INCLUDE_HEAP_HOOK
     if(Q3_INCLUDE_HEAP_HOOK())return NULL;
 #endif
-    for(i=0;i<16;i++)if(!owners[i]){owners[i]=malloc(size);Check(owners[i]!=NULL,"fixture heap allocation");liveOwners++;return owners[i];}
+    for(i=0;i<Q3_INCLUDE_MAX_OWNERS;i++)if(!owners[i]){owners[i]=malloc(size);Check(owners[i]!=NULL,"fixture heap allocation");liveOwners++;return owners[i];}
     Check(0,"bounded native owners");return NULL;
 }
-void FreeMemory(void *pointer) {int i;for(i=0;i<16;i++)if(owners[i]==pointer){free(pointer);owners[i]=NULL;liveOwners--;return;}Check(0,"known native owner releases once");}
+void FreeMemory(void *pointer) {int i;for(i=0;i<Q3_INCLUDE_MAX_OWNERS;i++)if(owners[i]==pointer){free(pointer);owners[i]=NULL;liveOwners--;return;}Check(0,"known native owner releases once");}
 #ifndef Com_Memcpy
 void Com_Memcpy(void *out,const void *in,size_t size) {memcpy(out,in,size);}
 #endif
@@ -35,15 +38,16 @@ void QDECL Com_Error(int level,const char *format,...) {
 }
 void QDECL Com_Printf(const char *format,...) {(void)format;Check(0,"unexpected native formatting");}
 static void QDECL Print(int level,char *format,...) {
-    char text[2048];va_list args;va_start(args,format);vsnprintf(text,sizeof(text),format,args);va_end(args);
-    Check(strstr(text,"file scripts/main.bot, line 37:")!=NULL,"native source diagnostic");
+    char text[2048],location[1200];va_list args;va_start(args,format);vsnprintf(text,sizeof(text),format,args);va_end(args);
+    snprintf(location,sizeof(location),"file %s, line %d:",source.scriptstack->filename,source.scriptstack->line);
+    Check(strstr(text,location)!=NULL,"native source diagnostic");
     if(level==PRT_ERROR)errors++;else if(level==PRT_WARNING)warnings++;else Check(0,"expected native diagnostic severity");
 }
 int PS_ReadToken(script_t *script,token_t *token) {
-    Check(script==&primary,"native include reads primary script");reads++;
+    Check(script==source.scriptstack,"native include reads active script");reads++;
     if(inputPosition==inputCount)return 0;*token=inputs[inputPosition++];return 1;
 }
-int EndOfScript(script_t *script) {Check(script==&primary,"native primary script EOF");return inputPosition==inputCount;}
+int EndOfScript(script_t *script) {Check(script==source.scriptstack,"native active script EOF");return inputPosition==inputCount;}
 void FreeScript(script_t *script) {Check(script!=&primary,"primary fixture script remains owned by caller");scriptReleases++;FreeMemory(script);}
 void StripDoubleQuotes(char *text) {size_t length=strlen(text);Check(length>=2&&text[0]=='"'&&text[length-1]=='"',"lexer supplies quoted filename");memmove(text,text+1,length-2);text[length-2]=0;}
 script_t *LoadScriptFile(const char *filename) {
@@ -97,6 +101,25 @@ static void Prefix(void) {
     large[1022]='x';large[1023]=0;PC_SetIncludePath(&source,large);Check(!strcmp(source.includepath,saved)&&errors==1,"separator cost rejects oversized prefix without mutation");large[1023]='x';large[1024]=0;PC_SetIncludePath(&source,large);Check(!strcmp(source.includepath,saved)&&errors==2,"oversized prefix copy rejects without truncation");Finish();
 }
 static void Recursive(void) {Reset("","scripts/main.bot");Quote("scripts/main.bot",0);Check(!PC_Directive_include(&source)&&lookups==1&&errors==1&&scriptReleases==1&&!liveOwners&&source.scriptstack==&primary,"recursive include rejects and frees newly loaded script");Finish();}
+static void IncludeDepth(int reject) {
+    script_t *script,*top;char name[MAX_QPATH];int i,count=reject?63:62;
+    Reset("","limit.bot");
+    for(i=0;i<count;i++){
+        script=GetMemory(sizeof(*script));memset(script,0,sizeof(*script));
+        snprintf(name,sizeof(name),"nested-%d.bot",i);strcpy(script->filename,name);script->line=i+1;
+        Check(PC_PushScript(&source,script),"every source through the native include-depth boundary publishes");
+    }
+    top=source.scriptstack;Quote("limit.bot",0);
+    if(reject){
+        Check(!PC_Directive_include(&source)&&source.scriptstack==top&&lookups==1&&errors==1&&!warnings&&
+              liveOwners==count&&scriptReleases==1,"source beyond include-depth boundary rejects and frees its candidate");
+    }else{
+        Check(PC_Directive_include(&source)&&source.scriptstack!=top&&!strcmp(source.scriptstack->filename,"limit.bot")&&
+              lookups==1&&!errors&&!warnings&&liveOwners==count+1&&!scriptReleases,
+              "last supported include depth publishes with native ordering and ownership");
+    }
+    Finish();
+}
 static void Other(void) {
     Reset("prefix/",NULL);Input("<",TT_PUNCTUATION,0);Input(">",TT_PUNCTUATION,0);Next();Check(!PC_Directive_include(&source)&&!lookups&&errors==1,"empty angle filename rejects even with a prefix");After();Finish();
     Reset("",NULL);source.skip=1;Quote("unused.bot",0);Check(PC_Directive_include(&source)&&!reads&&!lookups&&inputPosition==0&&!errors&&!warnings,"skipped native include consumes nothing");Finish();
@@ -104,7 +127,7 @@ static void Other(void) {
     Reset("",NULL);Input("123",TT_NUMBER,0);Next();Check(!PC_Directive_include(&source)&&!lookups&&errors==1,"invalid include operand rejects");After();Finish();
 }
 int main(int argc,char **argv) {
-    if(argc>1){int proof=atoi(argv[1]);if(proof==0)QuotedOverflow(0);else if(proof==1)AngleOverflow(1,0);else if(proof==2)AngleOverflow(0,1);else if(proof==3)Missing(1);else if(proof==4)Crossed();else if(proof==5)Normalize();else if(proof==6)Prefix();else Recursive();}
-    else {Valid();QuotedOverflow(0);QuotedOverflow(1);AngleOverflow(0,0);AngleOverflow(1,0);AngleOverflow(0,1);Missing(0);Missing(1);Crossed();Normalize();Prefix();Recursive();Other();puts("Native include path boundaries, lookup order, synchronization and script ownership passed (issue #48)");}
+    if(argc>1){int proof=atoi(argv[1]);if(proof==0)QuotedOverflow(0);else if(proof==1)AngleOverflow(1,0);else if(proof==2)AngleOverflow(0,1);else if(proof==3)Missing(1);else if(proof==4)Crossed();else if(proof==5)Normalize();else if(proof==6)Prefix();else if(proof==7)Recursive();else IncludeDepth(proof!=8);}
+    else {Valid();QuotedOverflow(0);QuotedOverflow(1);AngleOverflow(0,0);AngleOverflow(1,0);AngleOverflow(0,1);Missing(0);Missing(1);Crossed();Normalize();Prefix();Recursive();IncludeDepth(0);IncludeDepth(1);Other();puts("Native include path/depth bounds, lookup order, synchronization and script ownership passed (issue #48)");}
     return 0;
 }
