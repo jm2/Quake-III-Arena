@@ -77,6 +77,10 @@ typedef struct bot_character_s
 } bot_character_t;
 
 bot_character_t *botcharacters[MAX_CLIENTS + 1];
+//a cached character may be shared by any number of bots and is only freed by
+//BotShutdownCharacters, a private character is freed once no bot uses it
+static qboolean botcharactercached[MAX_CLIENTS + 1];
+static int botcharacterusers[MAX_CLIENTS + 1];
 
 static unsigned int BotCharacterFloatBits(const float *value)
 {
@@ -200,6 +204,8 @@ void BotFreeCharacter2(int handle)
 	BotFreeCharacterStrings(botcharacters[handle]);
 	FreeMemory(botcharacters[handle]);
 	botcharacters[handle] = NULL;
+	botcharactercached[handle] = qfalse;
+	botcharacterusers[handle] = 0;
 } //end of the function BotFreeCharacter2
 //========================================================================
 //
@@ -209,7 +215,16 @@ void BotFreeCharacter2(int handle)
 //========================================================================
 void BotFreeCharacter(int handle)
 {
-	if (!LibVarGetValue("bot_reloadcharacters")) return;
+	//decide by who owns the character, whatever bot_reloadcharacters is now
+	if (handle > 0 && handle <= MAX_CLIENTS)
+	{
+		if (botcharactercached[handle]) return;
+		if (botcharacterusers[handle] > 1)
+		{
+			botcharacterusers[handle]--;
+			return;
+		} //end if
+	} //end if
 	BotFreeCharacter2(handle);
 } //end of the function BotFreeCharacter
 //===========================================================================
@@ -730,7 +745,7 @@ numericfailure:
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
-int BotLoadCharacter(char *charfile, float skill)
+static int BotFindOrLoadCharacter(char *charfile, float skill)
 {
 	int firstskill, secondskill, handle;
 	if (!BotCharacterFilePathValid(charfile)) return 0;
@@ -787,6 +802,26 @@ int BotLoadCharacter(char *charfile, float skill)
 	//write the character to the log file
 	BotDumpCharacter(botcharacters[handle]);
 	//
+	return handle;
+} //end of the function BotFindOrLoadCharacter
+//===========================================================================
+//
+// Parameter:			-
+// Returns:				-
+// Changes Globals:		-
+//===========================================================================
+int BotLoadCharacter(char *charfile, float skill)
+{
+	int handle;
+
+	handle = BotFindOrLoadCharacter(charfile, skill);
+	if (handle)
+	{
+		//a character handed out under the cache policy stays cached, else
+		//count the bots that use the private character
+		if (!LibVarGetValue("bot_reloadcharacters")) botcharactercached[handle] = qtrue;
+		else if (!botcharactercached[handle]) botcharacterusers[handle]++;
+	} //end if
 	return handle;
 } //end of the function BotLoadCharacter
 //===========================================================================
