@@ -9,6 +9,7 @@ for Q3_TEST_MODE in normal fast;do
     if [[ "$Q3_TEST_MODE" == fast ]];then Q3_TEST_FLAGS=(-O2 -DNDEBUG -ffast-math);fi
     "${CC:-cc}" -DBOTLIB -std=gnu99 -fgnu89-inline -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
         -fsanitize=address,undefined,float-cast-overflow "${Q3_TEST_FLAGS[@]}" \
+        -DQ3_INCLUDE_MAX_OWNERS=128 \
         "-DQ3_PRECOMP_SOURCE=\"$Q3_TEST_ROOT/code/botlib/l_precomp.c\"" \
         "$Q3_TEST_ROOT/tests/bot_include_regression.c" "$Q3_TEST_ROOT/code/game/q_shared.c" \
         -Wl,--gc-sections -lm -o "$Q3_TEST_BINARY"
