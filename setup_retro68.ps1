@@ -221,7 +221,8 @@ $PreparedGl = Join-Path $PreparedOpenGLDir "gl.h"
 $PreparedAgl = Join-Path $PreparedOpenGLDir "agl.h"
 $OpenGLStubLib = Join-Path $SOURCE_DIR "InterfacesAndLibraries\SharedLibraries\libOpenGLLibraryStub.a"
 $MoveBrokenToolchain = $false
-if ((Test-Path "$INSTALL_DIR\bin\powerpc-apple-macos-gcc.exe") -and
+if (((Test-Path "$INSTALL_DIR\bin\powerpc-apple-macos-gcc.exe") -or
+     (Test-Path "$INSTALL_DIR\bin\powerpc-apple-macos-gcc")) -and
     (Test-Path $PreparedGl) -and
     (Test-Path $PreparedAgl) -and
     (Test-Path $OpenGLStubLib)) {

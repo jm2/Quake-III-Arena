@@ -1128,7 +1128,7 @@ make_ps_setup_root() {
 run_ps_setup() {
     local root="$1" tmp="${2:-$Q3_CHECK_TMP}"
     Q3_STATUS=0
-    (cd "$root" && TMPDIR="$tmp" PATH="$root/stubs:$PATH" \
+    (cd "$root" && unset CXXFLAGS && TMPDIR="$tmp" PATH="$root/stubs:$PATH" \
         pwsh -NoProfile -NonInteractive -File ./setup_retro68.ps1) > "$Q3_OUT" 2>&1 || Q3_STATUS=$?
 }
 
@@ -1251,6 +1251,22 @@ if command -v pwsh > /dev/null 2>&1; then
         "Retro68 toolchain check passed" "Retro68 appears to be installed"
     check "setup_retro68.ps1 left the working toolchain in place" \
         test -x "$ROOT/tools/Retro68-build/bin/powerpc-apple-macos-gcc.exe"
+
+    # Under pwsh on Linux or macOS the tools have no .exe suffix. A re-run
+    # against such a complete toolchain must accept it, not move it aside
+    # and rebuild (issue #387 review).
+    make_ps_setup_root "$ROOT"
+    rm -f "$ROOT"/tools/Retro68-build/bin/*.exe
+    run_ps_setup "$ROOT"
+    expect "setup_retro68.ps1 accepts a complete toolchain without .exe names" 0 \
+        "Retro68 toolchain check passed" "Retro68 appears to be installed"
+    # The check's probes log to calls.log in the toolchain, so compare the
+    # rest of it.
+    check "setup_retro68.ps1 neither moved nor rebuilt a complete toolchain without .exe names" \
+        bash -c '[ ! -e "$1/build-toolchain.called" ] && [ ! -e "$1/git.log" ] &&
+            [ -z "$(find "$1/tools" -maxdepth 1 -name "Retro68-*.*-*")" ] &&
+            [ -x "$1/tools/Retro68-build/bin/powerpc-apple-macos-gcc" ] &&
+            [ -f "$1/tools/Retro68-work/gcc-build-ppc/cc1.o" ]' _ "$ROOT"
 
     make_ps_setup_root "$ROOT"
     Q3_BEFORE="$(snapshot "$ROOT/tools/Retro68-build"; snapshot "$ROOT/tools/Retro68-work")"
