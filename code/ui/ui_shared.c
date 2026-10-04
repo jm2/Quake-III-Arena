@@ -194,6 +194,12 @@ const char *String_Alloc(const char *p) {
 	len = strlen(p);
 	if (len + strPoolIndex + 1 < STRING_POOL_SIZE) {
 		int ph = strPoolIndex;
+		// take the hash node first: a string that cannot be linked must not
+		// use up string pool space
+		str  = UI_Alloc(sizeof(stringDef_t));
+		if (!str) {
+			return NULL;
+		}
 		strcpy(&strPool[strPoolIndex], p);
 		strPoolIndex += len + 1;
 
@@ -203,10 +209,6 @@ const char *String_Alloc(const char *p) {
 			last = last->next;
 		}
 
-		str  = UI_Alloc(sizeof(stringDef_t));
-		if (!str) {
-			return NULL;
-		}
 		str->next = NULL;
 		str->str = &strPool[ph];
 		if (last) {
