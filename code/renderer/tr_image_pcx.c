@@ -26,23 +26,32 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 extern refimport_t ri;
 
-/** Decode complete PCX scanlines, including padding, without letting runs cross their ends. */
+/**
+ * Decode rows exactly as 1.32c's LoadPCX: every row restarts at x=0 and takes runs until it
+ * reaches columns, ignoring bytes_per_line, so stream padding becomes the next row's pixels.
+ * A run may overshoot its row; id wrote the excess into the following rows, which those rows
+ * then overwrite, so it is dropped here. An excess that would pass the end of id's buffer
+ * (heap corruption in 1.32c) and a read past the file (id's malformed check) are rejected.
+ * id also accepted zero-length runs (0xc0 plus a value byte) as no-ops, and so does this.
+ */
 static qboolean R_PCXRows( imageCursor_t *cursor, unsigned int columns, unsigned int rows,
-                          unsigned int bytesPerLine, const byte *palette, byte *output ) {
-	unsigned int row, column, run, visible, i;
+                          const byte *palette, byte *output ) {
+	unsigned int row, column, run, room, visible, i;
 	const byte *token, *value;
 	byte *pixel;
 	for ( row = 0; row < rows; row++ ) {
+		/* Pixels from this row's start to the end of id's (ymax+1)*(xmax+1) buffer. */
+		room = ( rows - row ) * columns;
 		column = 0;
-		while ( column < bytesPerLine ) {
+		while ( column < columns ) {
 			if ( !R_ImageBytes(cursor, 1, &token) ) return qfalse;
 			value = token; run = 1;
 			if ( (*token & 0xc0) == 0xc0 ) {
 				run = *token & 0x3f;
-				if ( !run || !R_ImageBytes(cursor, 1, &value) ) return qfalse;
+				if ( !R_ImageBytes(cursor, 1, &value) ) return qfalse;
 			}
-			if ( run > bytesPerLine - column ) return qfalse;
-			if ( output && column < columns ) {
+			if ( run > room - column ) return qfalse;
+			if ( output ) {
 				visible = run < columns - column ? run : columns - column;
 				pixel = output + (row * columns + column) * 4;
 				for ( i = 0; i < visible; i++, pixel += 4 ) {
@@ -56,32 +65,34 @@ static qboolean R_PCXRows( imageCursor_t *cursor, unsigned int columns, unsigned
 	return qtrue;
 }
 
-/** Validate the whole 8-bit PCX layout and RLE before allocating the single RGBA output. */
+/**
+ * Validate the header and the whole RLE stream before allocating the single RGBA output.
+ * Like 1.32c: the size is (xmax+1) x (ymax+1) with xmin, ymin, color_planes and bytes_per_line
+ * ignored, either axis above 1024 is rejected, the stream may run to the end of the file and
+ * the palette is the last 768 bytes with no 0x0c marker check. Files shorter than 768 bytes,
+ * where id read its palette from before the buffer, are rejected.
+ */
 static qboolean R_DecodePCX( const byte *buffer, unsigned int length, byte **pic, int *width, int *height ) {
 	imageCursor_t header, encoded, preflight;
-	const byte *format, *ignored, *planes, *palette;
-	unsigned int xmin, ymin, xmax, ymax, columns, rows, bytesPerLine;
+	const byte *format, *ignored, *palette;
+	unsigned int xmax, ymax, columns, rows;
 	byte *output;
-	/* The standard version-5 palette marker separates compressed bytes from all 256 colors. */
-	if ( length < 128 + 769 || buffer[length - 769] != 0x0c ) return qfalse;
+	if ( length < 768 ) return qfalse;
 	header.data = buffer; header.length = 128; header.position = 0;
+	/* xmax and ymax are read unsigned as on little-endian retail; big-endian 1.32c sign-extended
+	   values from 0x8000, giving the empty or negative sizes that are rejected here. */
 	if ( !R_ImageBytes(&header, 4, &format) || format[0] != 0x0a || format[1] != 5 ||
-	     format[2] != 1 || format[3] != 8 ||
-	     !R_ImageLE(&header, 2, &xmin) || !R_ImageLE(&header, 2, &ymin) ||
+	     format[2] != 1 || format[3] != 8 || !R_ImageBytes(&header, 4, &ignored) ||
 	     !R_ImageLE(&header, 2, &xmax) || !R_ImageLE(&header, 2, &ymax) ||
-	     !R_ImageBytes(&header, 53, &ignored) || !R_ImageBytes(&header, 1, &planes) ||
-	     !R_ImageLE(&header, 2, &bytesPerLine) || !R_ImageBytes(&header, 60, &ignored) ||
-	     *planes != 1 || xmax < xmin || ymax < ymin ) return qfalse;
-	columns = xmax - xmin + 1; rows = ymax - ymin + 1;
-	/* Retain the original 1024-pixel axis limit; the RGBA product is then at most 4 MiB. */
-	if ( columns > 1024 || rows > 1024 || bytesPerLine < columns ) return qfalse;
+	     xmax >= 1024 || ymax >= 1024 ) return qfalse;
+	columns = xmax + 1; rows = ymax + 1;
 	palette = buffer + length - 768;
-	encoded.data = buffer; encoded.length = length - 769; encoded.position = 128;
+	encoded.data = buffer; encoded.length = length; encoded.position = 128;
 	preflight = encoded;
-	if ( !R_PCXRows(&preflight, columns, rows, bytesPerLine, palette, NULL) ) return qfalse;
+	if ( !R_PCXRows(&preflight, columns, rows, palette, NULL) ) return qfalse;
 	output = ri.Malloc( columns * rows * 4 );
 	if ( !output ) return qfalse;
-	if ( !R_PCXRows(&encoded, columns, rows, bytesPerLine, palette, output) ) {
+	if ( !R_PCXRows(&encoded, columns, rows, palette, output) ) {
 		ri.Free(output); return qfalse;
 	}
 	*pic = output;
