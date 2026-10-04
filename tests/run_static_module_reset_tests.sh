@@ -17,10 +17,10 @@
 #
 # ASan puts redzones between instrumented globals, and the reset copies and
 # zeroes whole brackets, so module objects are built without ASan's global
-# instrumentation; stack, heap and UBSan checks stay on, except two that this
-# test is not about: the array bounds check (CalculateRanks writes past
-# level.numteamVotingClients[2], #463) and clang's null member access check
-# (the retail FOFS() is &((gentity_t *)0)->field).
+# instrumentation; stack, heap and UBSan checks stay on, including the array
+# bounds check since #463 bounded CalculateRanks' team voting loop, except
+# clang's null member access check, which this test is not about (the retail
+# FOFS() is &((gentity_t *)0)->field).
 set -euo pipefail
 export TMPDIR="${TMPDIR:-/var/tmp}"
 
@@ -109,7 +109,7 @@ q3_compile() {
     local out="$1" src="$2" kind="$3"
     shift 3
     if [ "$kind" = module ]; then
-        "$Q3_CC" "${Q3_FLAGS[@]}" "${Q3_NO_ASAN_GLOBALS[@]}" -fno-sanitize=bounds,null -w "$@" \
+        "$Q3_CC" "${Q3_FLAGS[@]}" "${Q3_NO_ASAN_GLOBALS[@]}" -fno-sanitize=null -w "$@" \
             -c "$src" -o "$Q3_TEST_DIR/$out"
     else
         "$Q3_CC" "${Q3_FLAGS[@]}" -Wall "$@" -c "$src" -o "$Q3_TEST_DIR/$out"
