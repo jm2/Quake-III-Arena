@@ -393,6 +393,36 @@ elif [ "$OS_NAME" = "Linux" ]; then
     echo "Using system Boost."
 fi
 
+# GCC 16 defaults to C++20, which the host build of Retro68's GCC 12.2.0
+# fails under (issue #387): libcody's u8"" literals become char8_t (its
+# configure adds -std=c++11 to CXX, but GCC's top-level make drops it), and
+# <memory>, which gcc/system.h includes after safe-ctype.h, now pulls in
+# <locale> and clashes with its toupper/isalpha macros. build-toolchain.bash
+# overwrites CC and CXX but not CXXFLAGS, so pin the dialect there: C++11,
+# because libcody's configure accepts no other -std. Retro68's own CMake
+# projects set C++17 after it, and GCC's target libraries ignore CXXFLAGS.
+host_cxx_dialect() {
+    local cxx
+    for cxx in g++ c++; do
+        command -v "$cxx" &> /dev/null || continue
+        printf '__cplusplus\n' | "$cxx" -x c++ -E -P - 2> /dev/null | tr -d ' L\r' | tail -n 1
+        return
+    done
+}
+HOST_CXX_DIALECT=$(host_cxx_dialect)
+if [[ $HOST_CXX_DIALECT =~ ^[0-9]+$ ]] && [ "$HOST_CXX_DIALECT" -gt 201703 ]; then
+    case " ${CXXFLAGS:-} " in
+        *" -std="*)
+            echo "The host C++ compiler defaults to C++ $HOST_CXX_DIALECT; keeping CXXFLAGS=$CXXFLAGS."
+            ;;
+        *)
+            export CXXFLAGS="${CXXFLAGS:--O2} -std=gnu++11"
+            echo "The host C++ compiler defaults to C++ $HOST_CXX_DIALECT, which GCC 12.2 does not"
+            echo "build under; building with CXXFLAGS=$CXXFLAGS."
+            ;;
+    esac
+fi
+
 bash "$SOURCE_DIR/build-toolchain.bash" --prefix="$INSTALL_DIR" "${SKIP_FLAGS[@]}"
 
 # 6. Post-Build Fixes

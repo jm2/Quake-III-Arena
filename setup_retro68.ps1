@@ -59,7 +59,9 @@ function Read-Retro68Versions {
 }
 $Pins = Read-Retro68Versions (Join-Path (Get-Location) "retro68-versions.txt")
 
-# Check for unar, build if missing
+# Check for unar, build if missing. A unar built here earlier is in tools\unar-bin.
+$BuiltUnarDir = Join-Path (Get-Location) "tools\unar-bin"
+if (Test-Path $BuiltUnarDir) { $env:PATH = "$BuiltUnarDir$([System.IO.Path]::PathSeparator)$env:PATH" }
 if (-not (Get-Command "unar" -ErrorAction SilentlyContinue)) {
     Write-Host "unar not found. Preparing to build XADMaster (unar/lsar)..." -ForegroundColor Yellow
     
@@ -190,13 +192,16 @@ if (-not (Get-Command "unar" -ErrorAction SilentlyContinue)) {
     
     if (Test-Path $UnarExeExe) {
         Write-Host "Build successful. Installing unar/lsar..." -ForegroundColor Green
-        if (-not (Test-Path "$INSTALL_DIR\bin")) { New-Item -ItemType Directory -Path "$INSTALL_DIR\bin" -Force | Out-Null }
+        # Not into the toolchain prefix: build-toolchain.bash refuses to
+        # build into a prefix that is not empty (issue #387).
+        $UnarBinDir = Join-Path (Get-Location) "$ToolsDir\unar-bin"
+        if (-not (Test-Path $UnarBinDir)) { New-Item -ItemType Directory -Path $UnarBinDir -Force | Out-Null }
         
-        Copy-Item $UnarExeExe "$INSTALL_DIR\bin" -Force
-        if (Test-Path $LsarExeExe) { Copy-Item $LsarExeExe "$INSTALL_DIR\bin" -Force }
+        Copy-Item $UnarExeExe $UnarBinDir -Force
+        if (Test-Path $LsarExeExe) { Copy-Item $LsarExeExe $UnarBinDir -Force }
         
         # Add to current PATH
-        $env:PATH = "$INSTALL_DIR\bin;$env:PATH"
+        $env:PATH = "$UnarBinDir$([System.IO.Path]::PathSeparator)$env:PATH"
     }
     else {
         Write-Host "Warning: XADMaster build failed." -ForegroundColor Red
@@ -216,7 +221,8 @@ $PreparedGl = Join-Path $PreparedOpenGLDir "gl.h"
 $PreparedAgl = Join-Path $PreparedOpenGLDir "agl.h"
 $OpenGLStubLib = Join-Path $SOURCE_DIR "InterfacesAndLibraries\SharedLibraries\libOpenGLLibraryStub.a"
 $MoveBrokenToolchain = $false
-if ((Test-Path "$INSTALL_DIR\bin\powerpc-apple-macos-gcc.exe") -and
+if (((Test-Path "$INSTALL_DIR\bin\powerpc-apple-macos-gcc.exe") -or
+     (Test-Path "$INSTALL_DIR\bin\powerpc-apple-macos-gcc")) -and
     (Test-Path $PreparedGl) -and
     (Test-Path $PreparedAgl) -and
     (Test-Path $OpenGLStubLib)) {
@@ -461,25 +467,52 @@ Get-ChildItem -Path "$SOURCE_DIR" -Recurse -Filter "CMakeLists.txt" | ForEach-Ob
 Write-Host "Building Retro68 Toolchain..." -ForegroundColor Green
 # build-toolchain.bash refuses to install a full build into a non-empty
 # prefix. Never delete the old toolchain: move it aside so it can be restored.
-if ($MoveBrokenToolchain) {
-    $Stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
-    $AsideName = "Retro68-build.broken-$Stamp"
-    $AsidePath = Join-Path (Split-Path $INSTALL_DIR -Parent) $AsideName
-    Rename-Item -Path $INSTALL_DIR -NewName $AsideName
-    Write-Host "Moved the toolchain that cannot run to $AsidePath."
-    Write-Host "To restore it, delete $INSTALL_DIR and rename $AsideName back to Retro68-build."
+# The same goes for an incomplete earlier build (issue #387), and for the work
+# tree, whose configure caches may name host libraries that are gone.
+$WORK_DIR = Join-Path (Get-Location) "tools\Retro68-work"
+$Stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
+$AsideSuffix = if ($MoveBrokenToolchain) { "broken" } else { "previous" }
+foreach ($Previous in @($INSTALL_DIR, $WORK_DIR)) {
+    if (-not (Test-Path $Previous)) {
+        continue
+    }
+    $AsideName = "$(Split-Path $Previous -Leaf).$AsideSuffix-$Stamp"
+    $AsidePath = Join-Path (Split-Path $Previous -Parent) $AsideName
+    Rename-Item -Path $Previous -NewName $AsideName
+    if ($MoveBrokenToolchain -and $Previous -eq $INSTALL_DIR) {
+        Write-Host "Moved the toolchain that cannot run to $AsidePath."
+    }
+    else {
+        Write-Host "Moved $Previous to $AsidePath."
+    }
+    Write-Host "To restore it, delete $Previous and rename $AsideName back to $(Split-Path $Previous -Leaf)."
     Write-Host "Delete it once the new toolchain works."
+}
+New-Item -ItemType Directory -Path $WORK_DIR | Out-Null
+
+# A host C++ compiler that defaults to C++20 or later (GCC 16) cannot build
+# GCC 12.2; pin C++11 in CXXFLAGS as setup_retro68.sh does (issue #387).
+$HostCxxDialect = "$(bash -c "printf '__cplusplus\n' | g++ -x c++ -E -P - 2> /dev/null | tr -d ' L\r' | tail -n 1")"
+if ($HostCxxDialect -match "^[0-9]+$" -and [long]$HostCxxDialect -gt 201703) {
+    if (" $env:CXXFLAGS " -match " -std=") {
+        Write-Host "The host C++ compiler defaults to C++ $HostCxxDialect; keeping CXXFLAGS=$env:CXXFLAGS."
+    }
+    else {
+        $env:CXXFLAGS = "$(if ($env:CXXFLAGS) { $env:CXXFLAGS } else { "-O2" }) -std=gnu++11"
+        Write-Host "The host C++ compiler defaults to C++ $HostCxxDialect, which GCC 12.2 does not"
+        Write-Host "build under; building with CXXFLAGS=$env:CXXFLAGS."
+    }
 }
 Write-Host "Invoking build-toolchain.bash via bash..."
 
 # Convert paths to Unix style for bash
 $InstallDirUnix = $INSTALL_DIR -replace '\\', '/'
 $SourceDirUnix = $SOURCE_DIR -replace '\\', '/'
+$WorkDirUnix = $WORK_DIR -replace '\\', '/'
 
-# We assume 'bash' is available (checked in dependencies)
-# We need to run the bash script. 
-# Note: Windows path handling in bash can be tricky.
-bash -c "cd '$SourceDirUnix' && ./build-toolchain.bash --prefix='$InstallDirUnix' --clean-after-build"
+# build-toolchain.bash refuses to run from its source directory, so run it
+# from the work tree, as setup_retro68.sh does (issue #387).
+bash -c "cd '$WorkDirUnix' && bash '$SourceDirUnix/build-toolchain.bash' --prefix='$InstallDirUnix' --clean-after-build"
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Installing OpenGL support into the prepared toolchain..." -ForegroundColor Green
@@ -510,6 +543,8 @@ if ($LASTEXITCODE -eq 0) {
         (Test-Path $StubResource) -and
         (Test-Path $MakeImport)) {
         Copy-Item $StubResource $StubAppleDouble -Force
+        # MakeImport runs powerpc-apple-macos-as from PATH (issue #387).
+        $env:PATH = "$(Join-Path $INSTALL_DIR "bin")$([System.IO.Path]::PathSeparator)$env:PATH"
         & $MakeImport $StubSource $OpenGLStubLib
     }
 
