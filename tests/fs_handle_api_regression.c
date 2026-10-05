@@ -32,14 +32,14 @@ static void MissingFILE(fileHandle_t f) {
     expectDrop = 0;
 }
 
-static fileHandle_t Open(char *path, int buffered) {
+static fileHandle_t Open(char *path, int unique) {
     fileHandle_t f;
     char bytes[4];
     Begin();
     search.pack = FS_LoadZipFile(path, "native.pk3");
-    Check(search.pack && FS_FOpenFileRead("native.txt", &f, buffered) == 12 && f > 0 &&
+    Check(search.pack && FS_FOpenFileRead("native.txt", &f, unique) == 12 && f > 0 &&
           FS_Read(bytes, 3, f) == 3 && !memcmp(bytes, "nat", 3),
-          "actual prior partial buffered/shared owner");
+          "actual prior partial unique/shared owner");
     return f;
 }
 
@@ -47,9 +47,8 @@ static void Invalid(char *path, int kind) {
     fileHandle_t f = Open(path, kind != 6);
     fileHandleData_t saved;
     int live = zoneLive;
-    char bytes[16], payload[12];
+    char bytes[16];
     memcpy(&saved, &fsh[f], sizeof(saved));
-    if (fsh[f].buffer) memcpy(payload, fsh[f].buffer, sizeof(payload));
     if (kind == 0) MissingFILE(MAX_FILE_HANDLES);
     else if (kind == 1) FS_FCloseFile(-1);
     else if (kind == 2) FS_FCloseFile(MAX_FILE_HANDLES);
@@ -58,11 +57,10 @@ static void Invalid(char *path, int kind) {
     else if (kind == 5) Check(FS_filelength(MAX_FILE_HANDLES) == -1, "exclusive length bound rejects");
     else if (kind == 6) FS_Flush(f);
     else FS_ForceFlush(f);
-    Check(!memcmp(&saved, &fsh[f], sizeof(saved)) && zoneLive == live &&
-          (!fsh[f].buffer || !memcmp(payload, fsh[f].buffer, sizeof(payload))),
+    Check(!memcmp(&saved, &fsh[f], sizeof(saved)) && zoneLive == live,
           "invalid handle/flush preserves complete prior native owner and payload");
     Check(FS_Read(bytes, sizeof(bytes), f) == 9 && !memcmp(bytes, "ive data\n", 9),
-          "prior native buffered/shared payload and cursor remain usable");
+          "prior native unique/shared payload and cursor remain usable");
     FS_FCloseFile(f);
     End();
 }
@@ -73,11 +71,9 @@ static void NativeHandleGolden(char *path) {
     int kind, ordinaryFD;
     for (kind = 0; kind <= 1; kind++) {
         f = Open(path, kind);
-        Check(FS_FTell(f) == 3, "native buffered/shared tell after partial read");
-        if (kind) Check(FS_filelength(f) == 12 && FS_FTell(f) == 3,
-                        "native buffered length retains partial cursor");
+        Check(FS_FTell(f) == 3, "native unique/shared tell after partial read");
         Check(FS_Read(bytes, sizeof(bytes), f) == 9 && !memcmp(bytes, "ive data\n", 9),
-              "native buffered/shared close golden payload");
+              "native unique/shared close golden payload");
         FS_FCloseFile(f);
         Check(!memcmp(&fsh[f], &(fileHandleData_t){0}, sizeof(fsh[f])),
               "native complete handle record clears after close");
@@ -122,10 +118,10 @@ static void Inputs(char *path) {
     }
     Check(!FS_Write(NULL, 1, f) && !FS_Write("x", INT_MIN, f) &&
           !FS_Write("x", 0, f) && !FS_Write("x", 1, f),
-          "buffered writes and invalid native requests reject");
+          "unique ZIP writes and invalid native requests reject");
     FS_Flush(f);
     FS_ForceFlush(f);
-    Check(!memcmp(&saved, &fsh[f], sizeof(saved)), "invalid operations retain buffered owner/cursor");
+    Check(!memcmp(&saved, &fsh[f], sizeof(saved)), "invalid operations retain unique owner/cursor");
     FS_FCloseFile(f);
     FS_FCloseFile(f);
     End();

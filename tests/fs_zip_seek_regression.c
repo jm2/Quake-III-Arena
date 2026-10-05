@@ -21,7 +21,7 @@ static fileHandle_t Open(char *path) {
     fileHandle_t f;
     Begin(); search.pack = FS_LoadZipFile(path, "native.pk3");
     Check(search.pack && FS_FOpenFileRead("native.bin", &f, qfalse) == 3*UNZ_BUFSIZE+17 &&
-          f > 0 && fsh[f].zipFile && !fsh[f].buffer, "actual shared large native ZIP handle");
+          f > 0 && fsh[f].zipFile && fsh[f].handleFiles.file.z == search.pack->handle, "actual shared large native ZIP handle");
     return f;
 }
 static void Close(fileHandle_t f) { FS_FCloseFile(f); End(); }

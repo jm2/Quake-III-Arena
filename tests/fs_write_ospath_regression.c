@@ -557,7 +557,7 @@ int main(int argc, char **argv) {
 #endif
     FS_Shutdown(qtrue);
     for (i = 0; i < MAX_FILE_HANDLES; i++) {
-        Check(!fsh[i].handleFiles.file.o && !fsh[i].buffer, "all handles closed");
+        Check(!fsh[i].handleFiles.file.o, "all handles closed");
     }
     FreeCvars();
     Check(!zoneLive, "zone released");

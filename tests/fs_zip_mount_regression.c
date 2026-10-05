@@ -120,14 +120,13 @@ static void Invalid(char *dir, int kind) {
     unsigned char *header, *buffer;
     fileHandleData_t saved;
     fileHandle_t f;
-    char payload[12];
     size_t headerSize, bufferSize;
     int live, count, files;
     Begin();
     Path(path, sizeof(path), dir, "native.pk3");
     search.pack = prior = FS_LoadZipFile(path, "native.pk3");
     Check(prior != NULL && FS_FOpenFileRead("native.txt", &f, qtrue) == 12,
-          "complete prior native mount and buffered owner");
+          "complete prior native mount and unique stream owner");
     headerSize = sizeof(*prior) + prior->hashSize * sizeof(fileInPack_t *);
     bufferSize = sizeof(fileInPack_t) + strlen(prior->buildBuffer[0].name) + 1;
     header = malloc(headerSize);
@@ -136,7 +135,6 @@ static void Invalid(char *dir, int kind) {
     memcpy(header, prior, headerSize);
     memcpy(buffer, prior->buildBuffer, bufferSize);
     memcpy(&saved, &fsh[f], sizeof(saved));
-    memcpy(payload, fsh[f].buffer, sizeof(payload));
     if (kind == 7) fs_packFiles = INT_MAX;
     live = zoneLive;
     count = fs_packFiles;
@@ -146,9 +144,8 @@ static void Invalid(char *dir, int kind) {
     Check(candidate == NULL, "invalid complete mount rejects");
     Check(zoneLive == live && FileOwners() == files && fs_packFiles == count && search.pack == prior &&
           !memcmp(header, prior, headerSize) && !memcmp(buffer, prior->buildBuffer, bufferSize) &&
-          !memcmp(&saved, &fsh[f], sizeof(saved)) &&
-          !memcmp(payload, fsh[f].buffer, sizeof(payload)),
-          "failed metadata keeps complete prior mount, buffer, count and physical owners");
+          !memcmp(&saved, &fsh[f], sizeof(saved)),
+          "failed metadata keeps complete prior mount, stream, count and physical owners");
     free(header);
     free(buffer);
     fs_packFiles = 1;
@@ -159,7 +156,7 @@ static void Invalid(char *dir, int kind) {
     FreePack(candidate);
     Check(FileOwners() == files, "retry mount stream physically releases");
     Check(FS_Read(path, sizeof(path), f) == 12 && !memcmp(path, "native data\n", 12),
-          "prior buffered payload remains usable after failed mount and retry");
+          "prior streamed payload remains usable after failed mount and retry");
     FS_FCloseFile(f);
     End();
 }
@@ -171,14 +168,13 @@ static void SecondPass(char *dir, int position) {
     size_t headerSize, bufferSize;
     fileHandleData_t saved;
     fileHandle_t f;
-    char payload[12];
     int live, files;
     Begin();
     Path(path, sizeof(path), dir, "native.pk3");
     search.pack = prior = FS_LoadZipFile(path, "prior.pk3");
     Check(search.pack != NULL, "prior native root before second-pass failure");
     Check(FS_FOpenFileRead("native.txt", &f, qtrue) == 12,
-          "prior real buffered owner before second-pass failure");
+          "prior real unique stream owner before second-pass failure");
     headerSize = sizeof(*prior) + prior->hashSize * sizeof(fileInPack_t *);
     bufferSize = sizeof(fileInPack_t) + strlen(prior->buildBuffer[0].name) + 1;
     header = malloc(headerSize);
@@ -187,7 +183,6 @@ static void SecondPass(char *dir, int position) {
     memcpy(header, prior, headerSize);
     memcpy(buffer, prior->buildBuffer, bufferSize);
     memcpy(&saved, &fsh[f], sizeof(saved));
-    memcpy(payload, fsh[f].buffer, sizeof(payload));
     live = zoneLive;
     files = FileOwners();
     candidateStream = NULL;
@@ -202,8 +197,7 @@ static void SecondPass(char *dir, int position) {
     Check(faultTriggered && candidate == NULL && zoneLive == live && FileOwners() == files &&
           fs_packFiles == 1 && search.pack == prior &&
           !memcmp(header, prior, headerSize) && !memcmp(buffer, prior->buildBuffer, bufferSize) &&
-          !memcmp(&saved, &fsh[f], sizeof(saved)) &&
-          !memcmp(payload, fsh[f].buffer, sizeof(payload)),
+          !memcmp(&saved, &fsh[f], sizeof(saved)),
           "second-pass real truncation releases every private candidate owner");
     free(header);
     free(buffer);
@@ -215,7 +209,7 @@ static void SecondPass(char *dir, int position) {
     FreePack(candidate);
     Check(FileOwners() == files, "second-pass retry physically releases its stream");
     Check(FS_Read(path, sizeof(path), f) == 12 && !memcmp(path, "native data\n", 12),
-          "second-pass failure and retry keep the prior buffer readable");
+          "second-pass failure and retry keep the prior stream readable");
     FS_FCloseFile(f);
     End();
 }
