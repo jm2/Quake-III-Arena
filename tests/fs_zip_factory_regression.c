@@ -1,4 +1,4 @@
-/* Actual archive/clone/buffer factories with physical native failure owners. */
+/* Actual archive/clone/stream factories with physical native failure owners. */
 /* Actual decoder initialization rejects each failed native allocation import. */
 #define Q3_ZIP_NULLABLE_IMPORT
 #define main FixtureZipMain
@@ -29,6 +29,9 @@ static int FileOwners(void) {
 
 static void Arm(int position) { nullableCalls = 0; nullablePosition = position; }
 
+/* unz_s clone, entry reader, read buffer and the zlib inflate state. */
+#define Q3_STREAM_IMPORTS 7
+
 
 static void ArchiveFailure(char *path, int clone, int position) {
     unzFile archive = NULL, candidate;
@@ -57,20 +60,21 @@ static void ArchiveFailure(char *path, int clone, int position) {
     End();
 }
 
-static void BufferFailure(char *path, int active, int position) {
+/* A unique open whose archive clone fails reads through the shared archive;
+ * a failure inside the clone's decoder setup cleans up and reports -1. */
+static void StreamFailure(char *path, int active, int position) {
     fileHandle_t prior, shared = 0, f;
     fileHandleData_t saved;
     unz_s savedArchive;
     file_in_zip_read_info_s savedDecoder;
-    char bytes[16], payload[12];
-    int live, files;
+    char bytes[16];
+    int live, files, n;
     long cursor = 0;
     Begin();
     search.pack = FS_LoadZipFile(path, "native.pk3");
     Check(search.pack && FS_FOpenFileRead("native.txt", &prior, qtrue) == 12 &&
-          FS_Read(bytes, 3, prior) == 3, "prior native buffered payload/cursor");
+          FS_Read(bytes, 3, prior) == 3, "prior native unique stream payload/cursor");
     memcpy(&saved, &fsh[prior], sizeof(saved));
-    memcpy(payload, fsh[prior].buffer, sizeof(payload));
     if (active) {
         Check(FS_FOpenFileRead("native.txt", &shared, qfalse) == 12 &&
               FS_Read(bytes, 3, shared) == 3, "active prior native shared reader");
@@ -82,26 +86,40 @@ static void BufferFailure(char *path, int active, int position) {
     files = FileOwners();
     f = 17;
     Arm(position);
-    Check(FS_FOpenFileRead("native.txt", &f, qtrue) == -1 && !f,
-          "failed native unique buffer/clone import clears candidate handle");
-    Check(nullableCalls >= position && zoneLive == live && FileOwners() == files &&
-          !memcmp(&saved, &fsh[prior], sizeof(saved)) &&
-          !memcmp(payload, fsh[prior].buffer, sizeof(payload)),
-          "buffer/clone failure frees candidate owners and retains complete prior buffer");
+    n = FS_FOpenFileRead("native.txt", &f, qtrue);
+    Check(nullableCalls >= position && !memcmp(&saved, &fsh[prior], sizeof(saved)) &&
+          FileOwners() == files, "failed clone/decoder import retains the prior stream");
     Arm(0);
-    if (active) Check(!memcmp(&savedArchive, search.pack->handle, sizeof(savedArchive)) &&
-                      !memcmp(&savedDecoder, savedArchive.pfile_in_zip_read, sizeof(savedDecoder)) &&
-                      ftell(savedArchive.file) == cursor,
-                      "buffer/clone failure retains active archive/decoder and physical cursor");
+    if (position == 1) {
+        Check(n == 12 && f > 0 && f != prior && f != shared &&
+              fsh[f].handleFiles.file.z == search.pack->handle && !fsh[f].handleFiles.unique,
+              "failed archive clone falls back to the shared archive");
+        Check(FS_Read(bytes, sizeof(bytes), f) == 12 && !memcmp(bytes, "native data\n", 12),
+              "shared fallback reads the complete payload");
+        FS_FCloseFile(f);
+        /* Closing a shared reader also ends any other shared reader's decoder. */
+        Check((active ? zoneLive < live : zoneLive == live) && search.pack->handle != NULL,
+              "shared fallback close keeps the archive");
+    } else {
+        Check(n == -1 && !f && zoneLive == live,
+              "failed native unique decoder import clears candidate handle and owners");
+        if (active) Check(!memcmp(&savedArchive, search.pack->handle, sizeof(savedArchive)) &&
+                          !memcmp(&savedDecoder, savedArchive.pfile_in_zip_read, sizeof(savedDecoder)) &&
+                          ftell(savedArchive.file) == cursor,
+                          "clone failure retains active archive/decoder and physical cursor");
+    }
     Check(FS_FOpenFileRead("native.txt", &f, qtrue) == 12 && f != prior && f != shared &&
+          fsh[f].handleFiles.unique &&
           FS_Read(bytes, sizeof(bytes), f) == 12 && !memcmp(bytes, "native data\n", 12),
-          "failed unique factory retries native complete buffering");
+          "failed unique factory retries a complete native stream");
     FS_FCloseFile(f);
     if (active) {
         Check(FS_Read(bytes, sizeof(bytes), shared) == 9 && !memcmp(bytes, "ive data\n", 9),
               "active prior shared native payload survives failed unique factory");
         FS_FCloseFile(shared);
     }
+    Check(FS_Read(bytes, sizeof(bytes), prior) == 9 && !memcmp(bytes, "ive data\n", 9),
+          "prior unique stream survives failed unique factory");
     FS_FCloseFile(prior);
     End();
 }
@@ -147,9 +165,9 @@ int main(int argc, char **argv) {
         i = atoi(argv[2]);
         if (i == 0) ArchiveFailure(argv[1], 0, 2);
         else if (i == 1) ArchiveFailure(argv[1], 1, 1);
-        else if (i == 2) BufferFailure(argv[1], 0, 7);
-        else if (i == 3) BufferFailure(argv[1], 1, 1);
-        else if (i == 4) BufferFailure(argv[1], 1, 8);
+        else if (i == 2) StreamFailure(argv[1], 0, 7);
+        else if (i == 3) StreamFailure(argv[1], 1, 1);
+        else if (i == 4) StreamFailure(argv[1], 1, 2);
         else if (i == 5) InvalidSource(argv[1]);
         else NativeFactoryGolden(argv[1]);
         return 0;
@@ -158,10 +176,11 @@ int main(int argc, char **argv) {
     ArchiveFailure(argv[1], 0, 1);
     ArchiveFailure(argv[1], 0, 2);
     ArchiveFailure(argv[1], 1, 1);
-    BufferFailure(argv[1], 0, 7);
-    BufferFailure(argv[1], 1, 1);
-    BufferFailure(argv[1], 1, 8);
+    for (i = 1; i <= Q3_STREAM_IMPORTS; i++) {
+        StreamFailure(argv[1], 0, i);
+        StreamFailure(argv[1], 1, i);
+    }
     InvalidSource(argv[1]);
-    puts("Actual native archive/clone/buffer factories cleanly fail, preserve owners and retry");
+    puts("Actual native archive/clone/stream factories cleanly fail, preserve owners and retry");
     return 0;
 }

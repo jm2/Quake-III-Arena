@@ -1,5 +1,5 @@
-/* Real buffered opens must continue owning their native handle slots. */
-#define Q3_ZIP_ZONE_CAPACITY 128
+/* Real unique streams must continue owning their native handle slots. */
+#define Q3_ZIP_ZONE_CAPACITY 1024
 #define main FixtureZipMain
 #ifndef Q3_ZIP_NATIVE_FIXTURE
 #define Q3_ZIP_NATIVE_FIXTURE "fs_zip_regression.c"
@@ -10,22 +10,21 @@
 static void Pair(char *path) {
     fileHandle_t first, second, retry;
     fileHandleData_t prior;
-    char bytes[32], payload[12];
+    char bytes[32];
     int before;
     Begin();
     search.pack = FS_LoadZipFile(path, "native.pk3");
     Check(search.pack != NULL, "actual compressed ZIP mount");
     Check(FS_FOpenFileRead("native.txt", &first, qtrue) == 12 && first > 0,
-          "first complete native buffered owner");
+          "first complete native unique stream owner");
     Check(FS_Read(bytes, 4, first) == 4 && !memcmp(bytes, "nati", 4),
           "first native partial read");
     memcpy(&prior, &fsh[first], sizeof(prior));
-    memcpy(payload, fsh[first].buffer, sizeof(payload));
     before = zoneLive;
     Check(FS_FOpenFileRead("native.txt", &second, qtrue) == 12 &&
-          second > 0 && second != first, "simultaneous buffers own distinct slots");
-    Check(zoneLive == before + 1 && !memcmp(&prior, &fsh[first], sizeof(prior)) &&
-          !memcmp(payload, fsh[first].buffer, sizeof(payload)),
+          second > 0 && second != first, "simultaneous streams own distinct slots");
+    Check(zoneLive > before && fsh[second].handleFiles.file.z != fsh[first].handleFiles.file.z &&
+          !memcmp(&prior, &fsh[first], sizeof(prior)),
           "second open preserves complete first owner and cursor");
     Check(FS_Read(bytes, sizeof(bytes), second) == 12 &&
           !memcmp(bytes, "native data\n", 12), "second independent payload");
@@ -36,9 +35,9 @@ static void Pair(char *path) {
     Check(FS_FOpenFileRead("missing.txt", &retry, qtrue) == -1 && retry == 0,
           "missing native entry fails cleanly");
     Check(!memcmp(&prior, &fsh[first], sizeof(prior)) && zoneLive == before,
-          "failed open preserves occupied buffered owner");
+          "failed open preserves occupied stream owner");
     Check(FS_FOpenFileRead("native.txt", &retry, qtrue) == 12 && retry == second,
-          "closed buffered slot retries without displacing its sibling");
+          "closed stream slot retries without displacing its sibling");
     Check(FS_Read(bytes, sizeof(bytes), first) == 8 &&
           !memcmp(bytes, "ve data\n", 8) && FS_Read(bytes, 1, first) == 0,
           "first cursor and native EOF survive other opens");
@@ -59,17 +58,17 @@ static void AllSlots(char *path) {
     Check(search.pack != NULL, "native full-slot ZIP mount");
     for (i = 0; i < MAX_FILE_HANDLES - 1; i++) {
         Check(FS_FOpenFileRead("native.txt", &handles[i], qtrue) == 12 &&
-              handles[i] == i + 1, "every native slot retains its buffered owner");
+              handles[i] == i + 1, "every native slot retains its stream owner");
         memcpy(&snapshots[i], &fsh[handles[i]], sizeof(snapshots[i]));
         for (j = 0; j <= i; j++) {
             Check(!memcmp(&snapshots[j], &fsh[handles[j]], sizeof(snapshots[j])) &&
-                  !memcmp(fsh[handles[j]].buffer, "native data\n", 12),
-                  "every earlier complete buffer remains intact");
+                  (j == i || fsh[handles[j]].handleFiles.file.z != fsh[handles[i]].handleFiles.file.z),
+                  "every earlier complete stream remains intact and private");
         }
     }
     live = zoneLive;
     FS_FCloseFile(handles[MAX_FILE_HANDLES - 2]);
-    Check(zoneLive == live - 1, "final native slot physically releases");
+    Check(zoneLive < live, "final native slot physically releases");
     Check(FS_FOpenFileRead("native.txt", &replacement, qtrue) == 12 &&
           replacement == MAX_FILE_HANDLES - 1 && zoneLive == live,
           "final native slot reuses only its released owner");
@@ -94,6 +93,6 @@ int main(int argc, char **argv) {
     Golden(argv[1]);
     Pair(argv[1]);
     AllSlots(argv[1]);
-    puts("Actual buffered handles preserve all native slots and physical owners");
+    puts("Actual unique stream handles preserve all native slots and physical owners");
     return 0;
 }

@@ -93,7 +93,7 @@ static void Invalid(char *path, int kind) {
 }
 
 static void PublicFailure(char *path, int kind, int active) {
-    unsigned char bytes[512], payload[12];
+    unsigned char bytes[512];
     char text[16];
     fileHandle_t prior, shared = 0, f;
     fileHandleData_t saved;
@@ -106,9 +106,8 @@ static void PublicFailure(char *path, int kind, int active) {
     size = ReadArchive(path, bytes, sizeof(bytes));
     search.pack = FS_LoadZipFile(path, "native.pk3");
     Check(search.pack && FS_FOpenFileRead("native.txt", &prior, qtrue) == 12 &&
-          FS_Read(text, 3, prior) == 3, "prior native buffered owner/cursor");
+          FS_Read(text, 3, prior) == 3, "prior native unique stream owner/cursor");
     memcpy(&saved, &fsh[prior], sizeof(saved));
-    memcpy(payload, fsh[prior].buffer, sizeof(payload));
     if (active) {
         Check(FS_FOpenFileRead("native.txt", &shared, qfalse) == 12 && shared != prior &&
               FS_Read(text, 3, shared) == 3 && !memcmp(text, "nat", 3),
@@ -127,9 +126,8 @@ static void PublicFailure(char *path, int kind, int active) {
     Check(FS_FOpenFileRead("native.txt", &f, qtrue) == -1 && !f,
           "actual changed selected metadata rejects before entry allocation/open");
     Check(!memcmp(&saved, &fsh[prior], sizeof(saved)) &&
-          !memcmp(payload, fsh[prior].buffer, sizeof(payload)) &&
           zoneLive == live && FileOwners() == files && !temporaryLive && !fs_loadStack,
-          "metadata failure preserves prior buffer/cursor and releases private clone/handle");
+          "metadata failure preserves prior stream/cursor and releases private clone/handle");
     if (active) {
         Check(!memcmp(&savedArchive, search.pack->handle, sizeof(savedArchive)) &&
               !memcmp(&savedDecoder, savedArchive.pfile_in_zip_read, sizeof(savedDecoder)) &&
@@ -139,7 +137,7 @@ static void PublicFailure(char *path, int kind, int active) {
     Change(path, search.pack->handle, pos, kind, bytes, size, 1);
     Check(FS_FOpenFileRead("native.txt", &f, qtrue) == 12 && f != prior && f != shared &&
           FS_Read(text, sizeof(text), f) == 12 && !memcmp(text, "native data\n", 12),
-          "restored complete metadata retries through actual native buffered open/read");
+          "restored complete metadata retries through actual native unique open/read");
     FS_FCloseFile(f);
     if (active) {
         Check(FS_Read(text, sizeof(text), shared) == 9 && !memcmp(text, "ive data\n", 9),
@@ -166,7 +164,7 @@ static void NativePositionGolden(char *path) {
           "native valid position, filename and length remain unchanged");
     Check(FS_FOpenFileRead("native.txt", &f, qtrue) == 12 &&
           FS_Read(bytes, sizeof(bytes), f) == 12 && !memcmp(bytes, "native data\n", 12),
-          "native selected position buffered payload golden");
+          "native selected position unique payload golden");
     FS_FCloseFile(f);
     End();
     Check(FileOwners() == files, "native selected metadata releases all OS descriptors");
