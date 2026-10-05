@@ -209,7 +209,7 @@ static void Mount(void) {
 static void Unmount(void) {
     int i;
     for (i = 0; i < MAX_FILE_HANDLES; i++) {
-        Check(!fsh[i].handleFiles.file.o && !fsh[i].buffer, "all handles closed");
+        Check(!fsh[i].handleFiles.file.o, "all handles closed");
     }
     unzClose(packPath.pack->handle);
     Z_Free(packPath.pack->buildBuffer);

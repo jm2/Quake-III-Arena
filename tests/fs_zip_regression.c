@@ -164,7 +164,7 @@ static void End(void) {
         Z_Free(search.pack);
         search.pack=NULL;
     }
-    for(i=0;i<MAX_FILE_HANDLES;i++)Check(!fsh[i].handleFiles.file.o&&!fsh[i].buffer,"all native handles clear");
+    for(i=0;i<MAX_FILE_HANDLES;i++)Check(!fsh[i].handleFiles.file.o,"all native handles clear");
     Check(!zoneLive&&!temporaryLive&&!fs_loadStack,"all filesystem owners release physically");
     fs_searchpaths=NULL;
 }
@@ -178,8 +178,8 @@ static void Golden(char *path) {
     search.pack=FS_LoadZipFile(path,"native.pk3");
     Check(search.pack&&search.pack->numfiles==1,"actual native ZIP mount");
     n=FS_FOpenFileRead("native.txt",&f,qtrue);
-    Check(n==12&&f>0&&fsh[f].buffer&&!fsh[f].handleFiles.file.z,"native unique buffered open");
-    Check(FS_Read(text,64,f)==12&&!memcmp(text,"native data\n",12),"native buffered payload and EOF");
+    Check(n==12&&f>0&&fsh[f].handleFiles.unique&&fsh[f].handleFiles.file.z&&fsh[f].handleFiles.file.z!=search.pack->handle,"native unique open streams through its own archive");
+    Check(FS_Read(text,64,f)==12&&!memcmp(text,"native data\n",12),"native streamed payload and EOF");
     FS_FCloseFile(f);
     n=FS_ReadFile("native.txt",&bytes);
     Check(n==12&&bytes&&!memcmp(bytes,"native data\n",12)&&((char*)bytes)[12]==0,"native shared full-file payload and trailing byte");

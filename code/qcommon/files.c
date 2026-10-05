@@ -282,14 +282,10 @@ typedef struct {
 	int			zipOffset;
 	qboolean	zipFile;
 	qboolean	streamed;
+	qboolean	byMode;		// opened by FS_FOpenFileByMode (a VM handle)
 	qboolean	streamSeekPending;
 	int			streamSeekResult;
 	char		name[MAX_ZPATH];
-    
-    // Antigravity: Buffered file support for Mac OS 9
-    byte        *buffer;
-    int         bufferLen;
-    int         bufferPos;
 } fileHandleData_t;
 
 static fileHandleData_t	fsh[MAX_FILE_HANDLES];
@@ -395,7 +391,7 @@ static fileHandle_t	FS_HandleForFile(void) {
 	int		i;
 
 	for ( i = 1 ; i < MAX_FILE_HANDLES ; i++ ) {
-		if ( fsh[i].handleFiles.file.o == NULL && fsh[i].buffer == NULL ) {
+		if ( fsh[i].handleFiles.file.o == NULL ) {
 			return i;
 		}
 	}
@@ -423,7 +419,7 @@ static FILE	*FS_FileForHandle( fileHandle_t f ) {
 void	FS_ForceFlush( fileHandle_t f ) {
 	FILE *file;
 
-	if (f <= 0 || f >= MAX_FILE_HANDLES || fsh[f].buffer ||
+	if (f <= 0 || f >= MAX_FILE_HANDLES ||
 		fsh[f].zipFile || !fsh[f].handleFiles.file.o)
 		return;
 	file = FS_FileForHandle(f);
@@ -445,11 +441,8 @@ int FS_filelength( fileHandle_t f ) {
 	FILE*	h;
 
 	if (f <= 0 || f >= MAX_FILE_HANDLES ||
-		(!fsh[f].buffer && !fsh[f].handleFiles.file.o))
+		!fsh[f].handleFiles.file.o)
 		return -1;
-    if (fsh[f].buffer) {
-        return fsh[f].bufferLen;
-    }
 	h = FS_FileForHandle(f);
 	pos = ftell (h);
 	fseek (h, 0, SEEK_END);
@@ -1025,20 +1018,13 @@ void FS_FCloseFile( fileHandle_t f ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
 	}
 	if (f <= 0 || f >= MAX_FILE_HANDLES ||
-		(!fsh[f].buffer && !fsh[f].handleFiles.file.o))
+		!fsh[f].handleFiles.file.o)
 		return;
 
 	if (fsh[f].streamed) {
 		Sys_EndStreamedFile(f);
 	}
 
-    // Antigravity: Buffered free
-    if (fsh[f].buffer) {
-        Z_Free(fsh[f].buffer);
-        fsh[f].buffer = NULL;
-        Com_Memset( &fsh[f], 0, sizeof( fsh[f] ) );
-        return;
-    }
 	if (fsh[f].zipFile == qtrue) {
 		unzCloseCurrentFile( fsh[f].handleFiles.file.z );
 		if ( fsh[f].handleFiles.unique ) {
@@ -1425,20 +1411,19 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 					l = strlen( filename );
 					FS_ReferencePakFile( pak, filename );
 
-					// Antigravity: HANDLE REUSE OPTIMIZATION
-					// Determine if we can buffer this file using the shared handle
-					// to avoid opening a new file handle (limit 40 on Mac OS 9).
-					
-					// Keep an active shared reader's decoder and physical cursor intact.
-					if (uniqueFILE && ((unz_s *)readZip)->pfile_in_zip_read) {
-						readZip = unzReOpen(pak->pakFilename, pak->handle);
-						if (!readZip) {
-							Com_Printf(S_COLOR_YELLOW "WARNING: couldn't reopen PK3 entry %s\n", filename);
-							Com_Memset(&fsh[*file], 0, sizeof(fsh[*file]));
-							*file = 0;
-							return -1;
+					if ( uniqueFILE ) {
+						// open a new file on the pakfile
+						readZip = unzReOpen( pak->pakFilename, pak->handle );
+						if ( readZip ) {
+							ownZip = qtrue;
+						} else {
+							// Retail made this fatal. Read through the shared archive
+							// instead: FS_ZipPosition keeps this handle's position.
+							Com_Printf( S_COLOR_YELLOW "WARNING: couldn't reopen %s, sharing its handle for %s\n",
+								pak->pakFilename, filename );
+							readZip = pak->handle;
+							fsh[*file].handleFiles.unique = qfalse;
 						}
-						ownZip = qtrue;
 					}
 					if ( unzSetCurrentFileInfoPosition(readZip, pakFile->pos) != UNZ_OK ) {
 						if (ownZip) unzClose(readZip);
@@ -1447,91 +1432,21 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 						*file = 0;
 						return -1;
 					}
-					
-					// 2. Peek at size
-					{
-						unz_s *sharedZ = (unz_s *)readZip;
-						unsigned long unsignedSize = sharedZ->cur_file_info.uncompressed_size;
-						int size;
-						qboolean doBuffer = qfalse;
-
-						if ( unsignedSize > (unsigned long)(INT_MAX - 1) ) {
-							if (ownZip) unzClose(readZip);
-							Com_Printf( S_COLOR_YELLOW "WARNING: oversized PK3 entry rejected: %s\n", filename );
-							Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
-							*file = 0;
-							return -1;
-						}
-						size = (int)unsignedSize;
-						
-						if ( size > 0 && size < 32*1024*1024 ) doBuffer = qtrue;
-						if ( size > 0 && (FS_HasExtension(filename, ".menu") ||
-							FS_HasExtension(filename, ".txt") ||
-							FS_HasExtension(filename, ".cfg") ||
-							FS_HasExtension(filename, ".def")) ) doBuffer = qtrue;
-						
-						if (uniqueFILE && doBuffer) {
-							int readResult;
-
-							// Buffer through the idle shared archive or our private clone.
-							fsh[*file].handleFiles.file.z = readZip;
-							fsh[*file].zipFile = qtrue;
-
-							// Open inside zip
-							if ( unzOpenCurrentFile( readZip ) != UNZ_OK ) {
-								if (ownZip) unzClose(readZip);
-								Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
-								*file = 0;
-								return -1;
-							}
-							
-							// Buffer
-							fsh[*file].buffer = Z_Malloc(size);
-							if (!fsh[*file].buffer) {
-								unzCloseCurrentFile(readZip);
-								if (ownZip) unzClose(readZip);
-								Com_Memset(&fsh[*file], 0, sizeof(fsh[*file]));
-								*file = 0;
-								return -1;
-							}
-							fsh[*file].bufferLen = size;
-							readResult = unzReadCurrentFile( readZip, fsh[*file].buffer, size );
-							fsh[*file].bufferPos = 0;
-							
-							unzCloseCurrentFile( readZip );
-							if (ownZip) unzClose(readZip);
-							if ( readResult != size ) {
-								Z_Free( fsh[*file].buffer );
-								Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
-								*file = 0;
-								return -1;
-							}
-							
-							// Clear handle so FS_FCloseFile doesn't touch shared handle
-							fsh[*file].handleFiles.file.z = NULL;
-							
-							Q_strncpyz( fsh[*file].name, filename, sizeof( fsh[*file].name ) );
-							return size;
-						}
+					if ( ((unz_s *)readZip)->cur_file_info.uncompressed_size > (unsigned long)(INT_MAX - 1) ) {
+						if (ownZip) unzClose(readZip);
+						Com_Printf( S_COLOR_YELLOW "WARNING: oversized PK3 entry rejected: %s\n", filename );
+						Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
+						*file = 0;
+						return -1;
 					}
 
-					// Standard Path (Network streams or large files)
-					if ( uniqueFILE ) {
-						if (!ownZip) readZip = unzReOpen(pak->pakFilename, readZip);
-						if (!readZip) {
-							Com_Printf(S_COLOR_YELLOW "WARNING: couldn't reopen PK3 entry %s\n", filename);
-							Com_Memset(&fsh[*file], 0, sizeof(fsh[*file]));
-							*file = 0;
-							return -1;
-						}
-					}
 					fsh[*file].handleFiles.file.z = readZip;
 					Q_strncpyz( fsh[*file].name, filename, sizeof( fsh[*file].name ) );
 					fsh[*file].zipFile = qtrue;
 					zfi = (unz_s *)fsh[*file].handleFiles.file.z;
 					// open the file in the zip
 					if ( unzOpenCurrentFile( fsh[*file].handleFiles.file.z ) != UNZ_OK ) {
-						if ( uniqueFILE ) {
+						if ( ownZip ) {
 							unzClose( fsh[*file].handleFiles.file.z );
 						}
 						Com_Memset( &fsh[*file], 0, sizeof( fsh[*file] ) );
@@ -1541,15 +1456,6 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 					fsh[*file].zipFilePos = pakFile->pos;
 					fsh[*file].fileSize = (int)zfi->cur_file_info.uncompressed_size;
 					fsh[*file].zipOffset = 0;
-
-					// Antigravity: Buffer check for non-optimized path (e.g. shared handle usage)
-					{
-                        int size = zfi->cur_file_info.uncompressed_size;
-                        if (fsh[*file].handleFiles.file.z && !uniqueFILE) {
-                            // If we didn't optimize above, but want to buffer...
-                            // (Logic similar to above but for !uniqueFILE case if needed)
-                        }
-					}
 
 					if ( fs_debug->integer ) {
 						// Com_Printf( "FS_FOpenFileRead: %s (found in '%s')\n", 
@@ -1700,23 +1606,12 @@ int FS_Read( void *buffer, int len, fileHandle_t f ) {
 	if ( f <= 0 || f >= MAX_FILE_HANDLES || len <= 0 || !buffer ) {
 		return 0;
 	}
-	if (!fsh[f].buffer && !fsh[f].handleFiles.file.o)
+	if (!fsh[f].handleFiles.file.o)
 		return 0;
 
 	buf = (byte *)buffer;
 	if (fs_readCount > INT_MAX - len) fs_readCount = INT_MAX;
 	else fs_readCount += len;
-
-    // Antigravity: Buffered read override
-    if (fsh[f].buffer) {
-        int remainingBytes = fsh[f].bufferLen - fsh[f].bufferPos;
-        int copyLen = len < remainingBytes ? len : remainingBytes;
-        if (copyLen > 0) {
-            memcpy(buffer, fsh[f].buffer + fsh[f].bufferPos, copyLen);
-            fsh[f].bufferPos += copyLen;
-        }
-        return copyLen;
-    }
 
 	if (fsh[f].zipFile == qfalse) {
 		remaining = len;
@@ -1773,7 +1668,7 @@ int FS_Write( const void *buffer, int len, fileHandle_t h ) {
 	if (h <= 0 || h >= MAX_FILE_HANDLES || len <= 0 || !buffer) {
 		return 0;
 	}
-	if (fsh[h].buffer || fsh[h].zipFile || !fsh[h].handleFiles.file.o) {
+	if (fsh[h].zipFile || !fsh[h].handleFiles.file.o) {
 		return 0;
 	}
 
@@ -1839,33 +1734,8 @@ int FS_Seek( fileHandle_t f, long offset, int origin ) {
 		return FS_RecordSeekResult( f, -1 );
 	}
 	if (f <= 0 || f >= MAX_FILE_HANDLES ||
-		(!fsh[f].buffer && !fsh[f].handleFiles.file.o))
+		!fsh[f].handleFiles.file.o)
 		return FS_RecordSeekResult( f, -1 );
-
-    // Antigravity: Buffered seek
-    if (fsh[f].buffer) {
-        int newPos = 0;
-        switch( origin ) {
-        case FS_SEEK_SET:
-            if (offset <= 0) newPos = 0;
-            else if (offset >= fsh[f].bufferLen) newPos = fsh[f].bufferLen;
-            else newPos = (int)offset;
-            break;
-        case FS_SEEK_CUR:
-            if (offset > fsh[f].bufferLen - fsh[f].bufferPos) newPos = fsh[f].bufferLen;
-            else if (offset < -fsh[f].bufferPos) newPos = 0;
-            else newPos = fsh[f].bufferPos + (int)offset;
-            break;
-        case FS_SEEK_END:
-            if (offset >= 0) newPos = fsh[f].bufferLen;
-            else if (offset < -fsh[f].bufferLen) newPos = 0;
-            else newPos = fsh[f].bufferLen + (int)offset;
-            break;
-		default: return FS_RecordSeekResult( f, -1 );
-		}
-		fsh[f].bufferPos = newPos;
-		return FS_RecordSeekResult( f, 0 );
-	}
 
 	if (fsh[f].streamed) {
 		if (offset > INT_MAX || offset < INT_MIN)
@@ -3339,8 +3209,12 @@ void FS_Shutdown( qboolean closemfp ) {
 	searchpath_t	*p, *next;
 	int	i;
 
+	// Close VM handles, as retail did, and zip handles that read through a
+	// pack freed below.  Unique engine streams (demos, cinematics, music) own
+	// their reopened archive and survive a restart, as in retail.
 	for(i = 0; i < MAX_FILE_HANDLES; i++) {
-		if (fsh[i].fileSize) {
+		if ( ( fsh[i].byMode && fsh[i].fileSize ) ||
+			( fsh[i].zipFile && !fsh[i].handleFiles.unique ) ) {
 			FS_FCloseFile(i);
 		}
 	}
@@ -4075,9 +3949,7 @@ int		FS_FOpenFileByMode( const char *qpath, fileHandle_t *f, fsMode_t mode ) {
 
 	switch( mode ) {
 	case FS_READ:
-        // HACK: Use qfalse (shared handle) generally to avoid unzReOpen failures on Mac OS 9
-        // This forces FS_Read to seek before reading, but avoids needing multiple file handles to the same PK3.
-        r = FS_FOpenFileRead( qpath, f, qfalse );
+		r = FS_FOpenFileRead( qpath, f, qtrue );
 		break;
 	case FS_WRITE:
 		*f = FS_FOpenFileWrite( qpath );
@@ -4111,6 +3983,7 @@ int		FS_FOpenFileByMode( const char *qpath, fileHandle_t *f, fsMode_t mode ) {
 			fsh[*f].baseOffset = ftell(fsh[*f].handleFiles.file.o);
 		}
 		fsh[*f].fileSize = r;
+		fsh[*f].byMode = qtrue;
 		fsh[*f].streamed = qfalse;
 
 		if (mode == FS_READ) {
@@ -4126,12 +3999,8 @@ int		FS_FOpenFileByMode( const char *qpath, fileHandle_t *f, fsMode_t mode ) {
 int		FS_FTell( fileHandle_t f ) {
 	int pos;
 	if (f <= 0 || f >= MAX_FILE_HANDLES ||
-		(!fsh[f].buffer && !fsh[f].handleFiles.file.o))
+		!fsh[f].handleFiles.file.o)
 		return -1;
-    // Antigravity: Buffered tell
-    if (fsh[f].buffer) {
-        return fsh[f].bufferPos;
-    }
 	if (fsh[f].zipFile == qtrue) {
 		pos = fsh[f].zipOffset;
 	} else {
@@ -4141,7 +4010,7 @@ int		FS_FTell( fileHandle_t f ) {
 }
 
 void	FS_Flush( fileHandle_t f ) {
-	if (f <= 0 || f >= MAX_FILE_HANDLES || fsh[f].buffer ||
+	if (f <= 0 || f >= MAX_FILE_HANDLES ||
 		fsh[f].zipFile || !fsh[f].handleFiles.file.o)
 		return;
 	fflush(fsh[f].handleFiles.file.o);

@@ -38,7 +38,8 @@ static void Reopen(char *path, int uniqueFirst) {
     search.pack = FS_LoadZipFile(path, "large.pk3");
     Check(search.pack != NULL, "actual large compressed native mount");
     Check(FS_FOpenFileRead("large.bin", &shared, qfalse) == NATIVE_LARGE_SIZE &&
-          shared > 0 && !fsh[shared].buffer, "native shared stream at buffer cap");
+          shared > 0 && fsh[shared].handleFiles.file.z == search.pack->handle,
+          "native shared stream of a 32 MiB entry");
     ZeroRead(shared, 13);
     readOwner = ((unz_s *)fsh[shared].handleFiles.file.z)->pfile_in_zip_read;
     Check(readOwner && readOwner->stream.total_out == 13, "active native shared decoder");
@@ -49,7 +50,7 @@ static void Reopen(char *path, int uniqueFirst) {
     }
     watchFrees = 1;
     Check(FS_FOpenFileRead("large.bin", &unique, qtrue) == NATIVE_LARGE_SIZE &&
-          unique > 0 && unique != shared && !fsh[unique].buffer,
+          unique > 0 && unique != shared && fsh[unique].handleFiles.unique,
           "native unique stream clones only ZIP metadata");
     watchFrees = 0;
     Check(!priorFrees, "reopen never frees an active shared decoder owner");
@@ -110,10 +111,11 @@ static void NativeGolden(char *path) {
     search.pack = FS_LoadZipFile(path, "large.pk3");
     Check(search.pack != NULL, "native cold large-file mount");
     Check(FS_FOpenFileRead("large.bin", &first, qtrue) == NATIVE_LARGE_SIZE &&
-          first > 0 && !fsh[first].buffer, "native cold unique stream selection");
+          first > 0 && fsh[first].handleFiles.unique, "native cold unique stream selection");
     ZeroRead(first, 17);
     Check(FS_FOpenFileRead("large.bin", &second, qtrue) == NATIVE_LARGE_SIZE &&
-          second != first && !fsh[second].buffer, "native independent unique streams");
+          second != first && fsh[second].handleFiles.file.z != fsh[first].handleFiles.file.z,
+          "native independent unique streams");
     ZeroRead(second, 7);
     FS_FCloseFile(first);
     ZeroRead(second, 8);
@@ -163,14 +165,14 @@ static void StoredRefill(char *path, int small) {
           (small ? 12 : NATIVE_LARGE_SIZE) && unique > 0 && unique != shared,
           "unique target opens beside an active stored reader");
     watchFrees = 0;
-    Check(!priorFrees, "active shared decoder survives a buffered or streamed unique target");
+    Check(!priorFrees, "active shared decoder survives a small or large unique target");
     Check(ftell(parent->file) == cursor, "active shared FILE cursor remains intact");
     Check(!memcmp(&savedArchive, parent, sizeof(savedArchive)) &&
           !memcmp(&savedRead, parent->pfile_in_zip_read, sizeof(savedRead)),
           "complete active shared metadata and decoder remain intact");
     if (small) {
-        Check(fsh[unique].buffer && FS_Read(payload, sizeof(payload), unique) == 12 &&
-              !memcmp(payload, "native data\n", 12), "native small-target buffering remains");
+        Check(fsh[unique].handleFiles.unique && FS_Read(payload, sizeof(payload), unique) == 12 &&
+              !memcmp(payload, "native data\n", 12), "native small target streams through its clone");
     } else ZeroRead(unique, 19);
     FS_FCloseFile(unique);
     PatternRead(shared, 13, 2 * UNZ_BUFSIZE + 17);

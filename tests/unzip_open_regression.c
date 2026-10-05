@@ -54,14 +54,13 @@ static void Direct(char *path, int position) {
 static void Public(char *path, int position) {
     fileHandle_t prior, f;
     fileHandleData_t saved;
-    char bytes[16], payload[12];
+    char bytes[16];
     int live, files;
     Begin();
     search.pack = FS_LoadZipFile(path, "native.pk3");
     Check(search.pack && FS_FOpenFileRead("native.txt", &prior, qtrue) == 12 &&
-          FS_Read(bytes, 3, prior) == 3, "prior native independent buffered cursor");
+          FS_Read(bytes, 3, prior) == 3, "prior native independent unique stream cursor");
     memcpy(&saved, &fsh[prior], sizeof(saved));
-    memcpy(payload, fsh[prior].buffer, sizeof(payload));
     live = zoneLive;
     files = FileOwners();
     f = 17;
@@ -70,16 +69,15 @@ static void Public(char *path, int position) {
           "public shared stream rejects failed decoder initialization");
     Check(nullableCalls >= position && !((unz_s *)search.pack->handle)->pfile_in_zip_read &&
           zoneLive == live && FileOwners() == files &&
-          !memcmp(&saved, &fsh[prior], sizeof(saved)) &&
-          !memcmp(payload, fsh[prior].buffer, sizeof(payload)),
-          "decoder failure clears candidate and preserves complete prior native buffer owner");
+          !memcmp(&saved, &fsh[prior], sizeof(saved)),
+          "decoder failure clears candidate and preserves complete prior native stream owner");
     Arm(0);
     Check(FS_FOpenFileRead("native.txt", &f, qfalse) == 12 && f != prior &&
           FS_Read(bytes, sizeof(bytes), f) == 12 && !memcmp(bytes, "native data\n", 12),
           "public failed initialization retries through actual native stream");
     FS_FCloseFile(f);
     Check(FS_Read(bytes, sizeof(bytes), prior) == 9 && !memcmp(bytes, "ive data\n", 9),
-          "prior partial buffer remains usable after failure and retry");
+          "prior partial stream remains usable after failure and retry");
     FS_FCloseFile(prior);
     End();
 }
