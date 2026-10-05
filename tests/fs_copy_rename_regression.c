@@ -15,7 +15,10 @@
  *   - a rename the mutable-name checks refuse stays refused on that path:
  *     no rename, copy or remove;
  *   - rename() refused and the copy's malloc failing: no crash, a warning,
- *     no destination, and the source stays where it was. */
+ *     no destination, and the source stays where it was;
+ *   - rename() refused and the copy's destination refused by FS_CreatePath
+ *     or not openable: the copy buffer is freed (malloc and free are
+ *     counted) and the source stays. */
 #include "../code/game/q_shared.h"
 #include <stdarg.h>
 #include <errno.h>
@@ -27,20 +30,23 @@ static FILE *FixtureOpen(const char *path, const char *mode);
 static int FixtureRename(const char *from, const char *to);
 static int FixtureRemove(const char *path);
 static void *FixtureMalloc(size_t size);
+static void FixtureFree(void *p);
 #define fopen FixtureOpen
 #define rename FixtureRename
 #define remove FixtureRemove
 #define malloc FixtureMalloc
+#define free FixtureFree
 #include "../code/qcommon/files.c"
 #undef fopen
 #undef rename
 #undef remove
 #undef malloc
+#undef free
 
 #define BASE_DIR "base"
 #define HOME_DIR "home"
 
-static int writeOpens, renames, removes, mallocs, warnings, zoneLive;
+static int writeOpens, renames, removes, mallocs, mallocLive, warnings, zoneLive;
 static int renameRefused, mallocFails;
 qboolean com_fullyInitialized;
 cvar_t *com_journal;
@@ -75,10 +81,17 @@ static int FixtureRemove(const char *path) {
     removes++;
     return remove(path);
 }
-/* files.c's only malloc is FS_CopyFile's whole-file buffer. */
+/* files.c's only malloc and free are FS_CopyFile's whole-file buffer. */
 static void *FixtureMalloc(size_t size) {
+    void *p;
     mallocs++;
-    return mallocFails ? NULL : malloc(size);
+    p = mallocFails ? NULL : malloc(size);
+    mallocLive += p != NULL;
+    return p;
+}
+static void FixtureFree(void *p) {
+    mallocLive -= p != NULL;
+    free(p);
 }
 static void Reset(int refuse, int failMalloc) {
     writeOpens = renames = removes = mallocs = warnings = 0;
@@ -342,6 +355,20 @@ int main(int argc, char **argv) {
     FS_Rename("empty.txt", "empty2.txt");
     Check(mallocs == 1 && removes == 1 && !warnings, "an empty file copies");
     Check(Exists(OSName("empty2.txt")) && !Exists(OSName("empty.txt")), "an empty file moved");
+
+    /* The copy's destination refused: FS_CreatePath will not make a path
+     * with "..", and fopen cannot create a file under a plain file. */
+    Reset(1, 0);
+    FS_Rename("empty2.txt", "a..txt");
+    Check(mallocs == 1 && !writeOpens && !removes, "FS_CreatePath refused the copy");
+    Check(Exists(OSName("empty2.txt")) && !Exists(OSName("a..txt")), "a refused copy keeps the source only");
+    Check(!mallocLive, "FS_CopyFile leaked its buffer when FS_CreatePath refused");
+    Plant(OSName("blocker"), "file");
+    Reset(1, 0);
+    FS_Rename("empty2.txt", "blocker/empty3.txt");
+    Check(mallocs == 1 && writeOpens == 1 && !removes, "the copy's fopen failed");
+    Check(Exists(OSName("empty2.txt")), "a failed copy keeps the source");
+    Check(!mallocLive, "FS_CopyFile leaked its buffer when fopen failed");
 
     FS_Shutdown(qtrue);
     FreeCvars();
