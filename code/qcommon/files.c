@@ -3312,7 +3312,8 @@ static void FS_Startup( const char *gameName ) {
 		homePath = fs_basepath->string;
 	}
 	fs_homepath = Cvar_Get ("fs_homepath", homePath, CVAR_INIT|CVAR_PROTECTED );
-	fs_gamedirvar = Cvar_Get ("fs_game", "", CVAR_INIT|CVAR_SYSTEMINFO );
+	// a command line "+set fs_game" (even an empty one) creates fs_game first and wins
+	fs_gamedirvar = Cvar_Get ("fs_game", DEFAULT_FS_GAME, CVAR_INIT|CVAR_SYSTEMINFO );
 	fs_restrict = Cvar_Get ("fs_restrict", "", CVAR_INIT );
 
 	// the command line can set both of these, and servers and VMs fs_game;

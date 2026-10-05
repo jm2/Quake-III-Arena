@@ -256,6 +256,12 @@ if(BUILD_TEAM_ARENA)
         ${BOTLIB_SRCS}
         ${JPEG_SRCS}
     )
+    # Retail started Team Arena with "+set fs_game missionpack"; a Finder
+    # launch passes no command line, so the engine defaults fs_game to it
+    # (#235). A "+set fs_game" still overrides it; Quake3 keeps "".
+    target_compile_definitions(Quake3_TeamArena PRIVATE
+        DEFAULT_FS_GAME="missionpack"
+    )
 endif()
 
 
