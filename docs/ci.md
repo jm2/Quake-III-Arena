@@ -253,7 +253,8 @@ older run the same way (issue #334). It:
 - restores the Retro68 toolchain from the Actions cache, or builds it: a
   shallow fetch of `RETRO68_COMMIT` into `tools/Retro68-src`, then
   `setup_retro68.sh`, which checks the pinned submodule commits and the SDK
-  archives' SHA-256 exactly as a local setup does;
+  archives' SHA-256 exactly as a local setup does (see
+  [SDK archives](#sdk-archives) for where a runner gets them);
 - runs `./build_mac.sh --team-arena`, which runs `check_retro68.sh`, configures
   with `BUILD_TEAM_ARENA=ON` (that configuration builds both `Quake3` and
   `Quake3_TeamArena`), runs `cmake/static_modules.py`'s module bracket and
@@ -275,14 +276,14 @@ repository and evicts entries unused for 7 days.
 
 | Cache | Key | Contents | Size |
 | --- | --- | --- | --- |
-| Toolchain | `retro68-toolchain-ubuntu-24.04-` + hash of `retro68-versions.txt` and `setup_retro68.sh` | `tools/Retro68-build` (the install prefix) and `tools/Retro68-src` without its GCC and binutils sources: the prepared `InterfacesAndLibraries` with the OpenGL import library, `Console` headers and the shallow `.git` the manifest reads | see PR #TBD |
-| SDK archives | `retro68-sit-` + hash of `retro68-versions.txt` | `tools/MPW_fully_updated.sit`, `tools/OpenGL_SDK_1.2.sit` | about 55 MB |
+| Toolchain | `retro68-toolchain-ubuntu-24.04-` + hash of `retro68-versions.txt` and `setup_retro68.sh` | `tools/Retro68-build` (the install prefix, 437 MB) and `tools/Retro68-src` without its GCC and binutils sources: the prepared `InterfacesAndLibraries` with the OpenGL import library, `Console` headers and a `.git` holding only the commit, index and submodule that the manifest reads | about 160 MB compressed |
+| SDK archives | `retro68-sit-` + hash of `retro68-versions.txt` | `tools/MPW_fully_updated.sit`, `tools/OpenGL_SDK_1.2.sit` | 55 MB |
 
 A run that finds the toolchain cache skips the archives and the toolchain
-build. Otherwise it builds the toolchain (about an hour on a hosted runner)
+build. Otherwise it builds the toolchain (18 minutes on a 32-thread machine,
+longer on a 4-vCPU hosted runner)
 and saves it before building Quake 3, so a failing PR still leaves the cache
-for the next run. The archives are restored from their cache when it exists,
-so a cold run does not depend on macintoshgarden.org being reachable. The
+for the next run. The
 host libraries are part of the runner image, so the key names the pinned
 image; a restored toolchain that `check_retro68.sh` finds cannot run needs a
 new key.
@@ -292,11 +293,21 @@ own branch or on master, never another pull request's. After a change to
 `retro68-versions.txt` or `setup_retro68.sh`, every pull request builds the
 toolchain once until the master run after the merge has saved it.
 
+### SDK archives
+
+A cold run needs `MPW_fully_updated.sit` and `OpenGL_SDK_1.2.sit`. It takes
+them from the archive cache, or else from `<base>/<file>`, where `<base>` is
+the `RETRO68_SDK_MIRROR` repository secret. macintoshgarden.org, the URL in
+`retro68-versions.txt`, answers scripted downloads with HTTP 418, so a runner
+cannot fetch them there. The mirror need not be trusted: `setup_retro68.sh`
+extracts neither archive unless both match their pinned SHA-256. Without the
+cache or the secret a cold run stops with an error. Pull requests from forks
+and from Dependabot get no secrets, but they restore master's caches.
+
 The toolchain cache and the archive cache hold Apple's MPW Universal
 Interfaces and OpenGL SDK 1.2, as every local Retro68 install does. The
-workflow fetches them from the same public macintoshgarden.org URLs as
-`setup_retro68.sh` and never publishes them, but GitHub lets workflows run
-for pull requests from forks restore caches saved on master. The uploaded
+workflow never publishes them, but GitHub lets workflows run for pull
+requests from forks restore caches saved on master. The uploaded
 applications contain only this project's code and Retro68's runtime
 libraries; they reach Apple's shared libraries through import stubs, which hold
 only symbol names.

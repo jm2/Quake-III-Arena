@@ -4,7 +4,7 @@ name: Retro68 PPC build
 # Retro68 toolchain pinned in retro68-versions.txt (issue #334). Portable CI
 # never runs Retro68; this workflow runs next to it, in parallel.
 #
-# Building the toolchain takes about an hour on a hosted runner, so the built
+# Building the toolchain takes far longer than Quake 3 itself, so the built
 # toolchain is cached under a key made from retro68-versions.txt and
 # setup_retro68.sh, and only a run that finds no cache builds it. See
 # docs/ci.md for the cache layout and its limits.
@@ -61,7 +61,7 @@ jobs:
           key: ${{ steps.keys.outputs.toolchain }}
           # The install prefix, plus the parts of the Retro68 checkout the
           # build reads: InterfacesAndLibraries (the prepared SDK and the
-          # OpenGL import library), Console's headers, and the shallow .git the
+          # OpenGL import library), Console's headers, and a commit-only .git the
           # build manifest takes the commit and submodules from. The GCC and
           # binutils sources are only needed to build the toolchain.
           path: |
@@ -80,17 +80,42 @@ jobs:
             tools/MPW_fully_updated.sit
             tools/OpenGL_SDK_1.2.sit
 
+      - name: Fetch the MPW and OpenGL SDK archives
+        id: fetch-sit
+        if: >-
+          steps.toolchain.outputs.cache-hit != 'true' &&
+          steps.sit.outputs.cache-hit != 'true'
+        # macintoshgarden.org, the URL retro68-versions.txt names, answers
+        # scripted downloads with HTTP 418, so a runner cannot fetch them
+        # there. RETRO68_SDK_MIRROR is a base URL the maintainer provides
+        # (a repository secret, so it may carry a token); <base>/<file> must
+        # serve each archive. setup_retro68.sh checks both against their
+        # pinned SHA-256 before extracting either, so the mirror is not
+        # trusted.
+        env:
+          MIRROR: ${{ secrets.RETRO68_SDK_MIRROR }}
+        run: |
+          if [ -z "$MIRROR" ]; then
+            echo "::error::No cached SDK archives and no RETRO68_SDK_MIRROR secret: the" \
+              "toolchain cannot be built. See docs/ci.md (Retro68 PPC build)."
+            exit 1
+          fi
+          mkdir -p tools
+          for key in MPW_FILE OPENGL_FILE; do
+            file=$(sed -n "s/^$key=//p" retro68-versions.txt)
+            curl -fsSL --retry 3 -o "tools/$file" "${MIRROR%/}/$file"
+            ls -l "tools/$file"
+          done
+
       - name: Build the Retro68 toolchain
         id: build-toolchain
         if: steps.toolchain.outputs.cache-hit != 'true'
         run: |
-          df -h / "$GITHUB_WORKSPACE"
-          # The toolchain build needs about 10 GB of scratch space.
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          # The build needs about 8 GB of scratch space; the image has plenty.
           df -h /
           # A shallow checkout of the pinned commit: setup_retro68.sh uses an
-          # existing checkout at the pinned commit as is, and a full clone
-          # would make the cached .git far larger.
+          # existing checkout at the pinned commit as is, and needs no
+          # history.
           url=$(sed -n 's/^RETRO68_URL=//p' retro68-versions.txt)
           commit=$(sed -n 's/^RETRO68_COMMIT=//p' retro68-versions.txt)
           git init -q tools/Retro68-src
@@ -100,12 +125,19 @@ jobs:
           bash ./setup_retro68.sh
           echo "Toolchain build took $(( ($(date +%s) - start) / 60 )) minutes."
           rm -rf tools/Retro68-work
+          # Keep only what the build manifest reads from the checkout: HEAD,
+          # the index and the submodule. The shallow pack holds every source
+          # blob (about 200 MB); a refetch of just the commit replaces it.
+          rm -f tools/Retro68-src/.git/objects/pack/pack-* tools/Retro68-src/.git/shallow
+          git -C tools/Retro68-src fetch -q --depth 1 --filter=tree:0 "$url" "$commit"
+          git -C tools/Retro68-src submodule status --recursive
           du -sh tools/Retro68-build tools/Retro68-src tools/*.sit
 
       - name: Save the MPW and OpenGL SDK archives
         if: >-
           steps.toolchain.outputs.cache-hit != 'true' &&
           steps.sit.outputs.cache-hit != 'true' &&
+          steps.fetch-sit.outcome == 'success' &&
           steps.build-toolchain.outcome == 'success'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
