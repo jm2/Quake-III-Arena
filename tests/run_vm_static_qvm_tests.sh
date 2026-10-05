@@ -9,6 +9,10 @@
 # retail header checksums: each holds the fixture QVMs plus two entries whose
 # CRC-32s are chosen so that the MD4 of the pk3's CRC list (files.c's header
 # checksum) is the retail value.
+# Issue #325: tests/cross_game_qvm_regression.c then drives the real connect
+# path (CL_ParseGamestate's systeminfo, FS_ConditionalRestart, VM_Create) over
+# the same install for each executable, joining the other game's server, its
+# own game's and a baseq3 mod's, and disconnecting.
 set -euo pipefail
 export TMPDIR="${TMPDIR:-/var/tmp}"
 Q3_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,6 +31,23 @@ uses = re.findall(r'target_compile_definitions\((\w+)[^)]*?STATIC_MODULES_GAME="
 if uses != [("Quake3_TeamArena", "missionpack")] or cmake.count("STATIC_MODULES_GAME=") != 1:
     raise SystemExit("CMakeLists.txt must give only Quake3_TeamArena STATIC_MODULES_GAME, found %r" % uses)
 (out / "ta_game").write_text(uses[0][1])
+# Issue #325: Quake3_TeamArena also starts on missionpack (#487).
+uses = re.findall(r'target_compile_definitions\((\w+)[^)]*?DEFAULT_FS_GAME="([^"]*)"', cmake, re.S)
+if uses != [("Quake3_TeamArena", "missionpack")] or cmake.count("DEFAULT_FS_GAME=") != 1:
+    raise SystemExit("CMakeLists.txt must give only Quake3_TeamArena DEFAULT_FS_GAME, found %r" % uses)
+(out / "ta_default").write_text(uses[0][1])
+# cross_game_qvm_regression.c models a disconnect as keeping fs_game, as
+# retail's CL_Disconnect did: the engine sets fs_game only from a server's
+# systeminfo (CL_SystemInfoChanged) and when FS_Startup refuses a bad one.
+sets = []
+for path in sorted((root / "code").rglob("*.c")):
+    if path.relative_to(root / "code").parts[0] in ("game", "cgame", "ui", "q3_ui"):
+        continue
+    for line in path.read_text(encoding="latin-1").splitlines():
+        if re.search(r'Cvar_\w+\s*\(\s*"fs_game"', line) and not re.search(r'Cvar_(Get|VariableString)\b', line):
+            sets.append("%s: %s" % (path.relative_to(root), line.strip()))
+if sets != ['code/client/cl_parse.c: Cvar_Set( "fs_game", "" );', 'code/qcommon/files.c: Cvar_Set( "fs_game", "" );']:
+    raise SystemExit("engine code that sets fs_game changed: %r" % sets)
 
 # The call sites pass retail's interpret modes and let VM_Create choose; a
 # static build used to force VMI_NATIVE there.
@@ -108,6 +129,11 @@ if md4.count("typedef unsigned long int UINT4;") != 1:
 PY_SETUP
 
 Q3_TA_GAME="$(cat "$Q3_TEST_DIR/ta_game")"
+Q3_TA_DEFAULT="$(cat "$Q3_TEST_DIR/ta_default")"
+# The md4.c the static-QVM build links (an ILP32 copy while md4.c's UINT4 is
+# 64 bits on LP64 hosts; md4.c itself once PR #496 fixes that).
+Q3_TEST_MD4="$Q3_TEST_ROOT/code/qcommon/md4.c"
+if [[ -f "$Q3_TEST_DIR/md4.c" ]]; then Q3_TEST_MD4="$Q3_TEST_DIR/md4.c"; fi
 for Q3_TEST_BUILD in quake3 teamarena; do
     for Q3_TEST_MODE in normal fast; do
         Q3_TEST_FLAGS=(-DQ3_STATIC -I"$Q3_TEST_ROOT/code/qcommon")
@@ -126,5 +152,26 @@ for Q3_TEST_BUILD in quake3 teamarena; do
             -Wl,--gc-sections -lm -o "$Q3_TEST_BIN"
         ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
             "$Q3_TEST_BIN" "$Q3_TEST_DIR/install"
+        # Issue #325: the real connect path (cl_parse.c, msg.c) over the same
+        # install, with the executable's own DEFAULT_FS_GAME.
+        Q3_TEST_DEFAULT=""
+        if [[ "$Q3_TEST_BUILD" == teamarena ]]; then
+            Q3_TEST_DEFAULT="$Q3_TA_DEFAULT"
+            Q3_TEST_FLAGS+=("-DDEFAULT_FS_GAME=\"$Q3_TA_DEFAULT\"")
+        fi
+        "${CC:-cc}" -std=gnu99 -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
+            -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast \
+            -fsanitize=address,undefined -fno-sanitize=alignment "${Q3_TEST_FLAGS[@]}" \
+            "-DDEFAULT_FS_GAME_EXPECTED=\"$Q3_TEST_DEFAULT\"" \
+            "$Q3_TEST_ROOT/tests/cross_game_qvm_regression.c" \
+            "$Q3_TEST_ROOT/code/qcommon/vm.c" "$Q3_TEST_ROOT/code/qcommon/vm_interpreted.c" \
+            "$Q3_TEST_ROOT/code/qcommon/vm_static.c" \
+            "$Q3_TEST_ROOT/code/qcommon/cvar.c" "$Q3_TEST_ROOT/code/qcommon/cmd.c" \
+            "$Q3_TEST_ROOT/code/qcommon/msg.c" "$Q3_TEST_ROOT/code/qcommon/huffman.c" \
+            "$Q3_TEST_ROOT/code/qcommon/unzip.c" "$Q3_TEST_MD4" \
+            "$Q3_TEST_ROOT/code/game/q_shared.c" \
+            -Wl,--gc-sections -lm -o "$Q3_TEST_BIN-cross-game"
+        ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+            "$Q3_TEST_BIN-cross-game" "$Q3_TEST_DIR/install"
     done
 done
