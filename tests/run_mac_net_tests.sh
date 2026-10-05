@@ -5,10 +5,12 @@ Q3_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 Q3_TEST_DIR="$(mktemp -d -p "${TMPDIR:-/var/tmp}" q3-mac-net.XXXXXX)"
 trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 
-# Issues #277 and #265: the Mac Open Transport receive and resolve paths.
-# mac_net.c needs the whole Mac Toolbox, so the fixture takes Sys_StringToAdr
-# and Sys_GetPacket from it verbatim (with a #line so reports name that file),
-# and Com_EventLoop from common.c; tests/mac_ot_fake.h stands in for OT.
+# Issues #277, #265 and #20: the Mac Open Transport receive, resolve and
+# start-up paths.  mac_net.c needs the whole Mac Toolbox, so the fixture takes
+# Sys_StringToAdr, Sys_GetPacket and Sys_InitNetworking through
+# Sys_ShutdownNetworking (with the helpers between them) from it verbatim
+# (with a #line so reports name that file), and Com_EventLoop from common.c;
+# tests/mac_ot_fake.h stands in for OT.
 Q3_TEST_EXTRACT() {
     awk -v start="$1" -v file="$2" '
         $0 ~ start { printf "#line %d \"%s\"\n", NR, file; found = 1 }
@@ -21,6 +23,17 @@ Q3_TEST_EXTRACT '^qboolean[[:space:]]+Sys_StringToAdr[[:space:]]*[(]' \
     "$Q3_TEST_ROOT/code/mac/mac_net.c" "$Q3_TEST_DIR/mac_net_extracted.c"
 Q3_TEST_EXTRACT '^qboolean[[:space:]]+Sys_GetPacket[[:space:]]*[(]' \
     "$Q3_TEST_ROOT/code/mac/mac_net.c" "$Q3_TEST_DIR/mac_net_extracted.c"
+# Everything from the first start-up helper (or Sys_InitNetworking itself)
+# to the end of Sys_ShutdownNetworking.
+awk -v file="$Q3_TEST_ROOT/code/mac/mac_net.c" '
+    !found && !done && /^(static[[:space:]]+void[[:space:]]+NET_CloseOpenTransport|void[[:space:]]+Sys_InitNetworking)[[:space:]]*[(]/ {
+        printf "#line %d \"%s\"\n", NR, file; found = 1 }
+    found { print }
+    found && /^void[[:space:]]+Sys_ShutdownNetworking[[:space:]]*[(]/ { shutdown = 1 }
+    shutdown && /^}/ { found = shutdown = 0; done = 1 }
+    END { exit done ? 0 : 1 }
+' "$Q3_TEST_ROOT/code/mac/mac_net.c" > "$Q3_TEST_DIR/mac_net_init_extracted.c" ||
+    { echo "run_mac_net_tests: no Sys_InitNetworking..Sys_ShutdownNetworking in mac_net.c" >&2; exit 1; }
 Q3_TEST_EXTRACT '^int[[:space:]]+Com_EventLoop[[:space:]]*[(]' \
     "$Q3_TEST_ROOT/code/qcommon/common.c" "$Q3_TEST_DIR/com_event_loop_extracted.c"
 
@@ -32,7 +45,10 @@ Q3_TEST_EXTRACT '^int[[:space:]]+Com_EventLoop[[:space:]]*[(]' \
 
 # One process per case: AddressSanitizer stops at the first overflow.
 for Q3_TEST_CASE in host-normal host-255 host-256 host-1023 \
-        packet-normal packet-split packet-full packet-drain-error event-oversize; do
+        packet-normal packet-split packet-full packet-drain-error event-oversize \
+        init-default init-cvars init-port-busy init-port-reassigned init-port-exhausted \
+        init-noudp init-fail-ot init-fail-config init-fail-open init-fail-nonblocking \
+        init-fail-resolver-open init-fail-resolver-bind init-fail-net-ip; do
     ASAN_OPTIONS=detect_leaks=${Q3_TEST_DETECT_LEAKS:-1}:halt_on_error=1 \
     UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
         "$Q3_TEST_DIR/mac_net" "$Q3_TEST_CASE"

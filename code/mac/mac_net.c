@@ -205,7 +205,107 @@ void NET_GetLocalAddress( void ) {
 
 /*
 ==================
+NET_CloseOpenTransport
+
+Releases what Sys_InitNetworking opened, in reverse order, so a failed
+start leaves UDP off (loopback still works) rather than half-initialised.
+==================
+*/
+static void NET_CloseOpenTransport( void ) {
+	if ( resolverEndpoint != kOTInvalidEndpointRef ) {
+		OTUnbind( resolverEndpoint );
+		OTCloseProvider( resolverEndpoint );
+		resolverEndpoint = kOTInvalidEndpointRef;
+	}
+	if ( endpoint != kOTInvalidEndpointRef ) {
+		OTUnbind( endpoint );
+		OTCloseProvider( endpoint );
+		endpoint = kOTInvalidEndpointRef;
+	}
+	endpointTSDU = 0;
+	if ( gOTInited ) {
+		CloseOpenTransport();
+		gOTInited = false;
+	}
+}
+
+/*
+==================
+NET_InitFailed
+==================
+*/
+static void NET_InitFailed( const char *stage, OSStatus err ) {
+	Com_Printf( "WARNING: %s failed (error %i), networking disabled\n", stage, (int)err );
+	NET_CloseOpenTransport();
+	Com_Printf( "------------------------------\n" );
+}
+
+/*
+==================
+NET_OpenUDPEndpoint
+==================
+*/
+static EndpointRef NET_OpenUDPEndpoint( TEndpointInfo *info, OSStatus *err ) {
+	OTConfigurationRef config;
+	EndpointRef	ep;
+
+	config = OTCreateConfiguration( kUDPName );
+	if ( !config || config == kOTInvalidConfigurationPtr ) {
+		*err = kOTBadConfigurationErr;
+		return kOTInvalidEndpointRef;
+	}
+	// OTOpenEndpoint disposes of config whether or not it succeeds
+	ep = OTOpenEndpoint( config, 0, info, err );
+	if ( *err != noErr ) {
+		return kOTInvalidEndpointRef;
+	}
+	return ep;
+}
+
+/*
+==================
+NET_BindEndpoint
+
+Binds ep to host:port and checks OT gave that port, not another one.
+==================
+*/
+static OSStatus NET_BindEndpoint( EndpointRef ep, InetHost host, int port ) {
+	TBind			bind, bindOut;
+	InetAddress		in, out;
+	OSStatus		err;
+
+	memset( &in, 0, sizeof( in ) );
+	in.fAddressType = AF_INET;
+	in.fPort = port;
+	in.fHost = host;
+
+	memset( &out, 0, sizeof( out ) );
+
+	bind.addr.maxlen = sizeof( in );
+	bind.addr.len = sizeof( in );
+	bind.addr.buf = (unsigned char *)&in;
+	bind.qlen = 0;
+	
+	bindOut.addr.maxlen = sizeof( out );
+	bindOut.addr.len = sizeof( out );
+	bindOut.addr.buf = (unsigned char *)&out;
+	bindOut.qlen = 0;
+	
+	err = OTBind( ep, &bind, &bindOut );
+	if ( err == noErr && port && out.fPort != in.fPort ) {
+		OTUnbind( ep );
+		err = kOTAddressBusyErr;
+	}
+	return err;
+}
+
+/*
+==================
 Sys_InitNetworking
+
+Opens a UDP endpoint on net_ip:net_port, trying the next nine ports when one
+is taken, as NET_OpenIP does on the other platforms, plus a second endpoint
+for resolving names.  Any failure closes everything again.
 
 
 struct InetAddress
@@ -221,19 +321,31 @@ typedef struct InetAddress InetAddress;
 */
 void Sys_InitNetworking( void ) {
 	OSStatus		err;
-	OTConfigurationRef config;
 	TEndpointInfo	info;
-	TBind			bind, bindOut;
-	InetAddress		in, out;
+	cvar_t			*noudp;
+	cvar_t			*ip;
+	netadr_t		adr;
+	InetHost		host;
+	int				port;
 	int				i;
 
 	Com_Printf( "----- Sys_InitNetworking -----\n" );
+
+	noudp = Cvar_Get( "net_noudp", "0", CVAR_LATCH | CVAR_ARCHIVE );
+	ip = Cvar_Get( "net_ip", "localhost", CVAR_LATCH );
+	port = Cvar_Get( "net_port", va( "%i", PORT_SERVER ), CVAR_LATCH )->integer;
+
+	if ( noudp->integer ) {
+		Com_Printf( "UDP networking disabled by net_noudp\n" );
+		Com_Printf( "------------------------------\n" );
+		return;
+	}
+
 	// init OpenTransport	
 	Com_Printf( "... InitOpenTransport()\n" );
 	err = InitOpenTransport();
 	if ( err != noErr ) {
-		Com_Printf( "InitOpenTransport() failed\n" );
-		Com_Printf( "------------------------------\n" );
+		NET_InitFailed( "InitOpenTransport()", err );
 		return;
 	}
 	
@@ -241,21 +353,9 @@ void Sys_InitNetworking( void ) {
 
 	// get an endpoint
 	Com_Printf( "... OTOpenEndpoint()\n" );
-	config = OTCreateConfiguration( kUDPName );
-
-#if 1
-	endpoint = OTOpenEndpoint( config, 0, &info, &err); 
-#else
-	err = OTAsyncOpenEndpoint( config, 0, 0, NotifyProc, 0 );
-	if ( !endpoint ) {
-		err = 1;
-	}
-#endif
-
+	endpoint = NET_OpenUDPEndpoint( &info, &err );
 	if ( err != noErr ) {
-		endpoint = 0;
-		Com_Printf( "OTOpenEndpoint() failed\n" );
-		Com_Printf( "------------------------------\n" );
+		NET_InitFailed( "OTOpenEndpoint()", err );
 		return;
 	}
 
@@ -263,41 +363,58 @@ void Sys_InitNetworking( void ) {
 	// T_INFINITE or T_INVALID (<= 0) leave the check to OTSndUData itself
 	endpointTSDU = info.tsdu;
 
-	// set non-blocking	
+	// set non-blocking: a blocking OTRcvUData would stall the main loop
 	err = OTSetNonBlocking( endpoint );
- 
-	// scan for a valid port in our range
+	if ( err != noErr ) {
+		NET_InitFailed( "OTSetNonBlocking()", err );
+		return;
+	}
+
+	// get an endpoint just for resolving addresses, because
+	// I was having crashing problems doing it on the same endpoint
+	resolverEndpoint = NET_OpenUDPEndpoint( NULL, &err );
+	if ( err != noErr ) {
+		NET_InitFailed( "OTOpenEndpoint() for resolver", err );
+		return;
+	}
+	err = NET_BindEndpoint( resolverEndpoint, kOTAnyInetAddress, 0 );
+	if ( err != noErr ) {
+		NET_InitFailed( "OTBind() for resolver", err );
+		return;
+	}
+
+	// bind to net_ip, or to every interface for "localhost" or ""
+	if ( !ip->string[0] || !Q_stricmp( ip->string, "localhost" ) ) {
+		host = kOTAnyInetAddress;
+	} else if ( Sys_StringToAdr( ip->string, &adr ) ) {
+		host = *(InetHost *)adr.ip;
+	} else {
+		Com_Printf( "WARNING: couldn't resolve net_ip %s\n", ip->string );
+		NET_InitFailed( "net_ip", kOTBadAddressErr );
+		return;
+	}
+
+	// automatically scan for a valid port, so multiple
+	// dedicated servers can be started without requiring
+	// a different net_port for each one
 	Com_Printf( "... OTBind()\n" );
 	for ( i = 0 ; i < 10 ; i++ ) {
-		in.fAddressType = AF_INET;
-		in.fPort = PORT_SERVER + i;
-		in.fHost = 0;
-
-		bind.addr.maxlen = sizeof( in );
-		bind.addr.len = sizeof( in );
-		bind.addr.buf = (unsigned char *)&in;
-		bind.qlen = 0;
-		
-		bindOut.addr.maxlen = sizeof( out );
-		bindOut.addr.len = sizeof( out );
-		bindOut.addr.buf = (unsigned char *)&out;
-		bindOut.qlen = 0;
-		
-		err = OTBind( endpoint, &bind, &bindOut );
+		Com_Printf( "Opening IP socket: %s:%i\n", ip->string, port + i );
+		err = NET_BindEndpoint( endpoint, host, port + i == PORT_ANY ? 0 : port + i );
 		if ( err == noErr ) {
-			Com_Printf( "Opened UDP endpoint at port %i\n",
-				out.fPort );
 			break;
 		}
+		Com_Printf( "WARNING: OTBind: error %i\n", (int)err );
 	}
-
 	if ( err != noErr ) {
-		Com_Printf( "Couldn't bind a local port\n" );
+		Com_Printf( "WARNING: Couldn't allocate IP port\n" );
+		NET_InitFailed( "OTBind()", err );
+		return;
 	}
+	Cvar_SetValue( "net_port", port + i );
 
 	// get the local address for LAN client detection
 	NET_GetLocalAddress();
-
 
 	// set to allow broadcasts
 	err = SetFourByteOption( endpoint, INET_IP, IP_BROADCAST, T_YES );
@@ -305,33 +422,6 @@ void Sys_InitNetworking( void ) {
 	if ( err != noErr ) {
 		Com_Printf( "IP_BROADCAST failed\n" );
 	}
-	
-	// get an endpoint just for resolving addresses, because
-	// I was having crashing problems doing it on the same endpoint
-	config = OTCreateConfiguration( kUDPName );
-	resolverEndpoint = OTOpenEndpoint( config, 0, nil, &err); 
-	if ( err != noErr ) {
-		resolverEndpoint = 0;
-		Com_Printf( "OTOpenEndpoint() for resolver failed\n" );
-		Com_Printf( "------------------------------\n" );
-		return;
-	}
-
-	in.fAddressType = AF_INET;
-	in.fPort = 0;
-	in.fHost = 0;
-
-	bind.addr.maxlen = sizeof( in );
-	bind.addr.len = sizeof( in );
-	bind.addr.buf = (unsigned char *)&in;
-	bind.qlen = 0;
-	
-	bindOut.addr.maxlen = sizeof( out );
-	bindOut.addr.len = sizeof( out );
-	bindOut.addr.buf = (unsigned char *)&out;
-	bindOut.qlen = 0;
-	
-	err = OTBind( resolverEndpoint, &bind, &bindOut );
 		
 	Com_Printf( "------------------------------\n" );
 }
@@ -345,20 +435,7 @@ Sys_ShutdownNetworking
 void Sys_ShutdownNetworking( void ) {
 	Com_Printf( "Sys_ShutdownNetworking();\n" );
 
-	if ( endpoint != kOTInvalidEndpointRef ) {
-		OTUnbind( endpoint );
-		OTCloseProvider( endpoint );
-		endpoint = kOTInvalidEndpointRef;
-	}
-	if ( resolverEndpoint != kOTInvalidEndpointRef ) {
-		OTUnbind( resolverEndpoint );
-		OTCloseProvider( resolverEndpoint );
-		resolverEndpoint = kOTInvalidEndpointRef;
-	}
-	if (gOTInited) {
-		CloseOpenTransport();
-		gOTInited = false;
-	}
+	NET_CloseOpenTransport();
 }
 
 /*
