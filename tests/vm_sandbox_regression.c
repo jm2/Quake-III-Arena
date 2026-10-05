@@ -16,6 +16,10 @@
  *          CL_Vid_Restart_f). The interpreter then kept executing from freed
  *          memory. ioquake3 refuses VM_Free on a running VM; here the
  *          interpreter notices on the syscall's return and drops.
+ * cap      A QVM at exactly the nesting limit that calls trap_Error: the
+ *          ERR_DROP's module shutdown call re-enters past the limit while
+ *          Com_Error is still handling the first error, and the limit's own
+ *          Com_Error ended in Sys_Error("recursive error").
  *
  * The QVMs go through the real VM_Create, VM_Call and VM_Free; hunk blocks
  * are separate heap allocations, so ASan reports any use after the
@@ -43,6 +47,8 @@ static char lastError[128];
 static vm_t *testVM;
 static int syscalls, depth, maxDepth, reenterLimit, freeOnSyscall, recreate;
 static vm_t *replacement;
+qboolean com_errorEntered;
+static int errorAtDepth = -1, shutdownOnError, inShutdown, shutdownCalls, shutdownSyscalls;
 
 static void Check( int ok, const char *message ) {
 	if ( !ok ) {
@@ -51,12 +57,23 @@ static void Check( int ok, const char *message ) {
 	}
 }
 
+/* common.c's Com_Error: a second error while one is handled is Sys_Error,
+ * and ERR_DROP shuts the modules down (SV_Shutdown -> GAME_SHUTDOWN) first. */
 void QDECL Com_Error( int level, const char *format, ... ) {
 	va_list ap;
+	Check( !com_errorEntered, "recursive error" );
+	com_errorEntered = qtrue;
 	va_start( ap, format );
 	vsnprintf( lastError, sizeof(lastError), format, ap );
 	va_end( ap );
 	Check( expectError && level == ERR_DROP, "unexpected engine error" );
+	if ( shutdownOnError ) {
+		shutdownCalls++;
+		inShutdown = 1;
+		VM_Call( testVM, 1 );
+		inShutdown = 0;
+	}
+	com_errorEntered = qfalse;
 	longjmp( errorJump, 1 );
 }
 void QDECL Com_Printf( const char *format, ... ) { (void)format; }
@@ -102,7 +119,15 @@ void VM_Compile( vm_t *vm, vmHeader_t *header ) { (void)vm; (void)header; Check(
 static int SystemCall( int *args ) {
 	int result = 0;
 	Check( args[0] == 0, "syscall number" );
+	if ( inShutdown ) {
+		shutdownSyscalls++;
+		return 0;
+	}
 	syscalls++;
+	if ( depth == errorAtDepth ) {
+		// trap_Error: G_ERROR, CG_ERROR and UI_ERROR are ERR_DROP
+		Com_Error( ERR_DROP, "trap_Error at level %d", depth + 1 );
+	}
 	if ( freeOnSyscall && syscalls == 1 ) {
 		// The command frees the running module and the hunk, then loads
 		// and runs a new one in the same vm_t slot.
@@ -196,6 +221,32 @@ static void TestNesting( void ) {
 	depth = 0;
 }
 
+static void TestErrorAtLevel( int level ) {
+	// The module nests to the limit, then errors at the given level; the
+	// ERR_DROP's shutdown call runs the module unless that would pass the limit.
+	Reset();
+	reenterLimit = NESTING_LIMIT - 1;
+	errorAtDepth = level - 1;
+	shutdownOnError = 1;
+	shutdownCalls = shutdownSyscalls = 0;
+	expectError = 1;
+	if ( setjmp( errorJump ) == 0 ) {
+		VM_Call( testVM, 0 );
+		Check( 0, "trap_Error returned" );
+	}
+	Check( strstr( lastError, "trap_Error" ) != NULL, "the module's own error is reported" );
+	Check( maxDepth == level - 1 && shutdownCalls == 1, "one shutdown call at the error" );
+	Check( shutdownSyscalls == ( level < NESTING_LIMIT ? 1 : 0 ), "shutdown runs below the limit only" );
+	Check( !com_errorEntered, "the error completed" );
+	if ( level == NESTING_LIMIT ) {
+		Check( testVM->interpretFaulted && !testVM->currentlyInterpreting, "the skipped module is faulted" );
+		Check( VM_Call( testVM, 1 ) == 0 && shutdownSyscalls == 0, "later shutdown calls skip the module" );
+	}
+	depth = 0;
+	errorAtDepth = -1;
+	shutdownOnError = 0;
+}
+
 static void TestFreed( qboolean withReplacement ) {
 	Reset();
 	freeOnSyscall = 1;
@@ -221,6 +272,9 @@ static void *RunTests( void *unused ) {
 	BuildQVM();
 	VM_Init();
 	TestNesting();
+	TestErrorAtLevel( 1 );
+	TestErrorAtLevel( NESTING_LIMIT - 1 );
+	TestErrorAtLevel( NESTING_LIMIT );
 	TestFreed( qfalse );
 	TestFreed( qtrue );
 	Reset();

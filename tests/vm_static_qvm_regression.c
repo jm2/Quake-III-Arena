@@ -32,6 +32,7 @@
 #endif
 
 qboolean com_fullyInitialized;
+qboolean com_errorEntered;
 static cvar_t developer;
 cvar_t *com_developer = &developer;
 cvar_t *com_journal;

@@ -682,12 +682,19 @@ A complete command line has been parsed, so try to execute it
 */
 void	Cmd_ExecuteString( const char *text ) {	
 	cmd_function_t	*cmd, **prev;
+	char			forward[MAX_STRING_CHARS];
 
 	// execute the command line
 	Cmd_TokenizeString( text );		
 	if ( !Cmd_Argc() ) {
 		return;		// no tokens
 	}
+
+	// text may live in a module's image (a QVM EXEC_NOW command), and the
+	// game commands below can run nested commands that free that module
+	// (vid_restart, map), so keep the copy CL_ForwardCommandToServer needs;
+	// a reliable command holds at most MAX_STRING_CHARS anyway
+	Q_strncpyz( forward, text, sizeof( forward ) );
 
 	// check registered command functions	
 	for ( prev = &cmd_functions ; *prev ; prev = &cmd->next ) {
@@ -732,7 +739,7 @@ void	Cmd_ExecuteString( const char *text ) {
 
 	// send it as a server command if we are connected
 	// this will usually result in a chat message
-	CL_ForwardCommandToServer ( text );
+	CL_ForwardCommandToServer ( forward );
 }
 
 /*

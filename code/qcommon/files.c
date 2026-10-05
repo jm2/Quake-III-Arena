@@ -283,6 +283,7 @@ typedef struct {
 	qboolean	zipFile;
 	qboolean	streamed;
 	qboolean	byMode;		// opened by FS_FOpenFileByMode (a VM handle)
+	int			owner;		// FS_OWNER_* of the module that opened it, 0 for the engine
 	qboolean	streamSeekPending;
 	int			streamSeekResult;
 	char		name[MAX_ZPATH];
@@ -4015,4 +4016,68 @@ void	FS_Flush( fileHandle_t f ) {
 		fsh[f].zipFile || !fsh[f].handleFiles.file.o)
 		return;
 	fflush(fsh[f].handleFiles.file.o);
+}
+
+/*
+=================
+FS_VM_OpenFile, FS_VM_ReadFile, FS_VM_WriteFile, FS_VM_CloseFile, FS_VM_SeekFile
+
+The FS traps of the game, cgame and ui modules.  Retail passed any handle
+number straight to the engine, so a module could read, seek or close the
+engine's handles (the journal, logs, demos) or another module's.  Each handle
+a module opens is tagged with its owner, and a module's calls on any handle
+it does not own do nothing.  Stock modules only use their own handles.
+=================
+*/
+static qboolean FS_VM_OwnsHandle( fileHandle_t f, int owner ) {
+	if ( f <= 0 || f >= MAX_FILE_HANDLES || !fsh[f].handleFiles.file.o ) {
+		return qfalse;
+	}
+	if ( fsh[f].owner != owner ) {
+		Com_DPrintf( "FS: module %i used file handle %i it does not own\n", owner, f );
+		return qfalse;
+	}
+	return qtrue;
+}
+
+int FS_VM_OpenFile( const char *qpath, fileHandle_t *f, fsMode_t mode, int owner ) {
+	int		r;
+
+	r = FS_FOpenFileByMode( qpath, f, mode );
+	if ( f && *f > 0 && *f < MAX_FILE_HANDLES ) {
+		fsh[*f].owner = owner;
+	}
+	return r;
+}
+
+int FS_VM_ReadFile( void *buffer, int len, fileHandle_t f, int owner ) {
+	if ( !FS_VM_OwnsHandle( f, owner ) ) {
+		return 0;
+	}
+	return FS_Read2( buffer, len, f );
+}
+
+int FS_VM_WriteFile( const void *buffer, int len, fileHandle_t f, int owner ) {
+	if ( !FS_VM_OwnsHandle( f, owner ) ) {
+		return 0;
+	}
+	return FS_Write( buffer, len, f );
+}
+
+void FS_VM_CloseFile( fileHandle_t f, int owner ) {
+	if ( !FS_VM_OwnsHandle( f, owner ) ) {
+		return;
+	}
+	FS_FCloseFile( f );
+}
+
+int FS_VM_SeekFile( fileHandle_t f, long offset, int origin, int owner ) {
+	if ( !FS_VM_OwnsHandle( f, owner ) ) {
+		return -1;
+	}
+	// FS_Seek treats a bad origin on a FILE handle as a fatal error
+	if ( origin != FS_SEEK_CUR && origin != FS_SEEK_END && origin != FS_SEEK_SET ) {
+		return -1;
+	}
+	return FS_Seek( f, offset, origin );
 }

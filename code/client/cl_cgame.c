@@ -529,18 +529,18 @@ int CL_CgameSystemCalls( int *args ) {
 			VM_Error( "Cgame filesystem open mode out of range" );
 			return -1;
 		}
-		return FS_FOpenFileByMode( VMAS(1), VM_CheckedArgPtr( args[2], sizeof(fileHandle_t), 4, args[3] == FS_READ ), args[3] );
+		return FS_VM_OpenFile( VMAS(1), VM_CheckedArgPtr( args[2], sizeof(fileHandle_t), 4, args[3] == FS_READ ), args[3], FS_OWNER_CGAME );
 	case CG_FS_READ:
-		FS_Read2( VM_CheckedArgPtr( args[1], args[2], 1, args[2] == 0 ), args[2], args[3] );
+		FS_VM_ReadFile( VM_CheckedArgPtr( args[1], args[2], 1, args[2] == 0 ), args[2], args[3], FS_OWNER_CGAME );
 		return 0;
 	case CG_FS_WRITE:
-		FS_Write( VM_CheckedArgPtr( args[1], args[2], 1, args[2] == 0 ), args[2], args[3] );
+		FS_VM_WriteFile( VM_CheckedArgPtr( args[1], args[2], 1, args[2] == 0 ), args[2], args[3], FS_OWNER_CGAME );
 		return 0;
 	case CG_FS_FCLOSEFILE:
-		FS_FCloseFile( args[1] );
+		FS_VM_CloseFile( args[1], FS_OWNER_CGAME );
 		return 0;
 	case CG_FS_SEEK:
-		return FS_Seek( args[1], args[2], args[3] );
+		return FS_VM_SeekFile( args[1], args[2], args[3], FS_OWNER_CGAME );
 	case CG_SENDCONSOLECOMMAND:
 		Cbuf_AddText( VMAS(1) );
 		return 0;

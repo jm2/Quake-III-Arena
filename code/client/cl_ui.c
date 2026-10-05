@@ -855,19 +855,19 @@ int CL_UISystemCalls( int *args ) {
 			VM_Error( "UI filesystem open mode out of range" );
 			return -1;
 		}
-		return FS_FOpenFileByMode( VMAS(1),
-		        VM_CheckedArgPtr( args[2], sizeof(fileHandle_t), 4, args[3] == FS_READ ), args[3] );
+		return FS_VM_OpenFile( VMAS(1),
+		        VM_CheckedArgPtr( args[2], sizeof(fileHandle_t), 4, args[3] == FS_READ ), args[3], FS_OWNER_UI );
 
 	case UI_FS_READ:
-		FS_Read2( VM_CheckedArgPtr( args[1], args[2], 1, args[2] == 0 ), args[2], args[3] );
+		FS_VM_ReadFile( VM_CheckedArgPtr( args[1], args[2], 1, args[2] == 0 ), args[2], args[3], FS_OWNER_UI );
 		return 0;
 
 	case UI_FS_WRITE:
-		FS_Write( VM_CheckedArgPtr( args[1], args[2], 1, args[2] == 0 ), args[2], args[3] );
+		FS_VM_WriteFile( VM_CheckedArgPtr( args[1], args[2], 1, args[2] == 0 ), args[2], args[3], FS_OWNER_UI );
 		return 0;
 
 	case UI_FS_FCLOSEFILE:
-		FS_FCloseFile( args[1] );
+		FS_VM_CloseFile( args[1], FS_OWNER_UI );
 		return 0;
 
 	case UI_FS_GETFILELIST: {
@@ -881,7 +881,7 @@ int CL_UISystemCalls( int *args ) {
 	}
 
 	case UI_FS_SEEK:
-		return FS_Seek( args[1], args[2], args[3] );
+		return FS_VM_SeekFile( args[1], args[2], args[3], FS_OWNER_UI );
 	
 	case UI_R_REGISTERMODEL:
 		return re.RegisterModel( VMAS(1) );

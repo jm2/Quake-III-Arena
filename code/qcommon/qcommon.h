@@ -684,6 +684,18 @@ int		FS_FOpenFileByMode( const char *qpath, fileHandle_t *f, fsMode_t mode );
 int		FS_Seek( fileHandle_t f, long offset, int origin );
 // seek on a file (doesn't work for zip files!!!!!!!!)
 
+// the FS traps of the game, cgame and ui modules only reach handles their
+// own module opened; any other handle, the engine's included, is ignored
+#define FS_OWNER_GAME	1
+#define FS_OWNER_CGAME	2
+#define FS_OWNER_UI		3
+int		FS_VM_OpenFile( const char *qpath, fileHandle_t *f, fsMode_t mode, int owner );
+int		FS_VM_ReadFile( void *buffer, int len, fileHandle_t f, int owner );
+int		FS_VM_WriteFile( const void *buffer, int len, fileHandle_t f, int owner );
+void	FS_VM_CloseFile( fileHandle_t f, int owner );
+int		FS_VM_SeekFile( fileHandle_t f, long offset, int origin, int owner );
+// a bad origin returns -1 instead of FS_Seek's fatal error
+
 qboolean FS_FilenameCompare( const char *s1, const char *s2 );
 
 const char *FS_GamePureChecksum( void );
