@@ -23,7 +23,16 @@ where each module's data lives. This script provides those addresses.
             such a symbol would be shared across a module reset. And fail
             when a module archive uses a symbol that another module archive
             defines: each retail module was its own QVM and could not reach
-            another module's code or data.
+            another module's code or data. With --override SYMBOL=OBJECT,
+            also fail unless the map places SYMBOL exactly once and in
+            OBJECT (see overrides).
+  overrides Read the linker map and fail unless each --override SYMBOL=OBJECT
+            is defined (and kept) exactly once, in the object named OBJECT.
+            code/mac/mac_syscalls.c replaces libretro's _open_r, _rename_r
+            and _unlink_r only because XCOFF ld ignores a redefinition from
+            an archive member that comes after it (#258, #259); if that
+            object ever moved into an archive itself, nothing would pull it
+            in and libretro's stubs would win without a diagnostic.
 
 Code shared with the engine or another module stays out of the brackets and
 is never reset. That is bg_*.c, q_shared.c and q_math.c: one copy serves the
@@ -149,15 +158,15 @@ def parse_map(path):
         start = next(i for i, l in enumerate(lines) if l.startswith('Linker script and memory map'))
     except StopIteration:
         fail('%s is not a linker map' % path)
-    sections, symbols, loads = [], {}, []
-    out, pending = None, None
+    sections, symbols, loads, defined = [], {}, [], []
+    out, pending, current = None, None, None
     for line in lines[start:]:
         if line.startswith('LOAD '):
             loads.append(line[5:].strip())
             continue
         m = re.match(r'^(\.\w+)\s', line) or re.match(r'^(\.\w+)$', line)
         if m:
-            out, pending = m.group(1), None
+            out, pending, current = m.group(1), None, None
             continue
         m = re.match(r'^\s+0x([0-9a-f]+)\s+(q3static_\w+) = ', line)
         if m:
@@ -166,7 +175,7 @@ def parse_map(path):
         m = re.match(r'^ (\.\w+|COMMON)\s+0x([0-9a-f]+)\s+0x([0-9a-f]+) (.+)$', line)
         if m:
             sections.append((out, m.group(1), int(m.group(2), 16), int(m.group(3), 16), m.group(4).strip()))
-            pending = None
+            pending, current = None, m.group(4).strip()
             continue
         m = re.match(r'^ (\.\w+|COMMON)\s*$', line)
         if m:
@@ -176,8 +185,15 @@ def parse_map(path):
             m = re.match(r'^\s+0x([0-9a-f]+)\s+0x([0-9a-f]+) (.+)$', line)
             if m:
                 sections.append((out, pending, int(m.group(1), 16), int(m.group(2), 16), m.group(3).strip()))
+                current = m.group(3).strip()
             pending = None
-    return sections, symbols, loads
+            continue
+        # A symbol the input section above defines; "-->gc" marks one whose
+        # section --gc-sections dropped.
+        m = re.match(r'^\s+0x([0-9a-f]+)\s+(-->gc\s+)?(\S+)$', line)
+        if m and current:
+            defined.append((m.group(3), current, int(m.group(1), 16), bool(m.group(2))))
+    return sections, symbols, loads, defined
 
 
 def member_of(file):
@@ -214,10 +230,36 @@ def global_definitions(nm, paths, undefined=False):
     return defined
 
 
+def override_errors(defined, overrides, map_path):
+    """Each SYMBOL=OBJECT must be kept exactly once, from OBJECT."""
+    errors = []
+    for value in overrides or []:
+        symbol, sep, obj = value.partition('=')
+        if not sep or not symbol or not obj:
+            fail('bad --override %r (expected symbol=object)' % value)
+        kept = [(file, addr) for name, file, addr, gc in defined if name == symbol and not gc]
+        if len(kept) != 1 or member_of(kept[0][0]) != obj:
+            errors.append('%s must come from %s alone, but %s places it in %s'
+                          % (symbol, obj, os.path.basename(map_path),
+                             ', '.join('%s at 0x%x' % (f, a) for f, a in kept) or 'no object'))
+    return errors
+
+
+def overrides(args):
+    _, _, _, defined = parse_map(args.map)
+    errors = override_errors(defined, args.override, args.map)
+    if errors:
+        for e in errors:
+            sys.stderr.write('static_modules.py: error: %s\n' % e)
+        fail('%d libretro override(s) not taken from the expected object' % len(errors))
+    for value in args.override or []:
+        sys.stdout.write('override %s ok\n' % value)
+
+
 def check(args):
     modules = parse_modules(args.module)
     shared = args.shared or []
-    sections, symbols, loads = parse_map(args.map)
+    sections, symbols, loads, defined = parse_map(args.map)
     ranges = {}
     for name, _ in modules:
         for kind in ('data', 'bss'):
@@ -229,7 +271,7 @@ def check(args):
             ranges[(name, kind)] = (lo, hi)
     owner = {os.path.basename(path): name for name, path in modules}
 
-    errors = []
+    errors = override_errors(defined, args.override, args.map)
     totals = {}
     copies = {}
     for out, sec, addr, size, file in sections:
@@ -322,12 +364,19 @@ def main():
     p.add_argument('--nm', required=True)
     p.add_argument('--module', action='append', help='name=archive path')
     p.add_argument('--shared', action='append', help='archive shared with the engine or another module')
+    p.add_argument('--override', action='append',
+                   help='symbol=object: the map must define symbol once, in object')
     p.add_argument('--output', help='file for the ranges report')
+    p = sub.add_parser('overrides')
+    p.add_argument('--map', required=True)
+    p.add_argument('--override', action='append', required=True, help='symbol=object')
     args = parser.parse_args()
     if args.command == 'ldscript':
         ldscript(args)
     elif args.command == 'check':
         check(args)
+    elif args.command == 'overrides':
+        overrides(args)
     else:
         parser.print_help()
         sys.exit(2)

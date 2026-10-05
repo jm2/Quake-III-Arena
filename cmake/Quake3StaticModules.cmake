@@ -12,8 +12,10 @@
 # After the link, cmake/static_modules.py checks the linker map: every data and
 # bss section of a module archive lies inside its own bracket, nothing else
 # lies inside one, and no global symbol is defined by more than one module,
-# shared archive or the engine. It writes <target>.static-modules.txt with the
-# ranges; MakePEF waits for it, so a failed check fails the build.
+# shared archive or the engine, and that newlib's _open_r, _rename_r and
+# _unlink_r come from code/mac/mac_syscalls.c and not libretro (#258, #259).
+# It writes <target>.static-modules.txt with the ranges; MakePEF waits for it,
+# so a failed check fails the build.
 #
 # The <shared> archives are never reset: their code serves the engine or more
 # than one module (see cmake/static_modules.py).
@@ -73,6 +75,9 @@ function(quake3_static_modules target game cgame ui)
         COMMAND "${Python3_EXECUTABLE}" "${QUAKE3_STATIC_MODULES_TOOL}" check
                 --map "${target}.map" --nm "${RETRO68_NM}"
                 ${check_modules} ${check_shared}
+                --override ._open_r=mac_syscalls.c.obj
+                --override ._rename_r=mac_syscalls.c.obj
+                --override ._unlink_r=mac_syscalls.c.obj
                 --output "${target}.static-modules.txt"
         DEPENDS ${target} "${QUAKE3_STATIC_MODULES_TOOL}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
