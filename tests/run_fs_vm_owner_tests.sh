@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export TMPDIR="${TMPDIR:-/var/tmp}"
+Q3_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+Q3_TEST_DIR="$(mktemp -d -p "${TMPDIR:-/var/tmp}" q3-fs-vm-owner.XXXXXX)"
+trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
+mkdir "$Q3_TEST_DIR/home"
+"${CC:-cc}" -std=gnu99 -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
+    -fsanitize=address,undefined \
+    "$Q3_TEST_ROOT/tests/fs_vm_owner_regression.c" \
+    "$Q3_TEST_ROOT/code/qcommon/unzip.c" "$Q3_TEST_ROOT/code/qcommon/md4.c" \
+    "$Q3_TEST_ROOT/code/game/q_shared.c" \
+    -Wl,--gc-sections -lm -o "$Q3_TEST_DIR/vm-owner-tests"
+ASAN_OPTIONS=detect_leaks=${Q3_TEST_DETECT_LEAKS:-1}:halt_on_error=1 \
+    UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+    "$Q3_TEST_DIR/vm-owner-tests" "$Q3_TEST_DIR/home"

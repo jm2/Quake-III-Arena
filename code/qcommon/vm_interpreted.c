@@ -326,6 +326,14 @@ int	VM_CallInterpreted( vm_t *vm, int *args ) {
 } while (0)
 
 	if ( vm->nestingLevel >= MAX_VM_NESTING ) {
+		if ( com_errorEntered ) {
+			// the module shutdown call of an error raised at the limit
+			// (trap_Error): another Com_Error would be a recursive error,
+			// so skip the call and leave the module to the error's teardown
+			vm->interpretFaulted = qtrue;
+			vm->currentlyInterpreting = qfalse;
+			return 0;
+		}
 		VM_INTERPRETER_ERROR( "VM calls nested too deeply" );
 	}
 	nestingLevel = ++vm->nestingLevel;

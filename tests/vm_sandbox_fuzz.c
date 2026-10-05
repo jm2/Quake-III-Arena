@@ -2,7 +2,8 @@
  *
  * Random and mutated QVM images go through the real VM_Create (interpreted),
  * VM_Call and VM_Restart. Every host memory error or undefined behavior
- * stops the run; a hang outside VM execution aborts. QVM-level outcomes (a
+ * stops the run; a hang outside VM execution aborts. The timer only
+ * interrupts QVM code: syscalls run with SIGALRM blocked. QVM-level outcomes (a
  * controlled ERR_DROP, or an infinite QVM loop cut off by the per-call timer)
  * are counted. The main loop runs on a 1 MB thread, the Mac's stack size.
  *
@@ -36,6 +37,7 @@
 
 static cvar_t developer;
 cvar_t *com_developer = &developer;
+qboolean com_errorEntered;
 static void *allocs[MAX_ALLOCS];
 static int allocCount, hunkUsed;
 static byte *file;
@@ -60,9 +62,22 @@ static void Mix( unsigned int v ) {
 	traceHash = (traceHash ^ v) * 16777619u;
 }
 
+/* The per-call timer may only cut off QVM execution. Host code that the VM
+ * reaches (malloc/free, fopen/fread, vsnprintf) is not async-signal-safe, so
+ * syscalls and Com_Error run with SIGALRM blocked, and an alarm that comes
+ * due meanwhile fires once the syscall returns to the QVM. A siglongjmp to
+ * errorJump restores the unblocked mask that sigsetjmp saved. */
+static void BlockAlarm( int block ) {
+	sigset_t set;
+	sigemptyset( &set );
+	sigaddset( &set, SIGALRM );
+	pthread_sigmask( block ? SIG_BLOCK : SIG_UNBLOCK, &set, NULL );
+}
+
 static void Arm( int ms );
 void QDECL Com_Error( int level, const char *format, ... ) {
 	va_list ap;
+	BlockAlarm( 1 );
 	va_start( ap, format );
 	vsnprintf( lastError, sizeof(lastError), format, ap );
 	va_end( ap );
@@ -77,7 +92,9 @@ void QDECL Com_Error( int level, const char *format, ... ) {
 		liveVM = NULL;
 		phase = 2;
 		Arm( 200 );
+		BlockAlarm( 0 );
 		VM_Call( vm, 1, 0 );
+		BlockAlarm( 1 );
 	}
 	siglongjmp( errorJump, 1 );
 }
@@ -189,7 +206,7 @@ static int RetailSyscall( int *args ) {
 /* Syscalls hash their arguments. Random programs' syscalls use the checked
  * accessors the dispatchers use, so their bounds see attacker-chosen values,
  * and re-enter or free the VM as immediate console commands can. */
-static int SystemCall( int *args ) {
+static int HostSystemCall( int *args ) {
 	int i, n = args[0];
 	char *s;
 	syscallCount++;
@@ -243,7 +260,9 @@ static int SystemCall( int *args ) {
 		if ( nestDepth < (deepNesting ? 100000 : 3) ) {
 			int r;
 			nestDepth++;
+			BlockAlarm( 0 );	// the nested QVM call is VM execution again
 			r = VM_Call( currentVM, args[1] & 15, args[2], args[3] );
+			BlockAlarm( 1 );
 			nestDepth--;
 			return r;
 		}
@@ -266,6 +285,14 @@ static int SystemCall( int *args ) {
 	default:
 		return (int)Rand();
 	}
+}
+
+static int SystemCall( int *args ) {
+	int result;
+	BlockAlarm( 1 );
+	result = HostSystemCall( args );
+	BlockAlarm( 0 );
+	return result;
 }
 
 static void OnAlarm( int sig ) {
@@ -315,7 +342,7 @@ static int RunCase( unsigned int seed, int calls, int timeoutMs, const int *firs
 	vm = NULL;
 	if ( (outcome = sigsetjmp( errorJump, 1 )) == 0 ) {
 		phase = 1;
-		Arm( 5000 );
+		Arm( 60000 );	// host hang detector only: generous for qemu
 		vm = VM_Create( "fuzz", SystemCall, VMI_BYTECODE );
 		Arm( 0 );
 		stage = 1;
@@ -351,7 +378,7 @@ static int RunCase( unsigned int seed, int calls, int timeoutMs, const int *firs
 				stage = 2 + c;
 				if ( c == 0 && (Rand() & 3) == 0 && retailModule < 0 ) {
 					phase = 1;
-					Arm( 5000 );
+					Arm( 60000 );
 					vm = VM_Restart( vm );
 					Arm( 0 );
 					phase = 0;

@@ -913,15 +913,15 @@ int SV_GameSystemCalls( int *args ) {
 			VM_Error( "Game filesystem open mode out of range" );
 			return -1;
 		}
-		return FS_FOpenFileByMode( VMAS(1), VM_CheckedArgPtr( args[2], sizeof(fileHandle_t), 4, args[3] == FS_READ ), args[3] );
+		return FS_VM_OpenFile( VMAS(1), VM_CheckedArgPtr( args[2], sizeof(fileHandle_t), 4, args[3] == FS_READ ), args[3], FS_OWNER_GAME );
 	case G_FS_READ:
-		FS_Read2( VM_CheckedArgPtr( args[1], args[2], 1, args[2] == 0 ), args[2], args[3] );
+		FS_VM_ReadFile( VM_CheckedArgPtr( args[1], args[2], 1, args[2] == 0 ), args[2], args[3], FS_OWNER_GAME );
 		return 0;
 	case G_FS_WRITE:
-		FS_Write( VM_CheckedArgPtr( args[1], args[2], 1, args[2] == 0 ), args[2], args[3] );
+		FS_VM_WriteFile( VM_CheckedArgPtr( args[1], args[2], 1, args[2] == 0 ), args[2], args[3], FS_OWNER_GAME );
 		return 0;
 	case G_FS_FCLOSE_FILE:
-		FS_FCloseFile( args[1] );
+		FS_VM_CloseFile( args[1], FS_OWNER_GAME );
 		return 0;
 	case G_FS_GETFILELIST: {
 		char *path = VMAS(1), *extension = VMAS(2), *listbuf = VMAB(3, args[4]);
@@ -933,7 +933,7 @@ int SV_GameSystemCalls( int *args ) {
 		return FS_GetFileList( path, extension, listbuf, args[4] );
 	}
 	case G_FS_SEEK:
-		return FS_Seek( args[1], args[2], args[3] );
+		return FS_VM_SeekFile( args[1], args[2], args[3], FS_OWNER_GAME );
 
 	case G_LOCATE_GAME_DATA:
 		SV_GameLocateData( args );

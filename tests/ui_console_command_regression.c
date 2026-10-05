@@ -44,6 +44,11 @@ int FS_Seek( fileHandle_t f, long offset, int origin ) { Unexpected( __func__ );
 int FS_SV_FOpenFileRead( const char *filename, fileHandle_t *fp ) { Unexpected( __func__ ); return 0; }
 fileHandle_t FS_SV_FOpenFileWrite( const char *filename ) { Unexpected( __func__ ); return 0; }
 int FS_Write( const void *buffer, int len, fileHandle_t f ) { Unexpected( __func__ ); return 0; }
+int FS_VM_OpenFile( const char *qpath, fileHandle_t *f, fsMode_t mode, int owner ) { Unexpected( __func__ ); return 0; }
+int FS_VM_ReadFile( void *buffer, int len, fileHandle_t f, int owner ) { Unexpected( __func__ ); return 0; }
+int FS_VM_WriteFile( const void *buffer, int len, fileHandle_t f, int owner ) { Unexpected( __func__ ); return 0; }
+void FS_VM_CloseFile( fileHandle_t f, int owner ) { Unexpected( __func__ ); }
+int FS_VM_SeekFile( fileHandle_t f, long offset, int origin, int owner ) { Unexpected( __func__ ); return 0; }
 int Hunk_MemoryRemaining( void ) { Unexpected( __func__ ); return 0; }
 void Key_ClearStates( void ) { Unexpected( __func__ ); }
 char *Key_GetBinding( int keynum ) { Unexpected( __func__ ); return NULL; }

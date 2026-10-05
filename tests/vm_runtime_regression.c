@@ -16,6 +16,7 @@ static jmp_buf errorJump;
 static int expectError, errorCount, syscalls, recurseSyscall, corruptReturn;
 static char lastError[128];
 static int inspectSyscall, lastSyscallArgument;
+qboolean com_errorEntered;
 
 static void Check( int ok, const char *message ) {
 	if ( !ok ) {
