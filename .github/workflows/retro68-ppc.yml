@@ -1,0 +1,194 @@
+name: Retro68 PPC build
+
+# Compiles the shipping PowerPC product, Quake3 and Quake3_TeamArena, with the
+# Retro68 toolchain pinned in retro68-versions.txt (issue #334). Portable CI
+# never runs Retro68; this workflow runs next to it, in parallel.
+#
+# Building the toolchain takes about an hour on a hosted runner, so the built
+# toolchain is cached under a key made from retro68-versions.txt and
+# setup_retro68.sh, and only a run that finds no cache builds it. See
+# docs/ci.md for the cache layout and its limits.
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # As in Portable CI: a newer PR head cancels the older run, and every master
+  # push keeps its own run.
+  group: retro68-ppc-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ppc-build:
+    name: Retro68 PPC build (Quake3 + Team Arena)
+    # Pinned (issue #227): the cached toolchain's host programs link against
+    # this image's Boost, GMP, MPFR, MPC and ISL, so the image is in the key.
+    runs-on: ubuntu-24.04
+    # A cold run builds the whole toolchain first; a warm one takes minutes.
+    timeout-minutes: 240
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compute the cache keys
+        id: keys
+        # The toolchain is rebuilt when its pins or the script that builds it
+        # change; the archives only when their pins change.
+        run: |
+          echo "toolchain=retro68-toolchain-ubuntu-24.04-${{ hashFiles('retro68-versions.txt', 'setup_retro68.sh') }}" >> "$GITHUB_OUTPUT"
+          echo "sit=retro68-sit-${{ hashFiles('retro68-versions.txt') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Install the toolchain's host dependencies
+        # The packages Retro68's README lists for Ubuntu, plus unar for the
+        # .sit archives and xxd for build_mac.sh's PEF check. A restored
+        # toolchain needs the same shared libraries at run time.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            cmake libgmp-dev libmpfr-dev libmpc-dev libisl-dev libboost-all-dev \
+            bison flex texinfo ruby unar wget xxd
+
+      - name: Restore the Retro68 toolchain
+        id: toolchain
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ steps.keys.outputs.toolchain }}
+          # The install prefix, plus the parts of the Retro68 checkout the
+          # build reads: InterfacesAndLibraries (the prepared SDK and the
+          # OpenGL import library), Console's headers, and the shallow .git the
+          # build manifest takes the commit and submodules from. The GCC and
+          # binutils sources are only needed to build the toolchain.
+          path: |
+            tools/Retro68-build
+            tools/Retro68-src
+            !tools/Retro68-src/gcc
+            !tools/Retro68-src/binutils
+
+      - name: Restore the MPW and OpenGL SDK archives
+        id: sit
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ steps.keys.outputs.sit }}
+          path: |
+            tools/MPW_fully_updated.sit
+            tools/OpenGL_SDK_1.2.sit
+
+      - name: Build the Retro68 toolchain
+        id: build-toolchain
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        run: |
+          df -h / "$GITHUB_WORKSPACE"
+          # The toolchain build needs about 10 GB of scratch space.
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h /
+          # A shallow checkout of the pinned commit: setup_retro68.sh uses an
+          # existing checkout at the pinned commit as is, and a full clone
+          # would make the cached .git far larger.
+          url=$(sed -n 's/^RETRO68_URL=//p' retro68-versions.txt)
+          commit=$(sed -n 's/^RETRO68_COMMIT=//p' retro68-versions.txt)
+          git init -q tools/Retro68-src
+          git -C tools/Retro68-src fetch -q --depth 1 "$url" "$commit"
+          git -C tools/Retro68-src -c advice.detachedHead=false checkout -q --detach FETCH_HEAD
+          start=$(date +%s)
+          bash ./setup_retro68.sh
+          echo "Toolchain build took $(( ($(date +%s) - start) / 60 )) minutes."
+          rm -rf tools/Retro68-work
+          du -sh tools/Retro68-build tools/Retro68-src tools/*.sit
+
+      - name: Save the MPW and OpenGL SDK archives
+        if: >-
+          steps.toolchain.outputs.cache-hit != 'true' &&
+          steps.sit.outputs.cache-hit != 'true' &&
+          steps.build-toolchain.outcome == 'success'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ steps.keys.outputs.sit }}
+          path: |
+            tools/MPW_fully_updated.sit
+            tools/OpenGL_SDK_1.2.sit
+
+      - name: Save the Retro68 toolchain
+        # Saved before the Quake 3 build, so a failing PR still leaves a
+        # toolchain for the next run.
+        if: steps.build-toolchain.outcome == 'success'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ steps.keys.outputs.toolchain }}
+          path: |
+            tools/Retro68-build
+            tools/Retro68-src
+            !tools/Retro68-src/gcc
+            !tools/Retro68-src/binutils
+
+      - name: Build Quake3 and Quake3_TeamArena
+        # build_mac.sh runs check_retro68.sh on the toolchain, configures with
+        # BUILD_TEAM_ARENA=ON (which builds both applications), and checks
+        # each PEF's Joy!peff/pwpc header and size, the Rez containers through
+        # mac_app.py verify (type/creator, data fork, cfrg/SIZE/BNDL/FREF and
+        # icons, bundle flag) and the build manifest. The build itself runs
+        # cmake/static_modules.py's bracket and override check before MakePEF.
+        run: |
+          set -o pipefail
+          ./build_mac.sh --team-arena 2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      - name: Require zero compiler warnings
+        # The same gate as a local PPC build: any "warning:" in the build log
+        # fails the job.
+        run: |
+          warnings=$(grep -c 'warning:' "$RUNNER_TEMP/build.log" || true)
+          echo "$warnings compiler warnings"
+          if [ "$warnings" -ne 0 ]; then
+            grep 'warning:' "$RUNNER_TEMP/build.log"
+            exit 1
+          fi
+
+      - name: Check the PEFs, static modules and manifests
+        working-directory: build_mac
+        run: |
+          status=0
+          for app in Quake3 Quake3_TeamArena; do
+            magic=$(head -c 12 "$app.pef")
+            if [ "$magic" = 'Joy!peffpwpc' ]; then
+              echo "OK $app.pef $(wc -c < "$app.pef") bytes (Joy!peff/pwpc)"
+            else
+              echo "::error::$app.pef does not start with Joy!peff/pwpc"
+              status=1
+            fi
+            # Written by cmake/static_modules.py check only when the module
+            # brackets and the libc overrides are as expected.
+            if [ -s "$app.static-modules.txt" ]; then
+              echo "--- $app.static-modules.txt"
+              cat "$app.static-modules.txt"
+            else
+              echo "::error::$app.static-modules.txt is missing"
+              status=1
+            fi
+            echo "--- $app.manifest.txt"
+            cat "$app.manifest.txt"
+            if ! grep -qx 'retro68_pinned=yes' "$app.manifest.txt"; then
+              echo "::error::$app was not built with the toolchain retro68-versions.txt pins"
+              status=1
+            fi
+          done
+          exit $status
+
+      - name: Upload the applications
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: quake3-ppc-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            build_mac/Quake3.pef
+            build_mac/Quake3.bin
+            build_mac/Quake3.manifest.txt
+            build_mac/Quake3_TeamArena.pef
+            build_mac/Quake3_TeamArena.bin
+            build_mac/Quake3_TeamArena.manifest.txt

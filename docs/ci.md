@@ -2,7 +2,10 @@
 
 `Portable CI` is the first automated signal layer for review and GasCity
 workers. It runs on master pushes, pull requests, and manual dispatch without a
-Retro68 installation, proprietary retail data, or a Mac OS 9 emulator.
+Retro68 installation, proprietary retail data, or a Mac OS 9 emulator. The
+`Retro68 PPC build` workflow runs next to it and compiles the shipping
+PowerPC product with the pinned Retro68 toolchain; see
+[Retro68 PPC build](#retro68-ppc-build).
 
 Feature branch updates run through the pull-request trigger. Filtering the
 push trigger to master avoids duplicate copies of the same jobs for each PR
@@ -238,6 +241,66 @@ The actual shader fixture also covers native identity-alpha skip and matching
 multitexture alpha/RGB waves, rejects changes without mutating stages, and
 checks real registration pass counts and cache reuse.
 
+## Retro68 PPC build
+
+`.github/workflows/retro68-ppc.yml` (check `Retro68 PPC build (Quake3 + Team
+Arena)`) runs on the same triggers as Portable CI, as a separate workflow, so
+it runs in parallel with Portable CI's jobs and a newer PR head cancels an
+older run the same way (issue #334). It:
+
+- installs the host packages Retro68's README lists for Ubuntu (GMP, MPFR,
+  MPC, ISL, Boost, bison, flex, texinfo, ruby) plus `unar` and `xxd`;
+- restores the Retro68 toolchain from the Actions cache, or builds it: a
+  shallow fetch of `RETRO68_COMMIT` into `tools/Retro68-src`, then
+  `setup_retro68.sh`, which checks the pinned submodule commits and the SDK
+  archives' SHA-256 exactly as a local setup does;
+- runs `./build_mac.sh --team-arena`, which runs `check_retro68.sh`, configures
+  with `BUILD_TEAM_ARENA=ON` (that configuration builds both `Quake3` and
+  `Quake3_TeamArena`), runs `cmake/static_modules.py`'s module bracket and
+  libc override check before MakePEF, has Rez build each application, and
+  checks the `Joy!peff`/`pwpc` header and size of each PEF, the MacBinary, HFS
+  and AppleDouble containers through `mac_app.py verify` (type/creator, data
+  fork, `cfrg`/`SIZE`/`BNDL`/`FREF`/icon resources, bundle flag) and the build
+  manifest;
+- fails on any `warning:` in the build log, the same zero-warning gate as a
+  local PPC build;
+- checks again that each PEF starts with `Joy!peffpwpc`, that each
+  `<name>.static-modules.txt` report exists, and that each manifest says
+  `retro68_pinned=yes`;
+- uploads `Quake3` and `Quake3_TeamArena` (`.pef`, `.bin`, `.manifest.txt`)
+  as a workflow artifact kept for 7 days.
+
+Two caches hold the toolchain inputs. GitHub keeps up to 10 GB of caches per
+repository and evicts entries unused for 7 days.
+
+| Cache | Key | Contents | Size |
+| --- | --- | --- | --- |
+| Toolchain | `retro68-toolchain-ubuntu-24.04-` + hash of `retro68-versions.txt` and `setup_retro68.sh` | `tools/Retro68-build` (the install prefix) and `tools/Retro68-src` without its GCC and binutils sources: the prepared `InterfacesAndLibraries` with the OpenGL import library, `Console` headers and the shallow `.git` the manifest reads | see PR #TBD |
+| SDK archives | `retro68-sit-` + hash of `retro68-versions.txt` | `tools/MPW_fully_updated.sit`, `tools/OpenGL_SDK_1.2.sit` | about 55 MB |
+
+A run that finds the toolchain cache skips the archives and the toolchain
+build. Otherwise it builds the toolchain (about an hour on a hosted runner)
+and saves it before building Quake 3, so a failing PR still leaves the cache
+for the next run. The archives are restored from their cache when it exists,
+so a cold run does not depend on macintoshgarden.org being reachable. The
+host libraries are part of the runner image, so the key names the pinned
+image; a restored toolchain that `check_retro68.sh` finds cannot run needs a
+new key.
+
+GitHub scopes caches by branch: a pull request restores caches saved on its
+own branch or on master, never another pull request's. After a change to
+`retro68-versions.txt` or `setup_retro68.sh`, every pull request builds the
+toolchain once until the master run after the merge has saved it.
+
+The toolchain cache and the archive cache hold Apple's MPW Universal
+Interfaces and OpenGL SDK 1.2, as every local Retro68 install does. The
+workflow fetches them from the same public macintoshgarden.org URLs as
+`setup_retro68.sh` and never publishes them, but GitHub lets workflows run
+for pull requests from forks restore caches saved on master. The uploaded
+applications contain only this project's code and Retro68's runtime
+libraries; they reach Apple's shared libraries through import stubs, which hold
+only symbol names.
+
 ## Run the portable checks locally
 
 ```sh
@@ -378,8 +441,9 @@ and transactional hunk acceptance remain pending.
 
 ## What this CI does not prove
 
-Portable CI does not compile a PowerPC PEF, preserve/inspect a Classic resource
-fork inside a mounted HFS image, use retail PK3s, or exercise AGL,
+Portable CI does not compile a PowerPC PEF; the separate Retro68 PPC build
+does. Neither workflow inspects a Classic resource fork inside a mounted HFS
+image, uses retail PK3s, or exercises AGL,
 DrawSprocket, InputSprocket, Sound Manager, Open Transport, Finder events, or
 Mac OS 9 runtime behavior. Passing these starter checks alone does not close
 security or target-runtime issues; each issue needs its specified regressions
@@ -407,11 +471,9 @@ their issue's acceptance criteria specify them.
 
 The next CI layers should be:
 
-1. a legally provisioned/self-hosted Retro68 runner that builds base and Team
-   Arena and validates `Joy!peff` / `pwpc` (issue #334);
-2. hostile-input ASan/UBSan harnesses for the parser/protocol security issues;
-3. mounted HFS resource/Finder inspection;
-4. emulator smoke tests using externally provisioned legal game data.
+1. hostile-input ASan/UBSan harnesses for the parser/protocol security issues;
+2. mounted HFS resource/Finder inspection;
+3. emulator smoke tests using externally provisioned legal game data.
 
 When adding a regression for a GitHub issue, name the issue in the test and
 put the evidence in the PR description. The issue's entry in
