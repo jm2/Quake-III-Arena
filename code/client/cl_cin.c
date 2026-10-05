@@ -1095,12 +1095,6 @@ int CIN_PlayCinematic( const char *arg, int x, int y, int w, int h, int systemBi
 		}
 	}
 
-	// DEBUG: Bypass intro cinematics to fix Mac OS 9 white screen/freeze
-	if (strstr(arg, "idlogo") || strstr(arg, "intro")) {
-		Sys_LogPrintf("CIN_PlayCinematic: Bypassing intro cinematic '%s' to prevent freeze\n", arg);
-		return -1;
-	}
-
 	Com_DPrintf("SCR_PlayCinematic( %s )\n", arg);
 
 	Com_Memset(&cin, 0, sizeof(cinematics_t) );
@@ -1260,19 +1254,8 @@ void CL_PlayCinematic_f(void) {
 
 void SCR_DrawCinematic (void) {
 	if (CL_handle >= 0 && CL_handle < MAX_VIDEO_HANDLES) {
-        static int cinLogCount = 0;
-        if (cinLogCount < 20) {
-            Sys_LogPrintf("SCR_DrawCinematic: Drawing cinematic handle=%d\n", CL_handle);
-            cinLogCount++;
-        }
 		CIN_DrawCinematic(CL_handle);
-	} else {
-        static int cinFailLogCount = 0;
-        if (cinFailLogCount < 20) {
-            Sys_LogPrintf("SCR_DrawCinematic: Invalid handle %d\n", CL_handle);
-            cinFailLogCount++;
-        }
-    }
+	}
 }
 
 void SCR_RunCinematic (void)
