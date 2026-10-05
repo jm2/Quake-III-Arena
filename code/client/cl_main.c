@@ -1396,6 +1396,7 @@ game directory.
 static qboolean CL_BeginDownload( const char *localName, const char *remoteName ) {
 	int localLen;
 	int remoteLen;
+	const char *leaf;
 
 	Com_DPrintf("***** CL_BeginDownload *****\n"
 				"Localname: %s\n"
@@ -1430,6 +1431,17 @@ static qboolean CL_BeginDownload( const char *localName, const char *remoteName 
 
 	Q_strncpyz ( clc.downloadName, localName, sizeof(clc.downloadName) );
 	Com_sprintf( clc.downloadTempName, sizeof(clc.downloadTempName), "%s.tmp", localName );
+
+	// HFS names are at most 31 bytes, and the Mac refuses longer ones
+	// (issue #327), so a pk3 named within that limit whose "<name>.tmp" is
+	// not downloads to "<name less .pk3>.tmp" instead
+	if ( PATH_SEP == ':' ) {
+		leaf = strrchr( localName, '/' );
+		leaf = leaf ? leaf + 1 : localName;
+		if ( strlen( leaf ) + 4 > 31 ) {
+			strcpy( clc.downloadTempName + localLen - 4, ".tmp" );
+		}
+	}
 
 	// Set so UI gets access to it
 	Cvar_Set( "cl_downloadName", remoteName );
