@@ -14,6 +14,7 @@ void *GetClearedMemory(unsigned long size) {
     owner=calloc(1,size);Check(owner!=NULL,"exact fixture cache allocation");return owner;
 }
 void FreeMemory(void *pointer) {Check(pointer&&pointer==owner,"known native cache released once");free(pointer);owner=NULL;}
+int AvailableMemory(void) {return INT_MAX;}
 static void Reset(int counter) {
     Check(!owner,"previous cache physically released");memset(&aasworld,0,sizeof(aasworld));routingcachesize=counter;requests=failImport=0;lastRequest=0;
 }
