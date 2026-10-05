@@ -393,6 +393,17 @@ Just adds default parameters that cgame doesn't need to know about
 void CL_CM_LoadMap( const char *mapname ) {
 	int		checksum;
 
+	// On a listen server the collision map is the one the server loaded for
+	// this level, and a cgame asking for the same name gets it back unchanged.
+	// Never let the cgame replace it: the server keeps cluster and area
+	// numbers for the old map, and a map loaded above the hunk mark would be
+	// freed under the server by the next Hunk_ClearToMark.
+	if ( com_sv_running->integer && !clc.demoplaying
+		&& clc.netchan.remoteAddress.type == NA_LOOPBACK ) {
+		Com_DPrintf( "CL_CM_LoadMap: keeping the local server's collision map\n" );
+		return;
+	}
+
 	CM_LoadMap( mapname, qtrue, &checksum );
 }
 
