@@ -1,4 +1,4 @@
-/* Issues #277 and #265: the classic Mac Open Transport network code.
+/* Issues #277, #265 and #20: the classic Mac Open Transport network code.
  *
  * #277: Sys_StringToAdr handed any host name to OTInitDNSAddress, which copies
  * it into the 256-byte DNSAddress.fName on the stack with no bound, and
@@ -17,8 +17,17 @@
  * Com_EventLoop's own oversize-packet branch must free its event, as every
  * other branch does.
  *
- * The runner extracts the real Sys_StringToAdr and Sys_GetPacket (mac_net.c)
- * and Com_EventLoop (common.c) verbatim; tests/mac_ot_fake.h stands in for
+ * #20: Sys_InitNetworking ignored OTSetNonBlocking and the resolver's OTBind
+ * failing, left Open Transport and endpoints open after a failed stage, and
+ * always bound PORT_SERVER + i on every interface.  As NET_OpenIP does on the
+ * other platforms, it must honour net_noudp, net_ip ("localhost" or "" for
+ * every interface) and net_port, try ten ports from net_port and set net_port
+ * to the one bound; every failed stage must be reported and must close what
+ * was opened, leaving the UDP paths inert and shutdown with nothing to close.
+ *
+ * The runner extracts the real Sys_StringToAdr, Sys_GetPacket and
+ * Sys_InitNetworking through Sys_ShutdownNetworking (mac_net.c), and
+ * Com_EventLoop (common.c) verbatim; tests/mac_ot_fake.h stands in for
  * Open Transport and the functions they call are replaced here.  Each case
  * runs in its own process: on master the long names overflow dnsAddr, which
  * AddressSanitizer stops at. */
@@ -28,6 +37,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <strings.h>
 
 static const UInt8 serverIP[4] = { 192, 246, 40, 70 };
 static const UInt8 serverPort[2] = { 0x6d, 0x38 };	/* 27960 */
@@ -357,6 +367,283 @@ static void EventLoopOversize( void ) {
 	Check( outstanding == 0, "every event block is freed" );
 }
 
+/* ---------- #20: Sys_InitNetworking ---------- */
+
+static qboolean gOTInited;
+static OTDataSize endpointTSDU;
+static int localAddressCalls, broadcastCalls;
+
+static cvar_t cvars[8];
+static char cvarStrings[8][MAX_CVAR_VALUE_STRING];
+static int cvarCount;
+
+static cvar_t *FindCvar( const char *name ) {
+	int i;
+
+	for ( i = 0 ; i < cvarCount ; i++ ) {
+		if ( !strcmp( cvars[i].name, name ) ) {
+			return &cvars[i];
+		}
+	}
+	return NULL;
+}
+
+/* Set a cvar as +set on the command line does, before Sys_Init. */
+static cvar_t *SetCvar( const char *name, const char *value ) {
+	cvar_t *var = FindCvar( name );
+
+	if ( !var ) {
+		Check( cvarCount < 8, "the cvar table has room" );
+		var = &cvars[cvarCount];
+		var->name = (char *)name;
+		var->string = cvarStrings[cvarCount++];
+	}
+	Q_strncpyz( var->string, value, MAX_CVAR_VALUE_STRING );
+	var->integer = atoi( value );
+	var->value = (float)atof( value );
+	return var;
+}
+
+cvar_t *Cvar_Get( const char *name, const char *value, int flags ) {
+	cvar_t *var = FindCvar( name );
+
+	if ( !var ) {
+		var = SetCvar( name, value );
+	}
+	var->flags |= flags;
+	return var;
+}
+
+void Cvar_SetValue( const char *name, float value ) {
+	char s[32];
+
+	snprintf( s, sizeof( s ), "%i", (int)value );
+	SetCvar( name, s );
+}
+
+char * QDECL va( char *format, ... ) {
+	static char s[MAX_STRING_CHARS];
+	va_list ap;
+
+	va_start( ap, format );
+	vsnprintf( s, sizeof( s ), format, ap );
+	va_end( ap );
+	return s;
+}
+
+int Q_stricmp( const char *s1, const char *s2 ) {
+	return strcasecmp( s1, s2 );
+}
+
+void Q_strncpyz( char *dest, const char *src, int destsize ) {
+	strncpy( dest, src, destsize - 1 );
+	dest[destsize - 1] = 0;
+}
+
+void NET_GetLocalAddress( void ) {
+	localAddressCalls++;
+}
+
+static OTResult SetFourByteOption( EndpointRef ep, OTXTILevel level, OTXTIName name, UInt32 value ) {
+	Check( ep == FAKE_OT_ENDPOINT && level == INET_IP && name == IP_BROADCAST && value == T_YES,
+		"broadcasts are enabled on the game endpoint" );
+	broadcastCalls++;
+	return noErr;
+}
+
+#include "mac_net_init_extracted.c"
+
+/* Before each case: nothing open, no cvars, a fresh fake. */
+static void ResetInit( void ) {
+	FakeOT_ResetLifetime();
+	FakeOT_ResetEndpoint();
+	endpoint = resolverEndpoint = kOTInvalidEndpointRef;
+	gOTInited = qfalse;
+	endpointTSDU = 0;
+	cvarCount = 0;
+	localAddressCalls = broadcastCalls = handleOTErrors = 0;
+	fakeOTResolveCalls = fakeOTInitDNSCalls = 0;
+	printed[0] = 0;
+}
+
+static void InitNetworking( void ) {
+	Sys_InitNetworking();
+	Check( fakeOTMisuse == 0, "OT is only used as documented" );
+}
+
+/* Start-up must have bound the game endpoint, non-blocking, to host:port and
+ * opened and bound a resolver, and shutting down must release it all. */
+static void ExpectStarted( InetHost host, int port ) {
+	netadr_t from;
+	msg_t msg;
+
+	Check( fakeOTInited == 1 && gOTInited, "Open Transport is open" );
+	Check( endpoint == FAKE_OT_ENDPOINT && resolverEndpoint == FAKE_OT_RESOLVER, "both endpoints are open" );
+	Check( FakeOT_OpenEndpoints() == 2, "two endpoints are open" );
+	Check( fakeOTEndpoints[0].nonBlocking, "the game endpoint is non-blocking" );
+	Check( fakeOTEndpoints[0].bound && fakeOTEndpoints[0].port == port && fakeOTEndpoints[0].host == host,
+		"the game endpoint is bound to net_ip:net_port" );
+	Check( fakeOTEndpoints[1].bound, "the resolver endpoint is bound" );
+	Check( FindCvar( "net_port" ) && FindCvar( "net_port" )->integer == port, "net_port names the port bound" );
+	Check( endpointTSDU == FAKE_OT_TSDU, "the endpoint's datagram limit is kept" );
+	Check( localAddressCalls == 1 && broadcastCalls == 1, "local addresses and broadcasts are set up" );
+	Check( !Printed( "WARNING" ), "no warning is printed" );
+
+	fakeOTRcvCalls = 0;
+	Check( !GetPacket( &from, &msg ) && fakeOTRcvCalls == 1, "the game endpoint is read" );
+
+	Sys_ShutdownNetworking();
+	Check( FakeOT_OpenEndpoints() == 0 && fakeOTEndpoints[0].closed == 1 && fakeOTEndpoints[1].closed == 1,
+		"shutting down closes each endpoint once" );
+	Check( fakeOTInited == 0 && fakeOTCloseCalls == 1 && !gOTInited, "shutting down closes Open Transport once" );
+	Check( endpoint == kOTInvalidEndpointRef && resolverEndpoint == kOTInvalidEndpointRef, "no endpoint is left" );
+	Check( fakeOTMisuse == 0, "OT is only used as documented" );
+}
+
+/* Start-up must have left networking off: everything it opened closed again,
+ * so the UDP paths do nothing (loopback goes through net_chan.c, not here),
+ * and a later shutdown must not close anything twice. */
+static void ExpectDisabled( const char *warning ) {
+	netadr_t from, a;
+	msg_t msg;
+
+	Check( FakeOT_OpenEndpoints() == 0, "every endpoint opened is closed" );
+	Check( fakeOTInited == 0 && !gOTInited, "Open Transport is closed again" );
+	Check( fakeOTCloseCalls == ( fakeOTInitCalls && !fakeOTFailInit ), "Open Transport is closed once if it opened" );
+	Check( endpoint == kOTInvalidEndpointRef && resolverEndpoint == kOTInvalidEndpointRef, "no endpoint is left" );
+
+	fakeOTRcvCalls = fakeOTResolveCalls = 0;
+	Check( !GetPacket( &from, &msg ) && fakeOTRcvCalls == 0, "no packet is read" );
+	Check( !Sys_StringToAdr( "192.246.40.70", &a ) && fakeOTResolveCalls == 0, "no name is resolved" );
+
+	Sys_ShutdownNetworking();
+	Check( fakeOTMisuse == 0 && fakeOTCloseCalls == ( fakeOTInitCalls && !fakeOTFailInit ),
+		"shutting down afterwards closes nothing twice" );
+	Check( Printed( warning ) == 1, "the failure is reported" );
+}
+
+static void InitDefault( void ) {
+	ResetInit();
+	InitNetworking();
+	ExpectStarted( kOTAnyInetAddress, PORT_SERVER );
+	Check( Printed( "Opening IP socket: localhost:27960\n" ) == 1, "the port opened is printed" );
+}
+
+/* net_ip and net_port choose the address, as on the other platforms. */
+static void InitCvars( void ) {
+	static const UInt8 ip[4] = { 10, 0, 0, 7 };
+	InetHost host;
+
+	ResetInit();
+	SetCvar( "net_port", "28000" );
+	SetCvar( "net_ip", "10.0.0.7" );
+	memcpy( &host, ip, 4 );
+	fakeOTResolvedHost = host;
+	InitNetworking();
+	Check( fakeOTResolveCalls == 1 && !strcmp( fakeOTResolvedName, "10.0.0.7" ), "net_ip is resolved" );
+	ExpectStarted( host, 28000 );
+
+	/* "localhost" and "" mean every interface, as in NET_IPSocket */
+	ResetInit();
+	SetCvar( "net_ip", "LocalHost" );
+	SetCvar( "net_port", "27961" );
+	InitNetworking();
+	Check( fakeOTResolveCalls == 0, "localhost is not resolved" );
+	ExpectStarted( kOTAnyInetAddress, 27961 );
+
+	ResetInit();
+	SetCvar( "net_ip", "" );
+	InitNetworking();
+	Check( fakeOTResolveCalls == 0, "an empty net_ip is not resolved" );
+	ExpectStarted( kOTAnyInetAddress, PORT_SERVER );
+}
+
+/* A port in use moves on to the next, and net_port follows. */
+static void InitPortBusy( void ) {
+	ResetInit();
+	SetCvar( "net_port", "28000" );
+	FakeOT_BusyPort( 28000 );
+	FakeOT_BusyPort( 28001 );
+	InitNetworking();
+	Check( Printed( "Opening IP socket: " ) == 3, "three ports are tried" );
+	Check( Printed( "WARNING: OTBind: error -3172\n" ) == 2, "each busy port is reported" );
+	Check( !Printed( "networking disabled" ), "networking stays on" );
+	printed[0] = 0;
+	ExpectStarted( kOTAnyInetAddress, 28002 );
+}
+
+/* An OTBind that hands back another port than asked for counts as busy. */
+static void InitPortReassigned( void ) {
+	ResetInit();
+	FakeOT_BusyPort( PORT_SERVER );
+	fakeOTBindReassigns = 1;
+	InitNetworking();
+	printed[0] = 0;
+	ExpectStarted( kOTAnyInetAddress, PORT_SERVER + 1 );
+}
+
+/* Ten busy ports: nothing is left open. */
+static void InitPortExhausted( void ) {
+	int i;
+
+	ResetInit();
+	for ( i = 0 ; i < 10 ; i++ ) {
+		FakeOT_BusyPort( PORT_SERVER + i );
+	}
+	FakeOT_BusyPort( PORT_SERVER + 10 );	/* never tried */
+	InitNetworking();
+	Check( Printed( "Opening IP socket: " ) == 10, "ten ports are tried" );
+	Check( Printed( "Couldn't allocate IP port\n" ) == 1, "running out of ports is reported" );
+	Check( FindCvar( "net_port" )->integer == PORT_SERVER, "net_port is left alone" );
+	ExpectDisabled( "WARNING: OTBind() failed" );
+}
+
+static void InitNoUDP( void ) {
+	ResetInit();
+	SetCvar( "net_noudp", "1" );
+	InitNetworking();
+	Check( fakeOTInitCalls == 0, "Open Transport is never opened" );
+	ExpectDisabled( "UDP networking disabled by net_noudp\n" );
+}
+
+static int InitFailureCase( const char *name ) {
+	ResetInit();
+	if ( !strcmp( name, "init-fail-ot" ) ) {
+		fakeOTFailInit = 1;
+		InitNetworking();
+		ExpectDisabled( "WARNING: InitOpenTransport() failed (error -3211)" );
+	} else if ( !strcmp( name, "init-fail-config" ) ) {
+		fakeOTFailConfig = 1;
+		InitNetworking();
+		ExpectDisabled( "WARNING: OTOpenEndpoint() failed (error -3282)" );
+	} else if ( !strcmp( name, "init-fail-open" ) ) {
+		fakeOTFailOpen = 1;
+		InitNetworking();
+		ExpectDisabled( "WARNING: OTOpenEndpoint() failed (error -3211)" );
+	} else if ( !strcmp( name, "init-fail-nonblocking" ) ) {
+		fakeOTFailNonBlocking = 1;
+		InitNetworking();
+		ExpectDisabled( "WARNING: OTSetNonBlocking() failed (error -3211)" );
+	} else if ( !strcmp( name, "init-fail-resolver-open" ) ) {
+		fakeOTFailOpen = 2;
+		InitNetworking();
+		ExpectDisabled( "WARNING: OTOpenEndpoint() for resolver failed (error -3211)" );
+	} else if ( !strcmp( name, "init-fail-resolver-bind" ) ) {
+		fakeOTFailBind = FAKE_OT_RESOLVER;
+		InitNetworking();
+		ExpectDisabled( "WARNING: OTBind() for resolver failed (error -3211)" );
+	} else if ( !strcmp( name, "init-fail-net-ip" ) ) {
+		SetCvar( "net_ip", "nosuchhost.invalid" );
+		fakeOTResolveError = kOTBadAddressErr;
+		InitNetworking();
+		Check( Printed( "WARNING: couldn't resolve net_ip nosuchhost.invalid\n" ) == 1, "the bad net_ip is named" );
+		ExpectDisabled( "WARNING: net_ip failed" );
+	} else {
+		return 0;
+	}
+	return 1;
+}
+
 int main( int argc, char **argv ) {
 	if ( argc != 2 ) {
 		fprintf( stderr, "usage: %s case\n", argv[0] );
@@ -385,6 +672,19 @@ int main( int argc, char **argv ) {
 		DrainError();
 	} else if ( !strcmp( currentCase, "event-oversize" ) ) {
 		EventLoopOversize();
+	} else if ( !strcmp( currentCase, "init-default" ) ) {
+		InitDefault();
+	} else if ( !strcmp( currentCase, "init-cvars" ) ) {
+		InitCvars();
+	} else if ( !strcmp( currentCase, "init-port-busy" ) ) {
+		InitPortBusy();
+	} else if ( !strcmp( currentCase, "init-port-reassigned" ) ) {
+		InitPortReassigned();
+	} else if ( !strcmp( currentCase, "init-port-exhausted" ) ) {
+		InitPortExhausted();
+	} else if ( !strcmp( currentCase, "init-noudp" ) ) {
+		InitNoUDP();
+	} else if ( InitFailureCase( currentCase ) ) {
 	} else {
 		fprintf( stderr, "unknown case %s\n", currentCase );
 		return 2;
