@@ -27,8 +27,17 @@
  * fBsyErr, and a name already taken is dupFNErr.  FSpExchangeFiles swaps
  * two files' contents and open paths, keeping names and locks, and fails
  * for a locked file (fLckdErr) or files on two volumes (diffVolErr);
- * fakeFMExchangeUnsupported makes it return paramErr, as on volumes
- * without it. */
+ * fakeFMExchangeErr makes it fail with that error instead (paramErr or
+ * wrgVolTypErr, as on volumes without it, or another failure).
+ *
+ * Every file has a catalog ID (its file number), which stays with its entry
+ * through renames, moves and exchanges (ExchangeFiles keeps file IDs with
+ * the names); PBGetCatInfoSync returns it in ioDirID.  fakeFMNameLimit
+ * makes the File Manager truncate leaf names to that many bytes instead of
+ * refusing those longer than 31 (31 is what issue #327 fears HFS may do; a
+ * shorter limit stands for any file system that folds two names into one):
+ * FSMakeFSSpec keeps the name as given, up to a Str63, and every lookup,
+ * creation and rename uses the truncated name. */
 #ifndef MAC_FILES_FAKE_H
 #define MAC_FILES_FAKE_H
 
@@ -40,6 +49,7 @@ typedef int16_t			OSErr;
 typedef int8_t			SInt8;
 typedef uint32_t		OSType;
 typedef unsigned char	Str255[256];
+typedef unsigned char	*StringPtr;
 typedef unsigned char	Str63[64];
 typedef const unsigned char	*ConstStr255Param;
 typedef unsigned char	Boolean;
@@ -52,13 +62,26 @@ typedef struct FSSpec {
 	Str63	name;
 } FSSpec;
 
+/* the fields of CInfoPBRec's hFileInfo that PBGetCatInfoSync uses */
+typedef struct HFileInfo {
+	StringPtr	ioNamePtr;
+	short		ioVRefNum;
+	short		ioFDirIndex;
+	SInt8		ioFlAttrib;
+	long		ioDirID;
+} HFileInfo;
+
+typedef union CInfoPBRec {
+	HFileInfo	hFileInfo;
+} CInfoPBRec, *CInfoPBPtr;
+
 struct _reent {
 	int	_errno;
 };
 
 enum { noErr = 0 };
 enum {
-	dskFulErr = -34, nsvErr = -35, bdNamErr = -37, tmfoErr = -42, fnfErr = -43,
+	dskFulErr = -34, ioErr = -36, nsvErr = -35, bdNamErr = -37, tmfoErr = -42, fnfErr = -43,
 	wPrErr = -44, fLckdErr = -45, vLckdErr = -46, fBsyErr = -47, dupFNErr = -48,
 	opWrErr = -49, paramErr = -50, permErr = -54, wrPermErr = -61, dirNFErr = -120,
 	badMovErr = -122, wrgVolTypErr = -123, notAFileErr = -1302, diffVolErr = -1303,
@@ -67,12 +90,13 @@ enum {
 enum { fsCurPerm = 0, fsRdPerm = 1, fsWrPerm = 2, fsRdWrPerm = 3, fsRdWrShPerm = 4 };
 
 enum { FAKE_FM_FILES = 8, FAKE_FM_PATHS = 8, FAKE_FM_FIRST_REF = 100 };
-enum { FAKE_FM_DIRS = 8, FAKE_FM_FIRST_DIR_ID = 100, FAKE_FM_VREFNUM = -1 };
+enum { FAKE_FM_DIRS = 8, FAKE_FM_FIRST_DIR_ID = 100, FAKE_FM_FIRST_FILE_ID = 1000, FAKE_FM_VREFNUM = -1 };
 enum { FAKE_VOLUME_WRITABLE, FAKE_VOLUME_SOFTWARE_LOCKED, FAKE_VOLUME_READ_ONLY_MEDIA };
 
 typedef struct {
 	int		used;
 	char	name[256];
+	long	id;
 	int		locked;
 	long	eof;
 	OSType	creator, type;
@@ -94,8 +118,10 @@ static fakeFMFile_t	fakeFMFiles[FAKE_FM_FILES];
 static fakeFMDir_t	fakeFMDirs[FAKE_FM_DIRS];
 static fakeFMPath_t	fakeFMPaths[FAKE_FM_PATHS];
 static int			fakeFMVolume;
-static int			fakeFMHOpenDFUnsupported, fakeFMExchangeUnsupported;
-static int			fakeFMRenames, fakeFMMoves, fakeFMDeletes, fakeFMExchanges;
+static int			fakeFMHOpenDFUnsupported, fakeFMNameLimit;
+static OSErr		fakeFMExchangeErr;
+static long			fakeFMNextID;
+static int			fakeFMRenames, fakeFMMoves, fakeFMDeletes, fakeFMExchanges, fakeFMCatInfos;
 static int			fakeFMCreates, fakeFMOpenDFs, fakeFMOpens, fakeFMSetEOFs, fakeFMCloses;
 static int			fakeFMLastPermission = -1;
 
@@ -106,8 +132,10 @@ static void FakeFM_Reset( void ) {
 	memset( fakeFMPaths, 0, sizeof( fakeFMPaths ) );
 	memset( fakeFMDirs, 0, sizeof( fakeFMDirs ) );
 	fakeFMVolume = FAKE_VOLUME_WRITABLE;
-	fakeFMHOpenDFUnsupported = fakeFMExchangeUnsupported = 0;
-	fakeFMRenames = fakeFMMoves = fakeFMDeletes = fakeFMExchanges = 0;
+	fakeFMHOpenDFUnsupported = fakeFMNameLimit = 0;
+	fakeFMExchangeErr = noErr;
+	fakeFMNextID = FAKE_FM_FIRST_FILE_ID;
+	fakeFMRenames = fakeFMMoves = fakeFMDeletes = fakeFMExchanges = fakeFMCatInfos = 0;
 	fakeFMCreates = fakeFMOpenDFs = fakeFMOpens = fakeFMSetEOFs = fakeFMCloses = 0;
 	fakeFMLastPermission = -1;
 }
@@ -146,6 +174,17 @@ static size_t FakeFM_DirLength( const char *name, size_t length ) {
 	return length;
 }
 
+/* The length of a full name as the File Manager keeps it: with
+ * fakeFMNameLimit, the leaf cut to that many bytes. */
+static size_t FakeFM_Truncated( const char *name, size_t length ) {
+	size_t dirLength = FakeFM_DirLength( name, length );
+
+	if ( fakeFMNameLimit && length - dirLength > (size_t)fakeFMNameLimit ) {
+		return dirLength + fakeFMNameLimit;
+	}
+	return length;
+}
+
 static void FakeFM_AddDir( const char *path, short vRefNum ) {
 	FakeFM_Dir( path, strlen( path ), vRefNum, 1 );
 }
@@ -158,6 +197,8 @@ static int FakeFM_AddFile( const char *name, long eof, int locked ) {
 		if ( !fakeFMFiles[i].used ) {
 			fakeFMFiles[i].used = 1;
 			strcpy( fakeFMFiles[i].name, name );
+			fakeFMFiles[i].name[FakeFM_Truncated( name, strlen( name ) )] = 0;
+			fakeFMFiles[i].id = fakeFMNextID++;
 			fakeFMFiles[i].eof = eof;
 			fakeFMFiles[i].locked = locked;
 			return i;
@@ -167,11 +208,12 @@ static int FakeFM_AddFile( const char *name, long eof, int locked ) {
 }
 
 static int FakeFM_Find( ConstStr255Param name ) {
+	size_t length = FakeFM_Truncated( (const char *)name + 1, name[0] );
 	int i;
 
 	for ( i = 0 ; i < FAKE_FM_FILES ; i++ ) {
-		if ( fakeFMFiles[i].used && strlen( fakeFMFiles[i].name ) == name[0] &&
-			!strncasecmp( fakeFMFiles[i].name, (const char *)name + 1, name[0] ) ) {
+		if ( fakeFMFiles[i].used && strlen( fakeFMFiles[i].name ) == length &&
+			!strncasecmp( fakeFMFiles[i].name, (const char *)name + 1, length ) ) {
 			return i;
 		}
 	}
@@ -366,13 +408,17 @@ static OSErr FakeFM_Lookup( short vRefNum, long dirID, ConstStr255Param leaf, in
 /* Name the file leaf in directory dir. */
 static OSErr FakeFM_SetName( int file, int dir, ConstStr255Param leaf ) {
 	size_t length = strlen( fakeFMDirs[dir].path );
+	size_t leafLength = leaf[0];
 
-	if ( length + leaf[0] > 255 ) {
+	if ( fakeFMNameLimit && leafLength > (size_t)fakeFMNameLimit ) {
+		leafLength = fakeFMNameLimit;
+	}
+	if ( length + leafLength > 255 ) {
 		return bdNamErr;
 	}
 	memcpy( fakeFMFiles[file].name, fakeFMDirs[dir].path, length );
-	memcpy( fakeFMFiles[file].name + length, leaf + 1, leaf[0] );
-	fakeFMFiles[file].name[length + leaf[0]] = 0;
+	memcpy( fakeFMFiles[file].name + length, leaf + 1, leafLength );
+	fakeFMFiles[file].name[length + leafLength] = 0;
 	return noErr;
 }
 
@@ -399,7 +445,7 @@ static OSErr FSMakeFSSpec( short vRefNum, long dirID, ConstStr255Param fileName,
 	if ( dir < 0 ) {
 		return dirNFErr;
 	}
-	if ( fileName[0] == dirLength || fileName[0] - dirLength > 31 ) {
+	if ( fileName[0] == dirLength || fileName[0] - dirLength > ( fakeFMNameLimit ? 63 : 31 ) ) {
 		return bdNamErr;
 	}
 	memset( spec, 0, sizeof( *spec ) );
@@ -424,7 +470,7 @@ static OSErr FakeFM_Rename( short vRefNum, long dirID, ConstStr255Param oldName,
 	if ( fakeFMFiles[file].locked ) {
 		return fLckdErr;
 	}
-	if ( !newName[0] || newName[0] > 31 || memchr( newName + 1, ':', newName[0] ) ) {
+	if ( !newName[0] || newName[0] > ( fakeFMNameLimit ? 63 : 31 ) || memchr( newName + 1, ':', newName[0] ) ) {
 		return bdNamErr;
 	}
 	err = FakeFM_Lookup( vRefNum, dirID, newName, &other );
@@ -518,8 +564,8 @@ static OSErr FSpExchangeFiles( const FSSpec *source, const FSSpec *dest ) {
 	int a, b, i;
 
 	fakeFMExchanges++;
-	if ( fakeFMExchangeUnsupported ) {
-		return paramErr;
+	if ( fakeFMExchangeErr != noErr ) {
+		return fakeFMExchangeErr;
 	}
 	if ( ( err = FakeFM_Lookup( source->vRefNum, source->parID, source->name, &a ) ) != noErr ||
 		( err = FakeFM_Lookup( dest->vRefNum, dest->parID, dest->name, &b ) ) != noErr ) {
@@ -542,6 +588,24 @@ static OSErr FSpExchangeFiles( const FSSpec *source, const FSSpec *dest ) {
 			fakeFMPaths[i].file = a + b - fakeFMPaths[i].file;
 		}
 	}
+	return noErr;
+}
+
+/* Only a lookup by name (ioFDirIndex 0) in directory ioDirID, as
+ * mac_syscalls.c makes; ioDirID returns the file number. */
+static OSErr PBGetCatInfoSync( CInfoPBPtr pb ) {
+	OSErr err;
+	int file;
+
+	fakeFMCatInfos++;
+	if ( pb->hFileInfo.ioFDirIndex != 0 || !pb->hFileInfo.ioNamePtr || !pb->hFileInfo.ioNamePtr[0] ) {
+		return paramErr;
+	}
+	if ( ( err = FakeFM_Lookup( pb->hFileInfo.ioVRefNum, pb->hFileInfo.ioDirID, pb->hFileInfo.ioNamePtr, &file ) ) != noErr ) {
+		return err;
+	}
+	pb->hFileInfo.ioFlAttrib = fakeFMFiles[file].locked ? 0x01 : 0;
+	pb->hFileInfo.ioDirID = fakeFMFiles[file].id;
 	return noErr;
 }
 
