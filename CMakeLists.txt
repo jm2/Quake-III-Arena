@@ -75,7 +75,11 @@ file(GLOB COMMON_SRCS code/qcommon/*.c)
 file(GLOB SERVER_SRCS code/server/*.c)
 file(GLOB CLIENT_SRCS code/client/*.c)
 file(GLOB RENDERER_SRCS code/renderer/*.c)
-file(GLOB MAC_SRCS code/mac/*.c code/mac/*.r)
+file(GLOB MAC_SRCS code/mac/*.c code/mac/*.cc code/mac/*.r)
+# mac_consolehooks.cc replaces libRetroConsole's InitConsole.cc (issues #10 and
+# #263) and builds retro::ConsoleWindow from the pinned Retro68 source's headers.
+set_source_files_properties("${CMAKE_SOURCE_DIR}/code/mac/mac_consolehooks.cc"
+    PROPERTIES INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/tools/Retro68-src/Console")
 file(GLOB BOTLIB_SRCS code/botlib/*.c)
 file(GLOB JPEG_SRCS code/jpeg-6/*.c)
 file(GLOB NULL_SRCS code/null/*.c) # Might need null implementations for some things?

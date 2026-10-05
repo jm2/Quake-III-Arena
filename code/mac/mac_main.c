@@ -122,7 +122,8 @@ static int retroLogTotal = 0;
 
 // Sys_LogPrintf implementation
 //
-// Writes to the on-screen Retro68 console and the in-memory ring buffer.
+// Writes to the in-memory ring buffer, and to the Retro68 console window
+// once that is shown (Sys_ConsoleWanted, mac_consolehooks.cc).
 // Intentionally does NOT touch the disk per call: on Mac OS 9 each
 // fopen/fwrite/fclose triplet traps into the File Manager and yields
 // cooperatively, and Sys_LogPrintf is called many times per frame from
@@ -1243,12 +1244,49 @@ static int Sys_StartupError( const char *error ) {
 	return 1;
 }
 
+/*
+==================
+Sys_InitToolbox
+
+Initializes the Toolbox once, before anything draws, logs or reads the
+keyboard, as id's InitMacStuff did (issue #263). Retro68's startup code
+initializes none of it, and its console used to do so as a side effect of
+the first printf. That console now opens only on demand
+(mac_consolehooks.cc), so main must not depend on it. The EventAvail calls
+are what that console did to bring the application to the front
+(Technote TB 35).
+==================
+*/
+static void Sys_InitToolbox( void ) {
+	EventRecord	event;
+	int			i;
+
+	MaxApplZone();
+	MoreMasters();
+
+	InitGraf( &qd.thePort );
+	InitFonts();
+	FlushEvents( everyEvent, 0 );
+	InitWindows();
+	InitMenus();
+	TEInit();
+	InitDialogs( NULL );
+	InitCursor();
+
+	for ( i = 0 ; i < 5 ; i++ ) {
+		EventAvail( everyEvent, &event );
+	}
+}
+
 int main( int argc, char **argv ) {
     int i;
     static char commandLine[MAC_COMMAND_LINE_SIZE];
     int commandLength;
     const char *error;
     KeyMap keys;
+
+    // Before any output: the console window and its error messages need it.
+    Sys_InitToolbox();
 
     // Save each module's initialized data before any module code runs.
     error = VM_InitStaticModules( sys_staticModules, SYS_STATIC_MODULES );
@@ -1275,6 +1313,7 @@ int main( int argc, char **argv ) {
         static char line[MAC_COMMAND_LINE_SIZE + 1];
         int lineLength;
 
+        Sys_ShowConsole( 1, qfalse );	// until Com_Init applies viewlog
         printf( "Quake 3 startup parameters, e.g. +set s_initsound 1 (Return for none):\n" );
         fflush( stdout );
         if ( fgets( line, sizeof( line ), stdin ) ) {

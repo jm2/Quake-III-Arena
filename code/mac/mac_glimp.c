@@ -771,11 +771,11 @@ void GLimp_Init( void ) {
 	static		qboolean	registered;
 	
 	ri.Printf( PRINT_ALL, "--- GLimp_Init ---\n" );
-	printf("DEBUG: GLimp_Init: Starting\n"); fflush(stdout);
+	Sys_LogPrintf("DEBUG: GLimp_Init: Starting\n");
 
 	aglGetVersion( &major, &minor );
 	ri.Printf( PRINT_ALL, "aglVersion: %i.%i\n", (int)major, (int)minor );
-	printf("DEBUG: GLimp_Init: aglVersion %d.%d\n", (int)major, (int)minor); fflush(stdout);
+	Sys_LogPrintf("DEBUG: GLimp_Init: aglVersion %d.%d\n", (int)major, (int)minor);
 	
 	r_device = ri.Cvar_Get( "r_device", "0", CVAR_LATCH | CVAR_ARCHIVE );
 	r_ext_transform_hint = ri.Cvar_Get( "r_ext_transform_hint", "1", CVAR_LATCH | CVAR_ARCHIVE );
@@ -817,7 +817,7 @@ void GLimp_Init( void ) {
 		return;
 	}
 
-	printf("DEBUG: GLimp_Init: Both GLimp_SetMode attempts failed!\n"); fflush(stdout);
+	Sys_LogPrintf("DEBUG: GLimp_Init: Both GLimp_SetMode attempts failed!\n");
 	ri.Error( ERR_FATAL, "Could not initialize OpenGL" );
 }
 

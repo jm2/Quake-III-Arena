@@ -275,6 +275,11 @@ from starting. As on other platforms' command lines, the parameters can be
 at most 1023 bytes once line endings are folded. A longer file or line stops
 the launch with a message in the console window. It is not cut short.
 
+The console window stays closed unless something needs it: the Shift prompt,
+an error, or `+set viewlog 1`, which shows the engine's log in it. The log is
+kept in memory either way. It is written to `retro68_console.txt` at quit and
+when Cmd-D is pressed, and to `retro68_console_crash.txt` after a fatal error.
+
 ## Current validation level
 
 Cross-compilation, structural PEF validation, and the container checks above
