@@ -361,6 +361,7 @@ extern glconfig_t glConfig;
 
 void	Sys_InitConsole( void );
 void	Sys_ShowConsole( int level, qboolean quitOnClose );
+int		Sys_ConsoleWanted( int fd );
 void	Sys_Print( const char *text );
 char	*Sys_ConsoleInput( void );
 qboolean Sys_ConsoleEvent( EventRecord *event );

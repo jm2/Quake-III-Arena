@@ -34,6 +34,21 @@ void	Sys_ShowConsole( int level, qboolean quitOnClose ) {
 
 
 /*
+==================
+Sys_ConsoleWanted
+
+Asked by _consolewrite (mac_consolehooks.cc) before output to fd opens the
+console window. Errors on stderr always open it. Other output opens it only
+once the console is displayed (viewlog, or the Shift prompt at launch).
+Hidden output still reaches the crash ring.
+==================
+*/
+int Sys_ConsoleWanted( int fd ) {
+	return fd == 2 || consoleDisplayed;
+}
+
+
+/*
 ================
 Sys_Print
 
