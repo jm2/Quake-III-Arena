@@ -16,6 +16,12 @@ void Sys_StreamSeek(fileHandle_t f, int offset, int origin) {
     Check(0, "unexpected platform streaming seek");
 }
 
+int Sys_StreamedRead(void *buffer, int size, int count, fileHandle_t f) {
+    (void)buffer; (void)size; (void)count; (void)f;
+    Check(0, "unexpected platform streaming read");
+    return 0;
+}
+
 static jmp_buf dropTarget;
 static int expectDrop;
 static void FixtureErrorHook(int level) {
@@ -109,8 +115,11 @@ static void Inputs(char *path) {
     memcpy(&saved, &fsh[f], sizeof(saved));
     for (i = 0; i < sizeof(handles) / sizeof(handles[0]); i++) {
         fileHandle_t missing = handles[i];
+        char one;
         Check(FS_FTell(missing) == -1 && FS_filelength(missing) == -1 &&
               !FS_Write("x", 1, missing), "missing native tell/length/write rejects");
+        // Issue #35: QVM FS_READ traps reach FS_Read2 with any handle.
+        Check(FS_Read2(&one, 1, missing) == 0, "missing native streamed read rejects");
         FS_FCloseFile(missing);
         FS_Flush(missing);
         FS_ForceFlush(missing);

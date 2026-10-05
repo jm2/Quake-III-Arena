@@ -67,11 +67,17 @@ static void InvalidDistances(void) {
     {vec3_t start={2147483648.0f,0,0},end={0,0,0};Check(AAS_AreaTravelTime(1,start,end)==65535,"first unrepresentable signed distance rejects before cast");}
     {vec3_t start={FLT_MAX,FLT_MAX,FLT_MAX},end={-FLT_MAX,-FLT_MAX,-FLT_MAX};Check(AAS_AreaTravelTime(1,start,end)==65535,"finite subtraction overflow rejects before cast");}
 }
+/* Issue #35: game QVMs pass area numbers through BotPredictVisiblePosition and BotMoveToGoal goals. */
+static void DoNotEnter(void) {
+    Mode(0);settings[1].contents=AREACONTENTS_DONOTENTER;
+    Check(AAS_AreaDoNotEnter(1)&&!AAS_AreaDoNotEnter(0),"native do-not-enter flag");
+    Check(!AAS_AreaDoNotEnter(2)&&!AAS_AreaDoNotEnter(-1)&&!AAS_AreaDoNotEnter(INT_MAX)&&!AAS_AreaDoNotEnter(INT_MIN),"do-not-enter area numbers stay inside areasettings");
+}
 int main(int argc,char **argv) {
     if(argc>1) {
         int proof=atoi(argv[1]);vec3_t start={0,0,0},end={0,0,0};Mode(2);
         start[0]=proof==0?Float(0x7fc00000u):proof==1?2147483648.0f:FLT_MAX;
         Check(AAS_AreaTravelTime(1,start,end)==65535,"unsafe original runtime distance conversion");
-    } else {Goldens();InvalidDistances();puts("Native AAS area travel-time conversions and legacy distance results passed (issue #47)");}
+    } else {Goldens();InvalidDistances();DoNotEnter();puts("Native AAS area travel-time conversions and legacy distance results passed (issue #47)");}
     return 0;
 }

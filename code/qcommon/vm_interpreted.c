@@ -285,6 +285,12 @@ locals from sp
 #define	STACK_MASK	(MAX_STACK-1)
 //#define	DEBUG_VM
 
+// Syscalls may re-enter their own VM (an EXEC_NOW console command runs a
+// QVM console command, for example), each entry nesting native frames until
+// the VM program stack runs out: about 1700 levels and several megabytes,
+// where the Mac application stack is 1 MB. Retail modules nest a few levels.
+#define	MAX_VM_NESTING	32
+
 #define	DEBUGSTR va("%s%i", VM_Indent(vm), opStack-stack )
 
 int	VM_CallInterpreted( vm_t *vm, int *args ) {
@@ -300,6 +306,7 @@ int	VM_CallInterpreted( vm_t *vm, int *args ) {
 	int		stackFloor;
 	const int entryFrame = VM_ENTRY_FRAME_SIZE;
 	qboolean wasInterpreting;
+	int		nestingLevel;
 #ifdef DEBUG_VM
 	vmSymbol_t	*profileSymbol;
 #endif
@@ -317,6 +324,11 @@ int	VM_CallInterpreted( vm_t *vm, int *args ) {
 	Com_Error( ERR_DROP, "%s", message ); \
 	return 0; \
 } while (0)
+
+	if ( vm->nestingLevel >= MAX_VM_NESTING ) {
+		VM_INTERPRETER_ERROR( "VM calls nested too deeply" );
+	}
+	nestingLevel = ++vm->nestingLevel;
 
 	// we might be called recursively, so this might not be the very top
 	programStack = stackOnEntry = vm->programStack;
@@ -514,6 +526,14 @@ nextInstruction2:
 				}
 				memcpy( syscallArgs, image + programStack + 4, available * sizeof(int) );
 				r = vm->systemCall( syscallArgs );
+				// An EXEC_NOW "map" or "vid_restart" can free this VM and clear
+				// the hunk under its image (ioquake3 refuses VM_Free while a VM
+				// runs). VM_Free clears nestingLevel; leave without touching the
+				// image or the vm_t, which a new module may already be using.
+				if ( vm->nestingLevel != nestingLevel ) {
+					Com_Error( ERR_DROP, "VM freed by its own syscall" );
+					return 0;
+				}
 
 #ifdef DEBUG_VM
 				// this is just our stack frame pointer, only needed
@@ -940,6 +960,7 @@ done:
 	}
 	vm->currentlyInterpreting = wasInterpreting;
 	vm->programStack = stackOnEntry;
+	vm->nestingLevel--;
 #undef VM_INTERPRETER_ERROR
 
 	// return the result

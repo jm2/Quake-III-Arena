@@ -763,6 +763,8 @@ int AAS_AreaClusterPortal(int areanum)
 //===========================================================================
 int AAS_AreaDoNotEnter(int areanum)
 {
+	// BotPredictVisiblePosition and BotMoveToGoal pass QVM area numbers here
+	if (areanum < 0 || areanum >= aasworld.numareas) return 0;
 	return (aasworld.areasettings[areanum].contents & AREACONTENTS_DONOTENTER);
 } //end of the function AAS_AreaDoNotEnter
 //===========================================================================

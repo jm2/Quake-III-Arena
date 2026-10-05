@@ -71,6 +71,12 @@ int AAS_UpdateEntity(int entnum, bot_entitystate_t *state)
 		botimport.Print(PRT_MESSAGE, "AAS_UpdateEntity: not loaded\n");
 		return BLERR_NOAASFILE;
 	} //end if
+	// the game QVM picks the number; the array holds aasworld.maxentities
+	if (entnum < 0 || entnum >= aasworld.maxentities)
+	{
+		botimport.Print(PRT_ERROR, "AAS_UpdateEntity: invalid entity number %d\n", entnum);
+		return BLERR_INVALIDENTITYNUMBER;
+	} //end if
 
 	ent = &aasworld.entities[entnum];
 
