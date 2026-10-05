@@ -287,8 +287,10 @@ int AAS_PointReachabilityAreaIndex( vec3_t origin )
 	areanum = aasworld.areasettings[areanum].clusterareanum;
 	if (cluster < 0)
 	{
-		cluster = aasworld.portals[-cluster].frontcluster;
-		areanum = aasworld.portals[-cluster].clusterareanum[0];
+		//read both fields from the portal before cluster is replaced
+		aas_portal_t *portal = &aasworld.portals[-cluster];
+		cluster = portal->frontcluster;
+		areanum = portal->clusterareanum[0];
 	} //end if
 
 	index = 0;
