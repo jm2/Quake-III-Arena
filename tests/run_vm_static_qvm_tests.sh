@@ -96,13 +96,6 @@ productid = (b"This file is copyright 1999 Id Software, and may not be duplicate
 pack("baseq3/pak0.pk3", stock(100) + [("salt.dat", forge(1)), ("forge.dat", forge(0x78aa8e5f))])
 pack("missionpack/pak3.pk3", stock(300) + [("salt.dat", forge(4)), ("forge.dat", forge(0xac6d28fb))])
 pack("mymod/zmod.pk3", [("vm/cgame.qvm", qvm(201))])
-# md4.c's UINT4 is unsigned long, 32 bits on the ILP32 target but 64 on LP64
-# hosts, where Com_BlockChecksum would not give the retail pk3 checksums.
-md4 = (root / "code/qcommon/md4.c").read_text(encoding="latin-1")
-if md4.count("typedef unsigned long int UINT4;") != 1:
-    raise SystemExit("md4.c's UINT4 typedef changed")
-(out / "md4.c").write_text(md4.replace("typedef unsigned long int UINT4;", "typedef unsigned int UINT4;"),
-                           encoding="latin-1")
 (out / "install" / "loosemod" / "vm").mkdir(parents=True)
 (out / "install" / "loosemod" / "vm" / "cgame.qvm").write_bytes(qvm(401))
 PY_SETUP
@@ -121,7 +114,7 @@ for Q3_TEST_BUILD in quake3 teamarena; do
             "$Q3_TEST_ROOT/code/qcommon/vm.c" "$Q3_TEST_ROOT/code/qcommon/vm_interpreted.c" \
             "$Q3_TEST_ROOT/code/qcommon/vm_static.c" \
             "$Q3_TEST_ROOT/code/qcommon/cvar.c" "$Q3_TEST_ROOT/code/qcommon/cmd.c" \
-            "$Q3_TEST_ROOT/code/qcommon/unzip.c" "$Q3_TEST_DIR/md4.c" \
+            "$Q3_TEST_ROOT/code/qcommon/unzip.c" "$Q3_TEST_ROOT/code/qcommon/md4.c" \
             "$Q3_TEST_ROOT/code/game/q_shared.c" \
             -Wl,--gc-sections -lm -o "$Q3_TEST_BIN"
         ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \

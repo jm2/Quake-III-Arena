@@ -1,6 +1,7 @@
 /* GLOBAL.H - RSAREF types and constants */
 
 #include <string.h>
+#include <stdint.h>
 #if defined(_WIN32)
 #pragma warning(disable : 4711)		// selected for automatic inline expansion
 #endif
@@ -11,8 +12,10 @@ typedef unsigned char *POINTER;
 /* UINT2 defines a two byte word */
 typedef unsigned short int UINT2;
 
-/* UINT4 defines a four byte word */
-typedef unsigned long int UINT4;
+/* UINT4 defines a four byte word: exactly 32 bits, since unsigned long is 64
+   bits on LP64 hosts, where the sums and rotations below would keep bits above
+   bit 31 and give wrong digests */
+typedef uint32_t UINT4;
 
   
 /* MD4.H - header file for MD4C.C */
