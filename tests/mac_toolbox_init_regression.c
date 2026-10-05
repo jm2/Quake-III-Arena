@@ -12,13 +12,19 @@
  * Shift prompt at launch, or errors on stderr).  Default startup must not open
  * it, and its log lines must still reach the crash-dump ring.
  *
+ * The follow-up to #499: Sys_Error writes the crash log before stderr can
+ * create the window, then shows retail's Stop alert unless DrawSprocket still
+ * holds the display; opening the window mid-game restores the current port;
+ * every write is gated, so viewlog 0 also stops output to a window the Shift
+ * prompt opened; and a static module failure waits for Return.
+ *
  * The runner extracts the real main, Sys_InitToolbox, Sys_LogPrintf,
- * Sys_AppendStartupText, Sys_ReadStartupFile and Sys_StartupError
+ * Sys_AppendStartupText, Sys_ReadStartupFile, Sys_StartupError and Sys_Error
  * (mac_main.c) and Sys_ConsoleWanted, Sys_ShowConsole and Sys_Print
- * (mac_console.c).  The Toolbox calls are fakes that log their order.  stdio
- * goes through ConsoleWrite and ConsoleRead, which model mac_consolehooks.cc:
- * output creates the window only when Sys_ConsoleWanted accepts it, and input
- * always does.  The window may only be created after the Toolbox is up,
+ * (mac_console.c), and links the real _consolewrite and _consoleread
+ * (mac_consolehooks.cc, compiled as C++ against mac_console_window_fake.h).
+ * The Toolbox calls are fakes that log their order, and stdio goes straight
+ * to the real hooks.  The window may only be created after the Toolbox is up,
  * because mac_consolehooks.cc no longer initializes it. */
 #include "../code/game/q_shared.h"
 #include "../code/qcommon/qcommon.h"
@@ -28,6 +34,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include "mac_console_window_fake.h"
 
 /* ---- fake Toolbox ---- */
 
@@ -48,7 +56,19 @@ static void Event( const char *name ) {
 typedef unsigned int	KeyMap[4];
 typedef struct { short what; } EventRecord;
 #define everyEvent		( (short)0xFFFF )
-static struct { void *thePort; } qd;
+FakeQDGlobals	qd = { NULL, { { 0, 0, 480, 640 } } };
+
+static struct FakeGrafPort { int unused; } gamePort, consolePort;
+static GrafPtr	currentPort;
+
+void GetPort( GrafPtr *port ) { *port = currentPort; }
+void SetPort( GrafPtr port ) { currentPort = port; }
+void InsetRect( Rect *r, short dh, short dv ) {
+	r->left += dh;
+	r->right -= dh;
+	r->top += dv;
+	r->bottom -= dv;
+}
 
 static void MaxApplZone( void ) { Event( "MaxApplZone" ); }
 static void MoreMasters( void ) { Event( "MoreMasters" ); }
@@ -80,20 +100,73 @@ static void GetKeys( KeyMap keys ) {
 	}
 }
 
-/* ---- the console window, as mac_consolehooks.cc ---- */
+/* ---- the console window behind the real mac_consolehooks.cc ---- */
 
 int Sys_ConsoleWanted( int fd );
+ssize_t _consolewrite( int fd, const void *buf, size_t count );
+ssize_t _consoleread( int fd, void *buf, size_t count );
 
 static int			windowOpen;
 static char			windowText[16384];
 static char			ring[16384];		/* what Sys_LogRecord kept */
 static int			outputBeforeToolbox;
-static const char	*typed;				/* the line typed into the window */
+static const char	*typed;				/* what is typed into the window */
+static int			draining;
 
-static void OpenWindow( void ) {
+GrafPtr FakeConsoleWindowOpen( const Rect *r ) {
 	Check( toolboxReady, "the console window is only created after the Toolbox is initialized" );
+	Check( r->top == 45 && r->left == 5 && r->bottom == 475 && r->right == 635,
+		"the window is where InitConsole put it" );
 	Event( "console window" );
 	windowOpen = 1;
+	return &consolePort;
+}
+
+void FakeConsoleWindowWrite( const char *s, int n ) {
+	size_t	length = strlen( windowText );
+
+	Check( windowOpen, "output only reaches an open window" );
+	if ( length + n < sizeof( windowText ) ) {
+		memcpy( windowText + length, s, n );
+		windowText[length + n] = '\0';
+	}
+}
+
+/* A line typed and ended with Return; Return alone once typed runs out. */
+const char *FakeConsoleWindowReadLine( void ) {
+	static char	line[2048];
+	int			i;
+
+	if ( draining ) {
+		return "";
+	}
+	Event( "read" );
+	for ( i = 0 ; i < (int)sizeof( line ) - 1 && typed && *typed ; ) {
+		line[i++] = *typed;
+		if ( *typed++ == '\n' ) {
+			break;
+		}
+	}
+	if ( i == 0 ) {
+		line[i++] = '\n';
+	}
+	line[i] = '\0';
+	return line;
+}
+
+/* Close the window between cases, dropping what a case left unread. */
+static void CloseWindow( void ) {
+	char	junk[4096];
+
+	if ( windowOpen ) {
+		draining = 1;
+		while ( _consoleread( 0, junk, sizeof( junk ) ) > 0 ) {
+		}
+		draining = 0;
+	}
+	FakeConsoleWindowDelete();
+	windowOpen = 0;
+	windowText[0] = '\0';
 }
 
 static void ConsoleWrite( int fd, const char *text ) {
@@ -101,19 +174,8 @@ static void ConsoleWrite( int fd, const char *text ) {
 		outputBeforeToolbox = 1;
 	}
 	Event( "output" );
-	if ( !windowOpen ) {
-		if ( !Sys_ConsoleWanted( fd ) ) {
-			return;
-		}
-		OpenWindow();
-	}
-	Q_strcat( windowText, sizeof( windowText ), text );
-}
-
-static void ConsoleRead( void ) {
-	if ( !windowOpen ) {
-		OpenWindow();
-	}
+	Check( _consolewrite( fd, text, strlen( text ) ) == (ssize_t)strlen( text ),
+		"_consolewrite takes the whole write" );
 }
 
 static int FakePrintf( const char *fmt, ... ) {
@@ -143,29 +205,76 @@ static int FakeFflush( FILE *f ) {
 }
 
 static char *FakeFgets( char *buf, int size, FILE *f ) {
-	int	i;
+	int		i;
+	char	c;
 
 	Check( f == stdin, "fgets reads stdin" );
-	ConsoleRead();
-	if ( !typed || !*typed ) {
-		return NULL;
-	}
-	for ( i = 0 ; i < size - 1 && *typed ; ) {
-		buf[i++] = *typed;
-		if ( *typed++ == '\n' ) {
+	for ( i = 0 ; i < size - 1 && _consoleread( 0, &c, 1 ) == 1 ; ) {
+		buf[i++] = c;
+		if ( c == '\n' ) {
 			break;
 		}
+	}
+	if ( i == 0 ) {
+		return NULL;
 	}
 	buf[i] = '\0';
 	return buf;
 }
 
 static int FakeGetchar( void ) {
-	ConsoleRead();
-	if ( typed && *typed ) {
-		return (unsigned char)*typed++;
+	unsigned char	c;
+
+	if ( _consoleread( 0, &c, 1 ) != 1 ) {
+		return EOF;
 	}
-	return '\n';	/* Return */
+	return c;
+}
+
+/* ---- Sys_Error's world ---- */
+
+static struct { qboolean isFullscreen; } glConfig;
+static jmp_buf		exited;
+static int			exitStatus;
+static int			ringHadErrorAtDump;
+static char			alertTitle[256], alertMessage[256];
+
+void Com_DumpFlightRecord( const char *fileName ) {
+	Event( "flight record" );
+}
+
+static void Sys_DumpRetroLogs( const char *fileName ) {
+	Check( !strcmp( fileName, "retro68_console_crash.txt" ), "Sys_Error dumps retro68_console_crash.txt" );
+	Event( "crash log" );
+	ringHadErrorAtDump = strstr( ring, "Sys_Error: " ) != NULL;
+}
+
+static void Sys_ShutdownInput( void ) { Event( "Sys_ShutdownInput" ); }
+static void Sys_ShutdownNetworking( void ) { Event( "Sys_ShutdownNetworking" ); }
+
+static void PascalToC( char *out, const unsigned char *in ) {
+	memcpy( out, in + 1, in[0] );
+	out[in[0]] = '\0';
+}
+
+static void ParamText( ConstStr255Param p0, ConstStr255Param p1, ConstStr255Param p2,
+		ConstStr255Param p3 ) {
+	PascalToC( alertTitle, p0 );
+	PascalToC( alertMessage, p1 );
+	Check( !memcmp( p1, p2, p1[0] + 1 ) && !memcmp( p1, p3, p1[0] + 1 ),
+		"^1, ^2 and ^3 are the message, as retail" );
+}
+
+static short StopAlert( short alertID, void *filter ) {
+	Check( alertID == 128 && filter == NULL, "StopAlert( 128, NULL ), as retail" );
+	Event( "alert" );
+	return 1;
+}
+
+static void FakeExit( int status ) __attribute__(( noreturn ));
+static void FakeExit( int status ) {
+	exitStatus = status;
+	longjmp( exited, 1 );
 }
 
 /* ---- the rest of main's world ---- */
@@ -216,6 +325,7 @@ void Com_Init( char *commandLine ) {
 	Sys_Print( "engine: before viewlog\n" );
 	Sys_ShowConsole( viewlog, qfalse );
 	Sys_Print( "engine: after viewlog\n" );
+	Sys_LogPrintf( "Com_Init: after viewlog\n" );
 	longjmp( comInitDone, 1 );
 }
 
@@ -234,10 +344,12 @@ static qboolean	consoleDisplayed;	/* mac_console.c's */
 #define fflush		FakeFflush
 #define fgets		FakeFgets
 #define getchar		FakeGetchar
+#define exit		FakeExit
 #define main		Sys_TestMacMain
 #include "mac_main_extracted.c"
 #include "mac_console_extracted.c"
 #undef main
+#undef exit
 #undef printf
 #undef fprintf
 #undef fflush
@@ -298,8 +410,7 @@ static int RunMain( const char *name, int shift, const char *line, const char *p
 	typed = line;
 	viewlog = log;
 	staticModulesError = NULL;
-	windowOpen = 0;
-	windowText[0] = '\0';
+	CloseWindow();
 	ring[0] = '\0';
 	outputBeforeToolbox = 0;
 	consoleDisplayed = qfalse;
@@ -332,6 +443,29 @@ static void CheckToolboxFirst( void ) {
 		"EventAvail brings the application to the front after the Toolbox is up" );
 	Check( EventIndex( "VM_InitStaticModules" ) > EventIndex( "InitCursor" ),
 		"VM_InitStaticModules runs after the Toolbox is initialized" );
+}
+
+static void RunSysError( const char *name, qboolean fullscreen, const char *fmt, ... ) {
+	char	text[1024];
+	va_list	argptr;
+
+	currentCase = name;
+	numEvents = 0;
+	CloseWindow();
+	ring[0] = '\0';
+	consoleDisplayed = qfalse;
+	glConfig.isFullscreen = fullscreen;
+	ringHadErrorAtDump = 0;
+	alertTitle[0] = alertMessage[0] = '\0';
+	exitStatus = -1;
+	va_start( argptr, fmt );
+	vsnprintf( text, sizeof( text ), fmt, argptr );
+	va_end( argptr );
+	if ( !setjmp( exited ) ) {
+		Sys_Error( "%s", text );
+		Check( 0, "Sys_Error does not return" );
+	}
+	glConfig.isFullscreen = qfalse;
 }
 
 static void CheckGetKeysAfterToolbox( void ) {
@@ -380,6 +514,18 @@ int main( int argc, char **argv ) {
 	Check( EventIndex( "console window" ) > EventIndex( "Com_Init" ), "the window opens at Sys_ShowConsole" );
 	Check( strstr( windowText, "engine: after viewlog\n" ) != NULL, "engine output shows with viewlog 1" );
 	Check( strstr( windowText, "engine: before viewlog\n" ) == NULL, "output before viewlog stays hidden" );
+	Check( strstr( windowText, "Com_Init: after viewlog\n" ) != NULL, "Sys_LogPrintf shows with viewlog 1" );
+
+	/* a console opened mid-game leaves the current port on the game window */
+	result = RunMain( "console opened mid-game", 0, NULL, NULL, 0 );
+	Check( result == -1 && !windowOpen, "no console window at launch" );
+	SetPort( &gamePort );
+	Sys_ShowConsole( 1, qfalse );	/* viewlog 1 at runtime */
+	Check( windowOpen, "viewlog 1 at runtime opens the console window" );
+	Check( currentPort == &gamePort, "opening the console window restores the current port" );
+	Sys_Print( "engine: mid-game\n" );
+	Check( strstr( windowText, "engine: mid-game\n" ) != NULL, "engine output reaches the window" );
+	Check( currentPort == &gamePort, "writing to the console window keeps the current port" );
 
 	/* Shift held: the prompt is shown in the window and the typed line used */
 	result = RunMain( "Shift prompt", 1, "+set s_initsound 1\n", "+set fs_game ignored\n", 0 );
@@ -390,6 +536,16 @@ int main( int argc, char **argv ) {
 	Check( EventIndex( "console window" ) > EventIndex( "GetKeys" ), "the window opens after GetKeys" );
 	Check( strstr( windowText, "Quake 3 startup parameters" ) != NULL, "the prompt is in the window" );
 	Check( !strcmp( comInitCommandLine, "+set s_initsound 1" ), "the typed line reaches Com_Init" );
+	/* viewlog 0 then hides the console again: the window stays, but its
+	 * output stops, as retail's Sys_Print stopped printing */
+	Check( strstr( windowText, "Com_Init: after viewlog\n" ) == NULL,
+		"after viewlog 0, Sys_LogPrintf no longer reaches the Shift prompt's window" );
+	Check( strstr( windowText, "engine: after viewlog\n" ) == NULL,
+		"after viewlog 0, engine output no longer reaches the window" );
+	Check( strstr( ring, "Com_Init: after viewlog\n" ) != NULL, "the crash ring still has it" );
+	FakeFprintf( stderr, "engine: error after viewlog\n" );
+	Check( strstr( windowText, "engine: error after viewlog\n" ) != NULL,
+		"errors on stderr still reach the window after viewlog 0" );
 
 	/* #24/#486: an overlong parameters file stops before Com_Init, in the window */
 	memset( longFile, 'a', sizeof( longFile ) - 1 );
@@ -414,9 +570,9 @@ int main( int argc, char **argv ) {
 	numEvents = 0;
 	currentCase = "static module error";
 	WriteParms( NULL );
+	CloseWindow();
 	toolboxReady = 0;
-	windowOpen = 0;
-	windowText[0] = '\0';
+	typed = NULL;
 	outputBeforeToolbox = 0;
 	consoleDisplayed = qfalse;
 	staticModulesError = "static module failure";
@@ -433,7 +589,36 @@ int main( int argc, char **argv ) {
 	Check( !outputBeforeToolbox, "no output before the Toolbox is initialized" );
 	Check( EventIndex( "VM_InitStaticModules" ) > EventIndex( "InitCursor" ), "the Toolbox is initialized first" );
 	Check( windowOpen && strstr( windowText, "static module failure" ) != NULL, "the error is in the window" );
+	Check( strstr( windowText, "Press Return to quit." ) != NULL, "the Return prompt is in the window" );
+	Check( EventIndex( "read" ) > EventIndex( "console window" ), "main waits for Return before it quits" );
+	Check( EventIndex( "GetKeys" ) < 0, "main stops before the rest of startup" );
 	staticModulesError = NULL;
+
+	/* Sys_Error with the console hidden: the crash log is written before
+	 * stderr creates the window, then the Stop alert shows the message */
+	RunSysError( "Sys_Error", qfalse, "fatal %d", 7 );
+	Check( EventIndex( "crash log" ) >= 0 && ringHadErrorAtDump, "the crash log has the error" );
+	Check( EventIndex( "console window" ) > EventIndex( "crash log" ),
+		"the crash log is written before the console window is created" );
+	Check( strstr( windowText, "Sys_Error: fatal 7\n" ) != NULL, "the error is in the console window" );
+	Check( EventIndex( "alert" ) > EventIndex( "Sys_ShutdownInput" ), "the alert follows the input shutdown" );
+	Check( !strcmp( alertTitle, "Quake 3 Error:" ) && !strcmp( alertMessage, "fatal 7" ),
+		"the alert shows the error, as retail" );
+	Check( exitStatus == 1, "Sys_Error exits with 1" );
+
+	/* a message longer than a Pascal string is cut at 255 bytes */
+	memset( longLine, 'c', 300 );
+	longLine[300] = '\0';
+	RunSysError( "Sys_Error long message", qfalse, "%s", longLine );
+	Check( strlen( alertMessage ) == 255 && !strncmp( alertMessage, longLine, 255 ),
+		"the alert shows the first 255 bytes" );
+
+	/* no alert while DrawSprocket still holds the display */
+	RunSysError( "Sys_Error fullscreen", qtrue, "recursive" );
+	Check( EventIndex( "crash log" ) >= 0 && EventIndex( "alert" ) < 0 && exitStatus == 1,
+		"Sys_Error exits without an alert while the display is captured" );
+
+	CloseWindow();
 
 	printf( "mac toolbox init regression passed\n" );
 	return 0;

@@ -13,7 +13,9 @@
 # bss section of a module archive lies inside its own bracket, nothing else
 # lies inside one, and no global symbol is defined by more than one module,
 # shared archive or the engine, and that newlib's _open_r, _rename_r and
-# _unlink_r come from code/mac/mac_syscalls.c and not libretro (#258, #259).
+# _unlink_r come from code/mac/mac_syscalls.c and not libretro (#258, #259),
+# and _consolewrite and _consoleread from code/mac/mac_consolehooks.cc and not
+# libRetroConsole's InitConsole.cc (#263, #10).
 # It writes <target>.static-modules.txt with the ranges; MakePEF waits for it,
 # so a failed check fails the build.
 #
@@ -78,6 +80,8 @@ function(quake3_static_modules target game cgame ui)
                 --override ._open_r=mac_syscalls.c.obj
                 --override ._rename_r=mac_syscalls.c.obj
                 --override ._unlink_r=mac_syscalls.c.obj
+                --override ._consolewrite=mac_consolehooks.cc.obj
+                --override ._consoleread=mac_consolehooks.cc.obj
                 --output "${target}.static-modules.txt"
         DEPENDS ${target} "${QUAKE3_STATIC_MODULES_TOOL}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"

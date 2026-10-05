@@ -313,6 +313,8 @@ void Sys_Quit( void ) {
 void Sys_Error( const char *error, ... ) {
     va_list argptr;
     char    text[1024];
+    Str255  title, message;
+    int     length;
 
     va_start( argptr, error );
     vsnprintf( text, sizeof(text), error, argptr );
@@ -321,11 +323,33 @@ void Sys_Error( const char *error, ... ) {
     Com_FlightRecord("Sys_Error: %s\n", text);
     Com_DumpFlightRecord("crashdump.txt");
 
-    fprintf( stderr, "Sys_Error: %s\n", text );
-    Sys_LogPrintf("Sys_Error: %s\n", text);
+    // The crash log first: stderr opens the console window if it is not
+    // open yet, which allocates, and a fatal error often leaves the heap
+    // nearly full.
+    Sys_LogRecord( "Sys_Error: " );
+    Sys_LogRecord( text );
+    Sys_LogRecord( "\n" );
     Sys_DumpRetroLogs("retro68_console_crash.txt");
+    fprintf( stderr, "Sys_Error: %s\n", text );
     Sys_ShutdownInput();
     Sys_ShutdownNetworking();
+
+    // As retail, a Stop alert (ALRT 128, mac_resources.r) keeps the message
+    // on screen until it is dismissed. Com_Error's CL_Shutdown releases a
+    // DrawSprocket display first; while one is still held (a recursive
+    // error), the alert could be neither seen nor answered, so skip it.
+    if ( !glConfig.isFullscreen ) {
+        strcpy( (char *)title + 1, "Quake 3 Error:" );
+        title[0] = strlen( (char *)title + 1 );
+        length = strlen( text );
+        if ( length > 255 ) {
+            length = 255;
+        }
+        message[0] = length;
+        memcpy( message + 1, text, length );
+        ParamText( title, message, message, message );
+        StopAlert( 128, NULL );
+    }
     exit( 1 );
 }
 
@@ -1234,7 +1258,8 @@ static int Sys_ReadStartupFile( const char *path, char *text, int textSize,
 ==================
 Sys_StartupError
 
-Shows a startup parameter error in the console window and waits for
+Shows a startup error (bad parameters, or a static module that cannot be
+saved by VM_InitStaticModules) in the console window and waits for
 Return, so the reason the game did not start can be read.
 ==================
 */
@@ -1291,8 +1316,7 @@ int main( int argc, char **argv ) {
     // Save each module's initialized data before any module code runs.
     error = VM_InitStaticModules( sys_staticModules, SYS_STATIC_MODULES );
     if ( error ) {
-        fprintf( stderr, "Quake3: %s\n", error );
-        return 1;
+        return Sys_StartupError( error );
     }
 
     Sys_LogPrintf("main: START\n");
