@@ -140,6 +140,7 @@ struct vm_s {
 	// for interpreted modules
 	qboolean	currentlyInterpreting;
 	qboolean	interpretFaulted;	// skip shutdown re-entry after a sandbox fault
+	int			nestingLevel;		// active interpreter entries; VM_Free clears it
 
 	qboolean	compiled;
 	byte		*codeBase;

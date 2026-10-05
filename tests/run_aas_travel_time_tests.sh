@@ -19,6 +19,7 @@ parts.append(route[first:last])
 for source,name,signature in (
     (reach,'AAS_AreaCrouch','int AAS_AreaCrouch(int areanum)'),
     (reach,'AAS_AreaSwim','int AAS_AreaSwim(int areanum)'),
+    (reach,'AAS_AreaDoNotEnter','int AAS_AreaDoNotEnter(int areanum)'),
     (route,'AAS_AreaTravelTime','unsigned short int AAS_AreaTravelTime(int areanum, vec3_t start, vec3_t end)'),
 ):
     start=signature+'\n{';end='} //end of the function '+name

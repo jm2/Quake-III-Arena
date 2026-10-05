@@ -170,6 +170,12 @@ fuzzyseperator_t *ReadFuzzySeperators_r(source_t *source)
 	if (!PC_ExpectTokenString(source, "(")) return NULL;
 	if (!PC_ExpectTokenType(source, TT_NUMBER, TT_INTEGER, &token)) return NULL;
 	index = token.intvalue;
+	// switch indexes the BOTLIB_INVENTORY_SIZE inventory a QVM passes in
+	if (index < 0 || index >= BOTLIB_INVENTORY_SIZE)
+	{
+		SourceError(source, "inventory index %d out of range\n", index);
+		return NULL;
+	} //end if
 	if (!PC_ExpectTokenString(source, ")")) return NULL;
 	if (!PC_ExpectTokenString(source, "{")) return NULL;
 	if (!PC_ExpectAnyToken(source, &token)) return NULL;

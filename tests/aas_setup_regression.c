@@ -1,6 +1,8 @@
 /* Actual AAS/public setup and native heap/hunk metadata, owners and callbacks. */
 #include Q3_AAS_SETUP_SOURCE
 extern int Export_BotLibSetup(void);
+extern int Export_BotLibUpdateEntity(int ent,bot_entitystate_t *state);
+extern qboolean ValidEntityNumber(int num,char *str);
 extern int botlibsetup;
 static void *heap[64],*hunk[16];
 static int heapLive,hunkLive,requests,failAt,errors,setupCalls,logCalls;
@@ -45,4 +47,14 @@ static void Invalid(int field,unsigned int bits,int exported){
     Check(requests==imports+(field?2:0),"invalid count stops before later cache/arena imports");End();
 }
 static void Golden(void){int imports;Begin();Check(Export_BotLibSetup()==BLERR_NOERROR&&!errors&&setupCalls==5&&logCalls==1&&botlibsetup&&botlibglobals.botlibsetup&&botlibglobals.maxclients==128&&botlibglobals.maxentities==1024,"actual exported setup publishes native defaults only after valid AAS initialization");Complete(128,1024);Check(heapLive==6&&hunkLive==1,"native default cache and physical hunk ownership");imports=requests;LibVarSet("maxclients","2.75");LibVarSet("maxentities","4.75");Check(AAS_Setup()==BLERR_NOERROR&&!errors,"native fractional positive counts retain truncation");Complete(2,4);Check(heapLive==6&&hunkLive==2&&requests>imports,"complete replacement retains native arena lifetime");End();}
-int main(int argc,char **argv){int occupied,fault,field,exported;unsigned int bad[]={0,0xbf800000U,0x3f000000U,0x4f000000U,0x7f800000U,0xff800000U,0x7fc00000U};size_t i;if(argc>1){fault=atoi(argv[1]);if(fault<14)Failure(fault/7,fault%7+1);else if(fault<18)Invalid((fault-14)/2,0x7fc00000U,(fault-14)%2);else if(fault<20)Invalid(1,0x4b800000U,fault-18);else Golden();return 0;}for(occupied=0;occupied<2;occupied++)for(fault=1;fault<=7;fault++)Failure(occupied,fault);for(field=0;field<2;field++)for(exported=0;exported<2;exported++)for(i=0;i<sizeof(bad)/sizeof(bad[0]);i++)Invalid(field,bad[i],exported);Invalid(1,0x4b800000U,0);Invalid(1,0x4b800000U,1);Golden();puts("Real AAS/export setup counts, native metadata, prior world rollback and physical heap/hunk lifetime passed (issues #47/#48)");return 0;}
+void AAS_UnlinkFromAreas(aas_link_t *areas){(void)areas;Check(0,"rejected entity numbers must not unlink");}
+static void Unreached(void){Check(0,"rejected entity numbers must not link");}
+void AAS_UnlinkFromBSPLeaves(bsp_link_t *leaves){(void)leaves;Unreached();}
+aas_link_t *AAS_LinkEntityClientBBox(vec3_t absmins,vec3_t absmaxs,int entnum,int presencetype){(void)absmins;(void)absmaxs;(void)entnum;(void)presencetype;Unreached();return NULL;}
+bsp_link_t *AAS_BSPLinkEntity(vec3_t absmins,vec3_t absmaxs,int entnum,int modelnum){(void)absmins;(void)absmaxs;(void)entnum;(void)modelnum;Unreached();return NULL;}
+void AAS_BSPModelMinsMaxsOrigin(int modelnum,vec3_t angles,vec3_t mins,vec3_t maxs,vec3_t origin){(void)modelnum;(void)angles;(void)mins;(void)maxs;(void)origin;Unreached();}
+static void Entities(void){bot_entitystate_t state;memset(&state,0,sizeof(state));Begin();Check(Export_BotLibSetup()==BLERR_NOERROR&&aasworld.maxentities==1024&&botlibglobals.maxentities==1024,"issue #35 entity table setup");aasworld.loaded=qtrue;
+    Check(!ValidEntityNumber(1024,"test")&&!ValidEntityNumber(-1,"test")&&ValidEntityNumber(1023,"test")&&Export_BotLibUpdateEntity(1024,&state)==BLERR_INVALIDENTITYNUMBER,"public entity numbers stop below maxentities (issue #35)");
+    LibVarSet("maxentities","4");Check(AAS_Setup()==BLERR_NOERROR&&aasworld.maxentities==4&&botlibglobals.maxentities==1024,"game QVM shrinks the AAS entity table");aasworld.loaded=qtrue;
+    Check(AAS_UpdateEntity(4,&state)==BLERR_INVALIDENTITYNUMBER&&AAS_UpdateEntity(-1,NULL)==BLERR_INVALIDENTITYNUMBER&&Export_BotLibUpdateEntity(1023,NULL)==BLERR_INVALIDENTITYNUMBER,"AAS entity writes stay inside the allocated table (issue #35)");aasworld.loaded=qfalse;End();}
+int main(int argc,char **argv){int occupied,fault,field,exported;unsigned int bad[]={0,0xbf800000U,0x3f000000U,0x4f000000U,0x7f800000U,0xff800000U,0x7fc00000U};size_t i;if(argc>1){fault=atoi(argv[1]);if(fault<14)Failure(fault/7,fault%7+1);else if(fault<18)Invalid((fault-14)/2,0x7fc00000U,(fault-14)%2);else if(fault<20)Invalid(1,0x4b800000U,fault-18);else if(fault<21)Golden();else Entities();return 0;}for(occupied=0;occupied<2;occupied++)for(fault=1;fault<=7;fault++)Failure(occupied,fault);for(field=0;field<2;field++)for(exported=0;exported<2;exported++)for(i=0;i<sizeof(bad)/sizeof(bad[0]);i++)Invalid(field,bad[i],exported);Invalid(1,0x4b800000U,0);Invalid(1,0x4b800000U,1);Golden();Entities();puts("Real AAS/export setup counts, native metadata, prior world rollback and physical heap/hunk lifetime passed (issues #47/#48)");return 0;}
