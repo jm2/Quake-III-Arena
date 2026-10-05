@@ -71,6 +71,7 @@ int OtherTeam(int team);
 const char *TeamName(int team);
 const char *OtherTeamName(int team);
 const char *TeamColorString(int team);
+void QDECL PrintMsg( gentity_t *ent, const char *fmt, ... ) Q_PRINTF_FORMAT( 2, 3 );
 void AddTeamScore(vec3_t origin, int team, int score);
 
 void Team_DroppedFlagThink(gentity_t *ent);

@@ -39,14 +39,16 @@ Q3_TEST_EXTRACT '^void[[:space:]]+Sys_Print[[:space:]]*[(]' "$Q3_TEST_CONSOLE" "
 
 # The C++ compiler that goes with $CC: clang++ for clang, g++ for gcc,
 # be32_cxx.sh for be32_cc.sh (the ppc32 BE job), c++ for cc.  An exported CXX
-# wins.  Either way it must target the same machine as $CC.
+# wins.  Either way it must target the same machine as $CC.  Behind
+# tests/format_cc.sh (run_host_regressions.sh), $Q3_FORMAT_CC is the compiler.
 if [ -z "${CXX:-}" ]; then
-    case "$(basename -- "${CC:-cc}")" in
-        be32_cc.sh) CXX="$(dirname -- "$CC")/be32_cxx.sh" ;;
-        clang*) CXX="$(dirname -- "${CC:-cc}")/clang++${CC##*clang}" ;;
-        *gcc*) CXX="$(dirname -- "${CC:-cc}")/$(basename -- "${CC:-cc}" | sed 's/gcc/g++/')" ;;
+    Q3_TEST_REAL_CC="${Q3_FORMAT_CC:-${CC:-cc}}"
+    case "$(basename -- "$Q3_TEST_REAL_CC")" in
+        be32_cc.sh) CXX="$(dirname -- "$Q3_TEST_REAL_CC")/be32_cxx.sh" ;;
+        clang*) CXX="$(dirname -- "$Q3_TEST_REAL_CC")/clang++${Q3_TEST_REAL_CC##*clang}" ;;
+        *gcc*) CXX="$(dirname -- "$Q3_TEST_REAL_CC")/$(basename -- "$Q3_TEST_REAL_CC" | sed 's/gcc/g++/')" ;;
         cc) CXX=c++ ;;
-        *) echo "run_mac_toolbox_init_tests: no C++ compiler known for CC=$CC; set CXX" >&2; exit 1 ;;
+        *) echo "run_mac_toolbox_init_tests: no C++ compiler known for CC=$Q3_TEST_REAL_CC; set CXX" >&2; exit 1 ;;
     esac
     case "$CXX" in ./*) CXX="${CXX#./}" ;; esac
 fi

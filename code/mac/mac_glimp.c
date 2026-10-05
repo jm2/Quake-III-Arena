@@ -83,7 +83,7 @@ void GLimp_ChangeDisplay( int *actualWidth, int *actualHeight ) {
 	// startup DrawSprocket
 	theError = DSpStartup();
 	if( theError ) {
-		ri.Printf( PRINT_ALL, "DSpStartup() failed: %i\n", theError );
+		ri.Printf( PRINT_ALL, "DSpStartup() failed: %i\n", (int)theError );
 		*actualWidth = 640;
 		*actualHeight = 480;
 		return;
@@ -158,8 +158,8 @@ void GLimp_AglDescribe_f( void ) {
 	
 	ri.Printf( PRINT_ALL, "Selected pixel format 0x%x\n", (int)sys_gl.fmt );
 	
-	ri.Printf( PRINT_ALL, "TEXTURE_MEMORY: %i\n", sys_gl.textureMemory );
-	ri.Printf( PRINT_ALL, "VIDEO_MEMORY: %i\n", sys_gl.videoMemory );
+	ri.Printf( PRINT_ALL, "TEXTURE_MEMORY: %i\n", (int)sys_gl.textureMemory );
+	ri.Printf( PRINT_ALL, "VIDEO_MEMORY: %i\n", (int)sys_gl.videoMemory );
 	
 	aglDescribePixelFormat(sys_gl.fmt, AGL_RED_SIZE, &r);
 	aglDescribePixelFormat(sys_gl.fmt, AGL_GREEN_SIZE, &g);
@@ -168,29 +168,29 @@ void GLimp_AglDescribe_f( void ) {
 	aglDescribePixelFormat(sys_gl.fmt, AGL_STENCIL_SIZE, &stencil);
 	aglDescribePixelFormat(sys_gl.fmt, AGL_DEPTH_SIZE, &depth);
 	ri.Printf( PRINT_ALL, "red:%i green:%i blue:%i alpha:%i depth:%i stencil:%i\n",
-		r, g, b, a, depth, stencil );
+		(int)r, (int)g, (int)b, (int)a, (int)depth, (int)stencil );
 
 	aglDescribePixelFormat(sys_gl.fmt, AGL_BUFFER_SIZE, &value);
-	ri.Printf( PRINT_ALL, "BUFFER_SIZE: %i\n", value );
+	ri.Printf( PRINT_ALL, "BUFFER_SIZE: %i\n", (int)value );
 
 	aglDescribePixelFormat(sys_gl.fmt, AGL_PIXEL_SIZE, &value);
-	ri.Printf( PRINT_ALL, "PIXEL_SIZE: %i\n", value );
+	ri.Printf( PRINT_ALL, "PIXEL_SIZE: %i\n", (int)value );
 
 	aglDescribePixelFormat(sys_gl.fmt, AGL_RENDERER_ID, &value);
-	ri.Printf( PRINT_ALL, "RENDERER_ID: %i\n", value );
+	ri.Printf( PRINT_ALL, "RENDERER_ID: %i\n", (int)value );
 
 	// memory functions
 	value = glmGetInteger( GLM_PAGE_SIZE );
-	ri.Printf( PRINT_ALL, "GLM_PAGE_SIZE: %i\n", value );
+	ri.Printf( PRINT_ALL, "GLM_PAGE_SIZE: %i\n", (int)value );
 	
 	value = glmGetInteger( GLM_NUMBER_PAGES );
-	ri.Printf( PRINT_ALL, "GLM_NUMBER_PAGES: %i\n", value );
+	ri.Printf( PRINT_ALL, "GLM_NUMBER_PAGES: %i\n", (int)value );
 	
 	value = glmGetInteger( GLM_CURRENT_MEMORY );
-	ri.Printf( PRINT_ALL, "GLM_CURRENT_MEMORY: %i\n", value );
+	ri.Printf( PRINT_ALL, "GLM_CURRENT_MEMORY: %i\n", (int)value );
 	
 	value = glmGetInteger( GLM_MAXIMUM_MEMORY );
-	ri.Printf( PRINT_ALL, "GLM_MAXIMUM_MEMORY: %i\n", value );
+	ri.Printf( PRINT_ALL, "GLM_MAXIMUM_MEMORY: %i\n", (int)value );
 	
 }
 
@@ -414,18 +414,18 @@ static void CheckDeviceRenderers( GDHandle device ) {
 	info = head_info;
 	inum = 0;
 	while( info ) {
-        Com_FlightRecord("CheckDeviceRenderers: Loop inum=%d\n", inum);
+        Com_FlightRecord("CheckDeviceRenderers: Loop inum=%d\n", (int)inum);
         Debug_Breadcrumb(411); // CheckDeviceRenderers Loop start
 
-		ri.Printf( PRINT_ALL, "  Renderer : %d\n", inum);
+		ri.Printf( PRINT_ALL, "  Renderer : %d\n", (int)inum);
 		
 		aglDescribeRenderer( info, AGL_ACCELERATED, &accelerated );
 		
 		if ( accelerated ) {		
 			aglDescribeRenderer( info, AGL_TEXTURE_MEMORY, &textureMemory );
 			aglDescribeRenderer( info, AGL_VIDEO_MEMORY, &videoMemory );
-			ri.Printf( PRINT_ALL, "    AGL_VIDEO_MEMORY: %i\n", textureMemory );
-			ri.Printf( PRINT_ALL, "    AGL_TEXTURE_MEMORY: %i\n", videoMemory );
+			ri.Printf( PRINT_ALL, "    AGL_VIDEO_MEMORY: %i\n", (int)textureMemory );
+			ri.Printf( PRINT_ALL, "    AGL_TEXTURE_MEMORY: %i\n", (int)videoMemory );
 			
 			// save the device with the most texture memory
 			if ( sys_gl.textureMemory < textureMemory ) {
@@ -715,7 +715,7 @@ qboolean GLimp_SetMode( void ) {
     Sys_LogPrintf("DEBUG: GLimp_SetMode: Calling aglSetDrawable, context=%p, drawable=%p\n", sys_gl.context, sys_gl.drawable);
 	if(!aglSetDrawable(sys_gl.context, sys_gl.drawable)) {
 		GLenum err = aglGetError();
-        Sys_LogPrintf("DEBUG: GLimp_SetMode: aglSetDrawable FAILED, err=%d\n", err);
+        Sys_LogPrintf("DEBUG: GLimp_SetMode: aglSetDrawable FAILED, err=%d\n", (int)err);
 		ri.Printf( PRINT_ALL, "GLimp_Init: Could not attach to context\n" );
 		return qfalse;
 	}

@@ -10,7 +10,8 @@
 # a comment. A name that matches no runner is an error, so stale entries are
 # noticed.
 # --shard K/N selects every N-th runner (0-based K) of the sorted list. The
-# compiler comes from $CC as in the individual runners. Each result is printed
+# compiler comes from $CC as in the individual runners, behind
+# tests/format_cc.sh, which adds the Retro68 build's format checks. Each result is printed
 # as soon as its runner finishes. --timeout bounds one runner; --deadline
 # bounds the whole run, after which every unfinished runner is named. Each
 # failing runner's full log is printed and the script exits non-zero.
@@ -124,7 +125,14 @@ if [ "$deadline" -gt 0 ]; then
     deadline_cmd=(timeout -k 15 "$deadline")
     deadline_note=", ${deadline}s deadline"
 fi
-echo "Running ${#selected[@]} of ${#all_runners[@]} runners (shard $shard/$shards, CC=${CC:-cc}, $jobs jobs, ${runner_timeout}s per runner$deadline_note)"
+# Issue #395: every runner compiles with the Retro68 build's format checks.
+# tests/format_cc.sh adds them and runs the real compiler, $Q3_FORMAT_CC.
+if [ -z "${Q3_FORMAT_CC:-}" ]; then
+    export Q3_FORMAT_CC="${CC:-cc}"
+    export CC="$PWD/tests/format_cc.sh"
+fi
+
+echo "Running ${#selected[@]} of ${#all_runners[@]} runners (shard $shard/$shards, CC=$Q3_FORMAT_CC with format checks, $jobs jobs, ${runner_timeout}s per runner$deadline_note)"
 printf '%s\0' "${selected[@]}" |
     "${deadline_cmd[@]}" xargs -0 -P "$jobs" -I{} bash -c 'run_one "$1" "$2" "$3"' _ {} "$log_dir" "$runner_timeout"
 

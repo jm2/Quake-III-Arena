@@ -36,6 +36,15 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -fgnu89-inline -O0 -g -fno-strict
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsigned-char")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsigned-char")
 
+# Printf-style functions carry Q_PRINTF_FORMAT (code/game/q_shared.h), so a
+# format whose arguments do not match fails the build (issue #395); on 32-bit
+# PowerPC such a call reads the wrong argument words and can crash. A few
+# formats are chosen at run time (q3_ui's team orders table, the Team Arena
+# orders script, libjpeg's message table), so -Wformat-nonliteral stays off.
+# -Wformat-overflow and -Wformat-truncation, which -Werror=format would also
+# make errors, judge buffer sizes rather than arguments; they stay warnings.
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wformat=2 -Wno-format-nonliteral -Werror=format -Werror=format-security -Wno-error=format-overflow -Wno-error=format-truncation")
+
 # CMake appends CMAKE_C_FLAGS_<CONFIG> *after* CMAKE_C_FLAGS on the compile
 # line, and the Release defaults are "-O3 -DNDEBUG" — which silently overrode
 # the -O0 -g above (the last -O flag wins). Clear the per-config flags so the

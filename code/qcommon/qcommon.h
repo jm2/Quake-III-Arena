@@ -157,7 +157,7 @@ void		NET_Restart( void );
 void		NET_Config( qboolean enableNetworking );
 
 void		NET_SendPacket (netsrc_t sock, int length, const void *data, netadr_t to);
-void		QDECL NET_OutOfBandPrint( netsrc_t net_socket, netadr_t adr, const char *format, ...);
+void		QDECL NET_OutOfBandPrint( netsrc_t net_socket, netadr_t adr, const char *format, ...) Q_PRINTF_FORMAT( 3, 4 );
 void		QDECL NET_OutOfBandData( netsrc_t sock, netadr_t adr, byte *format, int len );
 
 qboolean	NET_CompareAdr (netadr_t a, netadr_t b);
@@ -675,7 +675,7 @@ int		FS_FTell( fileHandle_t f );
 
 void	FS_Flush( fileHandle_t f );
 
-void 	QDECL FS_Printf( fileHandle_t f, const char *fmt, ... );
+void 	QDECL FS_Printf( fileHandle_t f, const char *fmt, ... ) Q_PRINTF_FORMAT( 2, 3 );
 // like fprintf
 
 int		FS_FOpenFileByMode( const char *qpath, fileHandle_t *f, fsMode_t mode );
@@ -781,9 +781,9 @@ void		Info_Print( const char *s );
 
 void		Com_BeginRedirect (char *buffer, int buffersize, void (*flush)(char *));
 void		Com_EndRedirect( void );
-void 		QDECL Com_Printf( const char *fmt, ... );
-void 		QDECL Com_DPrintf( const char *fmt, ... );
-void 		QDECL Com_Error( int code, const char *fmt, ... );
+void 		QDECL Com_Printf( const char *fmt, ... ) Q_PRINTF_FORMAT( 1, 2 );
+void 		QDECL Com_DPrintf( const char *fmt, ... ) Q_PRINTF_FORMAT( 1, 2 );
+void 		QDECL Com_Error( int code, const char *fmt, ... ) Q_PRINTF_FORMAT( 2, 3 );
 void 		Com_Quit_f( void );
 int			Com_EventLoop( void );
 int			Com_Milliseconds( void );	// will be journaled properly
@@ -1049,14 +1049,14 @@ void	*Sys_GetBotLibAPI( void *parms );
 
 char	*Sys_GetCurrentUser( void );
 
-void	QDECL Sys_Error( const char *error, ...);
+void	QDECL Sys_Error( const char *error, ...) Q_PRINTF_FORMAT( 1, 2 );
 void	Sys_Quit (void);
 char	*Sys_GetClipboardData( void );	// note that this isn't journaled...
 
 void	Sys_Print( const char *msg );
 
 #ifdef macintosh
-void Sys_LogPrintf( const char *fmt, ... );
+void Sys_LogPrintf( const char *fmt, ... ) Q_PRINTF_FORMAT( 1, 2 );
 #else
 #define Sys_LogPrintf Com_Printf
 #endif
@@ -1112,7 +1112,7 @@ qboolean Sys_LowPhysicalMemory();
 unsigned int Sys_ProcessorCount();
 
 int Sys_MonkeyShouldBeSpanked( void );
-void Sys_LogPrintf( const char *fmt, ... ); // Direct synchronous logging
+void Sys_LogPrintf( const char *fmt, ... ) Q_PRINTF_FORMAT( 1, 2 ); // Direct synchronous logging
 
 /* This is based on the Adaptive Huffman algorithm described in Sayood's Data
  * Compression book.  The ranks are not actually stored, but implicitly defined
