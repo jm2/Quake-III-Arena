@@ -1,0 +1,42 @@
+#include "ui/menudef.h"
+#define NAME_FIELD "ui_name"
+#undef NAME_FIELD
+#define NAME_FIELD "name"
+
+{
+// Issue #11 corpus: strings, escapes, comments and owner draws, as the
+// retail player and in-game menus use.
+	menuDef {
+		name "player_menu"
+		visible MENU_FALSE
+		fullscreen MENU_FALSE
+		rect 0 0 640 480
+		focusColor 1 .75 0 1
+
+		itemDef {
+			name namefield
+			type ITEM_TYPE_EDITFIELD
+			style WINDOW_STYLE_EMPTY
+			text "Player" " Name:"			// adjacent strings merge
+			cvar NAME_FIELD
+			maxchars 32
+			rect 80 40 300 20
+			textalign ITEM_ALIGN_LEFT
+			textalignx 10
+			textaligny 16
+			textscale .3
+			visible 1
+			action { exec "set ui_note \"quoted\"" ; play "sound/misc/nomenu.wav" }
+		}
+
+		itemDef {
+			name headmodel
+			type ITEM_TYPE_OWNERDRAW
+			ownerdraw UI_PLAYERMODEL
+			ownerdrawFlag UI_SHOW_NETANYTEAMGAME
+			rect 360 30 -150.5 200
+			visible 1
+			decoration
+		}
+	}
+}
