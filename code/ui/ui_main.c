@@ -5479,10 +5479,9 @@ void _UI_Init( qboolean inGameLoad ) {
 	}
 
 	printf("UI_Init: Building model list...\n"); fflush(stdout);
-	// UI_BuildQ3Model_List();  // SKIPPED: May cause freeze
-	printf("UI_Init: SKIPPING UI_BuildQ3Model_List (debug)\n"); fflush(stdout);
-	printf("UI_Init: SKIPPING UI_LoadBots (debug)\n"); fflush(stdout);
-	// UI_LoadBots();  // SKIPPED: Causes freeze
+	UI_BuildQ3Model_List();
+	printf("UI_Init: Loading bots...\n"); fflush(stdout);
+	UI_LoadBots();
 
 	// sets defaults for ui temp cvars
 	printf("UI_Init: Setting effectsColor...\n"); fflush(stdout);
