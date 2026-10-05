@@ -586,6 +586,13 @@ issues.
 
 #define BASEGAME "baseq3"
 
+// the fs_game an executable mounts over BASEGAME when nothing sets one:
+// retail started Team Arena with "+set fs_game missionpack", which a Finder
+// launch can't pass, so CMake gives Quake3_TeamArena "missionpack" (#235)
+#ifndef DEFAULT_FS_GAME
+#define DEFAULT_FS_GAME ""
+#endif
+
 qboolean FS_Initialized();
 
 void	FS_InitFilesystem (void);
