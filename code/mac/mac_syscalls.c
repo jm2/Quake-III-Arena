@@ -26,7 +26,15 @@
 //
 // Paths are passed to the File Manager as they are, like libretro does: the
 // engine already builds HFS paths (full, or partial from the default
-// directory).
+// directory).  A path with a component longer than 31 bytes is refused with
+// ENAMETOOLONG first.  No name this API reaches is longer (HFS's limit,
+// kHFSMaxFileNameChars; HFS Plus shows it longer names mangled to 31), so
+// such a component cannot name what the caller meant, and whether the File
+// Manager rejects it (bdNamErr) or truncates it to another name is not
+// known on the target (issue #327).  A truncated name could create a file
+// with another extension than the one FS_CheckFilenameIsMutable passed
+// ("<27 bytes>.qvm.pk3.tmp" as "<27 bytes>.qvm"), or make a rename's two
+// names one file.
 
 #include <reent.h>
 #include <errno.h>
@@ -73,11 +81,16 @@ static int Mac_OSErrToErrno( OSErr err ) {
 }
 
 // the C path as a Str255, or ENAMETOOLONG (libretro's length byte wrapped)
+// for a path longer than 255 bytes or with a component longer than 31
 static int Mac_PathToStr255( struct _reent *reent, const char *name, Str255 pname ) {
-	size_t	length;
+	const char	*s;
+	size_t		length, component;
 
 	length = strlen( name );
-	if ( length > 255 ) {
+	for ( component = 0, s = name ; *s && component <= 31 ; s++ ) {
+		component = *s == ':' ? 0 : component + 1;
+	}
+	if ( length > 255 || component > 31 ) {
 		reent->_errno = ENAMETOOLONG;
 		return 0;
 	}
@@ -170,7 +183,12 @@ static int Mac_SameName( ConstStr255Param a, ConstStr255Param b ) {
 // a rename across directories is a CatMove and then an HRename, undone if
 // the HRename fails: the old entry stays, or the new one is complete.
 // CatMove takes a nil newName as "the directory newDirID" (MoreFiles'
-// HMoveRename relies on that too).
+// HMoveRename relies on that too).  Because the move keeps the name, it
+// fails (dupFNErr, EEXIST) when dest's directory already has an entry
+// under the source's leaf, where POSIX would succeed; nothing changes.  No
+// caller renames across directories (FS_SV_Rename's one caller renames
+// .pk3.tmp to .pk3 in place), so this does not move under a temporary
+// name first.
 static OSErr Mac_MoveRename( const FSSpec *source, const FSSpec *dest ) {
 	OSErr	err;
 
@@ -188,6 +206,23 @@ static OSErr Mac_MoveRename( const FSSpec *source, const FSSpec *dest ) {
 	return err;
 }
 
+// The catalog ID of the entry spec names.  PBGetCatInfo returns a file's
+// number, or a directory's ID, in ioDirID (MoreFiles' DirectoryCopy.c
+// relies on this); files and directories share that numbering on a volume.
+static OSErr Mac_CatalogID( const FSSpec *spec, long *id ) {
+	CInfoPBRec	pb;
+	OSErr		err;
+
+	memset( &pb, 0, sizeof( pb ) );
+	pb.hFileInfo.ioNamePtr = (StringPtr)spec->name;
+	pb.hFileInfo.ioVRefNum = spec->vRefNum;
+	pb.hFileInfo.ioFDirIndex = 0;	// look up ioNamePtr in ioDirID
+	pb.hFileInfo.ioDirID = spec->parID;
+	err = PBGetCatInfoSync( &pb );
+	*id = pb.hFileInfo.ioDirID;
+	return err;
+}
+
 // POSIX rename: an existing dest is replaced.  FSpExchangeFiles swaps the
 // two files' contents in the catalog in one call, so dest names either its
 // old or its new contents at every moment; deleting the source, which now
@@ -200,9 +235,16 @@ static OSErr Mac_MoveRename( const FSSpec *source, const FSSpec *dest ) {
 // of dest stay with dest.  Otherwise a rename onto a directory, or of a
 // directory onto an existing entry, fails (notAFileErr, EISDIR).  Renaming
 // across volumes is EXDEV, as POSIX has it.
+//
+// Two names of one entry are found by its catalog ID, not by comparing the
+// names: a file system that folds two names EqualString tells apart (one
+// that truncates them) would otherwise have the file exchanged with itself
+// and then deleted.  As in POSIX, renaming an entry onto itself does
+// nothing, except that a change of case within its directory is made.
 int _rename_r( struct _reent *reent, const char *from, const char *to ) {
 	Str255	pfrom, pto;
 	FSSpec	source, dest;
+	long	sourceID, destID;
 	OSErr	err;
 
 	if ( !Mac_PathToStr255( reent, from, pfrom ) || !Mac_PathToStr255( reent, to, pto ) ) {
@@ -217,12 +259,13 @@ int _rename_r( struct _reent *reent, const char *from, const char *to ) {
 				err = diffVolErr;
 			} else if ( err == fnfErr ) {
 				err = Mac_MoveRename( &source, &dest );
-			} else if ( source.parID == dest.parID && EqualString( source.name, dest.name, false, true ) ) {
-				// the same entry, as HFS compares names: at most a change of case
-				if ( !Mac_SameName( source.name, dest.name ) ) {
+			} else if ( ( err = Mac_CatalogID( &source, &sourceID ) ) == noErr &&
+				( err = Mac_CatalogID( &dest, &destID ) ) == noErr && sourceID == destID ) {
+				if ( source.parID == dest.parID && !Mac_SameName( source.name, dest.name ) &&
+					EqualString( source.name, dest.name, false, true ) ) {
 					err = FSpRename( &source, dest.name );
 				}
-			} else {
+			} else if ( err == noErr ) {
 				err = FSpExchangeFiles( &source, &dest );
 				if ( err == noErr ) {
 					err = FSpDelete( &source );

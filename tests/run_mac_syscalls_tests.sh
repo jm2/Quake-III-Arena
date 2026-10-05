@@ -7,7 +7,8 @@ trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 
 # Issue #258: the File Manager permission code/mac/mac_syscalls.c's _open_r
 # asks for.  Issue #259: its _rename_r and _unlink_r, which libretro left as
-# stubs returning -1.  The regression includes that file whole; its
+# stubs returning -1, and the review of #492 (same-entry renames, long
+# leaves, issue #327).  The regression includes that file whole; its
 # <reent.h>, <Files.h>, <Errors.h> and <StringCompare.h> resolve to
 # tests/mac_files_fake.h.
 for Q3_TEST_HEADER in reent.h Files.h Errors.h StringCompare.h; do
@@ -24,8 +25,9 @@ ASAN_OPTIONS=detect_leaks=${Q3_TEST_DETECT_LEAKS:-1}:halt_on_error=1 \
 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
     "$Q3_TEST_DIR/mac_syscalls" read read-locked-file read-locked-volume read-cd \
         read-twice read-missing read-truncate write write-new write-locked \
-        append update exclusive hopen-fallback long-name \
+        append update exclusive hopen-fallback long-name long-leaf \
         rename rename-cross-dir rename-exists rename-exists-no-exchange \
+        rename-exists-exchange-fails rename-same-entry \
         rename-exists-busy rename-locked rename-missing rename-other-volume \
         rename-long-name unlink unlink-locked unlink-long-name
 

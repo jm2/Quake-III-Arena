@@ -21,7 +21,16 @@
  * the rename fails), with locked files, open files, locked volumes, missing
  * sources and directories, two volumes, and names too long for a Str255 or
  * an HFS leaf.  A rename either completes or leaves both names as they
- * were. */
+ * were.
+ *
+ * Review of #492: the rename onto an existing file found "the same file" by
+ * comparing names, so on a file system that folds two names into one entry
+ * (HFS truncating leaves past 31 bytes, issue #327) it exchanged the file
+ * with itself and deleted it.  rename-same-entry checks the catalog ID
+ * comparison that replaced it; long-leaf checks that a path component
+ * longer than 31 bytes never reaches the File Manager, which might
+ * truncate it; rename-exists-exchange-fails checks that only paramErr and
+ * wrgVolTypErr from FSpExchangeFiles fall back to deleting dest. */
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -34,6 +43,8 @@
 #define FOPEN_RPLUS	( O_RDWR )
 #define FOPEN_WPLUS	( O_RDWR | O_CREAT | O_TRUNC )
 #define FOPEN_WX	( O_WRONLY | O_CREAT | O_TRUNC | O_EXCL )
+
+#define LONG_STEM	"q3dm17_the_longest_yard_rmx"	/* 27 bytes */
 
 static const char *currentCase = "setup";
 static struct _reent reent;
@@ -179,7 +190,7 @@ static int RenameCase( const char *name ) {
 		Check( fakeFMFiles[FakeFM_Path( (short)( fd - kMacRefNumOffset ) )->file].eof == 11, "the open path lost its contents" );
 	} else if ( !strcmp( name, "rename-exists-no-exchange" ) ) {
 		// volumes without FSpExchangeFiles: delete the destination, then rename
-		fakeFMExchangeUnsupported = 1;
+		fakeFMExchangeErr = paramErr;
 		FakeFM_AddFile( ":baseq3:map_dl.pk3.tmp", 1234, 0 );
 		FakeFM_AddFile( ":baseq3:map_dl.pk3", 999, 0 );
 		CheckRenamed( Rename( ":baseq3:map_dl.pk3.tmp", ":baseq3:map_dl.pk3" ),
@@ -195,6 +206,41 @@ static int RenameCase( const char *name ) {
 		CheckRenameFailed( Rename( ":baseq3:a.cfg", ":baseq3:b.cfg" ), EACCES );
 		CheckFile( ":baseq3:a.cfg", 11, "the source changed" );
 		CheckFile( ":baseq3:b.cfg", 22, "the locked destination changed" );
+		// wrgVolTypErr falls back too
+		FakeFM_File( ":baseq3:b.cfg" )->locked = 0;
+		fakeFMExchangeErr = wrgVolTypErr;
+		CheckRenamed( Rename( ":baseq3:a.cfg", ":baseq3:b.cfg" ), ":baseq3:a.cfg", ":baseq3:b.cfg", 11 );
+	} else if ( !strcmp( name, "rename-exists-exchange-fails" ) ) {
+		// any other exchange failure leaves both files: dest is not deleted
+		FakeFM_AddFile( ":baseq3:map_dl.pk3.tmp", 1234, 0 );
+		FakeFM_AddFile( ":baseq3:map_dl.pk3", 999, 0 );
+		fakeFMExchangeErr = ioErr;
+		CheckRenameFailed( Rename( ":baseq3:map_dl.pk3.tmp", ":baseq3:map_dl.pk3" ), EIO );
+		fakeFMExchangeErr = afpAccessDenied;
+		CheckRenameFailed( Rename( ":baseq3:map_dl.pk3.tmp", ":baseq3:map_dl.pk3" ), EACCES );
+		CheckFile( ":baseq3:map_dl.pk3.tmp", 1234, "a failed exchange changed the source" );
+		CheckFile( ":baseq3:map_dl.pk3", 999, "a failed exchange deleted the destination" );
+		Check( fakeFMExchanges == 2 && fakeFMDeletes == 0 && fakeFMRenames == 0 && fakeFMMoves == 0,
+			"a failed exchange went on to delete or rename" );
+	} else if ( !strcmp( name, "rename-same-entry" ) ) {
+		// a file system that keeps 12 bytes of a leaf: two names, one file
+		fakeFMNameLimit = 12;
+		FakeFM_AddFile( ":baseq3:map_download", 1234, 0 );
+		Check( FakeFM_File( ":baseq3:map_download.pk3" ) == FakeFM_File( ":baseq3:map_download.tmp" ), "the names do not fold" );
+		Check( Rename( ":baseq3:map_download.tmp", ":baseq3:map_download.pk3" ) == 0, "renaming a file onto itself failed" );
+		CheckFile( ":baseq3:map_download", 1234, "renaming a file onto itself lost it" );
+		// on a volume without FSpExchangeFiles the fallback would delete dest
+		fakeFMExchangeErr = paramErr;
+		Check( Rename( ":baseq3:map_download.tmp", ":baseq3:map_download.pk3" ) == 0, "renaming a file onto itself failed" );
+		CheckFile( ":baseq3:map_download", 1234, "renaming a file onto itself lost it" );
+		Check( fakeFMExchanges == 0 && fakeFMDeletes == 0 && fakeFMRenames == 0, "a file was renamed onto itself" );
+		Check( fakeFMCatInfos == 4, "the entries were not compared by catalog ID" );
+		// two files whose names differ only past the limit are still one file,
+		// and two different files are still replaced
+		fakeFMExchangeErr = noErr;
+		FakeFM_AddFile( ":baseq3:other.cfg", 22, 0 );
+		CheckRenamed( Rename( ":baseq3:map_download.tmp", ":baseq3:other.cfg" ),
+			":baseq3:map_download", ":baseq3:other.cfg", 1234 );
 	} else if ( !strcmp( name, "rename-exists-busy" ) ) {
 		// the destination is open: its old contents cannot be deleted, so the
 		// exchange is undone and both files keep their contents
@@ -253,8 +299,10 @@ static int RenameCase( const char *name ) {
 		Check( fakeFMRenames == 0 && fakeFMMoves == 0 && fakeFMDeletes == 0 && fakeFMExchanges == 0,
 			"an over-long name reached the File Manager" );
 		// a leaf longer than HFS's 31 characters
-		CheckRenameFailed( Rename( ":baseq3:a.cfg", ":baseq3:a_map_with_a_rather_long_name.pk3" ), EINVAL );
+		CheckRenameFailed( Rename( ":baseq3:a.cfg", ":baseq3:a_map_with_a_rather_long_name.pk3" ), ENAMETOOLONG );
 		CheckFile( ":baseq3:a.cfg", 11, "a refused long leaf changed the source" );
+		Check( fakeFMRenames == 0 && fakeFMMoves == 0 && fakeFMDeletes == 0 && fakeFMExchanges == 0,
+			"a long leaf reached the File Manager" );
 	} else {
 		return 0;
 	}
@@ -401,8 +449,10 @@ static void Case( const char *name ) {
 		CheckOpened( fd, fsRdPerm );
 		Check( fakeFMOpenDFs == 1 && fakeFMOpens == 1, "no HOpen fallback" );
 	} else if ( !strcmp( name, "long-name" ) ) {
-		memset( longName, 'a', 255 );
-		longName[0] = ':';
+		// 255 bytes in components of 31
+		for ( fd = 0 ; fd < 255 ; fd++ ) {
+			longName[fd] = fd % 32 ? 'a' : ':';
+		}
 		longName[255] = 0;
 		FakeFM_AddFile( longName, 10, 0 );
 		fd = Open( longName, FOPEN_R );
@@ -413,6 +463,29 @@ static void Case( const char *name ) {
 		fakeFMOpenDFs = fakeFMOpens = 0;
 		CheckFailed( Open( longName, FOPEN_R ), ENAMETOOLONG );
 		Check( fakeFMOpenDFs == 0 && fakeFMOpens == 0 && fakeFMCreates == 0, "an over-long name reached the File Manager" );
+	} else if ( !strcmp( name, "long-leaf" ) ) {
+		// issue #327: if the File Manager cuts leaves to 31 bytes, a 32-byte
+		// component must not reach it
+		fakeFMNameLimit = 31;
+		CheckFailed( Open( ":baseq3:" LONG_STEM ".qvm.pk3.tmp", FOPEN_W ), ENAMETOOLONG );
+		Check( FakeFM_File( ":baseq3:" LONG_STEM ".qvm" ) == NULL, "a long leaf created a cut name" );
+		FakeFM_AddFile( ":baseq3:" LONG_STEM ".qvm", 10, 0 );
+		CheckFailed( Open( ":baseq3:" LONG_STEM ".qvm.pk3.tmp", FOPEN_R ), ENAMETOOLONG );
+		CheckFailed( Open( ":baseq3:" LONG_STEM ".qvm.pk3.tmp", FOPEN_A ), ENAMETOOLONG );
+		Check( Rename( ":baseq3:" LONG_STEM ".qvm.pk3.tmp", ":baseq3:" LONG_STEM ".qvm.pk3" ) == -1 &&
+			reent._errno == ENAMETOOLONG, "a rename of two long leaves is not ENAMETOOLONG" );
+		Check( Rename( ":baseq3:" LONG_STEM ".qvm", ":baseq3:" LONG_STEM ".qvm.pk3" ) == -1 &&
+			reent._errno == ENAMETOOLONG, "a rename to a long leaf is not ENAMETOOLONG" );
+		Check( Unlink( ":baseq3:" LONG_STEM ".qvm.pk3.tmp" ) == -1 && reent._errno == ENAMETOOLONG,
+			"an unlink of a long leaf is not ENAMETOOLONG" );
+		CheckFile( ":baseq3:" LONG_STEM ".qvm", 10, "a long leaf changed the file it would be cut to" );
+		// a directory too
+		CheckFailed( Open( ":baseq3:" LONG_STEM ".qvm.pk3:a.cfg", FOPEN_W ), ENAMETOOLONG );
+		// 31 bytes are passed on
+		fd = Open( ":baseq3:" LONG_STEM ".qvm", FOPEN_R );
+		CheckOpened( fd, fsRdPerm );
+		Check( fakeFMCreates == 0 && fakeFMOpenDFs == 1 && fakeFMRenames == 0 && fakeFMDeletes == 0 &&
+			fakeFMExchanges == 0 && fakeFMMoves == 0, "a long leaf reached the File Manager" );
 	} else {
 		fprintf( stderr, "unknown case %s\n", name );
 		exit( 2 );
