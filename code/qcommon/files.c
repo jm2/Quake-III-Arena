@@ -1539,7 +1539,8 @@ int FS_Read2( void *buffer, int len, fileHandle_t f ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
 	}
 
-	if ( !f ) {
+	// QVMs pass any handle here; check it before indexing fsh as FS_Read does.
+	if ( f <= 0 || f >= MAX_FILE_HANDLES ) {
 		return 0;
 	}
 	if (fsh[f].streamed) {
