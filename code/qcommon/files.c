@@ -1229,6 +1229,65 @@ static qboolean FS_IsLocalConfig( const char *filename ) {
 	return !Q_stricmp( filename, "q3config.cfg" ) || !Q_stricmp( filename, "autoexec.cfg" );
 }
 
+/*
+===========
+FS_ReferencePakFile
+
+Marks a pak as referenced by reading filename from it, and marks specifics
+on qagame, cgame and ui.  Shaders, txt, arena files by themselves do not
+count as a reference as these are loaded from every pk3 file.
+===========
+*/
+static void FS_ReferencePakFile( pack_t *pak, const char *filename ) {
+	if ( !(pak->referenced & FS_GENERAL_REF)) {
+		if ( !FS_HasExtension(filename, ".shader") &&
+			!FS_HasExtension(filename, ".txt") &&
+			!FS_HasExtension(filename, ".cfg") &&
+			!FS_HasExtension(filename, ".config") &&
+			strstr(filename, "levelshots") == NULL &&
+			!FS_HasExtension(filename, ".bot") &&
+			!FS_HasExtension(filename, ".arena") &&
+			!FS_HasExtension(filename, ".menu")) {
+			pak->referenced |= FS_GENERAL_REF;
+		}
+	}
+
+	// qagame.qvm	- 13
+	// dTZT`X!di`
+	if (!(pak->referenced & FS_QAGAME_REF) && FS_ShiftedStrStr(filename, "dTZT`X!di`", 13)) {
+		pak->referenced |= FS_QAGAME_REF;
+	}
+	// cgame.qvm	- 7
+	// \`Zf^'jof
+	if (!(pak->referenced & FS_CGAME_REF) && FS_ShiftedStrStr(filename , "\\`Zf^'jof", 7)) {
+		pak->referenced |= FS_CGAME_REF;
+	}
+	// ui.qvm		- 5
+	// pd)lqh
+	if (!(pak->referenced & FS_UI_REF) && FS_ShiftedStrStr(filename , "pd)lqh", 5)) {
+		pak->referenced |= FS_UI_REF;
+	}
+}
+
+/*
+===========
+FS_UnpureFileAllowed
+
+When we are pure or running restricted, the only files we
+will allow to come from a directory are these
+===========
+*/
+static qboolean FS_UnpureFileAllowed( const char *filename ) {
+	char demoExt[16];
+
+	Com_sprintf (demoExt, sizeof(demoExt), ".dm_%d",PROTOCOL_VERSION );
+	return FS_HasExtension( filename, ".cfg" )		// for config files
+		|| FS_HasExtension( filename, ".menu" )		// menu files
+		|| FS_HasExtension( filename, ".game" )		// menu files
+		|| FS_HasExtension( filename, demoExt )		// menu files
+		|| FS_HasExtension( filename, ".dat" );		// for journal files
+}
+
 int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueFILE ) {
 	searchpath_t	*search;
 	char			*netpath;
@@ -1239,7 +1298,6 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 	unz_s			*zfi;
 	FILE			*temp;
 	int				l;
-	char demoExt[16];
 	qboolean		isLocalConfig;
 
 	hash = 0;
@@ -1296,7 +1354,6 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 		return qfalse;
 	}
 
-	Com_sprintf (demoExt, sizeof(demoExt), ".dm_%d",PROTOCOL_VERSION );
 	// qpaths are not supposed to have a leading slash
 	if ( filename[0] == '/' || filename[0] == '\\' ) {
 		filename++;
@@ -1351,38 +1408,8 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 					qboolean ownZip = qfalse;
 
 					// mark the pak as having been referenced and mark specifics on cgame and ui
-					// shaders, txt, arena files  by themselves do not count as a reference as 
-					// these are loaded from all pk3s 
-					// from every pk3 file.. 
 					l = strlen( filename );
-					if ( !(pak->referenced & FS_GENERAL_REF)) {
-						if ( !FS_HasExtension(filename, ".shader") &&
-							!FS_HasExtension(filename, ".txt") &&
-							!FS_HasExtension(filename, ".cfg") &&
-							!FS_HasExtension(filename, ".config") &&
-							strstr(filename, "levelshots") == NULL &&
-							!FS_HasExtension(filename, ".bot") &&
-							!FS_HasExtension(filename, ".arena") &&
-							!FS_HasExtension(filename, ".menu")) {
-							pak->referenced |= FS_GENERAL_REF;
-						}
-					}
-
-					// qagame.qvm	- 13
-					// dTZT`X!di`
-					if (!(pak->referenced & FS_QAGAME_REF) && FS_ShiftedStrStr(filename, "dTZT`X!di`", 13)) {
-						pak->referenced |= FS_QAGAME_REF;
-					}
-					// cgame.qvm	- 7
-					// \`Zf^'jof
-					if (!(pak->referenced & FS_CGAME_REF) && FS_ShiftedStrStr(filename , "\\`Zf^'jof", 7)) {
-						pak->referenced |= FS_CGAME_REF;
-					}
-					// ui.qvm		- 5
-					// pd)lqh
-					if (!(pak->referenced & FS_UI_REF) && FS_ShiftedStrStr(filename , "pd)lqh", 5)) {
-						pak->referenced |= FS_UI_REF;
-					}
+					FS_ReferencePakFile( pak, filename );
 
 					// Antigravity: HANDLE REUSE OPTIMIZATION
 					// Determine if we can buffer this file using the shared handle
@@ -1531,11 +1558,7 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
       // turned out I used FS_FileExists instead
 			if ( fs_restrict->integer || fs_numServerPaks ) {
 
-				if ( !FS_HasExtension( filename, ".cfg" )		// for config files
-					&& !FS_HasExtension( filename, ".menu" )	// menu files
-					&& !FS_HasExtension( filename, ".game" )	// menu files
-					&& !FS_HasExtension( filename, demoExt )	// menu files
-					&& !FS_HasExtension( filename, ".dat" ) ) {	// for journal files
+				if ( !FS_UnpureFileAllowed( filename ) ) {
 					continue;
 				}
 			}
@@ -1548,11 +1571,7 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 				continue;
 			}
 
-			if ( !FS_HasExtension( filename, ".cfg" )		// for config files
-				&& !FS_HasExtension( filename, ".menu" )	// menu files
-				&& !FS_HasExtension( filename, ".game" )	// menu files
-				&& !FS_HasExtension( filename, demoExt )	// menu files
-				&& !FS_HasExtension( filename, ".dat" ) ) {	// for journal files
+			if ( !FS_UnpureFileAllowed( filename ) ) {
 				fs_fakeChkSum = random();
 			}
       
@@ -1959,6 +1978,100 @@ int	FS_FileIsInPAK(const char *filename, int *pChecksum ) {
 		}
 	}
 	return -1;
+}
+
+/*
+================
+FS_FilePakChecksum
+
+Finds the file FS_FOpenFileRead would open for filename, with the same
+search order and pure and restricted rules, without reading it.  Marks
+its pk3 referenced as reading the file would, so a static module that
+stands in for vm/cgame.qvm still sends the pure cgame and ui paks.
+Returns 1 and the pk3's header checksum, 0 for a file outside any pk3,
+or -1 when there is no such file.
+================
+*/
+int FS_FilePakChecksum( const char *filename, int *checksum ) {
+	searchpath_t	*search;
+	fileInPack_t	*pakFile;
+	char			*netpath;
+	FILE			*temp;
+	long			hash;
+
+	if ( !fs_searchpaths ) {
+		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
+	}
+
+	// qpaths are not supposed to have a leading slash
+	if ( filename[0] == '/' || filename[0] == '\\' ) {
+		filename++;
+	}
+	if ( !FS_CheckQPath( filename ) || FS_IsLocalConfig( filename ) ) {
+		return -1;
+	}
+
+	for ( search = fs_searchpaths ; search ; search = search->next ) {
+		if ( search->pack ) {
+			// disregard if it doesn't match one of the allowed pure pak files
+			if ( !FS_PakIsPure( search->pack ) ) {
+				continue;
+			}
+			hash = FS_HashFileName( filename, search->pack->hashSize );
+			for ( pakFile = search->pack->hashTable[hash] ; pakFile ; pakFile = pakFile->next ) {
+				// case and separator insensitive comparisons
+				if ( !FS_FilenameCompare( pakFile->name, filename ) ) {
+					FS_ReferencePakFile( search->pack, filename );
+					*checksum = search->pack->checksum;
+					return 1;
+				}
+			}
+		} else if ( search->dir ) {
+			if ( ( fs_restrict->integer || fs_numServerPaks ) && !FS_UnpureFileAllowed( filename ) ) {
+				continue;
+			}
+			netpath = FS_BuildOSPath( search->dir->path, search->dir->gamedir, filename );
+			temp = fopen( netpath, "rb" );
+			if ( temp ) {
+				fclose( temp );
+				return 0;
+			}
+		}
+	}
+	return -1;
+}
+
+/*
+================
+FS_IdPakGame
+
+Returns the game of the retail id pk3 with this header checksum: BASEGAME
+for baseq3/pak0.pk3 to pak8.pk3 (the CD and point releases up to 1.32),
+"missionpack" for missionpack/pak0.pk3 to pak3.pk3, or NULL for any other.
+These are the checksums ioquake3 checks its id paks against.
+================
+*/
+const char *FS_IdPakGame( int checksum ) {
+	static const unsigned int	basePaks[] = {
+		1566731103u, 298122907u, 412165236u, 2991495316u, 1197932710u,
+		4087071573u, 3709064859u, 908855077u, 977125798u
+	};
+	static const unsigned int	missionPaks[] = {
+		2430342401u, 511014160u, 2662638993u, 1438664554u
+	};
+	int		i;
+
+	for ( i = 0 ; i < (int)( sizeof( basePaks ) / sizeof( basePaks[0] ) ) ; i++ ) {
+		if ( (unsigned int)checksum == basePaks[i] ) {
+			return BASEGAME;
+		}
+	}
+	for ( i = 0 ; i < (int)( sizeof( missionPaks ) / sizeof( missionPaks[0] ) ) ; i++ ) {
+		if ( (unsigned int)checksum == missionPaks[i] ) {
+			return "missionpack";
+		}
+	}
+	return NULL;
 }
 
 /*

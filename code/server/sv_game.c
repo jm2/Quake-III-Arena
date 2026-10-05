@@ -1325,12 +1325,9 @@ void SV_InitGameProgs( void ) {
 		bot_enable = 0;
 	}
 
-	// load the dll or bytecode
-#ifdef GAME_HARD_LINKED
-	gvm = VM_Create( "qagame", SV_GameSystemCalls, VMI_NATIVE );
-#else
+	// load the dll or bytecode; a static build decides in VM_Create
+	// whether its linked-in module stands in for this QVM (#13)
 	gvm = VM_Create( "qagame", SV_GameSystemCalls, Cvar_VariableValue( "vm_game" ) );
-#endif
 	if ( !gvm ) {
 		Com_Error( ERR_FATAL, "VM_Create on game failed" );
 	}
