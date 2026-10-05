@@ -1,6 +1,6 @@
 /* Issue #48: a module's preprocessor handles must not outlive its VM.  The
-   cgame (CG_PC_LOAD_SOURCE) and game (BOTLIB_PC_LOAD_SOURCE) open handles in
-   botlib's one sourceFiles[] table, and the UI opens them in cl_ui.c's script
+   cgame (CG_PC_LOAD_SOURCE), game (BOTLIB_PC_LOAD_SOURCE) and UI
+   (UI_PC_LOAD_SOURCE, issue #11) open handles in botlib's one sourceFiles[]
    table.  A module that errors out mid-parse never frees its handle, and
    nothing freed it when the VM shut down, so the handle kept its slot and,
    since the live token budget (MAX_LIVE_TOKENS), its tokens for the rest of
@@ -15,7 +15,6 @@
 #if defined(Q3_PC_FIXTURE_CGAME)
 #include "../code/client/cl_cgame.c"
 #elif defined(Q3_PC_FIXTURE_UI)
-#define Q3_CLIENT_SYSCALL_REAL_FS	/* the fixture's files serve the UI parser */
 #include "../code/client/cl_ui.c"
 #elif defined(Q3_PC_FIXTURE_GAME)
 #include "../code/server/sv_game.c"
@@ -171,15 +170,12 @@ static void StopModule( int cycle ) {
 	Expect( cgvm == NULL, "the cgame VM is gone" );
 }
 #else
-/* the UI reads its menus through cl_ui.c's own script parser */
+/* the UI reads its menus through botlib, as in retail (issue #11) */
 #define MODULE_OWNER	PC_OWNER_UI
-/* the UI parser does not preprocess, so its hud is a plain menu file */
-#define HUD_FILE		"ui/small.menu"
-#define HUD_TOKENS		"menu", "1", "end"
 #define TRAP_LOAD		UI_PC_LOAD_SOURCE
 #define TRAP_FREE		UI_PC_FREE_SOURCE
 #define TRAP_READ		UI_PC_READ_TOKEN
-#define MODULE_SLOTS	(MAX_SCRIPT_HANDLES - 1)
+#define MODULE_SLOTS	(MAX_SOURCE_HANDLES - 1)
 static int Trap( int *args ) { return CL_UISystemCalls( args ); }
 static void StartModule( void ) { StartClientVM(); uivm = &vm; }
 static void StopModule( int cycle ) {
@@ -197,7 +193,7 @@ static void StopModule( int cycle ) {
 #define HUD_TOKENS		"hud", "299", "end"
 #endif
 
-/* --- files and memory for botlib and the UI parser ----------------------- */
+/* --- files and memory for botlib ---------------------------------------- */
 static void AddFile( const char *name, const char *contents ) {
 	Expect( numFiles < MAX_FIXTURE_FILES, "fixture file table" );
 	fileNames[numFiles] = strdup( name );
@@ -242,19 +238,6 @@ void *GetHunkMemory( unsigned long size ) { return GetMemory( size ); }
 void *GetClearedHunkMemory( unsigned long size ) { return GetClearedMemory( size ); }
 void QDECL Log_Write( char *format, ... ) { (void)format; }
 
-#if defined(Q3_PC_FIXTURE_UI)
-int FS_FOpenFileByMode( const char *qpath, fileHandle_t *f, fsMode_t mode ) { (void)mode; return OpenFile( qpath, f ); }
-int FS_Read( void *buffer, int len, fileHandle_t f ) { return ReadFile( buffer, len, f ); }
-void FS_FCloseFile( fileHandle_t f ) { CloseFile( f ); }
-void *Z_Malloc( int size ) { void *p = calloc( 1, size ); if ( p ) liveBlocks++; return p; }
-void Z_Free( void *ptr ) { if ( ptr ) { liveBlocks--; free( ptr ); } }
-int FS_GetFileList( const char *path, const char *extension, char *listbuf, int bufsize ) { Unexpected( __func__ ); return 0; }
-int FS_Read2( void *buffer, int len, fileHandle_t f ) { Unexpected( __func__ ); return 0; }
-int FS_Seek( fileHandle_t f, long offset, int origin ) { Unexpected( __func__ ); return 0; }
-int FS_SV_FOpenFileRead( const char *filename, fileHandle_t *fp ) { Unexpected( __func__ ); return 0; }
-fileHandle_t FS_SV_FOpenFileWrite( const char *filename ) { Unexpected( __func__ ); return 0; }
-int FS_Write( const void *buffer, int len, fileHandle_t f ) { Unexpected( __func__ ); return 0; }
-#endif
 
 /* --- the module's view: its traps ---------------------------------------- */
 static int LoadTrap( const char *name ) {
@@ -334,7 +317,7 @@ int main( void ) {
 	api.PC_SourceFileAndLine = PC_SourceFileAndLine;
 	api.PC_FreeSourceHandles = PC_FreeSourceHandles;
 	botlib_export = &api;
-	/* cl_ui.c logs every script load to stdout */
+	/* keep engine logging off the test output */
 	fflush( stdout );
 	console = dup( 1 );
 	n = open( "/dev/null", O_WRONLY );
