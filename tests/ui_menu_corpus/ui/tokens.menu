@@ -1,0 +1,11 @@
+#include "ui/menudef.h"
+#define WIDE 640
+#ifdef MISSIONPACK
+pack 1
+#else
+pack 0
+#endif
+type ITEM_TYPE_LISTBOX feeder FEEDER_DEMOS
+rect -12 +3 0.5 WIDE .25
+text "a" "b"
+action { play "sound/x.wav" ; open main }

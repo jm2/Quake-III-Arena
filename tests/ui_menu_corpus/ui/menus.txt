@@ -1,0 +1,8 @@
+// menu defs
+// Issue #11 corpus: a retail-style Team Arena menu list (ui/menus.txt), read
+// through UI_LoadMenus, Load_Menu and UI_ParseMenu.
+{
+	loadMenu { "ui/main.menu" }
+ 	loadMenu { "ui/setup.menu" }
+	loadMenu { "ui/player.menu" }
+}

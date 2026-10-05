@@ -1,0 +1,68 @@
+#include "ui/menudef.h"
+
+{
+// Issue #11 corpus: retail Team Arena main.menu syntax.
+
+	assetGlobalDef {
+		font "fonts/font" 26				// font
+		smallFont "fonts/smallfont" 20			// font
+		bigFont "fonts/bigfont" 34			// font
+		cursor "ui/assets/3_cursor3"			// cursor
+		gradientBar "ui/assets/gradientbar2.tga"	// gradient bar
+		itemFocusSound "sound/misc/menu2.wav"		// sound for item getting focus (via keyboard or mouse )
+		fadeClamp 1.0					// sets the fadeup alpha
+		fadeCycle 1					// how often fade happens in milliseconds
+		fadeAmount 0.1					// amount to adjust alpha per cycle
+		shadowColor 0.1 0.1 0.1 0.25			// shadow color
+	}
+
+	menuDef {
+		name "main"
+		background "menuback_a"
+		fullScreen MENU_TRUE
+		rect 0 0 640 480				// Size and position of the menu
+		visible MENU_TRUE				// Visible on open
+		focusColor 1 .75 0 1				// Menu focus color for text and items
+		soundLoop "music/sonic1.wav"
+		onOpen { setitemcolor fadebox backcolor 0 0 0 1 ; fadeout fadebox ; transition mappreview 0 0 640 480 0 0 640 480 10 4 }
+		onESC { open quit_popmenu }
+
+		itemDef {
+			name mappreview
+			style WINDOW_STYLE_FILLED
+			ownerdraw UI_STARTMAPCINEMATIC
+			rect 0 0 640 480
+			decoration
+			visible 1
+		}
+
+		itemDef {
+			name fight
+			text "FIGHT"
+			type ITEM_TYPE_BUTTON
+			style WINDOW_STYLE_EMPTY
+			textstyle ITEM_TEXTSTYLE_SHADOWEDMORE
+			rect 410 320 128 26
+			textalign ITEM_ALIGN_CENTER
+			textalignx 64
+			textaligny 20
+			textscale .416
+			forecolor 1 1 1 1
+			visible 1
+			action { play "sound/misc/kcaction.wav" ; open fight_menu }
+			mouseEnter { setitemcolor fight forecolor 1 .75 0 1 }
+			mouseExit { setitemcolor fight forecolor 1 1 1 1 }
+		}
+
+		itemDef {
+			name fadebox
+			style WINDOW_STYLE_FILLED
+			background "ui/assets/fadebox.tga"
+			forecolor 0 0 0 1
+			backcolor 0 0 0 1
+			rect 0 0 640 480
+			visible 1
+			decoration
+		}
+	}
+}
