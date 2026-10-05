@@ -484,6 +484,40 @@ vm_t *VM_Restart( vm_t *vm ) {
 	return vm;
 }
 
+#ifdef Q3_STATIC
+/*
+================
+VM_IsStockQVM
+
+Retail ran the QVM the search path provided. A static build links in the
+modules of one game, STATIC_MODULES_GAME, and runs them in place of its
+stock QVMs: the ones in that game's retail id pk3s. A QVM from any other
+pk3 or from a directory is a mod's (from fs_game, or a pure server's pk3),
+or the other game's, and must run itself (#13). With no QVM at all, the
+linked-in module is the fallback.
+================
+*/
+static qboolean VM_IsStockQVM( const char *filename ) {
+	const char	*game;
+	int			checksum;
+
+	switch ( FS_FilePakChecksum( filename, &checksum ) ) {
+	case -1:
+		return qtrue;
+	case 1:
+		game = FS_IdPakGame( checksum );
+		if ( game && !Q_stricmp( game, STATIC_MODULES_GAME ) ) {
+			return qtrue;
+		}
+		Com_Printf( "%s is not the stock %s one, interpreting it.\n", filename, STATIC_MODULES_GAME );
+		return qfalse;
+	default:
+		Com_Printf( "%s is outside any pk3, interpreting it.\n", filename );
+		return qfalse;
+	}
+}
+#endif
+
 /*
 ================
 VM_Create
@@ -541,6 +575,19 @@ vm_t *VM_Create( const char *module, int (*systemCalls)(int *),
 		}
 	}
 
+	Com_sprintf( filename, sizeof(filename), "vm/%s.qvm", vm->name );
+#ifdef Q3_STATIC
+	// A static build has no QVM compiler: its linked-in module is the
+	// compiled form of the stock QVM, and any other QVM is interpreted.
+	if ( interpret >= VMI_COMPILED ) {
+		if ( !Cvar_VariableValue( "fs_restrict" ) && VM_IsStockQVM( filename ) ) {
+			interpret = VMI_NATIVE;
+		} else {
+			interpret = VMI_BYTECODE;
+		}
+	}
+#endif
+
 	if ( interpret == VMI_NATIVE ) {
 		// try to load as a system dll
 		Com_Printf( "Loading dll file %s.\n", vm->name );
@@ -554,7 +601,6 @@ vm_t *VM_Create( const char *module, int (*systemCalls)(int *),
 	}
 
 	// load the image
-	Com_sprintf( filename, sizeof(filename), "vm/%s.qvm", vm->name );
 	Com_Printf( "Loading vm file %s.\n", filename );
 	length = FS_ReadFile( filename, (void **)&header );
 	if ( !header ) {

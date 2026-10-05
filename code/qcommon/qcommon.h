@@ -307,11 +307,28 @@ VIRTUAL MACHINE
 
 typedef struct vm_s vm_t;
 
+// vm_game, vm_cgame and vm_ui (and VM_Create's interpret) keep their retail
+// values. A static build has no QVM compiler, so it runs its linked-in module
+// as the compiled form of the stock QVM (#13):
+//   0 VMI_NATIVE    the linked-in module, else the QVM in the interpreter
+//   1 VMI_BYTECODE  the QVM in the interpreter, even a stock one
+//   2 VMI_COMPILED  the default, and what a pure server forces on clients:
+//                   the linked-in module if the QVM the search path provides
+//                   is the stock one it replaces (or there is none), else
+//                   that QVM in the interpreter
+// fs_restrict (the demo) never runs a linked-in module, as retail never
+// loaded a DLL with the demo.
 typedef enum {
 	VMI_NATIVE,
 	VMI_BYTECODE,
 	VMI_COMPILED
 } vmInterpret_t;
+
+// the game whose stock QVMs, in its retail id pk3s, a static build's
+// linked-in modules replace; CMake gives Quake3_TeamArena "missionpack"
+#ifndef STATIC_MODULES_GAME
+#define STATIC_MODULES_GAME BASEGAME
+#endif
 
 typedef enum {
 	TRAP_MEMSET = 100,
@@ -609,6 +626,13 @@ int		FS_FOpenFileRead( const char *qpath, fileHandle_t *file, qboolean uniqueFIL
 
 int		FS_FileIsInPAK(const char *filename, int *pChecksum );
 // returns 1 if a file is in the PAK file, otherwise -1
+
+int		FS_FilePakChecksum( const char *filename, int *checksum );
+// where FS_ReadFile would read filename from, marking its pk3 referenced:
+// 1 and the pk3's header checksum, 0 outside any pk3, or -1 if not found
+
+const char *FS_IdPakGame( int checksum );
+// BASEGAME or "missionpack" for a retail id pk3's header checksum, else NULL
 
 int		FS_Write( const void *buffer, int len, fileHandle_t f );
 

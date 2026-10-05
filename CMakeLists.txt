@@ -406,5 +406,9 @@ quake3_add_classic_application(Quake3)
 if(BUILD_TEAM_ARENA)
     quake3_static_modules(Quake3_TeamArena game_mp_obj cgame_mp_obj ui_mp_obj
         game_shared_mp_obj)
+    # Its linked-in modules stand in for missionpack's stock QVMs, not
+    # baseq3's; VM_Create interprets any other QVM (#13).
+    target_compile_definitions(Quake3_TeamArena PRIVATE
+        STATIC_MODULES_GAME="missionpack")
     quake3_add_classic_application(Quake3_TeamArena)
 endif()
