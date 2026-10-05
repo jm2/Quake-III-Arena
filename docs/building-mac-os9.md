@@ -247,6 +247,34 @@ artifact until [#22](https://github.com/jm2/Quake-III-Arena/issues/22) and
 [#23](https://github.com/jm2/Quake-III-Arena/issues/23) are resolved and the
 mounted image boots on Mac OS 9.
 
+## Startup parameters
+
+Mac OS 9 has no command line. As in id's original Classic Mac port, the
+applications read their startup parameters from one of two places:
+
+- a text file named `MacQuake3Parms.txt` in the folder that holds the
+  application and `baseq3`. `Quake3` and `Quake3_TeamArena` both read it. Put
+  each command on its own line, with or without a leading `+`, for example:
+
+  ```
+  +set s_initsound 1
+  +set fs_game mymod
+  ```
+
+  CR (SimpleText), LF and CRLF line endings all work.
+- holding Shift while the application starts. The console window then asks
+  for one line of parameters (for example `safe +set s_initsound 1`). That
+  line replaces the file for this launch only. Press Return to start with no
+  parameters.
+
+Use these to set `CVAR_INIT` cvars such as `fs_game`, `com_hunkMegs` and
+`com_zoneMegs`, to turn on the experimental sound backend with
+`+set s_initsound 1`, or to start in `safe` mode. Safe mode skips
+`q3config.cfg`, which is the way back after an archived setting stops the game
+from starting. As on other platforms' command lines, the parameters can be
+at most 1023 bytes once line endings are folded. A longer file or line stops
+the launch with a message in the console window. It is not cut short.
+
 ## Current validation level
 
 Cross-compilation, structural PEF validation, and the container checks above

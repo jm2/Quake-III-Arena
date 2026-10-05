@@ -1130,11 +1130,125 @@ void Sys_StreamSeek( int handle, int offset, int origin ) {
 void VM_Compile( void *vm, void *header ) {}
 int VM_CallCompiled( void *vm, int *args ) { return 0; }
 
+// Startup parameters (issues #261 and #24).
+//
+// Retro68's startup always calls main( 1, argv ), so, as in id's original
+// Classic Mac port (ReadCommandLineParms), the command line comes from:
+//   - a line typed into the console window when Shift is held at launch
+//     (id used Metrowerks' ccommand dialog there), or otherwise
+//   - the text file MAC_PARMS_FILE in the application's folder.
+// Com_ParseCommandLine splits console lines at line breaks as well as at
+// '+', so each line of the file can hold one command, such as
+// "+set s_initsound 1" or "safe". Input that does not fit the command line
+// stops the launch instead of being cut short or overflowing it.
+#define MAC_PARMS_FILE			"MacQuake3Parms.txt"
+#define MAC_COMMAND_LINE_SIZE	MAX_STRING_CHARS
+
+/*
+==================
+Sys_AppendStartupText
+
+Appends textLength bytes of startup text to the NUL-terminated commandLine
+(*commandLength bytes in commandSize bytes of storage), after separator when
+both are non-empty. CR, LF and CRLF line breaks become '\n', other control
+characters become spaces, and Mac Roman bytes 0x80-0xFF are kept. Returns 0,
+leaving the command line unchanged, when the result would not fit.
+==================
+*/
+static int Sys_AppendStartupText( char *commandLine, int commandSize, int *commandLength,
+		const char *text, int textLength, char separator ) {
+	int		length;
+	int		i;
+	int		c;
+
+	length = *commandLength;
+	if ( textLength <= 0 ) {
+		return 1;
+	}
+	if ( length > 0 ) {
+		if ( length >= commandSize - 1 ) {
+			return 0;
+		}
+		commandLine[length++] = separator;
+	}
+	for ( i = 0 ; i < textLength ; i++ ) {
+		c = (unsigned char)text[i];
+		if ( c == '\r' ) {
+			if ( i + 1 < textLength && text[i + 1] == '\n' ) {
+				i++;
+			}
+			c = '\n';
+		} else if ( c != '\n' && ( c < ' ' || c == 127 ) ) {
+			c = ' ';
+		}
+		if ( length >= commandSize - 1 ) {
+			commandLine[*commandLength] = '\0';
+			return 0;
+		}
+		commandLine[length++] = c;
+	}
+	commandLine[length] = '\0';
+	*commandLength = length;
+	return 1;
+}
+
+/*
+==================
+Sys_ReadStartupFile
+
+Appends the startup parameters file at path, if there is one, to the
+command line, through a textSize-byte scratch buffer that must hold at
+least twice the command line's storage (a CRLF file shrinks to half its
+size). Returns 1 when the file was read, 0 when there is no such file,
+-1 when it does not fit, and -2 on a read error.
+==================
+*/
+static int Sys_ReadStartupFile( const char *path, char *text, int textSize,
+		char *commandLine, int commandSize, int *commandLength ) {
+	FILE	*f;
+	int		textLength;
+	int		readError;
+
+	f = fopen( path, "rb" );
+	if ( !f ) {
+		return 0;
+	}
+	textLength = (int)fread( text, 1, textSize, f );
+	readError = ferror( f );
+	fclose( f );
+	if ( readError ) {
+		return -2;
+	}
+	if ( textLength >= textSize ) {
+		return -1;	// textSize bytes or more can never fit
+	}
+	if ( !Sys_AppendStartupText( commandLine, commandSize, commandLength,
+			text, textLength, '\n' ) ) {
+		return -1;
+	}
+	return 1;
+}
+
+/*
+==================
+Sys_StartupError
+
+Shows a startup parameter error in the console window and waits for
+Return, so the reason the game did not start can be read.
+==================
+*/
+static int Sys_StartupError( const char *error ) {
+	fprintf( stderr, "Quake3: %s\nPress Return to quit.\n", error );
+	getchar();
+	return 1;
+}
+
 int main( int argc, char **argv ) {
     int i;
-    char commandLine[1024];
-    size_t commandLength;
+    static char commandLine[MAC_COMMAND_LINE_SIZE];
+    int commandLength;
     const char *error;
+    KeyMap keys;
 
     // Save each module's initialized data before any module code runs.
     error = VM_InitStaticModules( sys_staticModules, SYS_STATIC_MODULES );
@@ -1148,24 +1262,58 @@ int main( int argc, char **argv ) {
     commandLine[0] = 0;
     commandLength = 0;
     for (i = 1; i < argc; i++) {
-        size_t argumentLength = strlen( argv[i] );
-        size_t separatorLength = i < argc - 1 ? 1 : 0;
-
-        if ( argumentLength + separatorLength >
-             sizeof( commandLine ) - commandLength - 1 ) {
-            fprintf( stderr,
-                     "Quake3: command line exceeds %u bytes\n",
-                     (unsigned int)(sizeof( commandLine ) - 1) );
-            return 1;
+        if ( !Sys_AppendStartupText( commandLine, sizeof( commandLine ), &commandLength,
+                                     argv[i], strlen( argv[i] ), ' ' ) ) {
+            return Sys_StartupError( va( "command line exceeds %d bytes",
+                                         (int)sizeof( commandLine ) - 1 ) );
         }
-
-        memcpy( commandLine + commandLength, argv[i], argumentLength );
-        commandLength += argumentLength;
-        if ( separatorLength ) {
-            commandLine[commandLength++] = ' ';
-        }
-        commandLine[commandLength] = '\0';
     }
+
+    // Shift is key code 0x38: bit 0 of byte 7 of the big-endian KeyMap.
+    GetKeys( keys );
+    if ( ((unsigned char *)keys)[7] & 0x01 ) {
+        static char line[MAC_COMMAND_LINE_SIZE + 1];
+        int lineLength;
+
+        printf( "Quake 3 startup parameters, e.g. +set s_initsound 1 (Return for none):\n" );
+        fflush( stdout );
+        if ( fgets( line, sizeof( line ), stdin ) ) {
+            lineLength = strlen( line );
+            if ( lineLength > 0 && line[lineLength - 1] == '\n' ) {
+                lineLength--;
+            } else if ( lineLength == (int)sizeof( line ) - 1 ) {
+                return Sys_StartupError( va( "startup parameters exceed %d bytes",
+                                             (int)sizeof( commandLine ) - 1 ) );
+            }
+            if ( !Sys_AppendStartupText( commandLine, sizeof( commandLine ), &commandLength,
+                                         line, lineLength, ' ' ) ) {
+                return Sys_StartupError( va( "startup parameters exceed %d bytes",
+                                             (int)sizeof( commandLine ) - 1 ) );
+            }
+        }
+        Sys_LogPrintf( "main: startup parameters typed at launch\n" );
+    } else {
+        static char text[MAC_COMMAND_LINE_SIZE * 2];
+        char path[MAX_OSPATH * 2 + sizeof( MAC_PARMS_FILE )];
+        int result;
+
+        // Next to the application, where the engine looks for baseq3
+        // (Sys_GetCwd returns at most 2 * MAX_OSPATH - 1 bytes).
+        snprintf( path, sizeof( path ), "%s:%s", Sys_GetCwd(), MAC_PARMS_FILE );
+        result = Sys_ReadStartupFile( path, text, sizeof( text ),
+                                      commandLine, sizeof( commandLine ), &commandLength );
+        if ( result == -2 ) {
+            return Sys_StartupError( va( "could not read %s", path ) );
+        }
+        if ( result == -1 ) {
+            return Sys_StartupError( va( "%s exceeds %d bytes", path,
+                                         (int)sizeof( commandLine ) - 1 ) );
+        }
+        if ( result ) {
+            Sys_LogPrintf( "main: startup parameters read from %s\n", path );
+        }
+    }
+    Sys_LogPrintf( "main: command line: %s\n", commandLine );
 
     // Note: Sys_Init() is called by Com_Init() after the cvar/zone systems
     // exist. Calling it here too (as this port once did) dereferenced the
