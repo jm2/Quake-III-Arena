@@ -30,6 +30,7 @@ for Q3_TEST_MODE in normal fast; do
     run corrupt "$Q3_TEST_DIR/corrupt.pk3" "$Q3_TEST_DIR/corrupt.manifest" "$Q3_TEST_DIR/corrupt.prefix"
     run truncated "$Q3_TEST_DIR/crafted.pk3" "$Q3_TEST_DIR/crafted.manifest" "$Q3_TEST_DIR/truncated.pk3"
     run fallback "$Q3_TEST_DIR/crafted.pk3" "$Q3_TEST_DIR/crafted.manifest" "$Q3_TEST_DIR/moved.pk3"
+    run restart "$Q3_TEST_DIR/crafted.pk3" "$Q3_TEST_DIR/crafted.manifest" "$Q3_TEST_DIR/moved.pk3"
     if [[ -n "${Q3_UNIQUE_STREAM_PK3:-}" ]]; then
         run stream "$Q3_UNIQUE_STREAM_PK3" "$Q3_TEST_DIR/real.manifest"
         run concurrent "$Q3_UNIQUE_STREAM_PK3" "$Q3_TEST_DIR/real.manifest"

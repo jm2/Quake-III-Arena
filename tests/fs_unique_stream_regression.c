@@ -109,6 +109,8 @@ int Sys_StreamedRead(void *buffer, int size, int count, fileHandle_t f) {
 	return FS_Read(buffer, size * count, f);
 }
 void Sys_StreamSeek(fileHandle_t f, int offset, int origin) { FS_Seek(f, offset, origin); }
+/* FS_Shutdown unregisters the filesystem commands. */
+void Cmd_RemoveCommand(const char *name) { (void)name; }
 /* FS_FOpenFileByMode's write modes are linked in but never used here. */
 void S_ClearSoundBuffer(void) { Fail("unexpected write-mode open"); }
 
@@ -491,6 +493,75 @@ static void Fallback(const char *pk3, const char *moved) {
 	Unmount();
 }
 
+/* A searchpath owned by the zone, as FS_Startup builds it, so that
+ * FS_Shutdown can free it. */
+static void MountOwned(const char *pk3) {
+	searchpath_t *path = Z_Malloc(sizeof(*path));
+	path->pack = FS_LoadZipFile((char *)pk3, "test.pk3");
+	Check(path->pack != NULL, "owned pk3 mounts");
+	fs_searchpaths = path;
+}
+
+/* FS_Restart (FS_ConditionalRestart from a demo's gamestate) runs FS_Shutdown
+ * and then mounts the paks again.  A unique stream owns its reopened archive
+ * and continues, as in retail; VM handles and handles reading through the
+ * freed pack are closed. */
+static void Restart(const char *pk3, const char *moved) {
+	const entry_t *e = Entry("music/track.wav"), *vm = Entry("video/stored.roq");
+	unsigned char *ref = Reference(pk3, e), *chunk = malloc(100000), b[16];
+	fileHandle_t unique, byMode, shared, fallback, later;
+	unz_s *archive;
+	int pos = 0, n;
+	Check(chunk != NULL, "chunk buffer");
+	memset(fsh, 0, sizeof(fsh));
+	fs_debug = &debugVar;
+	fs_restrict = &restrictVar;
+	fs_copyfiles = &copyVar;
+	zoneBudget = LONG_MAX;
+	mountedDescriptors = OpenDescriptors();
+	MountOwned(pk3);
+	Check(FS_FOpenFileRead(e->name, &unique, qtrue) == e->size && fsh[unique].handleFiles.unique,
+		  "unique stream opens, as CL_PlayDemo opens a demo");
+	Check(FS_Read(chunk, 100000, unique) == 100000 && !memcmp(chunk, ref, 100000),
+		  "unique stream reads before the restart");
+	pos = 100000;
+	archive = fsh[unique].handleFiles.file.z;
+	Check(FS_FOpenFileByMode(vm->name, &byMode, FS_READ) == vm->size && FS_Read2(b, sizeof(b), byMode) == sizeof(b),
+		  "VM read handle opens");
+	Check(FS_FOpenFileRead("maps/m00.bin", &shared, qfalse) > 0 && FS_Read(b, sizeof(b), shared) == sizeof(b),
+		  "shared handle opens");
+	Check(rename(pk3, moved) == 0, "pk3 moves away");
+	Check(FS_FOpenFileRead("maps/m01.bin", &fallback, qtrue) > 0 && !fsh[fallback].handleFiles.unique,
+		  "fallback handle shares the mounted pack");
+	Check(rename(moved, pk3) == 0, "pk3 moves back");
+
+	FS_Shutdown(qfalse);
+
+	Check(!fs_searchpaths, "the restart frees the search paths");
+	Check(!fsh[byMode].handleFiles.file.o, "the restart closes VM handles, as retail did");
+	Check(!fsh[shared].handleFiles.file.o && !fsh[fallback].handleFiles.file.o,
+		  "the restart closes handles that read through the freed pack");
+	Check(fsh[unique].handleFiles.file.z == archive && fsh[unique].handleFiles.unique &&
+		  fsh[unique].zipOffset == pos, "the restart keeps the unique stream and its position");
+	MountOwned(pk3);
+	Check(FS_FOpenFileRead("maps/m02.bin", &later, qtrue) > 0 && later != unique,
+		  "a new open after the restart does not take the stream's slot");
+	FS_FCloseFile(later);
+	while ((n = FS_Read(chunk, 65536, unique)) > 0) {
+		Check(pos + n <= e->size && !memcmp(chunk, ref + pos, n),
+			  "the unique stream continues byte-identically after the restart");
+		pos += n;
+	}
+	Check(pos == e->size, "the unique stream reads to its end after the restart");
+	FS_FCloseFile(unique);
+	FS_Shutdown(qfalse);
+	Check(zoneBytes == 0, "every zone owner is released");
+	Check(OpenDescriptors() == mountedDescriptors, "every descriptor is closed");
+	mountedZone = 0;
+	free(chunk);
+	free(ref);
+}
+
 int main(int argc, char **argv) {
 	if (argc < 4) Fail("usage: <mode> <pk3> <manifest> [extra]");
 	LoadManifest(argv[3]);
@@ -499,6 +570,7 @@ int main(int argc, char **argv) {
 	else if (!strcmp(argv[1], "corrupt") && argc > 4) Corrupt(argv[2], argv[4]);
 	else if (!strcmp(argv[1], "truncated") && argc > 4) Truncated(argv[2], argv[4]);
 	else if (!strcmp(argv[1], "fallback") && argc > 4) Fallback(argv[2], argv[4]);
+	else if (!strcmp(argv[1], "restart") && argc > 4) Restart(argv[2], argv[4]);
 	else Fail("unknown mode");
 	printf("unique stream %s: %d entries, peak zone %ld bytes above the mounted pk3\n",
 		   argv[1], numEntries, zonePeak - mountedZone);

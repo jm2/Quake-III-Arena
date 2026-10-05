@@ -282,6 +282,7 @@ typedef struct {
 	int			zipOffset;
 	qboolean	zipFile;
 	qboolean	streamed;
+	qboolean	byMode;		// opened by FS_FOpenFileByMode (a VM handle)
 	qboolean	streamSeekPending;
 	int			streamSeekResult;
 	char		name[MAX_ZPATH];
@@ -3081,8 +3082,12 @@ void FS_Shutdown( qboolean closemfp ) {
 	searchpath_t	*p, *next;
 	int	i;
 
+	// Close VM handles, as retail did, and zip handles that read through a
+	// pack freed below.  Unique engine streams (demos, cinematics, music) own
+	// their reopened archive and survive a restart, as in retail.
 	for(i = 0; i < MAX_FILE_HANDLES; i++) {
-		if (fsh[i].fileSize) {
+		if ( ( fsh[i].byMode && fsh[i].fileSize ) ||
+			( fsh[i].zipFile && !fsh[i].handleFiles.unique ) ) {
 			FS_FCloseFile(i);
 		}
 	}
@@ -3851,6 +3856,7 @@ int		FS_FOpenFileByMode( const char *qpath, fileHandle_t *f, fsMode_t mode ) {
 			fsh[*f].baseOffset = ftell(fsh[*f].handleFiles.file.o);
 		}
 		fsh[*f].fileSize = r;
+		fsh[*f].byMode = qtrue;
 		fsh[*f].streamed = qfalse;
 
 		if (mode == FS_READ) {
