@@ -1,0 +1,73 @@
+// mac_consolehooks.cc -- the Retro68 console window, opened on demand
+//
+// newlib sends stdin, stdout and stderr to _consoleread and _consolewrite.
+// Defining them here keeps libRetroConsole's InitConsole.cc out of the link.
+// That InitConsole ran InitGraf, InitFonts, InitWindows and InitMenus on the
+// first byte of output, so any printf opened the console window (issue #10)
+// and also initialized the Toolbox (issue #263). main now initializes the
+// Toolbox itself (Sys_InitToolbox). Opening the window later, after the game
+// window exists, must not run InitWindows and InitMenus again: that would
+// reset the window and menu lists. InitCursor would also show the cursor that
+// Sys_InitInput hid.
+//
+// The window is the same retro::ConsoleWindow, at the same position. It opens
+// only when Sys_ConsoleWanted (mac_console.c) accepts the output. Reading
+// stdin always opens it.
+
+#include <sys/types.h>
+#include <string.h>
+#include <string>
+
+#include "retro/ConsoleWindow.h"
+
+extern "C" int Sys_ConsoleWanted( int fd );
+
+using namespace retro;
+
+static void Sys_OpenConsoleWindow( void ) {
+	Rect	r;
+
+	if ( Console::currentInstance ) {
+		return;
+	}
+	Console::currentInstance = (Console *)-1;	// as InitConsole: no recursion
+
+	r = qd.screenBits.bounds;
+	r.top += 40;
+	InsetRect( &r, 5, 5 );
+	Console::currentInstance = new ConsoleWindow( r, "\pRetro68 Console" );
+}
+
+extern "C" ssize_t _consolewrite( int fd, const void *buf, size_t count ) {
+	if ( !Console::currentInstance ) {
+		if ( !Sys_ConsoleWanted( fd ) ) {
+			return count;	// hidden: the crash ring has Sys_LogPrintf's copy
+		}
+		Sys_OpenConsoleWindow();
+	}
+	if ( Console::currentInstance == (Console *)-1 ) {
+		return 0;
+	}
+	Console::currentInstance->write( (const char *)buf, count );
+	return count;
+}
+
+extern "C" ssize_t _consoleread( int fd, void *buf, size_t count ) {
+	static std::string	consoleBuf;
+
+	if ( !Console::currentInstance ) {
+		Sys_OpenConsoleWindow();
+	}
+	if ( Console::currentInstance == (Console *)-1 ) {
+		return 0;
+	}
+	if ( consoleBuf.size() == 0 ) {
+		consoleBuf = Console::currentInstance->ReadLine();
+	}
+	if ( count > consoleBuf.size() ) {
+		count = consoleBuf.size();
+	}
+	memcpy( buf, consoleBuf.data(), count );
+	consoleBuf = consoleBuf.substr( count );
+	return count;
+}
