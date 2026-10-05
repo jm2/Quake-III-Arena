@@ -1,5 +1,6 @@
 // mac_syscalls.c
-// newlib's open() for the File Manager, replacing the one in Retro68's libretro
+// newlib's open(), rename() and unlink() for the File Manager, replacing the
+// ones in Retro68's libretro
 //
 // libretro's _open_r (Retro68 83b9c8d2c5, libretro/syscalls.c) works out the
 // permission the caller asked for and then opens every file with fsRdWrPerm.
@@ -8,14 +9,24 @@
 // open for writing (opWrErr), so fopen( path, "rb" ) could not read retail
 // data from read-only media, or open a pk3 that was already open (issue #258).
 //
-// The linker takes this definition: the AIX-style XCOFF linker ignores a
+// libretro's _rename_r and _unlink_r only return -1, so rename() and remove()
+// (newlib's _remove_r calls _unlink_r) never worked: FS_SV_Rename finished
+// every download by copying the whole .pk3.tmp through one malloc, and the
+// .tmp was never deleted (issue #259).
+//
+// The linker takes these definitions: the AIX-style XCOFF linker ignores a
 // second definition that comes from an archive member (bfd/xcofflink.c,
 // "a redefinition in an object contained in an archive"), and this object
-// always precedes libretrocrt.a on the link line.  libretro's other syscalls
-// (_read_r, _write_r, _close_r, _lseek_r...) still come from libretrocrt.a,
-// so file descriptors keep its encoding: refNum + kMacRefNumOffset.
-// newlib's stdio implements O_APPEND itself by seeking to the end before
-// each write.
+// always precedes libretrocrt.a on the link line.  cmake/static_modules.py
+// fails the build unless the linker map shows each of them coming from this
+// object.  libretro's other syscalls (_read_r, _write_r, _close_r,
+// _lseek_r...) still come from libretrocrt.a, so file descriptors keep its
+// encoding: refNum + kMacRefNumOffset.  newlib's stdio implements O_APPEND
+// itself by seeking to the end before each write.
+//
+// Paths are passed to the File Manager as they are, like libretro does: the
+// engine already builds HFS paths (full, or partial from the default
+// directory).
 
 #include <reent.h>
 #include <errno.h>
@@ -23,6 +34,7 @@
 #include <string.h>
 #include <Files.h>
 #include <Errors.h>
+#include <StringCompare.h>
 
 extern const int kMacRefNumOffset;	// libretro/syscalls.c
 
@@ -42,33 +54,49 @@ static int Mac_OSErrToErrno( OSErr err ) {
 	case opWrErr:
 	case afpAccessDenied:
 		return EACCES;
+	case fBsyErr:
+		return EBUSY;
 	case tmfoErr:
 		return EMFILE;
 	case dskFulErr:
 		return ENOSPC;
+	case diffVolErr:
+		return EXDEV;
+	case notAFileErr:
+		return EISDIR;
 	case bdNamErr:
+	case badMovErr:
 		return EINVAL;
 	default:
 		return EIO;
 	}
 }
 
+// the C path as a Str255, or ENAMETOOLONG (libretro's length byte wrapped)
+static int Mac_PathToStr255( struct _reent *reent, const char *name, Str255 pname ) {
+	size_t	length;
+
+	length = strlen( name );
+	if ( length > 255 ) {
+		reent->_errno = ENAMETOOLONG;
+		return 0;
+	}
+	pname[0] = (unsigned char)length;
+	memcpy( pname + 1, name, length );
+	return 1;
+}
+
 int _open_r( struct _reent *reent, const char *name, int flags, int mode ) {
 	Str255	pname;
-	size_t	length;
 	SInt8	permission;
 	short	ref;
 	OSErr	err;
 
 	(void)mode;
 
-	length = strlen( name );
-	if ( length > 255 ) {
-		reent->_errno = ENAMETOOLONG;
+	if ( !Mac_PathToStr255( reent, name, pname ) ) {
 		return -1;
 	}
-	pname[0] = (unsigned char)length;
-	memcpy( pname + 1, name, length );
 
 	switch ( flags & O_ACCMODE ) {
 	case O_RDONLY:
@@ -114,4 +142,105 @@ int _open_r( struct _reent *reent, const char *name, int flags, int mode ) {
 	}
 
 	return ref + kMacRefNumOffset;
+}
+
+// remove() comes here too.  HDelete also deletes an empty directory, as
+// remove() should; a busy file or a directory that is not empty is EBUSY.
+int _unlink_r( struct _reent *reent, const char *name ) {
+	Str255	pname;
+	OSErr	err;
+
+	if ( !Mac_PathToStr255( reent, name, pname ) ) {
+		return -1;
+	}
+	err = HDelete( 0, 0, pname );
+	if ( err != noErr ) {
+		reent->_errno = Mac_OSErrToErrno( err );
+		return -1;
+	}
+	return 0;
+}
+
+static int Mac_SameName( ConstStr255Param a, ConstStr255Param b ) {
+	return a[0] == b[0] && !memcmp( a + 1, b + 1, a[0] );
+}
+
+// Move the entry source names to dest, which does not exist.  HRename only
+// renames within a directory and CatMove only moves (keeping the name), so
+// a rename across directories is a CatMove and then an HRename, undone if
+// the HRename fails: the old entry stays, or the new one is complete.
+// CatMove takes a nil newName as "the directory newDirID" (MoreFiles'
+// HMoveRename relies on that too).
+static OSErr Mac_MoveRename( const FSSpec *source, const FSSpec *dest ) {
+	OSErr	err;
+
+	if ( source->parID == dest->parID ) {
+		return FSpRename( source, dest->name );
+	}
+	err = CatMove( source->vRefNum, source->parID, source->name, dest->parID, NULL );
+	if ( err != noErr || Mac_SameName( source->name, dest->name ) ) {
+		return err;
+	}
+	err = HRename( dest->vRefNum, dest->parID, source->name, dest->name );
+	if ( err != noErr ) {
+		CatMove( dest->vRefNum, dest->parID, source->name, source->parID, NULL );
+	}
+	return err;
+}
+
+// POSIX rename: an existing dest is replaced.  FSpExchangeFiles swaps the
+// two files' contents in the catalog in one call, so dest names either its
+// old or its new contents at every moment; deleting the source, which now
+// holds dest's old contents, completes the rename, and if that delete fails
+// (an open or locked file) the contents are swapped back.  Volumes without
+// FSpExchangeFiles (paramErr, wrgVolTypErr: some foreign file systems)
+// fall back to deleting dest and then moving the source: between the two
+// dest does not exist, and if the move fails it is gone (there an empty
+// directory dest is deleted like a file).  The name, Finder info and lock
+// of dest stay with dest.  Otherwise a rename onto a directory, or of a
+// directory onto an existing entry, fails (notAFileErr, EISDIR).  Renaming
+// across volumes is EXDEV, as POSIX has it.
+int _rename_r( struct _reent *reent, const char *from, const char *to ) {
+	Str255	pfrom, pto;
+	FSSpec	source, dest;
+	OSErr	err;
+
+	if ( !Mac_PathToStr255( reent, from, pfrom ) || !Mac_PathToStr255( reent, to, pto ) ) {
+		return -1;
+	}
+
+	err = FSMakeFSSpec( 0, 0, pfrom, &source );
+	if ( err == noErr ) {
+		err = FSMakeFSSpec( 0, 0, pto, &dest );
+		if ( err == noErr || err == fnfErr ) {
+			if ( source.vRefNum != dest.vRefNum ) {
+				err = diffVolErr;
+			} else if ( err == fnfErr ) {
+				err = Mac_MoveRename( &source, &dest );
+			} else if ( source.parID == dest.parID && EqualString( source.name, dest.name, false, true ) ) {
+				// the same entry, as HFS compares names: at most a change of case
+				if ( !Mac_SameName( source.name, dest.name ) ) {
+					err = FSpRename( &source, dest.name );
+				}
+			} else {
+				err = FSpExchangeFiles( &source, &dest );
+				if ( err == noErr ) {
+					err = FSpDelete( &source );
+					if ( err != noErr ) {
+						FSpExchangeFiles( &source, &dest );
+					}
+				} else if ( err == paramErr || err == wrgVolTypErr ) {
+					err = FSpDelete( &dest );
+					if ( err == noErr ) {
+						err = Mac_MoveRename( &source, &dest );
+					}
+				}
+			}
+		}
+	}
+	if ( err != noErr ) {
+		reent->_errno = Mac_OSErrToErrno( err );
+		return -1;
+	}
+	return 0;
 }

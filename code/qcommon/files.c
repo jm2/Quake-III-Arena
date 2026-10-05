@@ -585,10 +585,14 @@ static qboolean FS_CreatePath (char *OSPath) {
 =================
 FS_CopyFile
 
-Copy a fully specified file from one place to another
+Copy a fully specified file from one place to another.
+Returns qfalse if the copy was not made, so the renames below
+keep the source.  On the Mac the whole file may not fit in one
+malloc (a downloaded pk3); a failed allocation is reported and
+returns qfalse.
 =================
 */
-static void FS_CopyFile( char *fromOSPath, char *toOSPath ) {
+static qboolean FS_CopyFile( char *fromOSPath, char *toOSPath ) {
 	FILE	*f;
 	int		len;
 	byte	*buf;
@@ -597,12 +601,12 @@ static void FS_CopyFile( char *fromOSPath, char *toOSPath ) {
 
 	if (strstr(fromOSPath, "journal.dat") || strstr(fromOSPath, "journaldata.dat")) {
 		Com_Printf( "Ignoring journal files\n");
-		return;
+		return qfalse;
 	}
 
 	f = fopen( fromOSPath, "rb" );
 	if ( !f ) {
-		return;
+		return qfalse;
 	}
 	fseek (f, 0, SEEK_END);
 	len = ftell (f);
@@ -610,23 +614,31 @@ static void FS_CopyFile( char *fromOSPath, char *toOSPath ) {
 
 	// we are using direct malloc instead of Z_Malloc here, so it
 	// probably won't work on a mac... Its only for developers anyway...
-	buf = malloc( len );
+	buf = len < 0 ? NULL : malloc( len ? len : 1 );
+	if ( !buf ) {
+		Com_Printf( "WARNING: FS_CopyFile: cannot allocate %d bytes to copy %s\n", len, fromOSPath );
+		fclose( f );
+		return qfalse;
+	}
 	if (fread( buf, 1, len, f ) != len)
 		Com_Error( ERR_FATAL, "Short read in FS_Copyfiles()\n" );
 	fclose( f );
 
 	if( FS_CreatePath( toOSPath ) ) {
-		return;
+		free( buf );
+		return qfalse;
 	}
 
 	f = fopen( toOSPath, "wb" );
 	if ( !f ) {
-		return;
+		free( buf );
+		return qfalse;
 	}
 	if (fwrite( buf, 1, len, f ) != len)
 		Com_Error( ERR_FATAL, "Short write in FS_Copyfiles()\n" );
 	fclose( f );
 	free( buf );
+	return qtrue;
 }
 
 /*
@@ -955,8 +967,9 @@ void FS_SV_Rename( const char *from, const char *to, qboolean safe ) {
 
 	if (rename( from_ospath, to_ospath )) {
 		// Failed, try copying it and deleting the original
-		FS_CopyFile ( from_ospath, to_ospath );
-		FS_Remove ( from_ospath );
+		if ( FS_CopyFile ( from_ospath, to_ospath ) ) {
+			FS_Remove ( from_ospath );
+		}
 	}
 }
 
@@ -991,8 +1004,9 @@ void FS_Rename( const char *from, const char *to ) {
 
 	if (rename( from_ospath, to_ospath )) {
 		// Failed, try copying it and deleting the original
-		FS_CopyFile ( from_ospath, to_ospath );
-		FS_Remove ( from_ospath );
+		if ( FS_CopyFile ( from_ospath, to_ospath ) ) {
+			FS_Remove ( from_ospath );
+		}
 	}
 }
 

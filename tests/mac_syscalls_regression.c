@@ -11,7 +11,17 @@
  * permission it asks for, what it creates and truncates, the descriptor it
  * returns (libretro's refNum + kMacRefNumOffset) and errno on failure.
  * Read-only opens must succeed from locked files and volumes and alongside
- * other opens of the same file; write opens must still fail there. */
+ * other opens of the same file; write opens must still fail there.
+ *
+ * Issue #259: libretro's _rename_r and _unlink_r only return -1, so every
+ * download was finished by copying the whole .pk3.tmp and the .tmp was
+ * never removed.  The rename-* and unlink-* cases drive the real _rename_r
+ * and _unlink_r: within a directory and across directories, onto an
+ * existing file (replaced, with its old contents gone, or left as it was if
+ * the rename fails), with locked files, open files, locked volumes, missing
+ * sources and directories, two volumes, and names too long for a Str255 or
+ * an HFS leaf.  A rename either completes or leaves both names as they
+ * were. */
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -77,11 +87,226 @@ static void ReadOnlyMedia( int volume, int lockedFile ) {
 	Check( FakeFM_OpenPaths() == 1, "failed write open left a path" );
 }
 
+static int Rename( const char *from, const char *to ) {
+	return _rename_r( &reent, from, to );
+}
+
+static int Unlink( const char *name ) {
+	return _unlink_r( &reent, name );
+}
+
+/* The file exists with this length (its contents in the fake), or not at all. */
+static void CheckFile( const char *name, long eof, const char *what ) {
+	fakeFMFile_t *file = FakeFM_File( name );
+
+	Check( eof < 0 ? file == NULL : file != NULL && file->eof == eof, what );
+}
+
+static void CheckRenamed( int result, const char *from, const char *to, long eof ) {
+	Check( result == 0, "rename failed" );
+	CheckFile( from, -1, "the old name is still there" );
+	CheckFile( to, eof, "the new name does not hold the old file" );
+}
+
+static void CheckRenameFailed( int result, int expectedErrno ) {
+	Check( result == -1, "rename succeeded" );
+	Check( reent._errno == expectedErrno, "wrong errno" );
+}
+
+/* The rename cases; the files are left for the caller to check. */
+static int RenameCase( const char *name ) {
+	char longName[300];
+	int fd;
+
+	if ( !strcmp( name, "rename" ) ) {
+		// the download finalisation: .pk3.tmp -> .pk3 in the same directory
+		FakeFM_AddFile( ":baseq3:map_dl.pk3.tmp", 1234, 0 );
+		CheckRenamed( Rename( ":baseq3:map_dl.pk3.tmp", ":baseq3:map_dl.pk3" ),
+			":baseq3:map_dl.pk3.tmp", ":baseq3:map_dl.pk3", 1234 );
+		Check( fakeFMMoves == 0 && fakeFMExchanges == 0 && fakeFMDeletes == 0, "a plain rename moved, exchanged or deleted" );
+		Check( fakeFMCreates == 0 && fakeFMOpenDFs == 0, "rename copied" );
+		// a full path, as fs_homepath makes on the Mac, and the same file
+		FakeFM_AddFile( "Macintosh HD:Quake3:baseq3:q3config.cfg", 50, 0 );
+		CheckRenamed( Rename( "Macintosh HD:Quake3:baseq3:q3config.cfg", "Macintosh HD:Quake3:baseq3:old.cfg" ),
+			"Macintosh HD:Quake3:baseq3:q3config.cfg", "Macintosh HD:Quake3:baseq3:old.cfg", 50 );
+		Check( Rename( "Macintosh HD:Quake3:baseq3:old.cfg", "Macintosh HD:Quake3:baseq3:old.cfg" ) == 0, "rename onto itself failed" );
+		CheckFile( "Macintosh HD:Quake3:baseq3:old.cfg", 50, "rename onto itself lost the file" );
+		// HFS names ignore case: a change of case renames the same file
+		Check( Rename( "Macintosh HD:Quake3:baseq3:old.cfg", "Macintosh HD:Quake3:baseq3:OLD.cfg" ) == 0, "change of case failed" );
+		Check( !strcmp( FakeFM_File( "Macintosh HD:Quake3:baseq3:old.cfg" )->name, "Macintosh HD:Quake3:baseq3:OLD.cfg" ), "change of case not made" );
+		Check( fakeFMExchanges == 0 && fakeFMDeletes == 0, "rename onto the same file exchanged or deleted it" );
+	} else if ( !strcmp( name, "rename-cross-dir" ) ) {
+		FakeFM_AddFile( ":baseq3:demos:demo.tmp", 900, 0 );
+		FakeFM_AddDir( ":baseq3:", FAKE_FM_VREFNUM );
+		CheckRenamed( Rename( ":baseq3:demos:demo.tmp", ":baseq3:demo0001.dm_68" ),
+			":baseq3:demos:demo.tmp", ":baseq3:demo0001.dm_68", 900 );
+		Check( fakeFMMoves == 1 && fakeFMRenames == 1, "not a CatMove and an HRename" );
+		// the same leaf: only a move
+		FakeFM_AddDir( ":baseq3:screenshots:", FAKE_FM_VREFNUM );
+		CheckRenamed( Rename( ":baseq3:demo0001.dm_68", ":baseq3:screenshots:demo0001.dm_68" ),
+			":baseq3:demo0001.dm_68", ":baseq3:screenshots:demo0001.dm_68", 900 );
+		Check( fakeFMMoves == 2 && fakeFMRenames == 1, "a move with the same leaf renamed" );
+		// into a missing directory: nothing moves
+		CheckRenameFailed( Rename( ":baseq3:screenshots:demo0001.dm_68", ":baseq3:missing:demo.dm_68" ), ENOENT );
+		CheckFile( ":baseq3:screenshots:demo0001.dm_68", 900, "a failed move lost the source" );
+		// onto a name the destination directory already has for another file
+		// the source's leaf: the move is refused and nothing changes
+		FakeFM_AddFile( ":baseq3:demo0001.dm_68", 5, 0 );
+		FakeFM_AddFile( ":baseq3:screenshots:other.dm_68", 6, 0 );
+		FakeFM_AddDir( ":baseq3:demos:", FAKE_FM_VREFNUM );
+		CheckRenameFailed( Rename( ":baseq3:screenshots:demo0001.dm_68", ":baseq3:new.dm_68" ), EEXIST );
+		CheckFile( ":baseq3:screenshots:demo0001.dm_68", 900, "a refused move lost the source" );
+		CheckFile( ":baseq3:new.dm_68", -1, "a refused move made the destination" );
+		CheckFile( ":baseq3:demo0001.dm_68", 5, "a refused move changed the other file" );
+	} else if ( !strcmp( name, "rename-exists" ) ) {
+		// POSIX: an existing destination is replaced in one step
+		FakeFM_AddFile( ":baseq3:map_dl.pk3.tmp", 1234, 0 );
+		FakeFM_AddFile( ":baseq3:map_dl.pk3", 999, 0 );
+		CheckRenamed( Rename( ":baseq3:map_dl.pk3.tmp", ":baseq3:map_dl.pk3" ),
+			":baseq3:map_dl.pk3.tmp", ":baseq3:map_dl.pk3", 1234 );
+		Check( fakeFMExchanges == 1 && fakeFMDeletes == 1, "not replaced by FSpExchangeFiles" );
+		// across directories
+		FakeFM_AddFile( ":baseq3:demos:demo.tmp", 900, 0 );
+		FakeFM_AddFile( ":baseq3:demo.dm_68", 800, 0 );
+		CheckRenamed( Rename( ":baseq3:demos:demo.tmp", ":baseq3:demo.dm_68" ),
+			":baseq3:demos:demo.tmp", ":baseq3:demo.dm_68", 900 );
+		Check( FakeFM_File( ":baseq3:demos:demo.tmp" ) == NULL && fakeFMMoves == 0, "cross-directory replace moved" );
+		// a source left open stays open on the moved contents
+		FakeFM_AddFile( ":baseq3:a.cfg", 11, 0 );
+		FakeFM_AddFile( ":baseq3:b.cfg", 22, 0 );
+		fd = Open( ":baseq3:a.cfg", FOPEN_R );
+		CheckRenamed( Rename( ":baseq3:a.cfg", ":baseq3:b.cfg" ), ":baseq3:a.cfg", ":baseq3:b.cfg", 11 );
+		Check( fakeFMFiles[FakeFM_Path( (short)( fd - kMacRefNumOffset ) )->file].eof == 11, "the open path lost its contents" );
+	} else if ( !strcmp( name, "rename-exists-no-exchange" ) ) {
+		// volumes without FSpExchangeFiles: delete the destination, then rename
+		fakeFMExchangeUnsupported = 1;
+		FakeFM_AddFile( ":baseq3:map_dl.pk3.tmp", 1234, 0 );
+		FakeFM_AddFile( ":baseq3:map_dl.pk3", 999, 0 );
+		CheckRenamed( Rename( ":baseq3:map_dl.pk3.tmp", ":baseq3:map_dl.pk3" ),
+			":baseq3:map_dl.pk3.tmp", ":baseq3:map_dl.pk3", 1234 );
+		Check( fakeFMExchanges == 1 && fakeFMDeletes == 1 && fakeFMRenames == 1, "not deleted and renamed" );
+		FakeFM_AddFile( ":baseq3:demos:demo.tmp", 900, 0 );
+		FakeFM_AddFile( ":baseq3:demo.dm_68", 800, 0 );
+		CheckRenamed( Rename( ":baseq3:demos:demo.tmp", ":baseq3:demo.dm_68" ),
+			":baseq3:demos:demo.tmp", ":baseq3:demo.dm_68", 900 );
+		// a destination that cannot be deleted stays, and so does the source
+		FakeFM_AddFile( ":baseq3:a.cfg", 11, 0 );
+		FakeFM_AddFile( ":baseq3:b.cfg", 22, 1 );
+		CheckRenameFailed( Rename( ":baseq3:a.cfg", ":baseq3:b.cfg" ), EACCES );
+		CheckFile( ":baseq3:a.cfg", 11, "the source changed" );
+		CheckFile( ":baseq3:b.cfg", 22, "the locked destination changed" );
+	} else if ( !strcmp( name, "rename-exists-busy" ) ) {
+		// the destination is open: its old contents cannot be deleted, so the
+		// exchange is undone and both files keep their contents
+		FakeFM_AddFile( ":baseq3:map_dl.pk3.tmp", 1234, 0 );
+		FakeFM_AddFile( ":baseq3:map_dl.pk3", 999, 0 );
+		fd = Open( ":baseq3:map_dl.pk3", FOPEN_R );
+		CheckRenameFailed( Rename( ":baseq3:map_dl.pk3.tmp", ":baseq3:map_dl.pk3" ), EBUSY );
+		CheckFile( ":baseq3:map_dl.pk3.tmp", 1234, "the source changed" );
+		CheckFile( ":baseq3:map_dl.pk3", 999, "the open destination changed" );
+		Check( FakeFM_Path( (short)( fd - kMacRefNumOffset ) )->file == FakeFM_File( ":baseq3:map_dl.pk3" ) - fakeFMFiles,
+			"the open path no longer reads the destination" );
+		Check( fakeFMExchanges == 2, "the exchange was not undone" );
+	} else if ( !strcmp( name, "rename-locked" ) ) {
+		FakeFM_AddFile( ":baseq3:a.cfg", 11, 1 );
+		CheckRenameFailed( Rename( ":baseq3:a.cfg", ":baseq3:b.cfg" ), EACCES );
+		CheckFile( ":baseq3:a.cfg", 11, "a locked file was renamed" );
+		// across directories the move is undone when the rename is refused
+		FakeFM_AddDir( ":baseq3:demos:", FAKE_FM_VREFNUM );
+		CheckRenameFailed( Rename( ":baseq3:a.cfg", ":baseq3:demos:b.cfg" ), EACCES );
+		CheckFile( ":baseq3:a.cfg", 11, "the move of a locked file was not undone" );
+		CheckFile( ":baseq3:demos:a.cfg", -1, "the move of a locked file was left" );
+		Check( fakeFMMoves == 2, "the move was not undone by a second move" );
+		// a locked destination is not replaced
+		FakeFM_File( ":baseq3:a.cfg" )->locked = 0;
+		FakeFM_AddFile( ":baseq3:b.cfg", 22, 1 );
+		CheckRenameFailed( Rename( ":baseq3:a.cfg", ":baseq3:b.cfg" ), EACCES );
+		CheckFile( ":baseq3:a.cfg", 11, "the source changed" );
+		CheckFile( ":baseq3:b.cfg", 22, "a locked destination was replaced" );
+		// a locked volume or CD
+		FakeFM_File( ":baseq3:b.cfg" )->locked = 0;
+		fakeFMVolume = FAKE_VOLUME_SOFTWARE_LOCKED;
+		CheckRenameFailed( Rename( ":baseq3:a.cfg", ":baseq3:c.cfg" ), EROFS );
+		CheckRenameFailed( Rename( ":baseq3:a.cfg", ":baseq3:b.cfg" ), EROFS );
+		fakeFMVolume = FAKE_VOLUME_READ_ONLY_MEDIA;
+		CheckRenameFailed( Rename( ":baseq3:a.cfg", ":baseq3:demos:a.cfg" ), EROFS );
+		CheckFile( ":baseq3:a.cfg", 11, "a file on a locked volume changed" );
+		CheckFile( ":baseq3:b.cfg", 22, "a file on a locked volume changed" );
+	} else if ( !strcmp( name, "rename-missing" ) ) {
+		FakeFM_AddFile( ":baseq3:b.cfg", 22, 0 );
+		CheckRenameFailed( Rename( ":baseq3:a.cfg", ":baseq3:b.cfg" ), ENOENT );
+		CheckRenameFailed( Rename( ":missing:a.cfg", ":baseq3:c.cfg" ), ENOENT );
+		CheckFile( ":baseq3:b.cfg", 22, "a missing source changed the destination" );
+		Check( fakeFMRenames == 0 && fakeFMDeletes == 0 && fakeFMExchanges == 0 && fakeFMMoves == 0, "a missing source reached a rename" );
+	} else if ( !strcmp( name, "rename-other-volume" ) ) {
+		FakeFM_AddFile( ":baseq3:a.cfg", 11, 0 );
+		FakeFM_AddDir( "Other:", -2 );
+		CheckRenameFailed( Rename( ":baseq3:a.cfg", "Other:a.cfg" ), EXDEV );
+		CheckFile( ":baseq3:a.cfg", 11, "a cross-volume rename changed the source" );
+	} else if ( !strcmp( name, "rename-long-name" ) ) {
+		FakeFM_AddFile( ":baseq3:a.cfg", 11, 0 );
+		memset( longName, 'a', 256 );
+		longName[0] = ':';
+		longName[256] = 0;
+		CheckRenameFailed( Rename( ":baseq3:a.cfg", longName ), ENAMETOOLONG );
+		CheckRenameFailed( Rename( longName, ":baseq3:a.cfg" ), ENAMETOOLONG );
+		Check( fakeFMRenames == 0 && fakeFMMoves == 0 && fakeFMDeletes == 0 && fakeFMExchanges == 0,
+			"an over-long name reached the File Manager" );
+		// a leaf longer than HFS's 31 characters
+		CheckRenameFailed( Rename( ":baseq3:a.cfg", ":baseq3:a_map_with_a_rather_long_name.pk3" ), EINVAL );
+		CheckFile( ":baseq3:a.cfg", 11, "a refused long leaf changed the source" );
+	} else {
+		return 0;
+	}
+	Check( FakeFM_OpenPaths() <= 1, "rename left a path open" );
+	return 1;
+}
+
+static int UnlinkCase( const char *name ) {
+	char longName[300];
+	int fd;
+
+	if ( !strcmp( name, "unlink" ) ) {
+		// FS_Remove's remove( ".pk3.tmp" ) after a copied download
+		FakeFM_AddFile( ":baseq3:map_dl.pk3.tmp", 1234, 0 );
+		FakeFM_AddFile( "Macintosh HD:Quake3:baseq3:map_dl.pk3.tmp", 1234, 0 );
+		Check( Unlink( ":baseq3:map_dl.pk3.tmp" ) == 0, "unlink failed" );
+		CheckFile( ":baseq3:map_dl.pk3.tmp", -1, "unlink left the file" );
+		Check( Unlink( "Macintosh HD:Quake3:baseq3:map_dl.pk3.tmp" ) == 0, "unlink of a full path failed" );
+		CheckFile( "Macintosh HD:Quake3:baseq3:map_dl.pk3.tmp", -1, "unlink left the file" );
+		Check( Unlink( ":baseq3:map_dl.pk3.tmp" ) == -1 && reent._errno == ENOENT, "a second unlink is not ENOENT" );
+		Check( Unlink( ":missing:map_dl.pk3.tmp" ) == -1 && reent._errno == ENOENT, "unlink in a missing directory is not ENOENT" );
+	} else if ( !strcmp( name, "unlink-locked" ) ) {
+		FakeFM_AddFile( ":baseq3:a.cfg", 11, 1 );
+		Check( Unlink( ":baseq3:a.cfg" ) == -1 && reent._errno == EACCES, "unlink of a locked file is not EACCES" );
+		FakeFM_File( ":baseq3:a.cfg" )->locked = 0;
+		fd = Open( ":baseq3:a.cfg", FOPEN_R );
+		Check( Unlink( ":baseq3:a.cfg" ) == -1 && reent._errno == EBUSY, "unlink of an open file is not EBUSY" );
+		FSClose( (short)( fd - kMacRefNumOffset ) );
+		fakeFMVolume = FAKE_VOLUME_SOFTWARE_LOCKED;
+		Check( Unlink( ":baseq3:a.cfg" ) == -1 && reent._errno == EROFS, "unlink on a locked volume is not EROFS" );
+		CheckFile( ":baseq3:a.cfg", 11, "a refused unlink deleted the file" );
+	} else if ( !strcmp( name, "unlink-long-name" ) ) {
+		memset( longName, 'a', 256 );
+		longName[0] = ':';
+		longName[256] = 0;
+		Check( Unlink( longName ) == -1 && reent._errno == ENAMETOOLONG, "unlink of an over-long name is not ENAMETOOLONG" );
+		Check( fakeFMDeletes == 0, "an over-long name reached the File Manager" );
+	} else {
+		return 0;
+	}
+	Check( FakeFM_OpenPaths() == 0, "unlink left a path open" );
+	return 1;
+}
+
 static void Case( const char *name ) {
 	int fd, fd2;
 	char longName[300];
 
 	Begin( name );
+	if ( RenameCase( name ) || UnlinkCase( name ) ) {
+		return;
+	}
 	if ( !strcmp( name, "read" ) ) {
 		FakeFM_AddFile( ":baseq3:pak0.pk3", 1000, 0 );
 		fd = Open( ":baseq3:pak0.pk3", FOPEN_R );
