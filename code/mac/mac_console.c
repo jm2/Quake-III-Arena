@@ -37,9 +37,9 @@ void	Sys_ShowConsole( int level, qboolean quitOnClose ) {
 ==================
 Sys_ConsoleWanted
 
-Asked by _consolewrite (mac_consolehooks.cc) before output to fd opens the
-console window. Errors on stderr always open it. Other output opens it only
-once the console is displayed (viewlog, or the Shift prompt at launch).
+Asked by _consolewrite (mac_consolehooks.cc) for each write to fd. Errors
+on stderr always open and reach the console window. Other output does only
+while the console is displayed (viewlog, or the Shift prompt at launch).
 Hidden output still reaches the crash ring.
 ==================
 */

@@ -130,11 +130,12 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install the PowerPC cross compiler and qemu-user
+      - name: Install the PowerPC cross compilers and qemu-user
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
-            gcc-powerpc-linux-gnu libc6-dev-powerpc-cross qemu-user-static
+            gcc-powerpc-linux-gnu g++-powerpc-linux-gnu libc6-dev-powerpc-cross \
+            qemu-user-static
           if [ ! -e /proc/sys/fs/binfmt_misc/qemu-ppc ]; then
             sudo systemctl restart systemd-binfmt
           fi
@@ -153,6 +154,17 @@ jobs:
           tests/be32_cc.sh -fsanitize=address,undefined "$RUNNER_TEMP/be32-probe.c" \
             -o "$RUNNER_TEMP/be32-probe"
           "$RUNNER_TEMP/be32-probe"
+          # C++ too: run_mac_toolbox_init_tests.sh builds mac_consolehooks.cc.
+          cat > "$RUNNER_TEMP/be32-probe.cc" <<'EOF'
+          #include <string>
+          int main() {
+              std::string s("ppc32");
+              return s.size() == 5 && sizeof(long) == 4 ? 0 : 1;
+          }
+          EOF
+          tests/be32_cxx.sh -fsanitize=address,undefined "$RUNNER_TEMP/be32-probe.cc" \
+            -o "$RUNNER_TEMP/be32-probe-cxx"
+          "$RUNNER_TEMP/be32-probe-cxx"
 
       - name: Run 32-bit big-endian regressions
         env:

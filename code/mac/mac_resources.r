@@ -53,3 +53,23 @@ resource 'SIZE' (-1) {
 	128000 * 1024,
 	96000 * 1024
 };
+
+/* Sys_Error's Stop alert (mac_main.c), as retail's ALRT 128: ParamText
+   puts "Quake 3 Error:" in ^0 and the message in ^1. */
+resource 'ALRT' (128, purgeable) {
+	{0, 0, 180, 420},
+	128,
+	beepStages,
+	alertPositionMainScreen
+};
+
+resource 'DITL' (128, purgeable) {
+	{
+		{145, 330, 165, 400},
+		Button { enabled, "Quit" };
+		{13, 78, 31, 400},
+		StaticText { disabled, "^0" };
+		{35, 78, 135, 400},
+		StaticText { disabled, "^1" }
+	}
+};

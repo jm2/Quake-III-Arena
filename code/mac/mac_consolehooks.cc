@@ -10,9 +10,9 @@
 // reset the window and menu lists. InitCursor would also show the cursor that
 // Sys_InitInput hid.
 //
-// The window is the same retro::ConsoleWindow, at the same position. It opens
-// only when Sys_ConsoleWanted (mac_console.c) accepts the output. Reading
-// stdin always opens it.
+// The window is the same retro::ConsoleWindow, at the same position. Output
+// opens and reaches it only while Sys_ConsoleWanted (mac_console.c) accepts
+// it. Reading stdin always opens it.
 
 #include <sys/types.h>
 #include <string.h>
@@ -26,6 +26,7 @@ using namespace retro;
 
 static void Sys_OpenConsoleWindow( void ) {
 	Rect	r;
+	GrafPtr	save;
 
 	if ( Console::currentInstance ) {
 		return;
@@ -35,14 +36,22 @@ static void Sys_OpenConsoleWindow( void ) {
 	r = qd.screenBits.bounds;
 	r.top += 40;
 	InsetRect( &r, 5, 5 );
+	// The ConsoleWindow constructor leaves the current port on the console.
+	// Opened mid-game, that would move port-relative code such as the drag
+	// handler's LocalToGlobal (mac_event.c) off the game window.
+	GetPort( &save );
 	Console::currentInstance = new ConsoleWindow( r, "\pRetro68 Console" );
+	SetPort( save );
 }
 
+// Each write is gated, not just the first: once viewlog 0 hides the console,
+// the window (which cannot be closed, like retail's SIOUX) stops receiving
+// stdout, as retail's Sys_Print stopped printing.
 extern "C" ssize_t _consolewrite( int fd, const void *buf, size_t count ) {
+	if ( !Sys_ConsoleWanted( fd ) ) {
+		return count;	// hidden: the crash ring has Sys_LogPrintf's copy
+	}
 	if ( !Console::currentInstance ) {
-		if ( !Sys_ConsoleWanted( fd ) ) {
-			return count;	// hidden: the crash ring has Sys_LogPrintf's copy
-		}
 		Sys_OpenConsoleWindow();
 	}
 	if ( Console::currentInstance == (Console *)-1 ) {
