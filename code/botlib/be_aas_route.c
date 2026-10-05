@@ -555,6 +555,9 @@ qboolean AAS_CalculateAreaTravelTimes(void)
 	} //end for
 	size = header;
 	if (!AAS_AddRoutingCost(&size, rows, 1) || !AAS_AddRoutingCost(&size, data, 1)) return qfalse;
+	// The engine zone ends the game when it cannot satisfy a request, and a
+	// file's reachability links can ask for far more than its own size here.
+	if (size > AvailableMemory()) return qfalse;
 	// Keep all pointer rows before 16-bit costs so every row stays aligned.
 	//allocate memory for the area travel times
 	ptr = size ? (char *)GetClearedMemory(size) : NULL;
@@ -779,6 +782,8 @@ aas_routingcache_t *AAS_AllocRoutingCache(int numtraveltimes)
 	size = (int)sizeof(aas_routingcache_t) + numtraveltimes *
 		(int)(sizeof(unsigned short int) + sizeof(unsigned char));
 	if (routingcachesize < 0 || size > INT_MAX - routingcachesize) return NULL;
+	// The engine zone ends the game when it cannot satisfy a request.
+	if (size > AvailableMemory()) return NULL;
 	cache = (aas_routingcache_t *) GetClearedMemory(size);
 	if (!cache) return NULL;
 	routingcachesize += size;

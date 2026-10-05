@@ -262,8 +262,16 @@ void BotImport_BSPModelMinsMaxsOrigin(int modelnum, vec3_t angles, vec3_t outmin
 	float max;
 	int	i;
 
-	h = CM_InlineModel(modelnum);
-	CM_ModelBounds(h, mins, maxs);
+	// AAS reachabilities and BSP entity keys supply this number: return
+	// empty bounds rather than letting CM_InlineModel drop the server
+	if ( modelnum < 0 || modelnum >= CM_NumInlineModels() ) {
+		Com_DPrintf( "BotImport_BSPModelMinsMaxsOrigin: bad model number %d\n", modelnum );
+		VectorClear( mins );
+		VectorClear( maxs );
+	} else {
+		h = CM_InlineModel(modelnum);
+		CM_ModelBounds(h, mins, maxs);
+	}
 	//if the model is rotated
 	if ((angles[0] || angles[1] || angles[2])) {
 		// expand for rotation
