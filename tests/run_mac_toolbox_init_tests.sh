@@ -37,14 +37,25 @@ Q3_TEST_EXTRACT '^int[[:space:]]+Sys_ConsoleWanted[[:space:]]*[(]' "$Q3_TEST_CON
 Q3_TEST_EXTRACT '^void[[:space:]]+Sys_ShowConsole[[:space:]]*[(]' "$Q3_TEST_CONSOLE" "$Q3_TEST_DIR/mac_console_extracted.c"
 Q3_TEST_EXTRACT '^void[[:space:]]+Sys_Print[[:space:]]*[(]' "$Q3_TEST_CONSOLE" "$Q3_TEST_DIR/mac_console_extracted.c"
 
-# The C++ compiler that goes with $CC (g++ for gcc and cc, clang++ for clang).
+# The C++ compiler that goes with $CC: clang++ for clang, g++ for gcc,
+# be32_cxx.sh for be32_cc.sh (the ppc32 BE job), c++ for cc.  An exported CXX
+# wins.  Either way it must target the same machine as $CC.
 if [ -z "${CXX:-}" ]; then
     case "$(basename -- "${CC:-cc}")" in
-        clang*) CXX="clang++${CC##*clang}" ;;
-        gcc*) CXX="g++${CC##*gcc}" ;;
-        *) CXX=c++ ;;
+        be32_cc.sh) CXX="$(dirname -- "$CC")/be32_cxx.sh" ;;
+        clang*) CXX="$(dirname -- "${CC:-cc}")/clang++${CC##*clang}" ;;
+        *gcc*) CXX="$(dirname -- "${CC:-cc}")/$(basename -- "${CC:-cc}" | sed 's/gcc/g++/')" ;;
+        cc) CXX=c++ ;;
+        *) echo "run_mac_toolbox_init_tests: no C++ compiler known for CC=$CC; set CXX" >&2; exit 1 ;;
     esac
+    case "$CXX" in ./*) CXX="${CXX#./}" ;; esac
 fi
+Q3_TEST_CC_MACHINE="$("${CC:-cc}" -dumpmachine 2>/dev/null)" ||
+    { echo "run_mac_toolbox_init_tests: ${CC:-cc} -dumpmachine failed" >&2; exit 1; }
+Q3_TEST_CXX_MACHINE="$("$CXX" -dumpmachine 2>/dev/null)" ||
+    { echo "run_mac_toolbox_init_tests: C++ compiler $CXX (for CC=${CC:-cc}) is not available; install it or set CXX" >&2; exit 1; }
+[ "$Q3_TEST_CC_MACHINE" = "$Q3_TEST_CXX_MACHINE" ] ||
+    { echo "run_mac_toolbox_init_tests: CXX=$CXX targets $Q3_TEST_CXX_MACHINE, but CC=${CC:-cc} targets $Q3_TEST_CC_MACHINE; set CXX to a matching C++ compiler" >&2; exit 1; }
 mkdir -p "$Q3_TEST_DIR/retro"
 cp "$Q3_TEST_ROOT/tests/mac_console_window_fake.h" "$Q3_TEST_DIR/retro/ConsoleWindow.h"
 # -w: the hooks' "\pRetro68 Console" is a Retro68 Pascal string, which host

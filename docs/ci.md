@@ -190,14 +190,17 @@ merging several PRs in a row never cancels or drops a master run.
     run the same `tests/run_*_tests.sh` runners on 32-bit big-endian PowerPC
     Linux (ILP32, `__BIG_ENDIAN__`), the target's byte order and word size. Each
     job runs on a pinned `ubuntu-24.04` image, because it relies on Ubuntu's
-    package names. It installs `gcc-powerpc-linux-gnu` and `qemu-user-static`, checks
-    that a sanitized probe runs through the qemu-ppc binfmt handler, then runs
+    package names. It installs `gcc-powerpc-linux-gnu`, `g++-powerpc-linux-gnu`
+    and `qemu-user-static`, checks that sanitized C and C++ probes run through
+    the qemu-ppc binfmt handler, then runs
     its quarter through `tests/run_host_regressions.sh` with the same 10-minute
     runner and 20-minute shard bounds;
   - `tests/be32_cc.sh` is the `$CC`. It keeps each runner's own flags,
     AddressSanitizer and UndefinedBehaviorSanitizer included, and adds the
     Retro68 target's `-fsigned-char` and 64-bit `long double`
-    (`-mlong-double-64`) plus `-latomic` for the ppc32 sanitizer runtimes;
+    (`-mlong-double-64`) plus `-latomic` for the ppc32 sanitizer runtimes.
+    `tests/be32_cxx.sh` does the same with `powerpc-linux-gnu-g++` for the
+    runners that also compile C++, which pick it when `$CC` is `be32_cc.sh`;
   - ppc32 has no LeakSanitizer, so the job sets `Q3_TEST_DETECT_LEAKS=0`, which
     the leak-checking runners pass as `detect_leaks`. Leaks are still checked
     by the x86-64 jobs;
@@ -251,9 +254,10 @@ pwsh -NoProfile -File ./build_mac.ps1 --help
 PowerShell parser validation is also part of CI; see
 `.github/workflows/portable-ci.yml` for the exact command.
 
-The 32-bit big-endian job needs `powerpc-linux-gnu-gcc` with its ppc32 sysroot
-and a registered qemu-ppc binfmt_misc handler (Debian/Ubuntu:
-`gcc-powerpc-linux-gnu libc6-dev-powerpc-cross qemu-user-static`):
+The 32-bit big-endian job needs `powerpc-linux-gnu-gcc` and
+`powerpc-linux-gnu-g++` with their ppc32 sysroot and a registered qemu-ppc
+binfmt_misc handler (Debian/Ubuntu: `gcc-powerpc-linux-gnu
+g++-powerpc-linux-gnu libc6-dev-powerpc-cross qemu-user-static`):
 
 ```sh
 CC="$PWD/tests/be32_cc.sh" QEMU_LD_PREFIX=/usr/powerpc-linux-gnu \

@@ -385,7 +385,7 @@ static int EventIndex( const char *name ) {
 }
 
 static void WriteParms( const char *data ) {
-	char	path[4096];
+	char	path[sizeof( cwd ) + 32];	/* cwd + ":MacQuake3Parms.txt" */
 	FILE	*f;
 
 	snprintf( path, sizeof( path ), "%s:MacQuake3Parms.txt", cwd );
