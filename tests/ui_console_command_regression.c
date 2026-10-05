@@ -8,6 +8,7 @@ clientStatic_t cls;
 refexport_t re;
 char cl_cdkey[34];
 int cvar_modifiedFlags;
+botlib_export_t *botlib_export;	/* the UI_PC_* traps reach botlib (issue #11) */
 
 qboolean SV_GameCommand( void ) { Unexpected( __func__ ); return qfalse; }
 void CIN_DrawCinematic( int handle ) { Unexpected( __func__ ); }

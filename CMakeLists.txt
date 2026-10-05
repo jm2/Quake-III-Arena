@@ -5,10 +5,9 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# OFF during bring-up (implementation_plan.md 3.4): halves build/link time and
-# the simple PC_* script parser in cl_ui.c doesn't fill pc_token_t number
-# fields yet, so the Team Arena UI would misparse its .menu files anyway.
-# Re-enable with -DBUILD_TEAM_ARENA=ON.
+# OFF during bring-up (implementation_plan.md 3.4): halves build/link time, and
+# the Team Arena menus (read through botlib's precompiler, as in retail) are
+# not yet validated on Mac OS 9. Re-enable with -DBUILD_TEAM_ARENA=ON.
 option(BUILD_TEAM_ARENA "Build the Quake3_TeamArena (mission pack) executable" OFF)
 
 # Debug-friendly flags. We deliberately do NOT use:
