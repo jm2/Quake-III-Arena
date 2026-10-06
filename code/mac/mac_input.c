@@ -124,9 +124,10 @@ void Sys_SuspendInput( void ) {
 		return;
 	}
 	inputSuspended = true;
-	ShowCursor();
-	// no InputSprocket calls without ISpStartup (in_nomouse, or it failed)
+	// no InputSprocket calls without ISpStartup (in_nomouse, or it failed),
+	// and no cursor change: Sys_InitInput only hid it if ISp started
 	if ( inputActive ) {
+		ShowCursor();
 		ISpSuspend();
 	}
 }
@@ -138,11 +139,12 @@ void Sys_ResumeInput( void ) {
 		return;
 	}
 	inputSuspended = false;
-	HideCursor();
-	// no InputSprocket calls without ISpStartup (in_nomouse, or it failed)
+	// no InputSprocket calls without ISpStartup (in_nomouse, or it failed),
+	// and no cursor change: Sys_InitInput only hid it if ISp started
 	if ( !inputActive ) {
 		return;
 	}
+	HideCursor();
 	ISpResume();
 
 	// Discard button events buffered across the suspend (#291): a press
