@@ -39,14 +39,17 @@ if uses != [("Quake3_TeamArena", "missionpack")] or cmake.count("DEFAULT_FS_GAME
 # cross_game_qvm_regression.c models a disconnect as keeping fs_game, as
 # retail's CL_Disconnect did: the engine sets fs_game only from a server's
 # systeminfo (CL_SystemInfoChanged) and when FS_Startup refuses a bad one.
+# Statements are compared with all whitespace removed, so a reformatted or
+# wrapped call still matches, and a write through fs_gamedirvar->name counts.
 sets = []
 for path in sorted((root / "code").rglob("*.c")):
     if path.relative_to(root / "code").parts[0] in ("game", "cgame", "ui", "q3_ui"):
         continue
-    for line in path.read_text(encoding="latin-1").splitlines():
-        if re.search(r'Cvar_\w+\s*\(\s*"fs_game"', line) and not re.search(r'Cvar_(Get|VariableString)\b', line):
-            sets.append("%s: %s" % (path.relative_to(root), line.strip()))
-if sets != ['code/client/cl_parse.c: Cvar_Set( "fs_game", "" );', 'code/qcommon/files.c: Cvar_Set( "fs_game", "" );']:
+    text = re.sub(r"\s+", "", path.read_text(encoding="latin-1"))
+    for call in re.finditer(r'(?<![A-Za-z0-9_])Cvar_(\w+)\((?:"fs_game"|fs_gamedirvar->name)[,)]', text):
+        if call.group(1) not in ("Get", "VariableString"):
+            sets.append("%s: %s" % (path.relative_to(root), text[call.start():text.find(";", call.start()) + 1]))
+if sets != ['code/client/cl_parse.c: Cvar_Set("fs_game","");', 'code/qcommon/files.c: Cvar_Set("fs_game","");']:
     raise SystemExit("engine code that sets fs_game changed: %r" % sets)
 
 # The call sites pass retail's interpret modes and let VM_Create choose; a
