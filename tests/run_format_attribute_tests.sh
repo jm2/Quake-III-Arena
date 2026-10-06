@@ -11,7 +11,8 @@
 #      runner under run_host_regressions.sh) still use these flags;
 #   4. every engine and module source this host can compile (all but
 #      code/mac, which the Retro68 build covers) builds with those flags, for
-#      each module configuration CMakeLists.txt builds.
+#      each module configuration CMakeLists.txt builds, and every printf-style
+#      definition sees its own format attribute (-Wmissing-format-attribute).
 set -euo pipefail
 
 export TMPDIR="${TMPDIR:-/var/tmp}"
@@ -92,7 +93,7 @@ mkdir -p "$Q3_TEST_DIR/gl/GL"
 printf '%s\n' 'typedef struct _XDisplay Display; typedef struct XVisualInfo XVisualInfo;' \
     'typedef struct __GLXcontextRec *GLXContext; typedef unsigned long GLXDrawable; typedef int Bool;' \
     > "$Q3_TEST_DIR/gl/GL/glx.h"
-Q3_FLAGS+=(-I"$Q3_TEST_DIR/gl")
+Q3_FLAGS+=(-I"$Q3_TEST_DIR/gl" -Wmissing-format-attribute)
 Q3_SWEPT=0
 sweep() {
     local file="$1"
@@ -101,6 +102,13 @@ sweep() {
         cat "$Q3_TEST_DIR/sweep.log" >&2
         fail "${file#"$Q3_TEST_ROOT"/} ($*) does not build with ${Q3_FORMAT_FLAGS[*]}"
     }
+    # A printf-style definition must see its attribute (its prototype, or its
+    # header), or calls in its own file go unchecked. Clang also flags
+    # UI_SendOrders, which passes a menu-supplied format it checks at runtime.
+    if grep -E 'missing-format-attribute|suggest-attribute=format' "$Q3_TEST_DIR/sweep.log" |
+        grep -v "'UI_SendOrders'" >&2; then
+        fail "${file#"$Q3_TEST_ROOT"/} ($*) defines a printf-style function without its format attribute"
+    fi
     Q3_SWEPT=$((Q3_SWEPT + 1))
 }
 # The source lists and exclusions of CMakeLists.txt.
