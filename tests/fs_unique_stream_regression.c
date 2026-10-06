@@ -6,6 +6,8 @@
  * common.c's does.  Every streamed byte is checked against the CRC32 that
  * Python's zlib computed and against a direct unzip read of the same entry. */
 #include <dirent.h>
+#include <errno.h>
+#include <sys/stat.h>
 #include <setjmp.h>
 #include <stdarg.h>
 #include <unistd.h>
@@ -21,7 +23,7 @@
 qboolean com_fullyInitialized;
 cvar_t *com_journal;
 fileHandle_t com_journalDataFile;
-static cvar_t debugVar, restrictVar, copyVar;
+static cvar_t debugVar, restrictVar, copyVar, homeVar;
 static searchpath_t search;
 
 static struct { void *p; int size; qboolean tracked; } owners[MAX_OWNERS];
@@ -502,17 +504,53 @@ static void MountOwned(const char *pk3) {
 	fs_searchpaths = path;
 }
 
+/* A game directory searched after the pack, owned by the zone, as
+ * FS_AddGameDirectory builds it. */
+static void AddOwnedDirectory(const char *home) {
+	searchpath_t *path = Z_Malloc(sizeof(*path));
+	path->dir = Z_Malloc(sizeof(*path->dir));
+	Q_strncpyz(path->dir->path, home, sizeof(path->dir->path));
+	Q_strncpyz(path->dir->gamedir, "baseq3", sizeof(path->dir->gamedir));
+	fs_searchpaths->next = path;
+}
+
+static void CheckFileText(const char *path, const char *text) {
+	char bytes[64];
+	FILE *f = fopen(path, "rb");
+	size_t n;
+	Check(f != NULL, "written file exists");
+	n = fread(bytes, 1, sizeof(bytes), f);
+	fclose(f);
+	Check(n == strlen(text) && !memcmp(bytes, text, n), "written file holds both halves of its text");
+}
+
 /* FS_Restart (FS_ConditionalRestart from a demo's gamestate) runs FS_Shutdown
  * and then mounts the paks again.  A unique stream owns its reopened archive
- * and continues, as in retail; VM handles and handles reading through the
- * freed pack are closed. */
+ * and continues, as in retail; VM read handles and handles reading through
+ * the freed pack are closed.  Directory, engine-write and VM-write handles
+ * hold no pack and stay open, as in retail (its FS_Shutdown closed only
+ * handles with a fileSize, which only FS_FOpenFileByMode's reads set). */
 static void Restart(const char *pk3, const char *moved) {
 	const entry_t *e = Entry("music/track.wav"), *vm = Entry("video/stored.roq");
 	unsigned char *ref = Reference(pk3, e), *chunk = malloc(100000), b[16];
-	fileHandle_t unique, byMode, shared, fallback, later;
+	fileHandle_t unique, byMode, shared, fallback, later, dirRead, engineWrite, vmWrite;
 	unz_s *archive;
 	int pos = 0, n;
+	char home[MAX_OSPATH], path[MAX_OSPATH + 32];
+	const char *slash = strrchr(pk3, '/');
+	FILE *f;
 	Check(chunk != NULL, "chunk buffer");
+	Check(slash && slash - pk3 + sizeof("/home") <= sizeof(home), "scratch directory");
+	snprintf(home, sizeof(home), "%.*s/home", (int)(slash - pk3), pk3);
+	snprintf(path, sizeof(path), "%s/baseq3", home);
+	Check((mkdir(home, 0700) == 0 || errno == EEXIST) && (mkdir(path, 0700) == 0 || errno == EEXIST),
+		  "home game directory");
+	snprintf(path, sizeof(path), "%s/baseq3/dir.txt", home);
+	f = fopen(path, "wb");
+	Check(f && fputs("directory bytes", f) >= 0 && fclose(f) == 0, "directory file");
+	homeVar.string = home;
+	fs_homepath = &homeVar;
+	Q_strncpyz(fs_gamedir, "baseq3", sizeof(fs_gamedir));
 	memset(fsh, 0, sizeof(fsh));
 	fs_debug = &debugVar;
 	fs_restrict = &restrictVar;
@@ -520,6 +558,7 @@ static void Restart(const char *pk3, const char *moved) {
 	zoneBudget = LONG_MAX;
 	mountedDescriptors = OpenDescriptors();
 	MountOwned(pk3);
+	AddOwnedDirectory(home);
 	Check(FS_FOpenFileRead(e->name, &unique, qtrue) == e->size && fsh[unique].handleFiles.unique,
 		  "unique stream opens, as CL_PlayDemo opens a demo");
 	Check(FS_Read(chunk, 100000, unique) == 100000 && !memcmp(chunk, ref, 100000),
@@ -534,6 +573,12 @@ static void Restart(const char *pk3, const char *moved) {
 	Check(FS_FOpenFileRead("maps/m01.bin", &fallback, qtrue) > 0 && !fsh[fallback].handleFiles.unique,
 		  "fallback handle shares the mounted pack");
 	Check(rename(moved, pk3) == 0, "pk3 moves back");
+	Check(FS_FOpenFileRead("dir.txt", &dirRead, qtrue) == 15 && !fsh[dirRead].zipFile &&
+		  FS_Read(b, 9, dirRead) == 9 && !memcmp(b, "directory", 9), "directory handle opens");
+	engineWrite = FS_FOpenFileWrite("engine.txt");
+	Check(engineWrite > 0 && FS_Write("engine ", 7, engineWrite) == 7, "engine write handle opens");
+	Check(FS_FOpenFileByMode("vm.txt", &vmWrite, FS_WRITE) == 0 && vmWrite > 0 && fsh[vmWrite].byMode &&
+		  FS_Write("vm ", 3, vmWrite) == 3, "VM write handle opens");
 
 	FS_Shutdown(qfalse);
 
@@ -543,10 +588,23 @@ static void Restart(const char *pk3, const char *moved) {
 		  "the restart closes handles that read through the freed pack");
 	Check(fsh[unique].handleFiles.file.z == archive && fsh[unique].handleFiles.unique &&
 		  fsh[unique].zipOffset == pos, "the restart keeps the unique stream and its position");
+	Check(fsh[dirRead].handleFiles.file.o && fsh[engineWrite].handleFiles.file.o && fsh[vmWrite].handleFiles.file.o,
+		  "the restart keeps directory, engine-write and VM-write handles, as retail did");
 	MountOwned(pk3);
-	Check(FS_FOpenFileRead("maps/m02.bin", &later, qtrue) > 0 && later != unique,
-		  "a new open after the restart does not take the stream's slot");
+	Check(FS_FOpenFileRead("maps/m02.bin", &later, qtrue) > 0 && later != unique && later != dirRead &&
+		  later != engineWrite && later != vmWrite, "a new open after the restart does not take a kept handle's slot");
 	FS_FCloseFile(later);
+	Check(FS_Read(b, 6, dirRead) == 6 && !memcmp(b, " bytes", 6) && FS_Read(b, 1, dirRead) == 0,
+		  "the directory handle continues after the restart");
+	FS_FCloseFile(dirRead);
+	Check(FS_Write("after", 5, engineWrite) == 5 && FS_Write("after", 5, vmWrite) == 5,
+		  "the write handles continue after the restart");
+	FS_FCloseFile(engineWrite);
+	FS_FCloseFile(vmWrite);
+	snprintf(path, sizeof(path), "%s/baseq3/engine.txt", home);
+	CheckFileText(path, "engine after");
+	snprintf(path, sizeof(path), "%s/baseq3/vm.txt", home);
+	CheckFileText(path, "vm after");
 	while ((n = FS_Read(chunk, 65536, unique)) > 0) {
 		Check(pos + n <= e->size && !memcmp(chunk, ref + pos, n),
 			  "the unique stream continues byte-identically after the restart");
