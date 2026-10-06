@@ -129,12 +129,26 @@ void Sys_SuspendInput( void ) {
 }
 
 void Sys_ResumeInput( void ) {
+	int		device, button;
+
 	if ( !inputSuspended ) {
 		return;
 	}
 	inputSuspended = false;
 	HideCursor();
 	ISpResume();
+
+	// Discard button events buffered across the suspend (#291): a press
+	// that came after DoOSEvent drained the queues was not released by
+	// Sys_ReleaseKeys, and its release went to the front process.
+	if ( !inputActive ) {
+		return;
+	}
+	for ( device = 0 ; device < numDevices ; device++ ) {
+		for ( button = 2 ; button < numElements[device] ; button++ ) {
+			ISpElement_Flush( elements[device][button] );
+		}
+	}
 }
 
 /*
