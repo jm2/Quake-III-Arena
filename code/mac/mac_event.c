@@ -230,6 +230,9 @@ void	DoOSEvent(EventRecord	*event)
 			// The key-ups for anything held now go to the front process,
 			// so release it all here or it stays down (#291).  Modifiers
 			// first, so Sys_ModifierEvents does not release them again.
+			// Drain InputSprocket first: a button pressed since the last
+			// Sys_Input is not yet tracked, so would not be released.
+			Sys_Input();
 			inputSystemSuspended = qtrue;
 			Sys_ModifierEvents( btnState );
 			Sys_ReleaseKeys();
