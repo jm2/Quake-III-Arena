@@ -30,7 +30,10 @@ void S_Callback( SndChannel *sc, SndCommand *cmd ) {
 	memset( &s_sndHeader, 0, sizeof( s_sndHeader ) );
 	s_sndHeader.samplePtr = (void *)(s_mixedSamples + offset);
 	s_sndHeader.numChannels = 2;
-	s_sndHeader.sampleRate = rate22khz;
+	// exactly dma.speed: rate22khz is the 22254.54 Hz Mac hardware rate,
+	// which played everything 0.9% sharp and ran the DMA position ahead of
+	// the mixer; the Sound Manager converts 22050 Hz to the output rate
+	s_sndHeader.sampleRate = rate22050hz;
 	s_sndHeader.loopStart = 0;
 	s_sndHeader.loopEnd = 0;
 	s_sndHeader.encode = extSH;
@@ -98,7 +101,7 @@ qboolean SNDDMA_Init(void) {
 	dma.samples = MAX_MIXED_SAMPLES;
 	dma.submission_chunk = SUBMISSION_CHUNK;
 	dma.samplebits = 16;
-	dma.speed = 22050;
+	dma.speed = 22050;		// must match the buffer headers' rate22050hz
 	dma.buffer = (byte *)s_mixedSamples;
 	
 	// que up the first submission-chunk sized buffer
