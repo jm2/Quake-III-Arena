@@ -404,12 +404,20 @@ void Sys_Yield( void ) {
 // build "Volume:Folder1:Folder2" with no trailing colon (FS_BuildOSPath glues
 // ":qpath" onto the result and a double colon is parent-directory).
 //
+// A volume root is the exception: it is "Volume:" (issue #267). A bare
+// "Volume" has no colon, so HFS takes it as an item in the default
+// directory, not as the volume; paths joined onto it still resolve, but
+// catalog lookups of the base path itself (Sys_ListFiles, so the Mods menu
+// and dir) fail. FS_BuildOSPath and Sys_JoinHFSPath add no second colon
+// after it.
+//
 // Fallback: some Process Manager configurations (debuggers, certain
 // emulator paths, very early call sites before the app is fully registered)
 // hand back noErr from GetProcessInformation but never populate the FSSpec.
 // We detect that with a sanity check on (vRefNum, parID) and fall back to
 // GetVol, which is always correct for "the volume the app is running from"
-// even if it loses the per-folder structure.
+// even if it loses the per-folder structure. That path is a volume root,
+// "Volume:".
 //
 // FS_BuildOSPath normalizes forward slashes, so caller paths like
 // "/baseq3/q3key/" concatenate correctly with the result either way.
@@ -464,10 +472,11 @@ char *Sys_GetCwd( void ) {
             Sys_Error( "Sys_GetCwd: GetVol fallback failed: %d", err );
         }
         segLen = volName[0];
-        if ( segLen >= (int)sizeof( cached ) ) {
-            segLen = sizeof( cached ) - 1;
+        if ( segLen >= (int)sizeof( cached ) - 1 ) {
+            segLen = sizeof( cached ) - 2;
         }
         memcpy( cached, &volName[1], segLen );
+        cached[segLen++] = ':';
         cached[segLen] = 0;
         Com_FlightRecord( "Sys_GetCwd (GetVol fallback): '%s'\n", cached );
         return cached;
@@ -516,8 +525,29 @@ char *Sys_GetCwd( void ) {
                    appSpec.vRefNum, appSpec.parID );
     }
 
+    // the application is at the root of its volume
+    if ( !strchr( cached, ':' ) ) {
+        Q_strcat( cached, sizeof( cached ), ":" );
+    }
+
     Com_FlightRecord( "Sys_GetCwd (FSSpec walk): '%s'\n", cached );
     return cached;
+}
+
+/*
+=================
+Sys_JoinHFSPath
+
+dest = directory:leaf. A volume root from Sys_GetCwd ("Vol:") already ends
+in the separator, and a second colon would name its parent (issue #267).
+=================
+*/
+static void Sys_JoinHFSPath( char *dest, int size, const char *directory,
+                             const char *leaf ) {
+    int length = strlen( directory );
+
+    snprintf( dest, size, "%s%s%s", directory,
+              length > 0 && directory[length - 1] == ':' ? "" : ":", leaf );
 }
 
 char *Sys_DefaultCDPath( void ) {
@@ -575,10 +605,19 @@ static qboolean Sys_GetDirectoryID( const char *directory, short *vRefNum,
                                     long *dirID ) {
     FSSpec spec;
     CInfoPBRec pb;
+    char volume[MAX_OSPATH];
     OSErr err;
 
     if ( !directory || !directory[0] ) {
         return HGetVol( NULL, vRefNum, dirID ) == noErr;
+    }
+
+    // A colon-free base path, such as a hand-set fs_basepath "Vol", names a
+    // volume, as it does in FS_BuildOSPath's "Vol:baseq3"; HFS alone would
+    // look for "Vol" in the default directory (issue #267).
+    if ( !strchr( directory, ':' ) ) {
+        Com_sprintf( volume, sizeof( volume ), "%s:", directory );
+        directory = volume;
     }
 
     err = PathToFSSpec( directory, &spec );
@@ -1362,7 +1401,7 @@ int main( int argc, char **argv ) {
 
         // Next to the application, where the engine looks for baseq3
         // (Sys_GetCwd returns at most 2 * MAX_OSPATH - 1 bytes).
-        snprintf( path, sizeof( path ), "%s:%s", Sys_GetCwd(), MAC_PARMS_FILE );
+        Sys_JoinHFSPath( path, sizeof( path ), Sys_GetCwd(), MAC_PARMS_FILE );
         result = Sys_ReadStartupFile( path, text, sizeof( text ),
                                       commandLine, sizeof( commandLine ), &commandLength );
         if ( result == -2 ) {

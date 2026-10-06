@@ -19,8 +19,8 @@
  * prompt opened; and a static module failure waits for Return.
  *
  * The runner extracts the real main, Sys_InitToolbox, Sys_LogPrintf,
- * Sys_AppendStartupText, Sys_ReadStartupFile, Sys_StartupError and Sys_Error
- * (mac_main.c) and Sys_ConsoleWanted, Sys_ShowConsole and Sys_Print
+ * Sys_AppendStartupText, Sys_ReadStartupFile, Sys_StartupError, Sys_JoinHFSPath
+ * and Sys_Error (mac_main.c) and Sys_ConsoleWanted, Sys_ShowConsole and Sys_Print
  * (mac_console.c), and links the real _consolewrite and _consoleread
  * (mac_consolehooks.cc, compiled as C++ against mac_console_window_fake.h).
  * The Toolbox calls are fakes that log their order, and stdio goes straight

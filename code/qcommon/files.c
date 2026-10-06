@@ -532,6 +532,7 @@ char *FS_BuildOSPath( const char *base, const char *game, const char *qpath ) {
 	char	temp[MAX_OSPATH];
 	static char ospath[2][MAX_OSPATH];
 	static int toggle;
+	int		length;
 	
 	toggle ^= 1;		// flip-flop to allow two returns without clash
 
@@ -541,7 +542,14 @@ char *FS_BuildOSPath( const char *base, const char *game, const char *qpath ) {
 
 	Com_sprintf( temp, sizeof(temp), "/%s/%s", game, qpath );
 	FS_ReplaceSeparators( temp );	
-	Com_sprintf( ospath[toggle], sizeof( ospath[0] ), "%s%s", base, temp );
+	// an HFS volume root base already ends in its separator ("Vol:", issue
+	// #267), and a second one would walk up out of it
+	length = strlen( base );
+	if ( PATH_SEP == ':' && length > 0 && base[length - 1] == PATH_SEP ) {
+		Com_sprintf( ospath[toggle], sizeof( ospath[0] ), "%s%s", base, temp + 1 );
+	} else {
+		Com_sprintf( ospath[toggle], sizeof( ospath[0] ), "%s%s", base, temp );
+	}
 	
 	return ospath[toggle];
 }
