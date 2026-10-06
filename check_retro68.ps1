@@ -29,7 +29,9 @@ $Target = "powerpc-apple-macos"
 # Keep in step with CMakeLists.txt, cmake/Retro68.toolchain.cmake and
 # check_retro68.sh.
 $CompileFlags = @("-std=gnu99", "-fgnu89-inline", "-O0", "-g",
-    "-fno-strict-aliasing", "-fsigned-char", "-D__MACOS__", "-D__POWERPC__")
+    "-fno-strict-aliasing", "-fsigned-char", "-Wformat=2", "-Wno-format-nonliteral",
+    "-Werror=format", "-Werror=format-security", "-Wno-error=format-overflow",
+    "-Wno-error=format-truncation", "-D__MACOS__", "-D__POWERPC__")
 $CxxFlags = @("-fsigned-char")
 
 # Messages from a tool that failed because of its surroundings: no space,

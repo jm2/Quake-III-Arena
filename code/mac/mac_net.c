@@ -51,7 +51,7 @@ void HandleOTError( EndpointRef ep, int err, const char *func ) {
 	case T_UDERR:
 		RcvUDErr( ep );
 		if ( err != lastErr ) {
-			Com_DPrintf( "%s: OTRcvUDErr %i\n", func, uderr.error );
+			Com_DPrintf( "%s: OTRcvUDErr %i\n", func, (int)uderr.error );
 		}
 		break;
 	default:

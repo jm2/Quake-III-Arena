@@ -14,8 +14,7 @@ trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 # leaves out the float to int conversion check that Clang's includes.
 # Issue #390: the Team Arena UI fixture routes ui_main.c's va and Com_sprintf
 # through printf-attributed checkers, so -Wformat checks their literal formats
-# and the checkers check the menus' orders strings at run time. ui_main.c passes
-# one extra argument, which printf ignores.
+# and the checkers check the menus' orders strings at run time.
 # Issue #401: a pk3, even a downloaded one, can replace the menus, so the orders
 # and voiceOrders scripts must refuse a string with more than one conversion,
 # or one that is not a plain %i or %d, before it reaches a formatter.
@@ -40,7 +39,7 @@ for Q3_TEST_SOURCE in "$Q3_TEST_ROOT"/code/q3_ui/ui_*.c; do
 done
 "${CC:-cc}" \
     -std=gnu99 -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
-    -fsanitize=address,undefined,float-cast-overflow -DMISSIONPACK -Wformat -Werror=format -Wno-format-extra-args \
+    -fsanitize=address,undefined,float-cast-overflow -DMISSIONPACK -Wformat -Werror=format \
     "$Q3_TEST_ROOT/tests/ui_cvar_index_regression.c" "${Q3_TEST_UI[@]}" \
     "$Q3_TEST_ROOT/code/game/bg_misc.c" "${Q3_TEST_ENGINE[@]}" \
     -Wl,--gc-sections -lm -o "$Q3_TEST_DIR/ui"

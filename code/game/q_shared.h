@@ -142,6 +142,16 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #define	QDECL
 
+// Q_PRINTF_FORMAT( fmt, first ) lets GCC and Clang check the arguments of a
+// printf-style function against its format string (issue #395): fmt is the
+// 1-based position of the format parameter, first that of the first variadic
+// argument (0 for a va_list). q3lcc (Q3_VM) has no __attribute__.
+#if defined(__GNUC__) && !defined(Q3_VM)
+#define Q_PRINTF_FORMAT( fmt, first ) __attribute__((format(printf, fmt, first)))
+#else
+#define Q_PRINTF_FORMAT( fmt, first )
+#endif
+
 short   ShortSwap (short l);
 int		LongSwap (int l);
 float	FloatSwap (const float *f);
@@ -506,7 +516,7 @@ void Com_Memcpy (void* dest, const void* src, const size_t count);
 #define CIN_silent	8
 #define CIN_shader	16
 
-void QDECL Com_FlightRecord( const char *fmt, ... );
+void QDECL Com_FlightRecord( const char *fmt, ... ) Q_PRINTF_FORMAT( 1, 2 );
 void Com_DumpFlightRecord( const char *fileName );
 void Debug_Breadcrumb( int color );
 
@@ -832,8 +842,8 @@ int		COM_GetCurrentParseLine( void );
 char	*COM_Parse( char **data_p );
 char	*COM_ParseExt( char **data_p, qboolean allowLineBreak );
 int		COM_Compress( char *data_p );
-void	COM_ParseError( char *format, ... );
-void	COM_ParseWarning( char *format, ... );
+void	COM_ParseError( char *format, ... ) Q_PRINTF_FORMAT( 1, 2 );
+void	COM_ParseWarning( char *format, ... ) Q_PRINTF_FORMAT( 1, 2 );
 //int		COM_ParseInfos( char *buf, int max, char infos[][MAX_INFO_STRING] );
 
 #define MAX_TOKENLENGTH		1024
@@ -867,7 +877,7 @@ void Parse1DMatrix (char **buf_p, int x, float *m);
 void Parse2DMatrix (char **buf_p, int y, int x, float *m);
 void Parse3DMatrix (char **buf_p, int z, int y, int x, float *m);
 
-void	QDECL Com_sprintf (char *dest, int size, const char *fmt, ...);
+void	QDECL Com_sprintf (char *dest, int size, const char *fmt, ...) Q_PRINTF_FORMAT( 3, 4 );
 
 
 // mode parm for FS_FOpenFile
@@ -937,7 +947,7 @@ float	LittleFloat (const float *l);
 
 void	Swap_Init (void);
 */
-char	* QDECL va(char *format, ...);
+char	* QDECL va(char *format, ...) Q_PRINTF_FORMAT( 1, 2 );
 
 //=============================================
 
@@ -954,8 +964,8 @@ qboolean Info_ValidateKeyValue( const char *s );
 void Info_NextPair( const char **s, char *key, char *value );
 
 // this is only here so the functions in q_shared.c and bg_*.c can link
-void	QDECL Com_Error( int level, const char *error, ... );
-void	QDECL Com_Printf( const char *msg, ... );
+void	QDECL Com_Error( int level, const char *error, ... ) Q_PRINTF_FORMAT( 2, 3 );
+void	QDECL Com_Printf( const char *msg, ... ) Q_PRINTF_FORMAT( 1, 2 );
 
 
 /*

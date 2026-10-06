@@ -47,18 +47,18 @@ void Sys_InitInput( void ) {
 	}
 	
 	ver = ISpGetVersion();
-	Com_Printf( "InputSprocket version: 0x%x\n", ver );
+	Com_Printf( "InputSprocket version: 0x%x\n", (unsigned)ver.majorRev << 24 | ver.minorAndBugRev << 16 | ver.stage << 8 | ver.nonRelRev );
 		
 	err = ISpStartup();
 	if ( err ) {
-		Com_Printf( "ISpStartup failed: %i\n", err );
+		Com_Printf( "ISpStartup failed: %i\n", (int)err );
 		Com_Printf( "------------------------------------\n" );
 		return;
 	}
 
 	// disable everything
 	ISpDevices_Extract( MAX_INPUT_DEVICES, &numDevices, devices );
-	Com_Printf("%i total devices\n", numDevices);
+	Com_Printf("%i total devices\n", (int)numDevices);
 	if (numDevices > MAX_INPUT_DEVICES) {
 		numDevices = MAX_INPUT_DEVICES;
 	}
@@ -72,7 +72,7 @@ void Sys_InitInput( void ) {
 			MAX_INPUT_DEVICES,
 			&numDevices,
 			devices);
-	Com_Printf("%i mouse devices\n", numDevices);
+	Com_Printf("%i mouse devices\n", (int)numDevices);
 	if (numDevices > MAX_MOUSE_DEVICES) {
 		numDevices = MAX_MOUSE_DEVICES;
 	}
@@ -85,7 +85,7 @@ void Sys_InitInput( void ) {
 	
 		// go through all the elements and asign them Quake key codes
 		ISpElementList_Extract( elementList, MAX_ELEMENTS, &numElements[i], elements[i] );
-		Com_Printf("%i elements in list\n", numElements[i] );
+		Com_Printf("%i elements in list\n", (int)numElements[i] );
 		if ( numElements[i] > MAX_ELEMENTS ) {
 			Com_Printf( "clamping element list to %i entries\n", MAX_ELEMENTS );
 			numElements[i] = MAX_ELEMENTS;
