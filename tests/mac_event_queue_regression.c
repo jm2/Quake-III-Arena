@@ -136,7 +136,15 @@ static void IspEvent( int button, int down ) {
 	}
 }
 
+static void IspNeedsStartup( const char *call ) {
+	if ( !ispStarted ) {
+		fprintf( stderr, "FAIL %s: %s without ISpStartup\n", currentCase, call );
+		failures++;
+	}
+}
+
 static OSStatus ISpSuspend( void ) {
+	IspNeedsStartup( "ISpSuspend" );
 	suspendCalls++;
 	ispSuspended = qtrue;
 	if ( ispPressAtSuspend ) {
@@ -146,6 +154,7 @@ static OSStatus ISpSuspend( void ) {
 	return 0;
 }
 static OSStatus ISpResume( void ) {
+	IspNeedsStartup( "ISpResume" );
 	resumeCalls++;
 	ispSuspended = qfalse;
 	return 0;
@@ -464,6 +473,7 @@ static void NoInputSprocket( void ) {
 	Resume();
 	Frame();
 	Frame();
+	Check( !suspendCalls && !resumeCalls, "InputSprocket is not suspended or resumed without it" );
 	Check( flushCalls == 0, "nothing is flushed without InputSprocket" );
 	Check( !downEvents[K_MOUSE2] && !AnyKeyDown(), "no button events without InputSprocket" );
 }
