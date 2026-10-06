@@ -227,7 +227,12 @@ void	DoOSEvent(EventRecord	*event)
 			inputSystemSuspended = qfalse;
 			Sys_ResumeInput();
 		} else {
+			// The key-ups for anything held now go to the front process,
+			// so release it all here or it stays down (#291).  Modifiers
+			// first, so Sys_ModifierEvents does not release them again.
 			inputSystemSuspended = qtrue;
+			Sys_ModifierEvents( btnState );
+			Sys_ReleaseKeys();
 			Sys_SuspendInput();
 		}
 	}
@@ -395,7 +400,9 @@ void Sys_SendKeyEvents (void) {
 	// Classic Mac OS posts no keyDown/keyUp for modifier keys, so their state
 	// must be sampled on every poll, including null events, or Ctrl/Shift/Alt
 	// presses and releases are only noticed when some other event arrives.
-	Sys_ModifierEvents( event.modifiers );
+	// In the background (windowed, canBackground) null events carry the
+	// system-wide modifiers, so hold them all up until resume (#291).
+	Sys_ModifierEvents( inputSystemSuspended ? btnState : event.modifiers );
 	sys_lastEventTic = event.when;
 
 	if ( !gotEvent ) {

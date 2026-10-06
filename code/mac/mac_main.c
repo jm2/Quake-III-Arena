@@ -73,22 +73,71 @@ int CStringToPString( char *s ) {
 static sysEvent_t eventQue[MAX_MAC_EVENTS];
 static int eventHead = 0;
 static int eventTail = 0;
+static int eventOverflows = 0;	// events dropped since Sys_GetEvent last reported
+static byte sys_keyDown[256];	// last queued state of each key (K_LAST_KEY < 256)
+
+static qboolean Sys_IsKeyRelease( const sysEvent_t *ev ) {
+    return ev->evType == SE_KEY && !ev->evValue2;
+}
+
+/*
+==================
+Sys_DropQueuedEvent
+
+Makes room in a full queue (#18).  As on the other platforms the oldest event
+goes and its Z_Malloc payload is freed, except that a key release is kept:
+dropping one whose press was already delivered would leave that key down.  So
+the oldest event that is not a release goes or, if every queued event is a
+release, the oldest release of a key that is released again later.  Nothing
+is printed here: Sys_GetEvent reports the count.
+==================
+*/
+static void Sys_DropQueuedEvent( void ) {
+    int drop, i, prev;
+
+    for ( drop = eventTail ; drop != eventHead ; drop = (drop + 1) % MAX_MAC_EVENTS ) {
+        if ( !Sys_IsKeyRelease( &eventQue[drop] ) ) {
+            break;
+        }
+    }
+    if ( drop == eventHead ) {
+        for ( drop = eventTail ; drop != eventHead ; drop = (drop + 1) % MAX_MAC_EVENTS ) {
+            for ( i = (drop + 1) % MAX_MAC_EVENTS ; i != eventHead ; i = (i + 1) % MAX_MAC_EVENTS ) {
+                if ( eventQue[i].evValue == eventQue[drop].evValue ) {
+                    break;
+                }
+            }
+            if ( i != eventHead ) {
+                break;
+            }
+        }
+        if ( drop == eventHead ) {
+            drop = eventTail;
+        }
+    }
+
+    if ( eventQue[drop].evPtr ) {
+        Z_Free( eventQue[drop].evPtr );
+    }
+    // close the gap: move the older events one slot toward the head
+    for ( i = drop ; i != eventTail ; i = prev ) {
+        prev = (i + MAX_MAC_EVENTS - 1) % MAX_MAC_EVENTS;
+        eventQue[i] = eventQue[prev];
+    }
+    eventTail = (eventTail + 1) % MAX_MAC_EVENTS;
+    eventOverflows++;
+}
 
 void Sys_QueEvent( int time, sysEventType_t type, int value, int value2, int ptrLength, void *ptr ) {
     sysEvent_t *ev;
     int next = (eventHead + 1) % MAX_MAC_EVENTS;
 
     if (next == eventTail) {
-        // Match the other platform queues: preserve the newest event, evict
-        // the oldest, and release any pointer-bearing payload it owned.
-        // Silently dropping the incoming packet leaked its Z_Malloc buffer;
-        // dropping a key-up event could also leave input latched.
-        ev = &eventQue[eventTail];
-        Com_Printf( "Sys_QueEvent: overflow\n" );
-        if ( ev->evPtr ) {
-            Z_Free( ev->evPtr );
-        }
-        eventTail = (eventTail + 1) % MAX_MAC_EVENTS;
+        Sys_DropQueuedEvent();
+    }
+
+    if ( type == SE_KEY && value >= 0 && value < (int)sizeof( sys_keyDown ) ) {
+        sys_keyDown[value] = ( value2 != 0 );
     }
 
     // time == 0 means "now" (contract from the other ports); InputSprocket
@@ -106,6 +155,24 @@ void Sys_QueEvent( int time, sysEventType_t type, int value, int value2, int ptr
     ev->evPtr = ptr;
     
     eventHead = next;
+}
+
+/*
+==================
+Sys_ReleaseKeys
+
+Queues a release for every key whose last queued event was a press.  Called
+on suspend (#291): the key-ups for keys held then go to the front process.
+==================
+*/
+void Sys_ReleaseKeys( void ) {
+    int key;
+
+    for ( key = 0 ; key < (int)sizeof( sys_keyDown ) ; key++ ) {
+        if ( sys_keyDown[key] ) {
+            Sys_QueEvent( 0, SE_KEY, key, qfalse, 0, NULL );
+        }
+    }
 }
 
 // mac_event.c
@@ -252,6 +319,11 @@ sysEvent_t Sys_GetEvent( void ) {
             memcpy( buf+1, netmsg.data, netmsg.cursize );
             Sys_QueEvent( 0, SE_PACKET, 0, 0, len, buf );
         }
+    }
+
+    if ( eventOverflows ) {
+        Com_Printf( "Sys_QueEvent: overflow, dropped %i events\n", eventOverflows );
+        eventOverflows = 0;
     }
 
     if (eventHead == eventTail) {
@@ -404,12 +476,20 @@ void Sys_Yield( void ) {
 // build "Volume:Folder1:Folder2" with no trailing colon (FS_BuildOSPath glues
 // ":qpath" onto the result and a double colon is parent-directory).
 //
+// A volume root is the exception: it is "Volume:" (issue #267). A bare
+// "Volume" has no colon, so HFS takes it as an item in the default
+// directory, not as the volume; paths joined onto it still resolve, but
+// catalog lookups of the base path itself (Sys_ListFiles, so the Mods menu
+// and dir) fail. FS_BuildOSPath and Sys_JoinHFSPath add no second colon
+// after it.
+//
 // Fallback: some Process Manager configurations (debuggers, certain
 // emulator paths, very early call sites before the app is fully registered)
 // hand back noErr from GetProcessInformation but never populate the FSSpec.
 // We detect that with a sanity check on (vRefNum, parID) and fall back to
 // GetVol, which is always correct for "the volume the app is running from"
-// even if it loses the per-folder structure.
+// even if it loses the per-folder structure. That path is a volume root,
+// "Volume:".
 //
 // FS_BuildOSPath normalizes forward slashes, so caller paths like
 // "/baseq3/q3key/" concatenate correctly with the result either way.
@@ -464,10 +544,11 @@ char *Sys_GetCwd( void ) {
             Sys_Error( "Sys_GetCwd: GetVol fallback failed: %d", err );
         }
         segLen = volName[0];
-        if ( segLen >= (int)sizeof( cached ) ) {
-            segLen = sizeof( cached ) - 1;
+        if ( segLen >= (int)sizeof( cached ) - 1 ) {
+            segLen = sizeof( cached ) - 2;
         }
         memcpy( cached, &volName[1], segLen );
+        cached[segLen++] = ':';
         cached[segLen] = 0;
         Com_FlightRecord( "Sys_GetCwd (GetVol fallback): '%s'\n", cached );
         return cached;
@@ -516,8 +597,29 @@ char *Sys_GetCwd( void ) {
                    appSpec.vRefNum, appSpec.parID );
     }
 
+    // the application is at the root of its volume
+    if ( !strchr( cached, ':' ) ) {
+        Q_strcat( cached, sizeof( cached ), ":" );
+    }
+
     Com_FlightRecord( "Sys_GetCwd (FSSpec walk): '%s'\n", cached );
     return cached;
+}
+
+/*
+=================
+Sys_JoinHFSPath
+
+dest = directory:leaf. A volume root from Sys_GetCwd ("Vol:") already ends
+in the separator, and a second colon would name its parent (issue #267).
+=================
+*/
+static void Sys_JoinHFSPath( char *dest, int size, const char *directory,
+                             const char *leaf ) {
+    int length = strlen( directory );
+
+    snprintf( dest, size, "%s%s%s", directory,
+              length > 0 && directory[length - 1] == ':' ? "" : ":", leaf );
 }
 
 char *Sys_DefaultCDPath( void ) {
@@ -575,10 +677,19 @@ static qboolean Sys_GetDirectoryID( const char *directory, short *vRefNum,
                                     long *dirID ) {
     FSSpec spec;
     CInfoPBRec pb;
+    char volume[MAX_OSPATH];
     OSErr err;
 
     if ( !directory || !directory[0] ) {
         return HGetVol( NULL, vRefNum, dirID ) == noErr;
+    }
+
+    // A colon-free base path, such as a hand-set fs_basepath "Vol", names a
+    // volume, as it does in FS_BuildOSPath's "Vol:baseq3"; HFS alone would
+    // look for "Vol" in the default directory (issue #267).
+    if ( !strchr( directory, ':' ) ) {
+        Com_sprintf( volume, sizeof( volume ), "%s:", directory );
+        directory = volume;
     }
 
     err = PathToFSSpec( directory, &spec );
@@ -1369,7 +1480,7 @@ int main( int argc, char **argv ) {
 
         // Next to the application, where the engine looks for baseq3
         // (Sys_GetCwd returns at most 2 * MAX_OSPATH - 1 bytes).
-        snprintf( path, sizeof( path ), "%s:%s", Sys_GetCwd(), MAC_PARMS_FILE );
+        Sys_JoinHFSPath( path, sizeof( path ), Sys_GetCwd(), MAC_PARMS_FILE );
         result = Sys_ReadStartupFile( path, text, sizeof( text ),
                                       commandLine, sizeof( commandLine ), &commandLength );
         if ( result == -2 ) {
