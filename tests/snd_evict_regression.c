@@ -103,6 +103,9 @@ cvar_t *Cvar_Get( const char *name, const char *value, int flags ) {
 }
 void *Hunk_AllocateTempMemory( int size ) { return malloc( size ); }
 void Hunk_FreeTempMemory( void *buf ) { free( buf ); }
+// S_BeginRegistration shuts sound down when it cannot allocate the buffer pool (#230).
+void SNDDMA_Shutdown( void ) {}
+void Cmd_RemoveCommand( const char *name ) { (void)name; }
 
 static int FindServed( const char *name ) {
 	int i;

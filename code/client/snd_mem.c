@@ -31,7 +31,16 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "snd_local.h"
 
+#ifdef __MACOS__
+// The whole pool has to fit in the application partition beside the hunk,
+// the zone and the image (issue #230, mac_resources.r): retail's 8 is about
+// 24 MB of buffers.  4 is about 12 MB, three quarters of every sound in the
+// demo's pak0; a level registers a fraction of them, and S_FreeOldestSound
+// pages out the least recently used when the pool fills.
+#define DEF_COMSOUNDMEGS "4"
+#else
 #define DEF_COMSOUNDMEGS "8"
+#endif
 
 /*
 ===============================================================================
@@ -77,20 +86,44 @@ redo:
 	return v;
 }
 
-void SND_setup() {
+// returns qfalse, with nothing allocated, when the pool cannot be had: the
+// caller must leave sound off
+qboolean SND_setup() {
 	sndBuffer *p, *q;
 	cvar_t	*cv;
 	int scs;
 
 	cv = Cvar_Get( "com_soundMegs", DEF_COMSOUNDMEGS, CVAR_LATCH | CVAR_ARCHIVE );
 
+	// the pool's size in bytes is kept in an int (inUse), and the free list
+	// needs at least one buffer to end on
+	if ( cv->integer < 1 || cv->integer > (int)( 0x7fffffff / ( 1536 * sizeof( sndBuffer ) ) ) ) {
+		Com_Printf( S_COLOR_YELLOW "WARNING: com_soundMegs %i is out of range, sound disabled\n", cv->integer );
+		return qfalse;
+	}
+
 	scs = (cv->integer*1536);
-	numBuffers = scs;
 
 	buffer = malloc(scs*sizeof(sndBuffer) );
 	// allocate the stack based hunk allocator
 	sfxScratchBuffer = malloc(SND_CHUNK_SIZE * sizeof(short) * 4);	//Hunk_Alloc(SND_CHUNK_SIZE * sizeof(short) * 4);
 	sfxScratchPointer = NULL;
+
+	// the free list below is written through the pool: a failed allocation
+	// would write it over low memory, which Mac OS 9 does not protect
+	if ( !buffer || !sfxScratchBuffer ) {
+		free( buffer );
+		free( sfxScratchBuffer );
+		buffer = NULL;
+		sfxScratchBuffer = NULL;
+		freelist = NULL;
+		numBuffers = 0;
+		inUse = 0;
+		Com_Printf( S_COLOR_YELLOW "WARNING: could not allocate %i KB of sound memory (com_soundMegs %i), sound disabled\n",
+			(int)( ( scs * sizeof( sndBuffer ) ) / 1024 ), cv->integer );
+		return qfalse;
+	}
+	numBuffers = scs;
 
 	inUse = scs*sizeof(sndBuffer);
 	p = buffer;;
@@ -102,6 +135,7 @@ void SND_setup() {
 	freelist = p + scs - 1;
 
 	Com_Printf("Sound memory manager started\n");
+	return qtrue;
 }
 
 /*

@@ -401,8 +401,12 @@ function(quake3_add_classic_application target)
         DEPENDS ${target} ${static_modules_report}
         COMMENT "Converting ${target} to PEF"
         VERBATIM)
+    # The SIZE minimum must hold the engine's fixed demand and this image
+    # with headroom (issue #230).
     add_custom_command(
         OUTPUT "${target}.bin" "${target}.dsk" "${target}.ad" "%${target}.ad"
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/cmake/mac_partition.py" map
+                --root "${CMAKE_SOURCE_DIR}" --map "${target}.map"
         COMMAND "${RETRO68_REZ}" "${CMAKE_SOURCE_DIR}/code/mac/mac_resources.r"
                 -I "${QUAKE3_REZ_INCLUDE_DIR}" -I "${CMAKE_SOURCE_DIR}/code/mac"
                 -t APPL -c IDQ3 --data "${target}.pef"
@@ -411,7 +415,7 @@ function(quake3_add_classic_application target)
                 --pef "${target}.pef"
                 "${target}.bin" "${target}.dsk" "%${target}.ad"
         DEPENDS "${target}.pef" ${QUAKE3_RESOURCE_SOURCES}
-                "${CMAKE_SOURCE_DIR}/mac_app.py"
+                "${CMAKE_SOURCE_DIR}/mac_app.py" "${CMAKE_SOURCE_DIR}/cmake/mac_partition.py"
         COMMENT "Building Classic application ${target} (APPL/IDQ3)"
         VERBATIM)
     quake3_add_build_manifest(${target})
