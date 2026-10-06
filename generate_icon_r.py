@@ -1,5 +1,37 @@
 import sys
-from PIL import Image
+
+# icl8/ics8 carry no color table: the Finder draws their indexes through the
+# standard 8-bit system palette ('clut' 8). Entries 0-214 are the 6x6x6 cube
+# (components FF, CC, 99, 66, 33, 00, red slowest, starting at white); 215-254
+# are ten-step red, green, blue and gray ramps without the cube's levels
+# (EE, DD, BB, AA, 88, 77, 55, 44, 22, 11); 255 is black.
+def system_clut8():
+    levels = (0xFF, 0xCC, 0x99, 0x66, 0x33, 0x00)
+    ramp = (0xEE, 0xDD, 0xBB, 0xAA, 0x88, 0x77, 0x55, 0x44, 0x22, 0x11)
+    clut = [(r, g, b) for r in levels for g in levels for b in levels][:215]
+    clut += [(v, 0, 0) for v in ramp]
+    clut += [(0, v, 0) for v in ramp]
+    clut += [(0, 0, v) for v in ramp]
+    clut += [(v, v, v) for v in ramp]
+    clut.append((0, 0, 0))
+    return clut
+
+SYSTEM_CLUT8 = system_clut8()
+
+def system_index(pixel):
+    """Nearest system palette index for an RGBA pixel drawn over white."""
+    r, g, b, a = pixel
+    # Blend onto white so antialiased edges and transparent pixels (hidden
+    # by the ICN#/ics# mask anyway) do not turn dark.
+    rgb = [(c * a + 255 * (255 - a) + 127) // 255 for c in (r, g, b)]
+    return min(range(256), key=lambda i: sum(
+        (c - p) * (c - p) for c, p in zip(rgb, SYSTEM_CLUT8[i])))
+
+def to_system_indexes(img):
+    rgba = img.convert("RGBA")
+    width, height = rgba.size
+    return bytes(system_index(rgba.getpixel((x, y)))
+                 for y in range(height) for x in range(width))
 
 def to_hex(byte_data):
     """Formats bytes as hex pairs with spacing."""
@@ -46,20 +78,8 @@ def create_icn_hash(img_32):
     return bitmap_data + mask_data
 
 def create_icl8(img_32):
-    """Creates icl8 (32x32 8-bit indexed) data."""
-    # Convert to P mode (palette) using standard Mac OS palette if possible, 
-    # but for now we'll let PIL quantize to 256 colors. 
-    # Ideally we'd map to the standard system palette, but custom palette MIGHT work 
-    # if clut is provided, but icl8 usually assumes system palette.
-    # We will assume a standard quantization for now.
-    
-    # Simulating Mac System Palette (approximate) is hard without the CLUT.
-    # We'll just quantize to 256 colors. It might look slightly off if OS forces system palette.
-    # Better approach: 
-    # Using 'P' mode.
-    
-    indexed = img_32.convert("P", palette=Image.ADAPTIVE, colors=256)
-    return indexed.tobytes()
+    """Creates icl8 (32x32 8-bit, system palette indexes) data."""
+    return to_system_indexes(img_32)
 
 def create_ics_hash(img_16):
     """Creates ics# (16x16 1-bit bitmap + mask) data."""
@@ -85,9 +105,8 @@ def create_ics_hash(img_16):
     return bitmap_data + mask_data
 
 def create_ics8(img_16):
-    """Creates ics8 (16x16 8-bit indexed) data."""
-    indexed = img_16.convert("P", palette=Image.ADAPTIVE, colors=256)
-    return indexed.tobytes()
+    """Creates ics8 (16x16 8-bit, system palette indexes) data."""
+    return to_system_indexes(img_16)
 
 def to_hex_string(byte_data):
     """Formats bytes as a Rez hex string (e.g. $'0011...')."""
@@ -104,7 +123,8 @@ def main():
     if len(sys.argv) < 3:
         print("Usage: generate_icon_r.py <32x32.png> <16x16.png>")
         sys.exit(1)
-        
+
+    from PIL import Image
     img_32 = Image.open(sys.argv[1]).resize((32,32))
     img_16 = Image.open(sys.argv[2]).resize((16,16))
     

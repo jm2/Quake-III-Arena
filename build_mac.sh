@@ -376,12 +376,14 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
     IMAGE_NAME="$RELEASE_ROOT/Quake3_Install.img"
     MAPPING_FILE="$TEMP_DIR/hfs_mapping.txt"
     
-    # Create a mapping file for HFS creator/types
+    # Create a mapping file for HFS creator/types (genisoimage order: EXTN
+    # XLate CREATOR TYPE Comment). The codes must be quoted: genisoimage
+    # misparses unquoted codes and writes garbage HFS types and creators.
     cat > "$MAPPING_FILE" <<EOF
-.pk3   Raw   IDQ3  Stak "Quake 3 Data"
-.cfg   Ascii IDQ3  TEXT "Quake 3 Config"
-Quake3 Raw   IDQ3  APPL "Quake 3 App"
-Quake3_TeamArena Raw IDQ3 APPL "Quake 3 Team Arena"
+.pk3   Raw   'IDQ3' 'Stak' "Quake 3 Data"
+.cfg   Ascii 'IDQ3' 'TEXT' "Quake 3 Config"
+Quake3 Raw   'IDQ3' 'APPL' "Quake 3 App"
+Quake3_TeamArena Raw 'IDQ3' 'APPL' "Quake 3 Team Arena"
 EOF
     
     if [ "$(uname)" == "Darwin" ] && command -v hdiutil &> /dev/null; then

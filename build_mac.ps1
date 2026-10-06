@@ -409,13 +409,14 @@ if ($PackageMode) {
     
     Write-Host "Creating HFS Disk Image..."
     
-    # Mapping file
+    # Mapping file (EXTN XLate CREATOR TYPE Comment); the codes must be quoted
+    # or genisoimage misparses them into garbage HFS types and creators.
     $MappingFile = Join-Path $TempDir "hfs_mapping.txt"
     Set-Content -Path $MappingFile -Value (
-        ".pk3   Raw   IDQ3 Stak 'Quake 3 Data'",
-        ".cfg   Ascii IDQ3 TEXT 'Quake 3 Config'",
-        "Quake3 Raw   IDQ3 APPL 'Quake 3 App'",
-        "Quake3_TeamArena Raw IDQ3 APPL 'Quake 3 Team Arena'"
+        ".pk3   Raw   'IDQ3' 'Stak' 'Quake 3 Data'",
+        ".cfg   Ascii 'IDQ3' 'TEXT' 'Quake 3 Config'",
+        "Quake3 Raw   'IDQ3' 'APPL' 'Quake 3 App'",
+        "Quake3_TeamArena Raw 'IDQ3' 'APPL' 'Quake 3 Team Arena'"
     )
     
     # Run mkisofs (Hybrid HFS)
