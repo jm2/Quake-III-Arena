@@ -73,22 +73,71 @@ int CStringToPString( char *s ) {
 static sysEvent_t eventQue[MAX_MAC_EVENTS];
 static int eventHead = 0;
 static int eventTail = 0;
+static int eventOverflows = 0;	// events dropped since Sys_GetEvent last reported
+static byte sys_keyDown[256];	// last queued state of each key (K_LAST_KEY < 256)
+
+static qboolean Sys_IsKeyRelease( const sysEvent_t *ev ) {
+    return ev->evType == SE_KEY && !ev->evValue2;
+}
+
+/*
+==================
+Sys_DropQueuedEvent
+
+Makes room in a full queue (#18).  As on the other platforms the oldest event
+goes and its Z_Malloc payload is freed, except that a key release is kept:
+dropping one whose press was already delivered would leave that key down.  So
+the oldest event that is not a release goes or, if every queued event is a
+release, the oldest release of a key that is released again later.  Nothing
+is printed here: Sys_GetEvent reports the count.
+==================
+*/
+static void Sys_DropQueuedEvent( void ) {
+    int drop, i, prev;
+
+    for ( drop = eventTail ; drop != eventHead ; drop = (drop + 1) % MAX_MAC_EVENTS ) {
+        if ( !Sys_IsKeyRelease( &eventQue[drop] ) ) {
+            break;
+        }
+    }
+    if ( drop == eventHead ) {
+        for ( drop = eventTail ; drop != eventHead ; drop = (drop + 1) % MAX_MAC_EVENTS ) {
+            for ( i = (drop + 1) % MAX_MAC_EVENTS ; i != eventHead ; i = (i + 1) % MAX_MAC_EVENTS ) {
+                if ( eventQue[i].evValue == eventQue[drop].evValue ) {
+                    break;
+                }
+            }
+            if ( i != eventHead ) {
+                break;
+            }
+        }
+        if ( drop == eventHead ) {
+            drop = eventTail;
+        }
+    }
+
+    if ( eventQue[drop].evPtr ) {
+        Z_Free( eventQue[drop].evPtr );
+    }
+    // close the gap: move the older events one slot toward the head
+    for ( i = drop ; i != eventTail ; i = prev ) {
+        prev = (i + MAX_MAC_EVENTS - 1) % MAX_MAC_EVENTS;
+        eventQue[i] = eventQue[prev];
+    }
+    eventTail = (eventTail + 1) % MAX_MAC_EVENTS;
+    eventOverflows++;
+}
 
 void Sys_QueEvent( int time, sysEventType_t type, int value, int value2, int ptrLength, void *ptr ) {
     sysEvent_t *ev;
     int next = (eventHead + 1) % MAX_MAC_EVENTS;
 
     if (next == eventTail) {
-        // Match the other platform queues: preserve the newest event, evict
-        // the oldest, and release any pointer-bearing payload it owned.
-        // Silently dropping the incoming packet leaked its Z_Malloc buffer;
-        // dropping a key-up event could also leave input latched.
-        ev = &eventQue[eventTail];
-        Com_Printf( "Sys_QueEvent: overflow\n" );
-        if ( ev->evPtr ) {
-            Z_Free( ev->evPtr );
-        }
-        eventTail = (eventTail + 1) % MAX_MAC_EVENTS;
+        Sys_DropQueuedEvent();
+    }
+
+    if ( type == SE_KEY && value >= 0 && value < (int)sizeof( sys_keyDown ) ) {
+        sys_keyDown[value] = ( value2 != 0 );
     }
 
     // time == 0 means "now" (contract from the other ports); InputSprocket
@@ -106,6 +155,24 @@ void Sys_QueEvent( int time, sysEventType_t type, int value, int value2, int ptr
     ev->evPtr = ptr;
     
     eventHead = next;
+}
+
+/*
+==================
+Sys_ReleaseKeys
+
+Queues a release for every key whose last queued event was a press.  Called
+on suspend (#291): the key-ups for keys held then go to the front process.
+==================
+*/
+void Sys_ReleaseKeys( void ) {
+    int key;
+
+    for ( key = 0 ; key < (int)sizeof( sys_keyDown ) ; key++ ) {
+        if ( sys_keyDown[key] ) {
+            Sys_QueEvent( 0, SE_KEY, key, qfalse, 0, NULL );
+        }
+    }
 }
 
 // mac_event.c
@@ -252,6 +319,11 @@ sysEvent_t Sys_GetEvent( void ) {
             memcpy( buf+1, netmsg.data, netmsg.cursize );
             Sys_QueEvent( 0, SE_PACKET, 0, 0, len, buf );
         }
+    }
+
+    if ( eventOverflows ) {
+        Com_Printf( "Sys_QueEvent: overflow, dropped %i events\n", eventOverflows );
+        eventOverflows = 0;
     }
 
     if (eventHead == eventTail) {

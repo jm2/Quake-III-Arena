@@ -309,6 +309,7 @@ extern	cvar_t	*sys_waitNextEvent;
 // ... (existing includes)
 
 void Sys_QueEvent( int time, sysEventType_t type, int value, int value2, int ptrLength, void *ptr );
+void Sys_ReleaseKeys( void );
 int PStringToCString( char *s );
 int CStringToPString( char *s );
 
