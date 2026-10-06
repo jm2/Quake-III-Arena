@@ -39,14 +39,32 @@ if uses != [("Quake3_TeamArena", "missionpack")] or cmake.count("DEFAULT_FS_GAME
 # cross_game_qvm_regression.c models a disconnect as keeping fs_game, as
 # retail's CL_Disconnect did: the engine sets fs_game only from a server's
 # systeminfo (CL_SystemInfoChanged) and when FS_Startup refuses a bad one.
+# Statements are compared with whitespace collapsed and dropped next to
+# punctuation (so a reformatted or wrapped call still matches, while
+# "else Cvar_Set" stays two words), and a write through fs_gamedirvar->name
+# counts.  The scan is checked on planted statements first.
+def fs_game_writes(source):
+    text = re.sub(r" ?([^\w ]) ?", r"\1", re.sub(r"\s+", " ", source))
+    return [text[call.start():text.find(";", call.start()) + 1]
+            for call in re.finditer(r'(?<![A-Za-z0-9_])Cvar_(\w+)\((?:"fs_game"|fs_gamedirvar->name)[,)]', text)
+            if call.group(1) not in ("Get", "VariableString")]
+for planted, expected in (
+        ('\tCvar_Set( "fs_game", "" );', ['Cvar_Set("fs_game","");']),
+        ('Cvar_Set("fs_game",\n\t\t"");', ['Cvar_Set("fs_game","");']),
+        ('if ( 0 ) { } else Cvar_Set( "fs_game", "x" );', ['Cvar_Set("fs_game","x");']),
+        ('return Cvar_Set( "fs_game", "" );', ['Cvar_Set("fs_game","");']),
+        ('Cvar_Set( fs_gamedirvar->name, "" );', ['Cvar_Set(fs_gamedirvar->name,"");']),
+        ('Cvar_SetValue( "fs_game", 0 );', ['Cvar_SetValue("fs_game",0);']),
+        ('if ( *Cvar_VariableString( "fs_game" ) ) { Cvar_Set( "fs_game", "" ); }', ['Cvar_Set("fs_game","");']),
+        ('Cvar_Get( "fs_game", "", 0 ); MyCvar_Set( "fs_game", "" ); Cvar_Set( "fs_gamedirvar", "" );', [])):
+    if fs_game_writes(planted) != expected:
+        raise SystemExit("fs_game write scan self-check failed on %r: %r" % (planted, fs_game_writes(planted)))
 sets = []
 for path in sorted((root / "code").rglob("*.c")):
     if path.relative_to(root / "code").parts[0] in ("game", "cgame", "ui", "q3_ui"):
         continue
-    for line in path.read_text(encoding="latin-1").splitlines():
-        if re.search(r'Cvar_\w+\s*\(\s*"fs_game"', line) and not re.search(r'Cvar_(Get|VariableString)\b', line):
-            sets.append("%s: %s" % (path.relative_to(root), line.strip()))
-if sets != ['code/client/cl_parse.c: Cvar_Set( "fs_game", "" );', 'code/qcommon/files.c: Cvar_Set( "fs_game", "" );']:
+    sets += ["%s: %s" % (path.relative_to(root), call) for call in fs_game_writes(path.read_text(encoding="latin-1"))]
+if sets != ['code/client/cl_parse.c: Cvar_Set("fs_game","");', 'code/qcommon/files.c: Cvar_Set("fs_game","");']:
     raise SystemExit("engine code that sets fs_game changed: %r" % sets)
 
 # The call sites pass retail's interpret modes and let VM_Create choose; a
