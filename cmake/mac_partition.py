@@ -26,6 +26,11 @@ The fixed demand, with the Mac defaults read from the sources:
   map    The same, with the image measured from a linker map (--map) and
          required to stay within IMAGE_ALLOWANCE_KB, so a larger image fails
          the Retro68 build until the allowance and the SIZE are raised.
+
+Both modes also check MAC_HUNK_RESERVE_KB, what Com_InitHunkMemory leaves
+beside the hunk when it clamps com_hunkMegs to MaxBlock(): it must hold the
+sound pool and HEADROOM_KB, and at the SIZE minimum the default hunk must
+still fit beside it, so the clamp never shrinks the default.
 """
 
 import argparse
@@ -164,6 +169,14 @@ def fixed_demand(root):
     ]
 
 
+def hunk_reserve(root):
+    common = root + "/code/qcommon/common.c"
+    defs = mac_defines(common)
+    if "MAC_HUNK_RESERVE_KB" not in defs:
+        fail("%s: the Mac build defines no MAC_HUNK_RESERVE_KB" % common)
+    return arithmetic(defs["MAC_HUNK_RESERVE_KB"], common) * 1024
+
+
 def size_minimum(root):
     resources = root + "/code/mac/mac_resources.r"
     body = search(r"resource 'SIZE' \(-1\) \{(.*?)\};", resources).group(1)
@@ -223,6 +236,20 @@ def main():
     if minimum - demand < HEADROOM_KB * 1024:
         fail("the SIZE minimum in code/mac/mac_resources.r leaves %d KiB beside the fixed demand, "
              "under the %d KiB headroom (issue #230)" % ((minimum - demand) // 1024, HEADROOM_KB))
+
+    # Com_InitHunkMemory clamps the hunk to MaxBlock() less this reserve. The
+    # zone, small zone, stack and image are already allocated by then, so at
+    # the minimum the hunk sees the minimum less them.
+    reserve = hunk_reserve(args.root)
+    sound = next(size for item, size in items if item.startswith("sound pool"))
+    print("%-52s %9d KiB (sound pool and headroom %d KiB)"
+          % ("hunk reserve (MAC_HUNK_RESERVE_KB)", reserve // 1024, (sound + 1023) // 1024 + HEADROOM_KB))
+    if reserve < sound + HEADROOM_KB * 1024:
+        fail("MAC_HUNK_RESERVE_KB in code/qcommon/common.c (%d KiB) does not hold the sound pool and "
+             "the %d KiB headroom (issue #230)" % (reserve // 1024, HEADROOM_KB))
+    if minimum - demand + sound < reserve:
+        fail("at the SIZE minimum, MAC_HUNK_RESERVE_KB in code/qcommon/common.c (%d KiB) leaves no room "
+             "for the default hunk, which Com_InitHunkMemory would refuse (issue #230)" % (reserve // 1024))
 
 
 if __name__ == "__main__":
