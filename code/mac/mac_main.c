@@ -370,6 +370,10 @@ void Sys_Init( void ) {
 }
 
 void Sys_Quit( void ) {
+    // CL_Shutdown has normally closed the sound channel already; a quit
+    // during an error has not, and its interrupt-time callback must not
+    // outlive the application
+    SNDDMA_Shutdown();
     Sys_ShutdownInput();
     Sys_ShutdownNetworking();
 
@@ -403,6 +407,9 @@ void Sys_Error( const char *error, ... ) {
     Sys_LogRecord( "\n" );
     Sys_DumpRetroLogs("retro68_console_crash.txt");
     fprintf( stderr, "Sys_Error: %s\n", text );
+    // a recursive error skips CL_Shutdown: stop the channel looping the
+    // last mixed buffer under the alert, and close it before exit
+    SNDDMA_Shutdown();
     Sys_ShutdownInput();
     Sys_ShutdownNetworking();
 

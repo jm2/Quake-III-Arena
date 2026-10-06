@@ -2,8 +2,9 @@
  * tests/mac_snddma_regression.c to compile the real code/mac/mac_snddma.c on
  * the host.  run_mac_snddma_tests.sh installs this file as Sound.h.  The
  * constants and field order are copied from Universal Interfaces 3.4
- * (Sound.h, "Technology: Sound Manager 3.6"); the Sound Manager itself is the
- * test's. */
+ * (Sound.h, "Technology: Sound Manager 3.6"); only field order and types are
+ * mirrored, not the mac68k packing or SndChannel's private fields.  The Sound
+ * Manager itself is the test's. */
 #ifndef MAC_SOUND_FAKE_H
 #define MAC_SOUND_FAKE_H
 
@@ -47,7 +48,12 @@ typedef struct SndCommand {
 
 typedef struct SndChannel	SndChannel;
 typedef SndChannel			*SndChannelPtr;
-typedef void (*SndCallBackUPP)( SndChannelPtr chan, SndCommand *cmd );
+typedef void (*SndCallBackProcPtr)( SndChannelPtr chan, SndCommand *cmd );
+/* On PowerPC a UPP is a routine descriptor that NewRoutineDescriptor
+ * allocates and can fail to; the test defines the struct and allocates one
+ * per NewSndCallBackUPP, so a call through a disposed UPP is a
+ * heap-use-after-free under ASan. */
+typedef struct FakeSndCallBackUPP	*SndCallBackUPP;
 
 struct SndChannel {
 	SndChannelPtr	nextChan;
@@ -75,7 +81,7 @@ typedef struct ExtSoundHeader {
 	UInt8			sampleArea[1];
 } ExtSoundHeader;
 
-SndCallBackUPP NewSndCallBackUPP( void (*userRoutine)( SndChannelPtr chan, SndCommand *cmd ) );
+SndCallBackUPP NewSndCallBackUPP( SndCallBackProcPtr userRoutine );
 void DisposeSndCallBackUPP( SndCallBackUPP userUPP );
 OSErr SndNewChannel( SndChannelPtr *chan, short synth, long init, SndCallBackUPP userRoutine );
 OSErr SndDoCommand( SndChannelPtr chan, const SndCommand *cmd, Boolean noWait );
