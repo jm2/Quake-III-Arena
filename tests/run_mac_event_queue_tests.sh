@@ -57,6 +57,7 @@ Q3_TEST_EXTRACT '^qboolean[[:space:]]+Sys_ConsoleEvent[[:space:]]*[(][^;]*$' "$Q
 Q3_TEST_EXTRACT '^char[[:space:]]*[*]Sys_ConsoleInput[[:space:]]*[(][^;]*$' "$Q3_TEST_CONSOLE" "$Q3_TEST_DIR/mac_console_extracted.c"
 Q3_TEST_INPUT="$Q3_TEST_ROOT/code/mac/mac_input.c"
 : > "$Q3_TEST_DIR/mac_input_extracted.c"
+Q3_TEST_EXTRACT '^void[[:space:]]+Sys_ShutdownInput[[:space:]]*[(][^;]*$' "$Q3_TEST_INPUT" "$Q3_TEST_DIR/mac_input_extracted.c"
 Q3_TEST_EXTRACT '^void[[:space:]]+Sys_SuspendInput[[:space:]]*[(][^;]*$' "$Q3_TEST_INPUT" "$Q3_TEST_DIR/mac_input_extracted.c"
 Q3_TEST_EXTRACT '^void[[:space:]]+Sys_ResumeInput[[:space:]]*[(][^;]*$' "$Q3_TEST_INPUT" "$Q3_TEST_DIR/mac_input_extracted.c"
 Q3_TEST_EXTRACT '^void[[:space:]]+Sys_Input[[:space:]]*[(][^;]*$' "$Q3_TEST_INPUT" "$Q3_TEST_DIR/mac_input_extracted.c"
@@ -70,6 +71,7 @@ Q3_TEST_EXTRACT '^void[[:space:]]+Sys_Input[[:space:]]*[(][^;]*$' "$Q3_TEST_INPU
 Q3_TEST_STATUS=0
 for Q3_TEST_CASE in modifier-alone modifier-alone-fullscreen background-modifiers \
         suspend-releases isp-press-at-suspend isp-press-during-suspend no-isp \
+        cursor-after-shutdown \
         overflow overflow-releases \
         console-dedicated console-long console-client wait-cancel; do
     ASAN_OPTIONS=detect_leaks=${Q3_TEST_DETECT_LEAKS:-1}:halt_on_error=1 \

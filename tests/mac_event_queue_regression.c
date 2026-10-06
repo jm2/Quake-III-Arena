@@ -11,7 +11,10 @@
  * in the front application must give no key events.  Keys, modifiers and
  * InputSprocket mouse buttons held at suspend must be released once, because
  * their key-ups go to the front application, and modifiers must resync on
- * resume.  An InputSprocket button press still buffered at the suspend event
+ * resume.  The cursor is shown while suspended and hidden again on resume
+ * only if Sys_InitInput hid it, so it stays visible without InputSprocket
+ * (in_nomouse, a failed ISpStartup, or input shut down).  An InputSprocket
+ * button press still buffered at the suspend event
  * must be drained and released with the rest, and one buffered across the
  * suspend must be flushed on resume, not delivered without its release.
  *
@@ -33,9 +36,10 @@
  * Sys_GetEvent from mac_main.c, and Sys_MsecForMacEvent, vkeyToQuakeKey,
  * DoKeyDown, DoKeyUp, Sys_ModifierEvents, DoOSEvent, Sys_SendKeyEvents and
  * Sys_WaitEvent from mac_event.c, the console ring, Sys_ConsoleEvent and
- * Sys_ConsoleInput from mac_console.c, and Sys_SuspendInput, Sys_ResumeInput and Sys_Input from
- * mac_input.c, verbatim (Sys_QueEvent renamed Sys_QueEvent_extracted, so a
- * wrapper can tell when the queue is running).  The Event Manager is a fake
+ * Sys_ConsoleInput from mac_console.c, and Sys_ShutdownInput,
+ * Sys_SuspendInput, Sys_ResumeInput and Sys_Input from mac_input.c, verbatim
+ * (Sys_QueEvent renamed Sys_QueEvent_extracted, so a wrapper can tell when
+ * the queue is running).  The Event Manager is a fake
  * that returns scripted events and otherwise null events carrying the current
  * modifiers; InputSprocket is a fake with per-element event queues.
  * The fixture plays the engine: it applies key events to its own key state
@@ -114,8 +118,14 @@ static Boolean GetOSEvent( EventMask mask, EventRecord *event ) {
 static unsigned long TickCount( void ) { return macTicks; }
 static void GetKeys( KeyMap keys ) { memset( keys, 0, sizeof( KeyMap ) ); }
 static void SysBeep( short duration ) { (void)duration; }
-static void ShowCursor( void ) { }
-static void HideCursor( void ) { }
+/* the cursor level: 0 shown, below 0 hidden; ShowCursor stops at 0 */
+static int				cursorLevel;
+static void ShowCursor( void ) {
+	if ( cursorLevel < 0 ) {
+		cursorLevel++;
+	}
+}
+static void HideCursor( void ) { cursorLevel--; }
 
 /* ---- fake InputSprocket: one mouse, two axes and three buttons ---- */
 
@@ -228,11 +238,7 @@ void Sys_ModifierEvents( int modifiers );
 void Sys_Input( void );
 void Sys_SuspendInput( void );
 void Sys_ResumeInput( void );
-void Sys_ShutdownInput( void ) {
-	ShowCursor();
-	ISpShutdown();
-	inputActive = qfalse;
-}
+void Sys_ShutdownInput( void );
 void DoMouseDown( EventRecord *event ) { (void)event; }
 void DoMouseUp( EventRecord *event ) { (void)event; }
 void DoUpdate( WindowPtr window ) { (void)window; }
@@ -415,6 +421,7 @@ static void BackgroundModifiers( void ) {
 	Suspend();
 	Frame();
 	Check( suspendCalls == 1, "the suspend event suspends InputSprocket" );
+	Check( cursorLevel == 0, "the cursor is shown while in the background" );
 	ClearCounts();
 	macModifiers = btnState | controlKey | shiftKey | optionKey;
 	Frame();
@@ -432,6 +439,7 @@ static void BackgroundModifiers( void ) {
 	Frame();
 	Frame();
 	Check( resumeCalls == 1, "the resume event resumes InputSprocket" );
+	Check( cursorLevel == -1, "the cursor is hidden again on resume" );
 	Check( keyDownState[K_SHIFT] && downEvents[K_SHIFT] == 1, "a modifier held at resume is down once" );
 	macModifiers = btnState;
 	Frame();
@@ -502,6 +510,7 @@ static void IspPressDuringSuspend( void ) {
 static void NoInputSprocket( void ) {
 	inputActive = qfalse;
 	ispStarted = qfalse;
+	cursorLevel = 0;	/* Sys_InitInput did not hide it */
 	IspEvent( K_MOUSE2, 1 );
 	Frame();
 	Suspend();
@@ -511,7 +520,23 @@ static void NoInputSprocket( void ) {
 	Frame();
 	Check( !suspendCalls && !resumeCalls, "InputSprocket is not suspended or resumed without it" );
 	Check( flushCalls == 0, "nothing is flushed without InputSprocket" );
+	Check( cursorLevel == 0, "the cursor stays visible without InputSprocket" );
 	Check( !downEvents[K_MOUSE2] && !AnyKeyDown(), "no button events without InputSprocket" );
+}
+
+/* #291: in_nomouse set while playing shuts input down, then a Cmd-Tab */
+static void CursorAfterShutdown( void ) {
+	Frame();
+	noMouseCvar.integer = 1;
+	Frame();
+	Check( !inputActive && cursorLevel == 0, "shutting input down shows the cursor" );
+	Suspend();
+	Frame();
+	Resume();
+	Frame();
+	Frame();
+	Check( cursorLevel == 0, "the cursor stays visible after a suspend and resume" );
+	Check( suspendCalls == 0 && resumeCalls == 0, "InputSprocket is not suspended or resumed after shutdown" );
 }
 
 /* #18: a key release and then more events than the queue holds */
@@ -657,6 +682,7 @@ int main( int argc, char **argv ) {
 	currentCase = argv[1];
 	inputActive = qtrue;	/* Sys_InitInput found a mouse */
 	ispStarted = qtrue;
+	cursorLevel = -1;		/* and hid the cursor */
 
 	if ( !strcmp( currentCase, "modifier-alone" ) ) {
 		ModifierAlone( qfalse );
@@ -672,6 +698,8 @@ int main( int argc, char **argv ) {
 		IspPressDuringSuspend();
 	} else if ( !strcmp( currentCase, "no-isp" ) ) {
 		NoInputSprocket();
+	} else if ( !strcmp( currentCase, "cursor-after-shutdown" ) ) {
+		CursorAfterShutdown();
 	} else if ( !strcmp( currentCase, "overflow" ) ) {
 		Overflow();
 	} else if ( !strcmp( currentCase, "overflow-releases" ) ) {
