@@ -125,16 +125,34 @@ void Sys_SuspendInput( void ) {
 	}
 	inputSuspended = true;
 	ShowCursor();
-	ISpSuspend();
+	// no InputSprocket calls without ISpStartup (in_nomouse, or it failed)
+	if ( inputActive ) {
+		ISpSuspend();
+	}
 }
 
 void Sys_ResumeInput( void ) {
+	int		device, button;
+
 	if ( !inputSuspended ) {
 		return;
 	}
 	inputSuspended = false;
 	HideCursor();
+	// no InputSprocket calls without ISpStartup (in_nomouse, or it failed)
+	if ( !inputActive ) {
+		return;
+	}
 	ISpResume();
+
+	// Discard button events buffered across the suspend (#291): a press
+	// that came after DoOSEvent drained the queues was not released by
+	// Sys_ReleaseKeys, and its release went to the front process.
+	for ( device = 0 ; device < numDevices ; device++ ) {
+		for ( button = 2 ; button < numElements[device] ; button++ ) {
+			ISpElement_Flush( elements[device][button] );
+		}
+	}
 }
 
 /*

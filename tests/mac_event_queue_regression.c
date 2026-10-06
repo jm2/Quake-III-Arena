@@ -11,18 +11,24 @@
  * in the front application must give no key events.  Keys, modifiers and
  * InputSprocket mouse buttons held at suspend must be released once, because
  * their key-ups go to the front application, and modifiers must resync on
- * resume.
+ * resume.  An InputSprocket button press still buffered at the suspend event
+ * must be drained and released with the rest, and one buffered across the
+ * suspend must be flushed on resume, not delivered without its release.
  *
  * #18: when the 256-slot queue fills, the dropped event's Z_Malloc payload
  * must be freed, the newest events kept, and no key release lost, or a key
  * whose press was already delivered stays down.  The overflow is reported
- * once, from Sys_GetEvent, with the number of events dropped.
+ * once, from Sys_GetEvent, with the number of events dropped, and nothing is
+ * printed from inside the queue.
  *
  * The runner extracts the real queue (Sys_QueEvent and its helpers) and
  * Sys_GetEvent from mac_main.c, and Sys_MsecForMacEvent, vkeyToQuakeKey,
  * DoKeyDown, DoKeyUp, Sys_ModifierEvents, DoOSEvent and Sys_SendKeyEvents
- * from mac_event.c, verbatim.  The Event Manager is a fake that returns
- * scripted events and otherwise null events carrying the current modifiers.
+ * from mac_event.c, and Sys_SuspendInput, Sys_ResumeInput and Sys_Input from
+ * mac_input.c, verbatim (Sys_QueEvent renamed Sys_QueEvent_extracted, so a
+ * wrapper can tell when the queue is running).  The Event Manager is a fake
+ * that returns scripted events and otherwise null events carrying the current
+ * modifiers; InputSprocket is a fake with per-element event queues.
  * The fixture plays the engine: it applies key events to its own key state
  * and frees packet payloads, as Com_EventLoop does. */
 #include "../code/game/q_shared.h"
@@ -97,6 +103,100 @@ static Boolean GetOSEvent( EventMask mask, EventRecord *event ) {
 static unsigned long TickCount( void ) { return macTicks; }
 static void GetKeys( KeyMap keys ) { memset( keys, 0, sizeof( KeyMap ) ); }
 static void SysBeep( short duration ) { (void)duration; }
+static void ShowCursor( void ) { }
+static void HideCursor( void ) { }
+
+/* ---- fake InputSprocket: one mouse, two axes and three buttons ---- */
+
+typedef unsigned int	UInt32;
+typedef int				OSStatus;
+enum { false = 0, true = 1 };	/* MacTypes.h */
+typedef int				ISpElementReference;	/* index into ispQueue */
+typedef struct {
+	unsigned long long	when;
+	ISpElementReference	element;
+	UInt32				refCon;
+	UInt32				data;
+} ISpElementEvent;
+
+#define ISP_ELEMENTS	5
+#define ISP_QUEUE		16
+static UInt32		ispQueue[ISP_ELEMENTS][ISP_QUEUE];
+static int			ispQueued[ISP_ELEMENTS];
+static qboolean		ispStarted, ispSuspended;
+static int			ispPressAtSuspend;	/* a press that lands as ISp suspends */
+static int			suspendCalls, resumeCalls, flushCalls;
+static const char	*currentCase;
+static int			failures;
+
+static void IspEvent( int button, int down ) {
+	int element = button - K_MOUSE1 + 2;
+	if ( ispQueued[element] < ISP_QUEUE ) {
+		ispQueue[element][ispQueued[element]++] = down;
+	}
+}
+
+static void IspNeedsStartup( const char *call ) {
+	if ( !ispStarted ) {
+		fprintf( stderr, "FAIL %s: %s without ISpStartup\n", currentCase, call );
+		failures++;
+	}
+}
+
+static OSStatus ISpSuspend( void ) {
+	IspNeedsStartup( "ISpSuspend" );
+	suspendCalls++;
+	ispSuspended = qtrue;
+	if ( ispPressAtSuspend ) {
+		IspEvent( ispPressAtSuspend, 1 );
+		ispPressAtSuspend = 0;
+	}
+	return 0;
+}
+static OSStatus ISpResume( void ) {
+	IspNeedsStartup( "ISpResume" );
+	resumeCalls++;
+	ispSuspended = qfalse;
+	return 0;
+}
+static OSStatus ISpShutdown( void ) { ispStarted = qfalse; return 0; }
+static OSStatus ISpElement_GetNextEvent( ISpElementReference element, UInt32 size,
+		ISpElementEvent *event, Boolean *wasEvent ) {
+	*wasEvent = 0;
+	if ( !ispStarted || ispSuspended || size != sizeof( *event ) || !ispQueued[element] ) {
+		return 0;
+	}
+	memset( event, 0, sizeof( *event ) );
+	event->element = element;
+	event->data = ispQueue[element][0];
+	memmove( ispQueue[element], ispQueue[element] + 1, --ispQueued[element] * sizeof( UInt32 ) );
+	*wasEvent = 1;
+	return 0;
+}
+static OSStatus ISpElement_GetSimpleState( ISpElementReference element, UInt32 *state ) {
+	(void)element;
+	*state = 0;
+	return 0;
+}
+static OSStatus ISpElement_Flush( ISpElementReference element ) {
+	if ( !ispStarted ) {
+		fprintf( stderr, "FAIL %s: ISpElement_Flush without InputSprocket\n", currentCase );
+		failures++;
+		return -50;	/* paramErr */
+	}
+	flushCalls++;
+	ispQueued[element] = 0;
+	return 0;
+}
+
+/* mac_input.c's globals, set up as Sys_InitInput leaves them */
+qboolean			inputSuspended;
+static UInt32		numDevices = 1;
+static UInt32		numElements[1] = { ISP_ELEMENTS };
+static ISpElementReference	elements[1][ISP_ELEMENTS] = { { 0, 1, 2, 3, 4 } };
+static cvar_t		noMouseCvar, dedicatedCvar;
+static cvar_t		*in_nomouse = &noMouseCvar;
+cvar_t				*com_dedicated = &dedicatedCvar;
 
 /* ---- the rest of the Mac port, as far as these functions reach ---- */
 
@@ -107,25 +207,20 @@ static qboolean		ignoreUpdateEvents;
 int					sys_ticBase, sys_msecBase, sys_lastEventTic;
 qboolean			inputActive;
 qboolean			inputSystemSuspended;
-static int			suspendCalls, resumeCalls;
-
-/* Sys_Input: InputSprocket mouse buttons, queued as mac_input.c does */
-static int			ispButton, ispButtonDown;
 
 void Sys_QueEvent( int time, sysEventType_t type, int value, int value2, int ptrLength, void *ptr );
+void Sys_QueEvent_extracted( int time, sysEventType_t type, int value, int value2, int ptrLength, void *ptr );
 void Sys_ReleaseKeys( void );
 void Sys_SendKeyEvents( void );
 void Sys_ModifierEvents( int modifiers );
-
-static void Sys_Input( void ) {
-	if ( inputSystemSuspended || !ispButton ) {
-		return;
-	}
-	Sys_QueEvent( 0, SE_KEY, ispButton, ispButtonDown, 0, NULL );
-	ispButton = 0;
+void Sys_Input( void );
+void Sys_SuspendInput( void );
+void Sys_ResumeInput( void );
+void Sys_ShutdownInput( void ) {
+	ShowCursor();
+	ISpShutdown();
+	inputActive = qfalse;
 }
-void Sys_SuspendInput( void ) { suspendCalls++; }
-void Sys_ResumeInput( void ) { resumeCalls++; }
 static qboolean Sys_ConsoleEvent( EventRecord *event ) { (void)event; return qfalse; }
 void DoMouseDown( EventRecord *event ) { (void)event; }
 void DoMouseUp( EventRecord *event ) { (void)event; }
@@ -155,11 +250,25 @@ void Z_Free( void *ptr ) {
 	free( ptr );
 }
 
+/* Com_Printf must not run inside the queue (#18): it can reach the
+ * console and the log while the queue is mid-update. */
+static int			insideQueue, printedInsideQueue;
+void Sys_QueEvent( int time, sysEventType_t type, int value, int value2, int ptrLength, void *ptr ) {
+	insideQueue++;
+	Sys_QueEvent_extracted( time, type, value, value2, ptrLength, ptr );
+	insideQueue--;
+}
+
 static char			printed[16384];
 void QDECL Com_Printf( const char *fmt, ... ) {
 	va_list	ap;
 	size_t	len = strlen( printed );
 
+	if ( insideQueue && !printedInsideQueue ) {
+		fprintf( stderr, "FAIL %s: Com_Printf from inside Sys_QueEvent\n", currentCase );
+		failures++;
+		printedInsideQueue = 1;
+	}
 	va_start( ap, fmt );
 	vsnprintf( printed + len, sizeof( printed ) - len, fmt, ap );
 	va_end( ap );
@@ -167,11 +276,10 @@ void QDECL Com_Printf( const char *fmt, ... ) {
 
 #include "mac_event_extracted.c"
 #include "mac_main_extracted.c"
+#include "mac_input_extracted.c"
 
 /* ---- the engine side ---- */
 
-static const char	*currentCase;
-static int			failures;
 static int			keyDownState[256];
 static int			downEvents[256], upEvents[256];
 static int			packetsSeen, lastPacket;
@@ -299,8 +407,7 @@ static void SuspendReleases( void ) {
 	Frame();
 	macModifiers = btnState | controlKey;
 	PostEvent( keyDown, ( 0x0D << 8 ) | 'w' );	/* the W key */
-	ispButton = K_MOUSE2;
-	ispButtonDown = 1;
+	IspEvent( K_MOUSE2, 1 );
 	Frame();
 	Check( keyDownState['w'] && keyDownState[K_CTRL] && keyDownState[K_MOUSE2], "W, Ctrl and mouse 2 are down" );
 	ClearCounts();
@@ -316,6 +423,59 @@ static void SuspendReleases( void ) {
 	Frame();
 	Check( upEvents[K_CTRL] == 1 && upEvents[K_COMMAND] <= 1, "no second release while in the background" );
 	Check( !AnyKeyDown(), "nothing is down while in the background" );
+}
+
+/* #291: an InputSprocket click buffered when the suspend event arrives */
+static void IspPressAtSuspend( void ) {
+	Frame();
+	ClearCounts();
+	/* pressed after the last Sys_Input, in the poll that sees the suspend */
+	IspEvent( K_MOUSE2, 1 );
+	Suspend();
+	Frame();
+	Check( downEvents[K_MOUSE2] == 1 && upEvents[K_MOUSE2] == 1,
+		"a press buffered at suspend is delivered and released" );
+	Check( !AnyKeyDown(), "nothing is down while in the background" );
+	Resume();
+	Frame();
+	Frame();
+	Check( resumeCalls == 1, "the resume event resumes InputSprocket" );
+	Check( !keyDownState[K_MOUSE2] && downEvents[K_MOUSE2] == 1,
+		"the press is not delivered again after resume" );
+	Check( !AnyKeyDown(), "nothing is left down after resume" );
+}
+
+/* #291: a click that lands after the drain, as InputSprocket suspends */
+static void IspPressDuringSuspend( void ) {
+	Frame();
+	ClearCounts();
+	ispPressAtSuspend = K_MOUSE3;
+	Suspend();
+	Frame();
+	Check( suspendCalls == 1, "the suspend event suspends InputSprocket" );
+	Resume();
+	Frame();
+	Frame();
+	Check( flushCalls > 0, "the button queues are flushed on resume" );
+	Check( !downEvents[K_MOUSE3] && !keyDownState[K_MOUSE3],
+		"a press buffered across the suspend is not delivered after resume" );
+	Check( !AnyKeyDown(), "nothing is left down after resume" );
+}
+
+/* #291: suspend and resume without InputSprocket (in_nomouse, or no ISp) */
+static void NoInputSprocket( void ) {
+	inputActive = qfalse;
+	ispStarted = qfalse;
+	IspEvent( K_MOUSE2, 1 );
+	Frame();
+	Suspend();
+	Frame();
+	Resume();
+	Frame();
+	Frame();
+	Check( !suspendCalls && !resumeCalls, "InputSprocket is not suspended or resumed without it" );
+	Check( flushCalls == 0, "nothing is flushed without InputSprocket" );
+	Check( !downEvents[K_MOUSE2] && !AnyKeyDown(), "no button events without InputSprocket" );
 }
 
 /* #18: a key release and then more events than the queue holds */
@@ -381,6 +541,8 @@ int main( int argc, char **argv ) {
 		return 2;
 	}
 	currentCase = argv[1];
+	inputActive = qtrue;	/* Sys_InitInput found a mouse */
+	ispStarted = qtrue;
 
 	if ( !strcmp( currentCase, "modifier-alone" ) ) {
 		ModifierAlone( qfalse );
@@ -390,6 +552,12 @@ int main( int argc, char **argv ) {
 		BackgroundModifiers();
 	} else if ( !strcmp( currentCase, "suspend-releases" ) ) {
 		SuspendReleases();
+	} else if ( !strcmp( currentCase, "isp-press-at-suspend" ) ) {
+		IspPressAtSuspend();
+	} else if ( !strcmp( currentCase, "isp-press-during-suspend" ) ) {
+		IspPressDuringSuspend();
+	} else if ( !strcmp( currentCase, "no-isp" ) ) {
+		NoInputSprocket();
 	} else if ( !strcmp( currentCase, "overflow" ) ) {
 		Overflow();
 	} else if ( !strcmp( currentCase, "overflow-releases" ) ) {

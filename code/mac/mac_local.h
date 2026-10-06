@@ -355,6 +355,10 @@ extern	qboolean			inputSystemSuspended;
 void Sys_SuspendInput( void );
 void Sys_ResumeInput( void );
 
+// mac_snddma.c (snd_local.h): idempotent, so quit and fatal-error paths
+// can close the Sound Manager channel even when S_Shutdown never ran
+void SNDDMA_Shutdown( void );
+
 // mac_glimp.c
 extern glconfig_t glConfig;
 
