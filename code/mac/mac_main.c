@@ -1456,6 +1456,13 @@ int main( int argc, char **argv ) {
             if ( lineLength > 0 && line[lineLength - 1] == '\n' ) {
                 lineLength--;
             } else if ( lineLength == (int)sizeof( line ) - 1 ) {
+                int c;
+
+                // Drop the rest of the line, so Sys_StartupError waits for
+                // a new Return instead of reading the next typed byte.
+                do {
+                    c = getchar();
+                } while ( c != '\n' && c != EOF );
                 return Sys_StartupError( va( "startup parameters exceed %d bytes",
                                              (int)sizeof( commandLine ) - 1 ) );
             }

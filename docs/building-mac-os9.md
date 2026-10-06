@@ -261,7 +261,11 @@ applications read their startup parameters from one of two places:
   +set fs_game mymod
   ```
 
-  CR (SimpleText), LF and CRLF line endings all work.
+  CR (SimpleText), LF and CRLF line endings all work. Because both
+  applications read the same file, an `fs_game` line there also replaces
+  Team Arena's built-in `missionpack` default, so `Quake3_TeamArena` then
+  starts in that game directory instead of Team Arena. Keep such a line out
+  of the shared file, or use the Shift prompt for a one-off mod launch.
 - holding Shift while the application starts. The console window then asks
   for one line of parameters (for example `safe +set s_initsound 1`). That
   line replaces the file for this launch only. Press Return to start with no
@@ -274,6 +278,11 @@ Use these to set `CVAR_INIT` cvars such as `fs_game`, `com_hunkMegs` and
 from starting. As on other platforms' command lines, the parameters can be
 at most 1023 bytes once line endings are folded. A longer file or line stops
 the launch with a message in the console window. It is not cut short.
+The engine also splits the parameters into at most 32 pieces
+(`Com_ParseCommandLine`), and each `+` and each line break starts a new one,
+so a file of `+set` lines holds 16 commands (one fewer for each blank
+line). Commands past that are not applied as startup settings. Writing the
+lines without the leading `+` (`set s_initsound 1`) fits up to 32.
 
 The console window stays closed unless something needs it: the Shift prompt,
 an error, or `+set viewlog 1`, which shows the engine's log in it. The log is
