@@ -45,6 +45,7 @@ Q3_TEST_EXTRACT '^void[[:space:]]+DoOSEvent[[:space:]]*[(][^;]*$' "$Q3_TEST_EVEN
 Q3_TEST_EXTRACT '^void[[:space:]]+Sys_SendKeyEvents[[:space:]]*[(][^;]*$' "$Q3_TEST_EVENT" "$Q3_TEST_DIR/mac_event_extracted.c"
 Q3_TEST_INPUT="$Q3_TEST_ROOT/code/mac/mac_input.c"
 : > "$Q3_TEST_DIR/mac_input_extracted.c"
+Q3_TEST_EXTRACT '^void[[:space:]]+Sys_ShutdownInput[[:space:]]*[(][^;]*$' "$Q3_TEST_INPUT" "$Q3_TEST_DIR/mac_input_extracted.c"
 Q3_TEST_EXTRACT '^void[[:space:]]+Sys_SuspendInput[[:space:]]*[(][^;]*$' "$Q3_TEST_INPUT" "$Q3_TEST_DIR/mac_input_extracted.c"
 Q3_TEST_EXTRACT '^void[[:space:]]+Sys_ResumeInput[[:space:]]*[(][^;]*$' "$Q3_TEST_INPUT" "$Q3_TEST_DIR/mac_input_extracted.c"
 Q3_TEST_EXTRACT '^void[[:space:]]+Sys_Input[[:space:]]*[(][^;]*$' "$Q3_TEST_INPUT" "$Q3_TEST_DIR/mac_input_extracted.c"
@@ -58,6 +59,7 @@ Q3_TEST_EXTRACT '^void[[:space:]]+Sys_Input[[:space:]]*[(][^;]*$' "$Q3_TEST_INPU
 Q3_TEST_STATUS=0
 for Q3_TEST_CASE in modifier-alone modifier-alone-fullscreen background-modifiers \
         suspend-releases isp-press-at-suspend isp-press-during-suspend no-isp \
+        cursor-after-shutdown \
         overflow overflow-releases; do
     ASAN_OPTIONS=detect_leaks=${Q3_TEST_DETECT_LEAKS:-1}:halt_on_error=1 \
     UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
