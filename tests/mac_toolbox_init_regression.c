@@ -384,6 +384,17 @@ static int EventIndex( const char *name ) {
 	return -1;
 }
 
+static int EventCount( const char *name ) {
+	int	i, count;
+
+	for ( i = count = 0 ; i < numEvents ; i++ ) {
+		if ( !strcmp( events[i], name ) ) {
+			count++;
+		}
+	}
+	return count;
+}
+
 static void WriteParms( const char *data ) {
 	char	path[sizeof( cwd ) + 32];	/* cwd + ":MacQuake3Parms.txt" */
 	FILE	*f;
@@ -565,6 +576,10 @@ int main( int argc, char **argv ) {
 	Check( result == 1 && comInitCalls == 0, "main returns 1 before Com_Init" );
 	CheckToolboxFirst();
 	Check( strstr( windowText, "startup parameters exceed 1023 bytes" ) != NULL, "the error is in the window" );
+	Check( strstr( windowText, "Press Return to quit." ) != NULL, "the Return prompt is in the window" );
+	/* #486 review: the rest of the overlong line is not the Return */
+	Check( EventCount( "read" ) == 2 && !strcmp( events[numEvents - 1], "read" ),
+		"main drops the rest of the typed line and waits for a new Return before it quits" );
 
 	/* a static module failure is reported in the window, after the Toolbox */
 	numEvents = 0;
