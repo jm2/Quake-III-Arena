@@ -299,6 +299,22 @@ sysEvent_t Sys_GetEvent( void ) {
     // Pump InputSprocket events (mouse)
     Sys_Input();
 
+    // A dedicated server's console commands, as id's Sys_PumpEvents and
+    // unix_main.c read them
+    {
+        char    *s;
+        char    *b;
+        int     len;
+
+        s = Sys_ConsoleInput();
+        if ( s ) {
+            len = strlen( s ) + 1;
+            b = Z_Malloc( len );
+            strcpy( b, s );
+            Sys_QueEvent( 0, SE_CONSOLE, 0, 0, len, b );
+        }
+    }
+
     // Check for network packets and queue them as SE_PACKET (same pattern
     // as unix_main.c). Without this, Sys_GetPacket had no caller at all and
     // the engine could never receive UDP traffic.
