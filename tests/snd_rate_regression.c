@@ -91,6 +91,9 @@ void *Hunk_AllocateTempMemory( int size ) {
 	return malloc( size );	// exact size: AddressSanitizer reports a read of even the first sample of an empty one
 }
 void Hunk_FreeTempMemory( void *buf ) { free( buf ); }
+// S_BeginRegistration shuts sound down when it cannot allocate the buffer pool (#230).
+void SNDDMA_Shutdown( void ) {}
+void Cmd_RemoveCommand( const char *name ) { (void)name; }
 
 static int FindServed( const char *name ) {
 	int i;

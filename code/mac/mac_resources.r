@@ -2,11 +2,6 @@
 #include "CodeFragments.r"
 #include "quake3_icons.r"
 
-type 'sizc' {
-    longint; /* Minimum Size */
-    longint; /* Preferred Size */
-};
-
 resource 'cfrg' (0) {
 	{	/* array memberArray: 1 elements */
 		/* [1] */
@@ -19,16 +14,6 @@ resource 'cfrg' (0) {
 		kIsApp, kOnDiskFlat, kZeroOffset, kWholeFork,
 		"Quake3"
 	}
-};
-
-resource 'sizc' (0) {
-	/* Minimum Size (heap margin). Engine fixed demand is ~73 MB
-	   (56 MB hunk + 16 MB zone + smallzone) before code, CFM, and
-	   malloc slack; the old 62.5 MB minimum let the Finder grant a
-	   partition the game could never start in. */
-	96000 * 1024,
-	/* Preferred Size */
-	128000 * 1024
 };
 
 resource 'SIZE' (-1) {
@@ -49,9 +34,18 @@ resource 'SIZE' (-1) {
 	reserved,
 	reserved,
 	
-	/* Memory Size (Same as sizc for consistency) */
-	128000 * 1024,
-	96000 * 1024
+	/* Preferred and minimum partition (issue #230). At the minimum the
+	   engine's fixed demand is about 103.5 MB for Quake3 and 105.5 MB for
+	   Quake3_TeamArena: the 56 MB hunk, the 16 MB zone, the 0.5 MB small
+	   zone, the sound pool (12 MB at the Mac's com_soundMegs 4), the 1 MB
+	   cfrg stack and the image (text, data and bss: 17.9 and 19.9 MB),
+	   which CFM loads into the partition when virtual memory is off. That
+	   leaves 11.7 MB for AGL/OpenGL, the Sound Manager and fragmentation in
+	   Team Arena. cmake/mac_partition.py checks this against the sources
+	   and the link. The preferred size also fits a com_soundMegs 8 carried
+	   over from a PC q3config.cfg. */
+	144000 * 1024,
+	120000 * 1024
 };
 
 /* Sys_Error's Stop alert (mac_main.c), as retail's ALRT 128: ParamText

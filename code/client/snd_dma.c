@@ -383,7 +383,12 @@ void S_BeginRegistration( void ) {
 	s_soundMuted = qfalse;		// we can play again
 
 	if (s_numSfx == 0) {
-		SND_setup();
+		if ( !SND_setup() ) {
+			// with no buffer pool nothing can be loaded or played: leave
+			// sound off, as s_initsound 0 does
+			S_Shutdown();
+			return;
+		}
 
 		s_numSfx = 0;
 		Com_Memset( s_knownSfx, 0, sizeof( s_knownSfx ) );

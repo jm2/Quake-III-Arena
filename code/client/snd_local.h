@@ -168,7 +168,7 @@ qboolean S_LoadSound( sfx_t *sfx );
 
 void		SND_free(sndBuffer *v);
 sndBuffer*	SND_malloc();
-void		SND_setup();
+qboolean	SND_setup();
 
 void S_PaintChannels(int endtime);
 
