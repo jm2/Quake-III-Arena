@@ -16,6 +16,16 @@ static EndpointRef endpoint = kOTInvalidEndpointRef;
 static EndpointRef resolverEndpoint = kOTInvalidEndpointRef;
 static OTDataSize	endpointTSDU;	// largest datagram OTSndUData takes, <= 0 if unbounded
 
+// set by the notifiers, which also wake the application from WaitNextEvent
+static ProcessSerialNumber	netProcess;
+static OTNotifyUPP			endpointNotifyUPP, resolverNotifyUPP;
+static volatile qboolean	netDataArrived;		// T_DATA on the game endpoint
+static volatile qboolean	resolveDone;		// T_RESOLVEADDRCOMPLETE
+static volatile OTResult	resolveResult;
+
+#define	RESOLVE_TIMEOUT		10000	// msec, as id's synchronous lookup
+#define	RESOLVE_SLEEP		6		// ticks WaitNextEvent sleeps per check
+
 #define	MAX_IPS		16
 static	int		numIP;
 static	InetInterfaceInfo	sys_inetInfo[MAX_IPS];
@@ -60,24 +70,6 @@ void HandleOTError( EndpointRef ep, int err, const char *func ) {
 	}
 	lastErr = err;	// don't spew tons of messages
 }
-
-/*
-=================
-NotifyProc
-=================
-*/
-pascal void NotifyProc(void* contextPtr, OTEventCode code, 
-									   OTResult result, void* cookie) {
-	switch( code ) {
-	case T_OPENCOMPLETE:
-		endpoint = cookie;
-		break;
-	case T_UDERR:
-		RcvUDErr( endpoint );
-		break;
-	}
-}
-
 
 /*
 =================
@@ -204,6 +196,56 @@ void NET_GetLocalAddress( void ) {
 
 
 /*
+=================
+NET_EndpointNotify
+
+Notifiers run at deferred task time, so they only set a flag and wake the
+application (WakeUpProcess is interrupt-safe).  OT calls the game endpoint's
+for T_DATA even though the endpoint is synchronous: NET_Sleep waits for it.
+=================
+*/
+static pascal void NET_EndpointNotify( void *contextPtr, OTEventCode code,
+									   OTResult result, void *cookie ) {
+	if ( code == T_DATA ) {
+		netDataArrived = qtrue;
+		WakeUpProcess( &netProcess );
+	}
+}
+
+/*
+=================
+NET_ResolverNotify
+
+The asynchronous resolver endpoint's: Sys_StringToAdr waits for its lookup.
+=================
+*/
+static pascal void NET_ResolverNotify( void *contextPtr, OTEventCode code,
+									   OTResult result, void *cookie ) {
+	if ( code == T_RESOLVEADDRCOMPLETE ) {
+		resolveResult = result;
+		resolveDone = qtrue;
+		WakeUpProcess( &netProcess );
+	}
+}
+
+
+/*
+==================
+NET_CloseResolver
+
+Closing the endpoint also abandons a lookup in progress: its notifier is
+not called again.
+==================
+*/
+static void NET_CloseResolver( void ) {
+	if ( resolverEndpoint != kOTInvalidEndpointRef ) {
+		OTUnbind( resolverEndpoint );
+		OTCloseProvider( resolverEndpoint );
+		resolverEndpoint = kOTInvalidEndpointRef;
+	}
+}
+
+/*
 ==================
 NET_CloseOpenTransport
 
@@ -212,11 +254,7 @@ start leaves UDP off (loopback still works) rather than half-initialised.
 ==================
 */
 static void NET_CloseOpenTransport( void ) {
-	if ( resolverEndpoint != kOTInvalidEndpointRef ) {
-		OTUnbind( resolverEndpoint );
-		OTCloseProvider( resolverEndpoint );
-		resolverEndpoint = kOTInvalidEndpointRef;
-	}
+	NET_CloseResolver();
 	if ( endpoint != kOTInvalidEndpointRef ) {
 		OTUnbind( endpoint );
 		OTCloseProvider( endpoint );
@@ -301,6 +339,55 @@ static OSStatus NET_BindEndpoint( EndpointRef ep, InetHost host, int port ) {
 
 /*
 ==================
+NET_OpenResolver
+
+Opens the endpoint that resolves names, bound to any port and asynchronous,
+so that Sys_StringToAdr can keep the Mac running while it waits.  Returns
+the stage that failed, with its error in *err, or NULL.
+==================
+*/
+static const char *NET_OpenResolver( OSStatus *err ) {
+	resolverEndpoint = NET_OpenUDPEndpoint( NULL, err );
+	if ( *err != noErr ) {
+		return "OTOpenEndpoint() for resolver";
+	}
+	*err = NET_BindEndpoint( resolverEndpoint, kOTAnyInetAddress, 0 );
+	if ( *err != noErr ) {
+		return "OTBind() for resolver";
+	}
+	*err = OTInstallNotifier( resolverEndpoint, resolverNotifyUPP, NULL );
+	if ( *err != noErr ) {
+		return "OTInstallNotifier() for resolver";
+	}
+	*err = OTSetAsynchronous( resolverEndpoint );
+	if ( *err != noErr ) {
+		return "OTSetAsynchronous() for resolver";
+	}
+	return NULL;
+}
+
+/*
+==================
+NET_ResetResolver
+
+A lookup that is given up leaves its request with the resolver: replace the
+endpoint, so the next lookup starts clean.
+==================
+*/
+static void NET_ResetResolver( void ) {
+	const char	*stage;
+	OSStatus	err;
+
+	NET_CloseResolver();
+	stage = NET_OpenResolver( &err );
+	if ( stage ) {
+		Com_Printf( "WARNING: %s failed (error %i), host names will not resolve\n", stage, (int)err );
+		NET_CloseResolver();
+	}
+}
+
+/*
+==================
 Sys_InitNetworking
 
 Opens a UDP endpoint on net_ip:net_port, trying the next nine ports when one
@@ -321,6 +408,7 @@ typedef struct InetAddress InetAddress;
 */
 void Sys_InitNetworking( void ) {
 	OSStatus		err;
+	const char		*stage;
 	TEndpointInfo	info;
 	cvar_t			*noudp;
 	cvar_t			*ip;
@@ -351,6 +439,13 @@ void Sys_InitNetworking( void ) {
 	
   	gOTInited = true;
 
+	// the notifiers wake this process
+	GetCurrentProcess( &netProcess );
+	if ( !endpointNotifyUPP ) {
+		endpointNotifyUPP = NewOTNotifyUPP( NET_EndpointNotify );
+		resolverNotifyUPP = NewOTNotifyUPP( NET_ResolverNotify );
+	}
+
 	// get an endpoint
 	Com_Printf( "... OTOpenEndpoint()\n" );
 	endpoint = NET_OpenUDPEndpoint( &info, &err );
@@ -370,16 +465,18 @@ void Sys_InitNetworking( void ) {
 		return;
 	}
 
-	// get an endpoint just for resolving addresses, because
-	// I was having crashing problems doing it on the same endpoint
-	resolverEndpoint = NET_OpenUDPEndpoint( NULL, &err );
+	// T_DATA wakes NET_Sleep
+	err = OTInstallNotifier( endpoint, endpointNotifyUPP, NULL );
 	if ( err != noErr ) {
-		NET_InitFailed( "OTOpenEndpoint() for resolver", err );
+		NET_InitFailed( "OTInstallNotifier()", err );
 		return;
 	}
-	err = NET_BindEndpoint( resolverEndpoint, kOTAnyInetAddress, 0 );
-	if ( err != noErr ) {
-		NET_InitFailed( "OTBind() for resolver", err );
+
+	// get an endpoint just for resolving addresses, because
+	// I was having crashing problems doing it on the same endpoint
+	stage = NET_OpenResolver( &err );
+	if ( stage ) {
+		NET_InitFailed( stage, err );
 		return;
 	}
 
@@ -440,6 +537,40 @@ void Sys_ShutdownNetworking( void ) {
 
 /*
 =============
+NET_StringToHost
+
+A dotted quad, four decimal numbers 0-255, needs no lookup: convert it here,
+as inet_addr does in id's Sys_StringToSockaddr.  (OTInetStringToHost is
+CarbonLib only.)  Anything else, leading zeros included, which inet_addr
+reads as octal, is left to the resolver as before.
+=============
+*/
+static qboolean NET_StringToHost( const char *s, byte *ip ) {
+	byte	b[4];
+	int		i, n, digits;
+
+	for ( i = 0 ; i < 4 ; i++ ) {
+		n = digits = 0;
+		while ( *s >= '0' && *s <= '9' ) {
+			if ( digits && !n ) {
+				return qfalse;	// a leading zero
+			}
+			n = n * 10 + *s++ - '0';
+			if ( ++digits > 3 || n > 255 ) {
+				return qfalse;
+			}
+		}
+		if ( !digits || *s++ != ( i < 3 ? '.' : 0 ) ) {
+			return qfalse;
+		}
+		b[i] = n;
+	}
+	memcpy( ip, b, 4 );
+	return qtrue;
+}
+
+/*
+=============
 Sys_StringToAdr
 
 
@@ -448,15 +579,30 @@ Does NOT parse port numbers
 
 idnewt
 192.246.40.70
+
+A host name is looked up asynchronously.  While OT works, Sys_WaitEvent
+keeps the Mac running: the system and other processes get the time, windows
+update and File > Quit works.  Esc or Command-period gives up, as does
+RESOLVE_TIMEOUT passing, which OT's own timeout normally reports first.
 =============
 */
 qboolean	Sys_StringToAdr( const char *s, netadr_t *a ) {
+	// static: OT fills them in after OTResolveAddress returns
+	static TBind		in, out;
+	static InetAddress	inAddr;
+	static DNSAddress	dnsAddr;
+	static qboolean		resolving;
 	OSStatus	err;
-	TBind		in, out;
-	InetAddress	inAddr;
-	DNSAddress	dnsAddr;
+	qboolean	cancel;
+	int			start;
 
-	if ( !resolverEndpoint ) {
+	if ( NET_StringToHost( s, a->ip ) ) {
+		a->type = NA_IP;
+		return qtrue;
+	}
+
+	// a lookup can't start while another waits (from Sys_WaitEvent)
+	if ( !resolverEndpoint || resolving ) {
 		return qfalse;
 	}
 
@@ -477,8 +623,24 @@ qboolean	Sys_StringToAdr( const char *s, netadr_t *a ) {
 	out.addr.buf = (byte *)&inAddr;
 	out.addr.maxlen = sizeof( inAddr );
 	out.qlen = 0;
-	                           
-	err = OTResolveAddress( resolverEndpoint, &in, &out, 10000 );
+
+	resolveDone = qfalse;
+	err = OTResolveAddress( resolverEndpoint, &in, &out, RESOLVE_TIMEOUT );
+	if ( err == noErr ) {
+		resolving = qtrue;
+		cancel = qfalse;
+		start = Sys_Milliseconds();
+		while ( !resolveDone && !cancel && Sys_Milliseconds() - start < RESOLVE_TIMEOUT + 1000 ) {
+			Sys_WaitEvent( RESOLVE_SLEEP, &cancel );
+		}
+		resolving = qfalse;
+		if ( !resolveDone ) {
+			Com_Printf( "Sys_StringToAdr: lookup of %s %s\n", s, cancel ? "cancelled" : "timed out" );
+			NET_ResetResolver();
+			return qfalse;
+		}
+		err = resolveResult;
+	}
 	if ( err ) {
 		HandleOTError( resolverEndpoint, err, "Sys_StringToAdr" );
 		return qfalse;
@@ -658,5 +820,38 @@ qboolean	Sys_IsLANAddress (netadr_t adr) {
 }
 
 
-void NET_Sleep( int i ) {
+/*
+====================
+NET_Sleep
+
+sleeps msec or until net socket is ready, as unix_net.c does with select:
+WaitNextEvent gives the time to other processes until the endpoint's
+notifier wakes it for a datagram.  A Mac event, such as a key typed at the
+console, ends the sleep too, as stdin does select.
+====================
+*/
+void NET_Sleep( int msec ) {
+	OTByteCount	bytes;
+	int			start, remaining;
+
+	if ( !endpoint || !com_dedicated->integer ) {
+		return; // we're not a server, just run full speed
+	}
+
+	netDataArrived = qfalse;
+	if ( OTCountDataBytes( endpoint, &bytes ) == noErr ) {
+		return;	// a datagram is already waiting, so no T_DATA will come
+	}
+
+	start = Sys_Milliseconds();
+	for ( ;; ) {
+		remaining = msec - ( Sys_Milliseconds() - start );
+		if ( remaining <= 0 || netDataArrived ) {
+			break;
+		}
+		// in ticks, rounded up so the last moments are slept, not spun
+		if ( Sys_WaitEvent( ( remaining * 60 + 999 ) / 1000, NULL ) ) {
+			break;
+		}
+	}
 }

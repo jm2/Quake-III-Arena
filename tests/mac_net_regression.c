@@ -25,12 +25,31 @@
  * to the one bound; every failed stage must be reported and must close what
  * was opened, leaving the UDP paths inert and shutdown with nothing to close.
  *
- * The runner extracts the real Sys_StringToAdr, Sys_GetPacket and
- * Sys_InitNetworking through Sys_ShutdownNetworking (mac_net.c), and
- * Com_EventLoop (common.c) verbatim; tests/mac_ot_fake.h stands in for
- * Open Transport and the functions they call are replaced here.  Each case
- * runs in its own process: on master the long names overflow dnsAddr, which
- * AddressSanitizer stops at. */
+ * #21: NET_Sleep was empty, so a dedicated server spun at full speed between
+ * frames.  As unix_net.c's select does, it must now sleep (WaitNextEvent, a
+ * sleep of more than zero ticks: never a spin) until msec pass or a datagram
+ * arrives, which the game endpoint's notifier reports with WakeUpProcess; a
+ * datagram already queued or a Mac event (console typing) must end it too.
+ * A client, or a server with no endpoint, must not sleep at all.
+ *
+ * #33: Sys_StringToAdr resolved every string with a synchronous
+ * OTResolveAddress that could freeze the Mac for ten seconds.  A dotted quad
+ * must now be converted without OT (as inet_addr does elsewhere), even with
+ * networking off, and anything else must go to the resolver as before.  A
+ * name must be looked up asynchronously while Sys_WaitEvent keeps the Mac
+ * running: never a spin, completion within a wait of OT's report, failure
+ * reported, at most RESOLVE_TIMEOUT plus a second when OT never answers,
+ * and Esc giving up at once.  A lookup given up must leave a fresh resolver
+ * for the next one.  The start-up must install both notifiers and make the
+ * resolver asynchronous, each failure handled like the other stages.
+ *
+ * The runner extracts the real mac_net.c globals, Sys_InitNetworking through
+ * Sys_ShutdownNetworking with the notifiers and helpers before them,
+ * Sys_StringToAdr with its helper, Sys_GetPacket and NET_Sleep (mac_net.c),
+ * and Com_EventLoop (common.c) verbatim; tests/mac_ot_fake.h stands in for
+ * Open Transport, with a virtual clock, and the functions they call are
+ * replaced here.  Each case runs in its own process: on master the long
+ * names overflow dnsAddr, which AddressSanitizer stops at. */
 #include "../code/game/q_shared.h"
 #include "../code/qcommon/qcommon.h"
 #include "mac_ot_fake.h"
@@ -93,16 +112,163 @@ const char *NET_AdrToString( netadr_t a ) {
 	return s;
 }
 
-/* mac_net.c */
-static EndpointRef endpoint = FAKE_OT_ENDPOINT;
-static EndpointRef resolverEndpoint = FAKE_OT_RESOLVER;
-
 void HandleOTError( EndpointRef ep, int err, const char *func ) {
 	(void)ep; (void)err; (void)func;
 	handleOTErrors++;
 }
 
+/* Sys_InitNetworking's */
+
+static int localAddressCalls, broadcastCalls;
+
+static cvar_t cvars[8];
+static char cvarStrings[8][MAX_CVAR_VALUE_STRING];
+static int cvarCount;
+
+static cvar_t *FindCvar( const char *name ) {
+	int i;
+
+	for ( i = 0 ; i < cvarCount ; i++ ) {
+		if ( !strcmp( cvars[i].name, name ) ) {
+			return &cvars[i];
+		}
+	}
+	return NULL;
+}
+
+/* Set a cvar as +set on the command line does, before Sys_Init. */
+static cvar_t *SetCvar( const char *name, const char *value ) {
+	cvar_t *var = FindCvar( name );
+
+	if ( !var ) {
+		Check( cvarCount < 8, "the cvar table has room" );
+		var = &cvars[cvarCount];
+		var->name = (char *)name;
+		var->string = cvarStrings[cvarCount++];
+	}
+	Q_strncpyz( var->string, value, MAX_CVAR_VALUE_STRING );
+	var->integer = atoi( value );
+	var->value = (float)atof( value );
+	return var;
+}
+
+cvar_t *Cvar_Get( const char *name, const char *value, int flags ) {
+	cvar_t *var = FindCvar( name );
+
+	if ( !var ) {
+		var = SetCvar( name, value );
+	}
+	var->flags |= flags;
+	return var;
+}
+
+void Cvar_SetValue( const char *name, float value ) {
+	char s[32];
+
+	snprintf( s, sizeof( s ), "%i", (int)value );
+	SetCvar( name, s );
+}
+
+char * QDECL va( char *format, ... ) {
+	static char s[MAX_STRING_CHARS];
+	va_list ap;
+
+	va_start( ap, format );
+	vsnprintf( s, sizeof( s ), format, ap );
+	va_end( ap );
+	return s;
+}
+
+int Q_stricmp( const char *s1, const char *s2 ) {
+	return strcasecmp( s1, s2 );
+}
+
+void Q_strncpyz( char *dest, const char *src, int destsize ) {
+	strncpy( dest, src, destsize - 1 );
+	dest[destsize - 1] = 0;
+}
+
+void NET_GetLocalAddress( void ) {
+	localAddressCalls++;
+}
+
+static OTResult SetFourByteOption( EndpointRef ep, OTXTILevel level, OTXTIName name, UInt32 value ) {
+	Check( ep == FAKE_OT_ENDPOINT && level == INET_IP && name == IP_BROADCAST && value == T_YES,
+		"broadcasts are enabled on the game endpoint" );
+	broadcastCalls++;
+	return noErr;
+}
+
+/* NET_Sleep's and Sys_StringToAdr's */
+
+static cvar_t dedicated;
+cvar_t *com_dedicated = &dedicated;
+
+int Sys_Milliseconds( void ) {
+	return fakeOTNow;
+}
+
+/* The fake WaitNextEvent: it sleeps until sleepTicks pass, or until a
+ * notifier wakes the process, delivering what OT has due on the way.  An
+ * Event Manager event (a key) can be scripted for one call, and an Esc that
+ * sets *cancel. */
+static int waitCalls, waitSpins, waitEventCall, waitCancelCall;
+
+qboolean Sys_WaitEvent( long sleepTicks, qboolean *cancel ) {
+	int end, due, wakeups;
+
+	waitCalls++;
+	Check( waitCalls < 100000, "the wait ends" );
+	if ( sleepTicks <= 0 ) {
+		waitSpins++;	/* returns at once: a loop around it spins */
+		Check( 0, "every wait sleeps: a wait of no ticks spins" );
+	}
+	if ( waitCalls == waitEventCall ) {
+		return qtrue;
+	}
+	if ( waitCalls == waitCancelCall ) {
+		Check( cancel != NULL, "the wait can be cancelled" );
+		*cancel = qtrue;
+		return qtrue;
+	}
+	end = fakeOTNow + sleepTicks * 1000 / 60;
+	wakeups = fakeOTWakeups;
+	while ( ( due = FakeOT_NextDue() ) >= 0 && due <= end ) {
+		FakeOT_Advance( due );
+		if ( fakeOTWakeups != wakeups ) {
+			return qfalse;	/* WakeUpProcess: a null event, early */
+		}
+	}
+	FakeOT_Advance( end );
+	return qfalse;
+}
+
+/* mac_net.c */
+#include "mac_net_globals.c"
+#include "mac_net_init_extracted.c"
+#include "mac_net_resolve_extracted.c"
 #include "mac_net_extracted.c"
+#include "mac_net_sleep_extracted.c"
+
+/* Before each case: nothing open, no cvars, a fresh fake. */
+static void ResetInit( void ) {
+	FakeOT_ResetLifetime();
+	FakeOT_ResetEndpoint();
+	endpoint = resolverEndpoint = kOTInvalidEndpointRef;
+	gOTInited = qfalse;
+	endpointTSDU = 0;
+	cvarCount = 0;
+	localAddressCalls = broadcastCalls = handleOTErrors = 0;
+	fakeOTResolveCalls = fakeOTInitDNSCalls = 0;
+	printed[0] = 0;
+	waitCalls = waitSpins = waitEventCall = waitCancelCall = 0;
+	dedicated.integer = 0;
+}
+
+static void InitNetworking( void ) {
+	Sys_InitNetworking();
+	Check( fakeOTMisuse == 0, "OT is only used as documented" );
+}
 
 /* ---------- #277: Sys_StringToAdr ---------- */
 
@@ -111,6 +277,8 @@ void HandleOTError( EndpointRef ep, int err, const char *func ) {
 static void CheckHostName( const char *name, qboolean fits ) {
 	netadr_t a;
 
+	ResetInit();
+	InitNetworking();
 	memset( &a, 0, sizeof( a ) );
 	printed[0] = 0;
 	fakeOTInitDNSCalls = fakeOTResolveCalls = 0;
@@ -160,6 +328,7 @@ static const UInt8 *Datagram( int slot, int length ) {
 
 static void ResetEndpoint( void ) {
 	FakeOT_ResetEndpoint();
+	endpoint = FAKE_OT_ENDPOINT;
 	printed[0] = 0;
 	handleOTErrors = 0;
 }
@@ -367,110 +536,6 @@ static void EventLoopOversize( void ) {
 	Check( outstanding == 0, "every event block is freed" );
 }
 
-/* ---------- #20: Sys_InitNetworking ---------- */
-
-static qboolean gOTInited;
-static OTDataSize endpointTSDU;
-static int localAddressCalls, broadcastCalls;
-
-static cvar_t cvars[8];
-static char cvarStrings[8][MAX_CVAR_VALUE_STRING];
-static int cvarCount;
-
-static cvar_t *FindCvar( const char *name ) {
-	int i;
-
-	for ( i = 0 ; i < cvarCount ; i++ ) {
-		if ( !strcmp( cvars[i].name, name ) ) {
-			return &cvars[i];
-		}
-	}
-	return NULL;
-}
-
-/* Set a cvar as +set on the command line does, before Sys_Init. */
-static cvar_t *SetCvar( const char *name, const char *value ) {
-	cvar_t *var = FindCvar( name );
-
-	if ( !var ) {
-		Check( cvarCount < 8, "the cvar table has room" );
-		var = &cvars[cvarCount];
-		var->name = (char *)name;
-		var->string = cvarStrings[cvarCount++];
-	}
-	Q_strncpyz( var->string, value, MAX_CVAR_VALUE_STRING );
-	var->integer = atoi( value );
-	var->value = (float)atof( value );
-	return var;
-}
-
-cvar_t *Cvar_Get( const char *name, const char *value, int flags ) {
-	cvar_t *var = FindCvar( name );
-
-	if ( !var ) {
-		var = SetCvar( name, value );
-	}
-	var->flags |= flags;
-	return var;
-}
-
-void Cvar_SetValue( const char *name, float value ) {
-	char s[32];
-
-	snprintf( s, sizeof( s ), "%i", (int)value );
-	SetCvar( name, s );
-}
-
-char * QDECL va( char *format, ... ) {
-	static char s[MAX_STRING_CHARS];
-	va_list ap;
-
-	va_start( ap, format );
-	vsnprintf( s, sizeof( s ), format, ap );
-	va_end( ap );
-	return s;
-}
-
-int Q_stricmp( const char *s1, const char *s2 ) {
-	return strcasecmp( s1, s2 );
-}
-
-void Q_strncpyz( char *dest, const char *src, int destsize ) {
-	strncpy( dest, src, destsize - 1 );
-	dest[destsize - 1] = 0;
-}
-
-void NET_GetLocalAddress( void ) {
-	localAddressCalls++;
-}
-
-static OTResult SetFourByteOption( EndpointRef ep, OTXTILevel level, OTXTIName name, UInt32 value ) {
-	Check( ep == FAKE_OT_ENDPOINT && level == INET_IP && name == IP_BROADCAST && value == T_YES,
-		"broadcasts are enabled on the game endpoint" );
-	broadcastCalls++;
-	return noErr;
-}
-
-#include "mac_net_init_extracted.c"
-
-/* Before each case: nothing open, no cvars, a fresh fake. */
-static void ResetInit( void ) {
-	FakeOT_ResetLifetime();
-	FakeOT_ResetEndpoint();
-	endpoint = resolverEndpoint = kOTInvalidEndpointRef;
-	gOTInited = qfalse;
-	endpointTSDU = 0;
-	cvarCount = 0;
-	localAddressCalls = broadcastCalls = handleOTErrors = 0;
-	fakeOTResolveCalls = fakeOTInitDNSCalls = 0;
-	printed[0] = 0;
-}
-
-static void InitNetworking( void ) {
-	Sys_InitNetworking();
-	Check( fakeOTMisuse == 0, "OT is only used as documented" );
-}
-
 /* Start-up must have bound the game endpoint, non-blocking, to host:port and
  * opened and bound a resolver, and shutting down must release it all. */
 static void ExpectStarted( InetHost host, int port ) {
@@ -484,6 +549,9 @@ static void ExpectStarted( InetHost host, int port ) {
 	Check( fakeOTEndpoints[0].bound && fakeOTEndpoints[0].port == port && fakeOTEndpoints[0].host == host,
 		"the game endpoint is bound to net_ip:net_port" );
 	Check( fakeOTEndpoints[1].bound, "the resolver endpoint is bound" );
+	Check( fakeOTEndpoints[0].notifier && fakeOTEndpoints[1].notifier, "both endpoints have notifiers" );
+	Check( !fakeOTEndpoints[0].async && fakeOTEndpoints[1].async,
+		"the resolver is asynchronous, the game endpoint synchronous" );
 	Check( FindCvar( "net_port" ) && FindCvar( "net_port" )->integer == port, "net_port names the port bound" );
 	Check( endpointTSDU == FAKE_OT_TSDU, "the endpoint's datagram limit is kept" );
 	Check( localAddressCalls == 1 && broadcastCalls == 1, "local addresses and broadcasts are set up" );
@@ -514,7 +582,7 @@ static void ExpectDisabled( const char *warning ) {
 
 	fakeOTRcvCalls = fakeOTResolveCalls = 0;
 	Check( !GetPacket( &from, &msg ) && fakeOTRcvCalls == 0, "no packet is read" );
-	Check( !Sys_StringToAdr( "192.246.40.70", &a ) && fakeOTResolveCalls == 0, "no name is resolved" );
+	Check( !Sys_StringToAdr( "idnewt", &a ) && fakeOTResolveCalls == 0, "no name is resolved" );
 
 	Sys_ShutdownNetworking();
 	Check( fakeOTMisuse == 0 && fakeOTCloseCalls == ( fakeOTInitCalls && !fakeOTFailInit ),
@@ -540,8 +608,16 @@ static void InitCvars( void ) {
 	memcpy( &host, ip, 4 );
 	fakeOTResolvedHost = host;
 	InitNetworking();
-	Check( fakeOTResolveCalls == 1 && !strcmp( fakeOTResolvedName, "10.0.0.7" ), "net_ip is resolved" );
+	Check( fakeOTResolveCalls == 0, "a dotted net_ip is not looked up" );
 	ExpectStarted( host, 28000 );
+
+	/* a host name is looked up */
+	ResetInit();
+	SetCvar( "net_ip", "server.example" );
+	fakeOTResolvedHost = host;
+	InitNetworking();
+	Check( fakeOTResolveCalls == 1 && !strcmp( fakeOTResolvedName, "server.example" ), "net_ip is resolved" );
+	ExpectStarted( host, PORT_SERVER );
 
 	/* "localhost" and "" mean every interface, as in NET_IPSocket */
 	ResetInit();
@@ -632,6 +708,18 @@ static int InitFailureCase( const char *name ) {
 		fakeOTFailBind = FAKE_OT_RESOLVER;
 		InitNetworking();
 		ExpectDisabled( "WARNING: OTBind() for resolver failed (error -3211)" );
+	} else if ( !strcmp( name, "init-fail-notifier" ) ) {
+		fakeOTFailNotifier = FAKE_OT_ENDPOINT;
+		InitNetworking();
+		ExpectDisabled( "WARNING: OTInstallNotifier() failed (error -3211)" );
+	} else if ( !strcmp( name, "init-fail-resolver-notifier" ) ) {
+		fakeOTFailNotifier = FAKE_OT_RESOLVER;
+		InitNetworking();
+		ExpectDisabled( "WARNING: OTInstallNotifier() for resolver failed (error -3211)" );
+	} else if ( !strcmp( name, "init-fail-resolver-async" ) ) {
+		fakeOTFailAsync = 1;
+		InitNetworking();
+		ExpectDisabled( "WARNING: OTSetAsynchronous() for resolver failed (error -3211)" );
 	} else if ( !strcmp( name, "init-fail-net-ip" ) ) {
 		SetCvar( "net_ip", "nosuchhost.invalid" );
 		fakeOTResolveError = kOTBadAddressErr;
@@ -644,6 +732,261 @@ static int InitFailureCase( const char *name ) {
 	return 1;
 }
 
+/* ---------- #33: dotted quads and asynchronous lookups ---------- */
+
+/* s must convert to ip with no lookup and no wait. */
+static void ExpectDotted( const char *s, const UInt8 ip[4] ) {
+	netadr_t a;
+
+	memset( &a, 0, sizeof( a ) );
+	fakeOTInitDNSCalls = fakeOTResolveCalls = waitCalls = 0;
+	Check( Sys_StringToAdr( s, &a ), "a dotted quad converts" );
+	Check( fakeOTInitDNSCalls == 0 && fakeOTResolveCalls == 0, "a dotted quad is not looked up" );
+	Check( a.type == NA_IP && !memcmp( a.ip, ip, 4 ), "to its address" );
+	Check( waitCalls == 0, "a dotted quad needs no wait" );
+}
+
+/* s is not a dotted quad: it must go to the resolver, as before. */
+static void ExpectNotDotted( const char *s ) {
+	netadr_t a;
+
+	memset( &a, 0, sizeof( a ) );
+	fakeOTResolveCalls = 0;
+	memcpy( &fakeOTResolvedHost, serverIP, 4 );
+	Check( Sys_StringToAdr( s, &a ) && fakeOTResolveCalls == 1 && !strcmp( fakeOTResolvedName, s )
+		&& !memcmp( a.ip, serverIP, 4 ), "anything else is left to the resolver" );
+}
+
+static void HostDotted( void ) {
+	static const UInt8 zero[4] = { 0, 0, 0, 0 }, ones[4] = { 255, 255, 255, 255 };
+	static const UInt8 ten[4] = { 10, 0, 0, 7 };
+
+	ResetInit();
+	InitNetworking();
+	printed[0] = 0;
+	ExpectDotted( "192.246.40.70", serverIP );
+	ExpectDotted( "0.0.0.0", zero );
+	ExpectDotted( "255.255.255.255", ones );
+	ExpectDotted( "10.0.0.7", ten );
+	ExpectNotDotted( "1.2.3" );
+	ExpectNotDotted( "1.2.3.4.5" );
+	ExpectNotDotted( "256.1.1.1" );
+	ExpectNotDotted( "1.2.3.1000" );
+	ExpectNotDotted( "01.2.3.4" );		/* octal to inet_addr */
+	ExpectNotDotted( "1.2.3.4x" );
+	ExpectNotDotted( "1..2.3" );
+	ExpectNotDotted( "3com.com" );
+	Check( !printed[0] && handleOTErrors == 0, "nothing is printed" );
+}
+
+/* With networking off a dotted quad still converts, as inet_addr does on the
+ * other platforms; a name fails without reaching OT. */
+static void HostDisabled( void ) {
+	netadr_t a;
+
+	ResetInit();
+	SetCvar( "net_noudp", "1" );
+	InitNetworking();
+	ExpectDotted( "192.246.40.70", serverIP );
+	fakeOTResolveCalls = 0;
+	Check( !Sys_StringToAdr( "idnewt", &a ) && fakeOTResolveCalls == 0, "a name is not looked up" );
+}
+
+static void StartResolver( void ) {
+	ResetInit();
+	InitNetworking();
+	printed[0] = 0;
+	memcpy( &fakeOTResolvedHost, serverIP, 4 );
+}
+
+/* Look name up: one lookup, during which the Mac keeps running (Sys_WaitEvent
+ * is called) and never spins.  *elapsed is the virtual time it took. */
+static qboolean Lookup( const char *name, netadr_t *a, int *elapsed ) {
+	int start = fakeOTNow;
+	qboolean ok;
+
+	memset( a, 0, sizeof( *a ) );
+	waitCalls = waitSpins = 0;
+	fakeOTResolveCalls = 0;
+	ok = Sys_StringToAdr( name, a );
+	*elapsed = fakeOTNow - start;
+	Check( fakeOTResolveCalls == 1, "the name is looked up once" );
+	Check( waitCalls > 0, "the Mac keeps running while the name is looked up" );
+	Check( waitSpins == 0, "every wait sleeps: the lookup does not spin" );
+	return ok;
+}
+
+/* The resolver must have been replaced once by a fresh one, ready to use. */
+static void ExpectFreshResolver( void ) {
+	Check( fakeOTEndpoints[1].opened == 2 && fakeOTEndpoints[1].closed == 1,
+		"the resolver is replaced once" );
+	Check( resolverEndpoint == FAKE_OT_RESOLVER && fakeOTEndpoints[1].bound
+		&& fakeOTEndpoints[1].notifier && fakeOTEndpoints[1].async, "the new resolver is ready" );
+	Check( fakeOTMisuse == 0, "OT is only used as documented" );
+}
+
+/* The next lookup must work. */
+static void ExpectNextLookup( void ) {
+	netadr_t a;
+	int elapsed;
+
+	fakeOTResolveDelay = 50;
+	memcpy( &fakeOTResolvedHost, clientIP, 4 );
+	Check( Lookup( "idnewt", &a, &elapsed ) && !memcmp( a.ip, clientIP, 4 ), "the next lookup resolves" );
+	Check( elapsed == 50, "the next lookup ends as OT reports it" );
+}
+
+static void ResolveAsync( void ) {
+	netadr_t a;
+	int elapsed;
+
+	StartResolver();
+	fakeOTResolveDelay = 250;
+	Check( Lookup( "idnewt", &a, &elapsed ), "the name resolves" );
+	Check( a.type == NA_IP && !memcmp( a.ip, serverIP, 4 ), "to OT's address" );
+	Check( elapsed == 250, "the notifier wakes the wait as OT reports the address" );
+	Check( waitCalls <= 3, "in a few waits" );
+	Check( handleOTErrors == 0 && !printed[0], "nothing is printed" );
+	ExpectNextLookup();
+	Check( fakeOTEndpoints[1].opened == 1 && fakeOTMisuse == 0, "on the same resolver" );
+}
+
+/* NXDOMAIN: OT reports a failure, which fails the lookup. */
+static void ResolveError( void ) {
+	netadr_t a;
+	int elapsed;
+
+	StartResolver();
+	fakeOTResolveDelay = 200;
+	fakeOTResolveError = kOTBadNameErr;
+	Check( !Lookup( "nosuchhost.invalid", &a, &elapsed ), "an unknown name fails" );
+	Check( elapsed == 200 && handleOTErrors == 1, "as soon as OT reports it, with its error" );
+	fakeOTResolveError = noErr;
+	ExpectNextLookup();
+}
+
+/* No DNS server answers: OT's own timeout ends the lookup. */
+static void ResolveOTTimeout( void ) {
+	netadr_t a;
+	int elapsed;
+
+	StartResolver();
+	fakeOTResolveDelay = 60000;
+	Check( !Lookup( "idnewt", &a, &elapsed ), "a lookup OT times out fails" );
+	Check( elapsed == 10000 && handleOTErrors == 1, "after OT's ten seconds, with its error" );
+	Check( waitCalls <= 101, "in waits of a tenth of a second or more" );
+	fakeOTResolveError = noErr;
+	ExpectNextLookup();
+}
+
+/* OT never answers: the lookup still ends, a second after OT should have. */
+static void ResolveTimeout( void ) {
+	netadr_t a;
+	int elapsed;
+
+	StartResolver();
+	fakeOTResolveDelay = -1;
+	Check( !Lookup( "idnewt", &a, &elapsed ), "a lookup OT never answers fails" );
+	Check( elapsed >= 11000 && elapsed <= 11100, "eleven seconds on" );
+	Check( waitCalls <= 111, "in waits of a tenth of a second or more" );
+	Check( Printed( "Sys_StringToAdr: lookup of idnewt timed out\n" ) == 1, "the timeout is reported" );
+	ExpectFreshResolver();
+	ExpectNextLookup();
+}
+
+/* Esc gives up at once. */
+static void ResolveCancel( void ) {
+	netadr_t a;
+	int elapsed;
+
+	StartResolver();
+	fakeOTResolveDelay = -1;
+	waitCancelCall = 3;
+	Check( !Lookup( "idnewt", &a, &elapsed ), "a cancelled lookup fails" );
+	Check( waitCalls == 3 && elapsed == 200, "as soon as Esc is pressed" );
+	Check( Printed( "Sys_StringToAdr: lookup of idnewt cancelled\n" ) == 1, "the cancel is reported" );
+	ExpectFreshResolver();
+	waitCancelCall = 0;
+	ExpectNextLookup();
+}
+
+/* ---------- #21: NET_Sleep ---------- */
+
+static void StartServer( void ) {
+	ResetInit();
+	InitNetworking();
+	printed[0] = 0;
+	dedicated.integer = 1;
+}
+
+/* Sleep msec, returning the virtual time it took. */
+static int Sleep( int msec ) {
+	int start = fakeOTNow;
+
+	waitCalls = waitSpins = fakeOTCountCalls = 0;
+	NET_Sleep( msec );
+	return fakeOTNow - start;
+}
+
+/* No datagram: the whole time is slept, rounded up to a tick, not spun. */
+static void SleepTimeout( void ) {
+	static const int msecs[] = { 50, 37, 100, 1, 16, 17 };
+	int i, elapsed;
+
+	StartServer();
+	for ( i = 0 ; i < (int)( sizeof( msecs ) / sizeof( msecs[0] ) ) ; i++ ) {
+		elapsed = Sleep( msecs[i] );
+		Check( elapsed >= msecs[i] && elapsed < msecs[i] + 17, "NET_Sleep sleeps msec, to the tick" );
+		Check( waitCalls >= 1 && waitCalls <= 2 && waitSpins == 0, "in one or two waits, never spinning" );
+		Check( fakeOTCountCalls == 1, "the endpoint is checked once" );
+	}
+	Check( Sleep( 0 ) == 0 && waitCalls == 0, "no time, no sleep" );
+	Check( fakeOTMisuse == 0, "OT is only used as documented" );
+}
+
+/* A datagram ends the sleep as it arrives, and is then read. */
+static void SleepPacket( void ) {
+	const UInt8 *data = Datagram( 0, 100 );
+	netadr_t from;
+	msg_t msg;
+	int elapsed;
+
+	StartServer();
+	FakeOT_ArriveAt( 20, data, 100 );
+	elapsed = Sleep( 50 );
+	Check( elapsed == 20, "a datagram wakes the sleep as it arrives" );
+	Check( waitCalls == 1 && waitSpins == 0, "in one wait" );
+	Check( GetPacket( &from, &msg ) && msg.cursize == 100 && !memcmp( msg.data, data, 100 ), "the datagram is read" );
+	Check( fakeOTMisuse == 0, "OT is only used as documented" );
+}
+
+/* A datagram that came before the sleep: no T_DATA will, so no sleep. */
+static void SleepQueued( void ) {
+	StartServer();
+	FakeOT_QueueDatagram( Datagram( 0, 100 ), 100, clientIP, clientPort );
+	Check( Sleep( 50 ) == 0 && waitCalls == 0, "a datagram waiting already means no sleep" );
+}
+
+/* A Mac event (a key typed at the console) ends the sleep, as stdin does. */
+static void SleepEvent( void ) {
+	StartServer();
+	waitEventCall = 1;
+	Check( Sleep( 50 ) == 0 && waitCalls == 1, "an event ends the sleep" );
+}
+
+/* A client runs full speed, as on Unix; so does a server with no network. */
+static void SleepClient( void ) {
+	StartServer();
+	dedicated.integer = 0;
+	Check( Sleep( 50 ) == 0 && waitCalls == 0 && fakeOTCountCalls == 0, "a client does not sleep" );
+
+	ResetInit();
+	SetCvar( "net_noudp", "1" );
+	InitNetworking();
+	dedicated.integer = 1;
+	Check( Sleep( 50 ) == 0 && waitCalls == 0 && fakeOTCountCalls == 0, "nor a server without UDP" );
+}
+
 int main( int argc, char **argv ) {
 	if ( argc != 2 ) {
 		fprintf( stderr, "usage: %s case\n", argv[0] );
@@ -653,7 +996,7 @@ int main( int argc, char **argv ) {
 
 	if ( !strcmp( currentCase, "host-normal" ) ) {
 		CheckHostName( "idnewt", qtrue );
-		CheckHostName( "192.246.40.70", qtrue );
+		CheckHostName( "1.2.3", qtrue );		/* not a dotted quad: left to OT */
 	} else if ( !strcmp( currentCase, "host-255" ) ) {
 		HostNameOfLength( 255, qtrue );
 	} else if ( !strcmp( currentCase, "host-256" ) ) {
@@ -684,6 +1027,30 @@ int main( int argc, char **argv ) {
 		InitPortExhausted();
 	} else if ( !strcmp( currentCase, "init-noudp" ) ) {
 		InitNoUDP();
+	} else if ( !strcmp( currentCase, "host-dotted" ) ) {
+		HostDotted();
+	} else if ( !strcmp( currentCase, "host-disabled" ) ) {
+		HostDisabled();
+	} else if ( !strcmp( currentCase, "resolve-async" ) ) {
+		ResolveAsync();
+	} else if ( !strcmp( currentCase, "resolve-error" ) ) {
+		ResolveError();
+	} else if ( !strcmp( currentCase, "resolve-ot-timeout" ) ) {
+		ResolveOTTimeout();
+	} else if ( !strcmp( currentCase, "resolve-timeout" ) ) {
+		ResolveTimeout();
+	} else if ( !strcmp( currentCase, "resolve-cancel" ) ) {
+		ResolveCancel();
+	} else if ( !strcmp( currentCase, "sleep-timeout" ) ) {
+		SleepTimeout();
+	} else if ( !strcmp( currentCase, "sleep-packet" ) ) {
+		SleepPacket();
+	} else if ( !strcmp( currentCase, "sleep-queued" ) ) {
+		SleepQueued();
+	} else if ( !strcmp( currentCase, "sleep-event" ) ) {
+		SleepEvent();
+	} else if ( !strcmp( currentCase, "sleep-client" ) ) {
+		SleepClient();
 	} else if ( InitFailureCase( currentCase ) ) {
 	} else {
 		fprintf( stderr, "unknown case %s\n", currentCase );

@@ -72,14 +72,43 @@ void	Sys_Print( const char *text ) {
 /*
 ==================
 Sys_ConsoleEvent
+
+A dedicated server has no game window, so, as in id's SIOUX version, what is
+typed goes to the console: echoed in the console window and kept until
+Sys_ConsoleInput hands back the line.  Delete (or left arrow) takes back a
+character.  Command keys still reach the menus.  The game takes the keys
+when it is not dedicated.
 ==================
 */
 qboolean Sys_ConsoleEvent( EventRecord *event ) {
-    // SIOUX handling removed. 
-    // If we need input, we'd need to poll stdin or similar if supported, 
-    // or handle system events that map to console if using a specific library.
-    // For now, just return false as we rely on the game loop for main input.
-    return qfalse;
+	int		c;
+
+	if ( !com_dedicated || !com_dedicated->integer ) {
+		return qfalse;
+	}
+	if ( ( event->what != keyDown && event->what != autoKey ) || ( event->modifiers & cmdKey ) ) {
+		return qfalse;
+	}
+
+	c = event->message & charCodeMask;
+	if ( c == 8 || c == 28 ) {
+		// never into a line already entered
+		if ( consoleHead > consoleTail && consoleChars[ ( consoleHead - 1 ) & CONSOLE_MASK ] != 13 ) {
+			consoleHead--;
+			printf( "\033[D \033[D" );	// Retro68's console has no backspace
+		}
+	} else if ( ( c >= 32 && c != 127 ) || c == 13 ) {
+		// a full ring takes no more characters, but always a return
+		if ( consoleHead - consoleTail < CONSOLE_MASK
+			|| ( c == 13 && consoleHead - consoleTail <= CONSOLE_MASK ) ) {
+			consoleChars[ consoleHead & CONSOLE_MASK ] = c;
+			consoleHead++;
+			printf( "%c", c == 13 ? '\n' : c );
+		}
+	}
+	fflush( stdout );
+
+	return qtrue;
 }
 
 
@@ -92,8 +121,17 @@ Return NULL if a complete line is not ready.
 ================
 */
 char *Sys_ConsoleInput( void ) {
-    // Simple stdin polling not implemented effectively here without blocking or 
-    // knowing how StdCLib maps input events in the game loop.
-    // Returning NULL disables dedicated server console input for now.
+	static char	string[CONSOLE_MASK+1];
+	int		i;
+
+	for ( i = 0 ; consoleTail + i < consoleHead ; i++ ) {
+		string[i] = consoleChars[ ( consoleTail + i ) & CONSOLE_MASK ];
+		if ( string[i] == 13 ) {
+			consoleTail += i + 1;
+			string[i] = 0;
+			return string;
+		}
+	}
+
 	return NULL;
 }
