@@ -18,6 +18,9 @@
  * every write is gated, so viewlog 0 also stops output to a window the Shift
  * prompt opened; and a static module failure waits for Return.
  *
+ * #5: Sys_Error closes the Sound Manager channel (SNDDMA_Shutdown) before
+ * the alert, since a recursive error skips CL_Shutdown.
+ *
  * The runner extracts the real main, Sys_InitToolbox, Sys_LogPrintf,
  * Sys_AppendStartupText, Sys_ReadStartupFile, Sys_StartupError, Sys_JoinHFSPath
  * and Sys_Error (mac_main.c) and Sys_ConsoleWanted, Sys_ShowConsole and Sys_Print
@@ -251,6 +254,7 @@ static void Sys_DumpRetroLogs( const char *fileName ) {
 
 static void Sys_ShutdownInput( void ) { Event( "Sys_ShutdownInput" ); }
 static void Sys_ShutdownNetworking( void ) { Event( "Sys_ShutdownNetworking" ); }
+static void SNDDMA_Shutdown( void ) { Event( "SNDDMA_Shutdown" ); }
 
 static void PascalToC( char *out, const unsigned char *in ) {
 	memcpy( out, in + 1, in[0] );
@@ -602,6 +606,10 @@ int main( int argc, char **argv ) {
 		"the crash log is written before the console window is created" );
 	Check( strstr( windowText, "Sys_Error: fatal 7\n" ) != NULL, "the error is in the console window" );
 	Check( EventIndex( "alert" ) > EventIndex( "Sys_ShutdownInput" ), "the alert follows the input shutdown" );
+	/* issue #5: a recursive error never reaches S_Shutdown, and the Sound
+	 * Manager would loop the last mixed chunks under the alert */
+	Check( EventIndex( "SNDDMA_Shutdown" ) >= 0 && EventIndex( "alert" ) > EventIndex( "SNDDMA_Shutdown" ),
+		"Sys_Error closes the sound channel before the alert" );
 	Check( !strcmp( alertTitle, "Quake 3 Error:" ) && !strcmp( alertMessage, "fatal 7" ),
 		"the alert shows the error, as retail" );
 	Check( exitStatus == 1, "Sys_Error exits with 1" );
@@ -617,6 +625,7 @@ int main( int argc, char **argv ) {
 	RunSysError( "Sys_Error fullscreen", qtrue, "recursive" );
 	Check( EventIndex( "crash log" ) >= 0 && EventIndex( "alert" ) < 0 && exitStatus == 1,
 		"Sys_Error exits without an alert while the display is captured" );
+	Check( EventIndex( "SNDDMA_Shutdown" ) >= 0, "Sys_Error closes the sound channel before it exits" );
 
 	CloseWindow();
 
