@@ -24,6 +24,8 @@ extern "C" int Sys_ConsoleWanted( int fd );
 
 using namespace retro;
 
+static GrafPtr	consoleWindow;
+
 static void Sys_OpenConsoleWindow( void ) {
 	Rect	r;
 	GrafPtr	save;
@@ -41,7 +43,19 @@ static void Sys_OpenConsoleWindow( void ) {
 	// handler's LocalToGlobal (mac_event.c) off the game window.
 	GetPort( &save );
 	Console::currentInstance = new ConsoleWindow( r, "\pRetro68 Console" );
+	GetPort( &consoleWindow );
 	SetPort( save );
+}
+
+// Redraws the console window for DoUpdate (mac_event.c), between its
+// BeginUpdate and EndUpdate. The game loop takes the console window's update
+// events, so without this a part uncovered by another window stayed blank.
+extern "C" void Sys_ConsoleDraw( GrafPtr window ) {
+	if ( !consoleWindow || window != consoleWindow
+		|| !Console::currentInstance || Console::currentInstance == (Console *)-1 ) {
+		return;
+	}
+	Console::currentInstance->Draw();
 }
 
 // Each write is gated, not just the first: once viewlog 0 hides the console,

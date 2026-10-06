@@ -24,16 +24,33 @@
  * once, from Sys_GetEvent, with the number of events dropped, and nothing is
  * printed from inside the queue.
  *
- * The runner extracts the real queue (Sys_QueEvent and its helpers) and
- * Sys_GetEvent from mac_main.c, and Sys_MsecForMacEvent, vkeyToQuakeKey,
- * DoKeyDown, DoKeyUp, Sys_ModifierEvents, DoOSEvent and Sys_SendKeyEvents
- * from mac_event.c, and Sys_ShutdownInput, Sys_SuspendInput, Sys_ResumeInput
- * and Sys_Input from mac_input.c, verbatim (Sys_QueEvent renamed
- * Sys_QueEvent_extracted, so a wrapper can tell when the queue is running).  The Event Manager is a fake
- * that returns scripted events and otherwise null events carrying the current
- * modifiers; InputSprocket is a fake with per-element event queues.
- * The fixture plays the engine: it applies key events to its own key state
- * and frees packet payloads, as Com_EventLoop does. */
+ * #17: Sys_InitInput must find a mouse's X and Y movement and its buttons by
+ * element kind and label, wherever they are in the element list, clamp the
+ * device and element counts to its buffers, map at most K_MOUSE1..K_MOUSE5
+ * (a mouse listing more buttons once sent key numbers past K_LAST_KEY, which
+ * CL_KeyEvent indexes keys[] with unchecked), skip mice it cannot use, and,
+ * if InputSprocket fails or finds no usable mouse, shut it down and leave
+ * the cursor and the Event Manager's mouse button alone.
+ *
+ * #19: the Finder's Open Application, Open Documents and Quit Application
+ * Apple Events reach handlers through AEProcessAppleEvent, and Quit queues
+ * the quit command; an update event for the console window redraws it; the
+ * front window is unhighlighted on suspend and highlighted on resume; and
+ * Sys_PumpEvents, which the renderer calls during long frames, pumps.
+ *
+ * The runner extracts the real queue (Sys_QueEvent and its helpers),
+ * Sys_GetEvent and Sys_PumpEvents from mac_main.c, and Sys_MsecForMacEvent,
+ * vkeyToQuakeKey, DoKeyDown, DoKeyUp, Sys_ModifierEvents, DoOSEvent,
+ * DoUpdate, the Apple Event handlers, Sys_InitAppleEvents and
+ * Sys_SendKeyEvents from mac_event.c, verbatim, and includes all of
+ * mac_input.c after its #includes (Sys_QueEvent renamed
+ * Sys_QueEvent_extracted, so a wrapper can tell when the queue is running).
+ * The Event Manager is a fake that returns scripted events and otherwise null
+ * events carrying the current modifiers, and dispatches high-level events to
+ * the installed handlers; InputSprocket is a fake with devices, element lists
+ * and per-element event queues.  The fixture plays the engine: it applies key
+ * events to its own key state and frees packet payloads, as Com_EventLoop
+ * does. */
 #include "../code/game/q_shared.h"
 #include "../code/qcommon/qcommon.h"
 #include "../code/ui/keycodes.h"
@@ -57,7 +74,8 @@ typedef struct {
 } EventRecord;
 
 enum { nullEvent = 0, mouseDown = 1, mouseUp = 2, keyDown = 3, keyUp = 4,
-	autoKey = 5, updateEvt = 6, diskEvt = 7, activateEvt = 8, osEvt = 15 };
+	autoKey = 5, updateEvt = 6, diskEvt = 7, activateEvt = 8, osEvt = 15,
+	kHighLevelEvent = 23 };
 enum { everyEvent = 0xFFFF, updateMask = 0x0040 };
 enum { charCodeMask = 0x000000FF, keyCodeMask = 0x0000FF00 };
 enum { btnState = 0x0080, cmdKey = 0x0100, shiftKey = 0x0200, alphaLock = 0x0400,
@@ -115,12 +133,176 @@ static void ShowCursor( void ) {
 }
 static void HideCursor( void ) { cursorLevel--; }
 
-/* ---- fake InputSprocket: one mouse, two axes and three buttons ---- */
+/* ---- fake Window Manager, QuickDraw and AGL ---- */
 
+typedef void			*GrafPtr;
+typedef void			*AGLContext;
+static char				gameWindowStorage, consoleWindowStorage, otherPortStorage;
+#define gameWindow		( (WindowPtr)&gameWindowStorage )
+#define consoleWindow	( (WindowPtr)&consoleWindowStorage )
+static struct { void *drawable; } sys_gl = { &gameWindowStorage };
+static GrafPtr			currentPort = &otherPortStorage;
+static WindowPtr		frontWindow = &gameWindowStorage;
+static WindowPtr		updating;			/* between BeginUpdate and EndUpdate */
+static int				updatesBegun, updatesEnded, aglUpdates;
+static int				hilites, hilited = 1;
+static WindowPtr		consoleDrawn;
+static const char		*currentCase;
+static int				failures;
+
+static void GetPort( GrafPtr *port ) { *port = currentPort; }
+static void SetPort( GrafPtr port ) { currentPort = port; }
+static void BeginUpdate( WindowPtr window ) {
+	if ( updating || currentPort != window ) {
+		fprintf( stderr, "FAIL %s: BeginUpdate nested or not in the window's port\n", currentCase );
+		failures++;
+	}
+	updating = window;
+	updatesBegun++;
+}
+static void EndUpdate( WindowPtr window ) {
+	if ( updating != window ) {
+		fprintf( stderr, "FAIL %s: EndUpdate without its BeginUpdate\n", currentCase );
+		failures++;
+	}
+	updating = NULL;
+	updatesEnded++;
+}
+static AGLContext aglGetCurrentContext( void ) { return &gameWindowStorage; }
+static void aglUpdateContext( AGLContext ctx ) { (void)ctx; aglUpdates++; }
+static WindowPtr FrontWindow( void ) { return frontWindow; }
+static void HiliteWindow( WindowPtr window, Boolean on ) {
+	if ( window == frontWindow ) {
+		hilites++;
+		hilited = on;
+	}
+}
+/* mac_consolehooks.cc */
+void Sys_ConsoleDraw( WindowPtr window ) {
+	if ( window == consoleWindow ) {
+		if ( updating != consoleWindow ) {
+			fprintf( stderr, "FAIL %s: the console drawn outside its update\n", currentCase );
+			failures++;
+		}
+		consoleDrawn = window;
+	}
+}
+
+/* ---- fake Apple Event Manager ---- */
+
+typedef short			OSErr;
+typedef unsigned int	OSType;
+typedef OSType			AEEventClass;
+typedef OSType			AEEventID;
+typedef struct { AEEventClass eventClass; AEEventID eventID; } AppleEvent;
+#define pascal
+typedef OSErr ( *AEEventHandlerProcPtr )( const AppleEvent *event, AppleEvent *reply, long refcon );
+typedef AEEventHandlerProcPtr	AEEventHandlerUPP;
+#define NewAEEventHandlerUPP( proc )	( proc )
+enum { noErr = 0, errAEEventNotHandled = -1708 };
+enum { kCoreEventClass = 'aevt', kAEOpenApplication = 'oapp', kAEOpenDocuments = 'odoc',
+	kAEPrintDocuments = 'pdoc', kAEQuitApplication = 'quit' };
+
+#define MAX_AE_HANDLERS	8
+static struct { AEEventClass eventClass; AEEventID eventID; AEEventHandlerUPP handler; } aeHandlers[MAX_AE_HANDLERS];
+static int				numAEHandlers, aeProcessed;
+static OSErr			lastAEResult = 1;
+
+static OSErr AEInstallEventHandler( AEEventClass eventClass, AEEventID eventID,
+		AEEventHandlerUPP handler, long refcon, Boolean isSysHandler ) {
+	(void)refcon;
+	if ( isSysHandler || numAEHandlers == MAX_AE_HANDLERS ) {
+		return -50;	/* paramErr */
+	}
+	aeHandlers[numAEHandlers].eventClass = eventClass;
+	aeHandlers[numAEHandlers].eventID = eventID;
+	aeHandlers[numAEHandlers].handler = handler;
+	numAEHandlers++;
+	return noErr;
+}
+
+/* a high-level event has its class in message and its ID in where */
+static void PostAppleEvent( AEEventClass eventClass, AEEventID eventID ) {
+	EventRecord *ev = &scripted[scriptedHead++ % MAX_SCRIPTED];
+	memset( ev, 0, sizeof( *ev ) );
+	ev->what = kHighLevelEvent;
+	ev->message = eventClass;
+	ev->where.v = eventID >> 16;
+	ev->where.h = eventID & 0xFFFF;
+}
+
+static OSErr AEProcessAppleEvent( const EventRecord *event ) {
+	AppleEvent	ae, reply;
+	int			i;
+
+	aeProcessed++;
+	ae.eventClass = (AEEventClass)event->message;
+	ae.eventID = ( (unsigned)(unsigned short)event->where.v << 16 ) | (unsigned short)event->where.h;
+	lastAEResult = errAEEventNotHandled;
+	for ( i = 0 ; i < numAEHandlers ; i++ ) {
+		if ( aeHandlers[i].eventClass == ae.eventClass && aeHandlers[i].eventID == ae.eventID ) {
+			memset( &reply, 0, sizeof( reply ) );
+			lastAEResult = aeHandlers[i].handler( &ae, &reply, 0 );
+			break;
+		}
+	}
+	return lastAEResult;
+}
+
+/* the command buffer */
+static char				cbufText[256];
+void Cbuf_ExecuteText( int exec_when, const char *text ) {
+	if ( exec_when != EXEC_APPEND ) {
+		fprintf( stderr, "FAIL %s: a command run at once from an Apple Event\n", currentCase );
+		failures++;
+	}
+	strncat( cbufText, text, sizeof( cbufText ) - strlen( cbufText ) - 1 );
+}
+
+/* ---- fake InputSprocket: devices, element lists and element queues ---- */
+
+typedef unsigned char	UInt8;
 typedef unsigned int	UInt32;
 typedef int				OSStatus;
 enum { false = 0, true = 1 };	/* MacTypes.h */
-typedef int				ISpElementReference;	/* index into ispQueue */
+typedef struct { UInt8 majorRev, minorAndBugRev, stage, nonRelRev; } NumVersion;
+enum {
+	kISpDeviceClass_Mouse = 'mous', kISpDeviceClass_Keyboard = 'keyd',
+	kISpElementKind_Button = 'butn', kISpElementKind_Axis = 'axis', kISpElementKind_Delta = 'dlta',
+	kISpElementLabel_None = 'none',
+	kISpElementLabel_Delta_X = 'xdlt', kISpElementLabel_Delta_Y = 'ydlt',
+	kISpElementLabel_Delta_Z = 'zdlt',
+	kISpElementLabel_Delta_Cursor_X = 'curx', kISpElementLabel_Delta_Cursor_Y = 'cury',
+	kISpElementLabel_Btn_MouseOne = 'mou1', kISpElementLabel_Btn_MouseTwo = 'mou2',
+	kISpElementLabel_Btn_MouseThree = 'mou3'
+};
+
+#define ISP_QUEUE		16
+#define ISP_ELEMENTS	2048
+#define ISP_DEVICES		160
+typedef struct fakeDevice_s fakeDevice_t;
+typedef struct {
+	fakeDevice_t	*device;
+	OSType			kind, label;
+	UInt32			queue[ISP_QUEUE];
+	int				queued;
+	UInt32			state;			/* movement since the last read */
+} fakeElement_t;
+struct fakeDevice_s {
+	OSType			deviceClass;
+	int				first, count;	/* its elements in ispElements */
+	OSStatus		listErr, extractErr, activateErr;
+	qboolean		active;
+};
+typedef fakeElement_t	*ISpElementReference;
+typedef fakeDevice_t	*ISpDeviceReference;
+typedef fakeDevice_t	*ISpElementListReference;	/* a device's own list */
+typedef struct {
+	OSType			theLabel;
+	OSType			theKind;
+	unsigned char	theString[64];	/* Str63 */
+	UInt32			reserved1, reserved2;
+} ISpElementInfo;
 typedef struct {
 	unsigned long long	when;
 	ISpElementReference	element;
@@ -128,21 +310,69 @@ typedef struct {
 	UInt32				data;
 } ISpElementEvent;
 
-#define ISP_ELEMENTS	5
-#define ISP_QUEUE		16
-static UInt32		ispQueue[ISP_ELEMENTS][ISP_QUEUE];
-static int			ispQueued[ISP_ELEMENTS];
-static qboolean		ispStarted, ispSuspended;
-static int			ispPressAtSuspend;	/* a press that lands as ISp suspends */
-static int			suspendCalls, resumeCalls, flushCalls;
-static const char	*currentCase;
-static int			failures;
+static fakeElement_t	ispElements[ISP_ELEMENTS];
+static fakeDevice_t		ispDevices[ISP_DEVICES];
+static int				numIspElements, numIspDevices;
+static fakeElement_t	*defaultButtons[5];	/* the default mouse's, by key */
+static qboolean			ispStarted, ispSuspended;
+static int				ispPressAtSuspend;	/* a press that lands as ISp suspends */
+static int				suspendCalls, resumeCalls, flushCalls, shutdownCalls;
+
+static fakeDevice_t *AddDevice( OSType deviceClass ) {
+	fakeDevice_t *device = &ispDevices[numIspDevices++];
+	device->deviceClass = deviceClass;
+	device->first = numIspElements;
+	return device;
+}
+
+/* elements go in the list of the device added last */
+static fakeElement_t *AddElement( fakeDevice_t *device, OSType kind, OSType label ) {
+	fakeElement_t *element = &ispElements[numIspElements++];
+	element->device = device;
+	element->kind = kind;
+	element->label = label;
+	device->count++;
+	return element;
+}
+
+/* a keyboard, and a mouse listing X, Y and three buttons, as retail assumed */
+static void DefaultDevices( void ) {
+	fakeDevice_t	*mouse;
+	int				i;
+
+	AddDevice( kISpDeviceClass_Keyboard );
+	mouse = AddDevice( kISpDeviceClass_Mouse );
+	AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_Delta_X );
+	AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_Delta_Y );
+	for ( i = 0 ; i < 3 ; i++ ) {
+		defaultButtons[i] = AddElement( mouse, kISpElementKind_Button, kISpElementLabel_Btn_MouseOne + i );
+	}
+}
+
+static void IspCheckElement( ISpElementReference element, const char *call ) {
+	if ( element < ispElements || element >= ispElements + numIspElements ) {
+		fprintf( stderr, "FAIL %s: %s on a bad element reference\n", currentCase, call );
+		failures++;
+		exit( 1 );
+	}
+}
+
+static void IspCheckDevice( ISpDeviceReference device, const char *call ) {
+	if ( device < ispDevices || device >= ispDevices + numIspDevices ) {
+		fprintf( stderr, "FAIL %s: %s on a bad device reference\n", currentCase, call );
+		failures++;
+		exit( 1 );
+	}
+}
+
+static void IspPress( fakeElement_t *element, int down ) {
+	if ( element->queued < ISP_QUEUE ) {
+		element->queue[element->queued++] = down;
+	}
+}
 
 static void IspEvent( int button, int down ) {
-	int element = button - K_MOUSE1 + 2;
-	if ( ispQueued[element] < ISP_QUEUE ) {
-		ispQueue[element][ispQueued[element]++] = down;
-	}
+	IspPress( defaultButtons[button - K_MOUSE1], down );
 }
 
 static void IspNeedsStartup( const char *call ) {
@@ -152,6 +382,20 @@ static void IspNeedsStartup( const char *call ) {
 	}
 }
 
+static NumVersion ISpGetVersion( void ) {
+	NumVersion v = { 1, 0x70, 0x80, 0 };
+	return v;
+}
+static OSStatus ISpStartup( void ) { ispStarted = qtrue; return 0; }
+static OSStatus ISpShutdown( void ) {
+	int i;
+	for ( i = 0 ; i < numIspDevices ; i++ ) {
+		ispDevices[i].active = qfalse;
+	}
+	shutdownCalls++;
+	ispStarted = qfalse;
+	return 0;
+}
 static OSStatus ISpSuspend( void ) {
 	IspNeedsStartup( "ISpSuspend" );
 	suspendCalls++;
@@ -168,44 +412,137 @@ static OSStatus ISpResume( void ) {
 	ispSuspended = qfalse;
 	return 0;
 }
-static OSStatus ISpShutdown( void ) { ispStarted = qfalse; return 0; }
+
+/* As InputSprocket: the count is the total, the buffer gets what fits. */
+static OSStatus ExtractDevices( OSType deviceClass, UInt32 bufferCount, UInt32 *count,
+		ISpDeviceReference *buffer ) {
+	int i;
+
+	IspNeedsStartup( "ISpDevices_Extract" );
+	*count = 0;
+	for ( i = 0 ; i < numIspDevices ; i++ ) {
+		if ( deviceClass && ispDevices[i].deviceClass != deviceClass ) {
+			continue;
+		}
+		if ( *count < bufferCount ) {
+			buffer[*count] = &ispDevices[i];
+		}
+		( *count )++;
+	}
+	return 0;
+}
+static OSStatus ISpDevices_Extract( UInt32 bufferCount, UInt32 *count, ISpDeviceReference *buffer ) {
+	return ExtractDevices( 0, bufferCount, count, buffer );
+}
+static OSStatus ISpDevices_ExtractByClass( OSType deviceClass, UInt32 bufferCount, UInt32 *count,
+		ISpDeviceReference *buffer ) {
+	return ExtractDevices( deviceClass, bufferCount, count, buffer );
+}
+static OSStatus ISpDevices_Deactivate( UInt32 count, ISpDeviceReference *devices ) {
+	UInt32 i;
+	for ( i = 0 ; i < count ; i++ ) {
+		IspCheckDevice( devices[i], "ISpDevices_Deactivate" );
+		devices[i]->active = qfalse;
+	}
+	return 0;
+}
+static OSStatus ISpDevices_Activate( UInt32 count, ISpDeviceReference *devices ) {
+	UInt32 i;
+	for ( i = 0 ; i < count ; i++ ) {
+		IspCheckDevice( devices[i], "ISpDevices_Activate" );
+		if ( devices[i]->activateErr ) {
+			return devices[i]->activateErr;
+		}
+	}
+	for ( i = 0 ; i < count ; i++ ) {
+		devices[i]->active = qtrue;
+	}
+	return 0;
+}
+static OSStatus ISpDevice_GetElementList( ISpDeviceReference device, ISpElementListReference *list ) {
+	IspCheckDevice( device, "ISpDevice_GetElementList" );
+	if ( device->listErr ) {
+		return device->listErr;
+	}
+	*list = device;
+	return 0;
+}
+static OSStatus ISpElementList_Extract( ISpElementListReference list, UInt32 bufferCount,
+		UInt32 *count, ISpElementReference *buffer ) {
+	int i;
+
+	IspCheckDevice( list, "ISpElementList_Extract" );
+	if ( list->extractErr ) {
+		return list->extractErr;
+	}
+	for ( i = 0 ; i < list->count && i < (int)bufferCount ; i++ ) {
+		buffer[i] = &ispElements[list->first + i];
+	}
+	*count = list->count;
+	return 0;
+}
+static OSStatus ISpElement_GetInfo( ISpElementReference element, ISpElementInfo *info ) {
+	IspCheckElement( element, "ISpElement_GetInfo" );
+	memset( info, 0, sizeof( *info ) );
+	info->theKind = element->kind;
+	info->theLabel = element->label;
+	info->theString[0] = 4;
+	memcpy( info->theString + 1, "elem", 4 );
+	return 0;
+}
+static void PStringToCString( char *s ) {
+	int len = (unsigned char)s[0];
+	memmove( s, s + 1, len );
+	s[len] = 0;
+}
 static OSStatus ISpElement_GetNextEvent( ISpElementReference element, UInt32 size,
 		ISpElementEvent *event, Boolean *wasEvent ) {
+	IspCheckElement( element, "ISpElement_GetNextEvent" );
+	IspNeedsStartup( "ISpElement_GetNextEvent" );
 	*wasEvent = 0;
-	if ( !ispStarted || ispSuspended || size != sizeof( *event ) || !ispQueued[element] ) {
+	if ( !ispStarted || ispSuspended || !element->device->active || size != sizeof( *event )
+			|| !element->queued ) {
 		return 0;
 	}
 	memset( event, 0, sizeof( *event ) );
 	event->element = element;
-	event->data = ispQueue[element][0];
-	memmove( ispQueue[element], ispQueue[element] + 1, --ispQueued[element] * sizeof( UInt32 ) );
+	event->data = element->queue[0];
+	memmove( element->queue, element->queue + 1, --element->queued * sizeof( UInt32 ) );
 	*wasEvent = 1;
 	return 0;
 }
 static OSStatus ISpElement_GetSimpleState( ISpElementReference element, UInt32 *state ) {
-	(void)element;
+	IspCheckElement( element, "ISpElement_GetSimpleState" );
+	IspNeedsStartup( "ISpElement_GetSimpleState" );
 	*state = 0;
+	if ( ispStarted && !ispSuspended && element->device->active ) {
+		*state = element->state;
+		element->state = 0;
+	}
 	return 0;
 }
 static OSStatus ISpElement_Flush( ISpElementReference element ) {
+	IspCheckElement( element, "ISpElement_Flush" );
 	if ( !ispStarted ) {
 		fprintf( stderr, "FAIL %s: ISpElement_Flush without InputSprocket\n", currentCase );
 		failures++;
 		return -50;	/* paramErr */
 	}
 	flushCalls++;
-	ispQueued[element] = 0;
+	element->queued = 0;
 	return 0;
 }
 
-/* mac_input.c's globals, set up as Sys_InitInput leaves them */
-qboolean			inputSuspended;
-static UInt32		numDevices = 1;
-static UInt32		numElements[1] = { ISP_ELEMENTS };
-static ISpElementReference	elements[1][ISP_ELEMENTS] = { { 0, 1, 2, 3, 4 } };
 static cvar_t		noMouseCvar, dedicatedCvar;
-static cvar_t		*in_nomouse = &noMouseCvar;
 cvar_t				*com_dedicated = &dedicatedCvar;
+cvar_t *Cvar_Get( const char *name, const char *value, int flags ) {
+	(void)value; (void)flags;
+	if ( strcmp( name, "in_nomouse" ) ) {
+		fprintf( stderr, "FAIL %s: unexpected Cvar_Get %s\n", currentCase, name );
+		failures++;
+	}
+	return &noMouseCvar;
+}
 
 /* ---- the rest of the Mac port, as far as these functions reach ---- */
 
@@ -214,8 +551,8 @@ static cvar_t		waitNextEventCvar;
 static cvar_t		*sys_waitNextEvent = &waitNextEventCvar;
 static qboolean		ignoreUpdateEvents;
 int					sys_ticBase, sys_msecBase, sys_lastEventTic;
-qboolean			inputActive;
-qboolean			inputSystemSuspended;
+extern qboolean		inputActive;
+extern qboolean		inputSystemSuspended;
 
 void Sys_QueEvent( int time, sysEventType_t type, int value, int value2, int ptrLength, void *ptr );
 void Sys_QueEvent_extracted( int time, sysEventType_t type, int value, int value2, int ptrLength, void *ptr );
@@ -226,10 +563,12 @@ void Sys_Input( void );
 void Sys_SuspendInput( void );
 void Sys_ResumeInput( void );
 void Sys_ShutdownInput( void );
+void Sys_InitInput( void );
+void Sys_InitAppleEvents( void );
+void Sys_PumpEvents( void );
 static qboolean Sys_ConsoleEvent( EventRecord *event ) { (void)event; return qfalse; }
 void DoMouseDown( EventRecord *event ) { (void)event; }
 void DoMouseUp( EventRecord *event ) { (void)event; }
-void DoUpdate( WindowPtr window ) { (void)window; }
 void DoDiskEvent( EventRecord *event ) { (void)event; }
 void DoActivate( WindowPtr window, int modifiers ) { (void)window; (void)modifiers; }
 static qboolean Sys_GetPacket( netadr_t *from, msg_t *msg ) { (void)from; (void)msg; return qfalse; }
@@ -282,12 +621,15 @@ void QDECL Com_Printf( const char *fmt, ... ) {
 #include "mac_event_extracted.c"
 #include "mac_main_extracted.c"
 #include "mac_input_extracted.c"
+/* mac_input.c's, as Sys_InitInput leaves them */
+extern UInt32		numDevices;
 
 /* ---- the engine side ---- */
 
 static int			keyDownState[256];
 static int			downEvents[256], upEvents[256];
 static int			packetsSeen, lastPacket;
+static int			mouseX, mouseY;
 
 static void Check( int ok, const char *message ) {
 	if ( !ok ) {
@@ -312,13 +654,20 @@ static void Frame( void ) {
 		if ( ev.evType == SE_NONE ) {
 			return;
 		}
-		if ( ev.evType == SE_KEY && ev.evValue >= 0 && ev.evValue < 256 ) {
+		/* CL_KeyEvent indexes keys[MAX_KEYS] with the key unchecked */
+		if ( ev.evType == SE_KEY && ( ev.evValue < 0 || ev.evValue >= K_LAST_KEY ) ) {
+			Check( 0, "a key event outside the key numbers" );
+		} else if ( ev.evType == SE_KEY ) {
 			keyDownState[ev.evValue] = ev.evValue2 != 0;
 			if ( ev.evValue2 ) {
 				downEvents[ev.evValue]++;
 			} else {
 				upEvents[ev.evValue]++;
 			}
+		}
+		if ( ev.evType == SE_MOUSE ) {
+			mouseX += ev.evValue;
+			mouseY += ev.evValue2;
 		}
 		if ( ev.evType == SE_PACKET ) {
 			packetsSeen++;
@@ -471,9 +820,6 @@ static void IspPressDuringSuspend( void ) {
 
 /* #291: suspend and resume without InputSprocket (in_nomouse, or no ISp) */
 static void NoInputSprocket( void ) {
-	inputActive = qfalse;
-	ispStarted = qfalse;
-	cursorLevel = 0;	/* Sys_InitInput did not hide it */
 	IspEvent( K_MOUSE2, 1 );
 	Frame();
 	Suspend();
@@ -559,15 +905,277 @@ static void OverflowReleases( void ) {
 	Check( !AnyKeyDown(), "nothing is left down after mashing keys" );
 }
 
+
+/* #17: mouse movement, as Sys_Input scales it */
+#define MOVE( n )	( (UInt32)( (n) * 163 ) )
+
+static void CheckMouse( fakeElement_t *x, fakeElement_t *y, fakeElement_t **buttons, int numButtons ) {
+	int i;
+
+	Check( inputActive && cursorLevel == -1, "a usable mouse activates input and hides the cursor" );
+	Frame();
+	mouseX = mouseY = 0;
+	x->state = MOVE( 3 );
+	y->state = MOVE( -2 );
+	Frame();
+	Check( mouseX == 3 && mouseY == 2, "movement comes from the X and Y elements" );
+	for ( i = 0 ; i < numButtons ; i++ ) {
+		ClearCounts();
+		IspPress( buttons[i], 1 );
+		Frame();
+		Check( downEvents[K_MOUSE1 + i] == 1 && keyDownState[K_MOUSE1 + i], "each button presses its mouse key" );
+		IspPress( buttons[i], 0 );
+		Frame();
+		Check( upEvents[K_MOUSE1 + i] == 1 && !keyDownState[K_MOUSE1 + i], "and releases it" );
+	}
+	Check( !AnyKeyDown(), "nothing is left down" );
+}
+
+/* #17: a mouse whose list is not X, Y and then the buttons */
+static void IspShuffled( void ) {
+	fakeDevice_t	*mouse;
+	fakeElement_t	*x, *y, *buttons[3];
+
+	AddDevice( kISpDeviceClass_Keyboard );
+	mouse = AddDevice( kISpDeviceClass_Mouse );
+	buttons[1] = AddElement( mouse, kISpElementKind_Button, kISpElementLabel_Btn_MouseTwo );
+	AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_Delta_Z );	/* a wheel */
+	y = AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_Delta_Y );
+	buttons[0] = AddElement( mouse, kISpElementKind_Button, kISpElementLabel_Btn_MouseOne );
+	x = AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_Delta_X );
+	buttons[2] = AddElement( mouse, kISpElementKind_Button, kISpElementLabel_Btn_MouseThree );
+	Sys_InitInput();
+	CheckMouse( x, y, buttons, 3 );
+}
+
+/* #17: more buttons than mouse keys */
+static void IspManyButtons( void ) {
+	fakeDevice_t	*mouse;
+	fakeElement_t	*x, *y, *buttons[300];
+	int				i;
+
+	mouse = AddDevice( kISpDeviceClass_Mouse );
+	x = AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_Delta_X );
+	y = AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_Delta_Y );
+	for ( i = 0 ; i < 300 ; i++ ) {
+		buttons[i] = AddElement( mouse, kISpElementKind_Button, kISpElementLabel_None );
+	}
+	Sys_InitInput();
+	CheckMouse( x, y, buttons, 5 );
+	/* the buttons past the fifth have no mouse key */
+	ClearCounts();
+	for ( i = 5 ; i < 300 ; i++ ) {
+		IspPress( buttons[i], 1 );
+	}
+	Frame();
+	for ( i = 5 ; i < 300 ; i++ ) {
+		IspPress( buttons[i], 0 );
+	}
+	Frame();
+	Check( !AnyKeyDown(), "buttons past the fifth press no key" );
+}
+
+/* #17: a list longer than the buffer, and unlabeled movement */
+static void IspOverCapacity( void ) {
+	fakeDevice_t	*mouse;
+	fakeElement_t	*x, *y, *buttons[2];
+	int				i;
+
+	mouse = AddDevice( kISpDeviceClass_Mouse );
+	buttons[0] = AddElement( mouse, kISpElementKind_Button, kISpElementLabel_None );
+	for ( i = 0 ; i < 508 ; i++ ) {
+		AddElement( mouse, kISpElementKind_Axis, kISpElementLabel_None );
+	}
+	x = AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_None );
+	y = AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_None );
+	buttons[1] = AddElement( mouse, kISpElementKind_Button, kISpElementLabel_None );
+	/* past the 512 that fit: these must not be seen */
+	for ( i = 0 ; i < 100 ; i++ ) {
+		AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_Delta_X );
+		AddElement( mouse, kISpElementKind_Button, kISpElementLabel_Btn_MouseOne );
+	}
+	Sys_InitInput();
+	Check( strstr( printed, "clamping element list to 512 entries" ) != NULL, "the element count is clamped" );
+	CheckMouse( x, y, buttons, 2 );
+}
+
+/* #17: more devices than the buffer, and mice that cannot be used */
+static void IspManyDevices( void ) {
+	fakeDevice_t	*mouse;
+	fakeElement_t	*x, *y, *buttons[1];
+	int				i;
+
+	for ( i = 0 ; i < 40 ; i++ ) {
+		AddDevice( kISpDeviceClass_Keyboard );
+	}
+	/* no elements; a lone button; Y movement only */
+	AddDevice( kISpDeviceClass_Mouse );
+	mouse = AddDevice( kISpDeviceClass_Mouse );
+	AddElement( mouse, kISpElementKind_Button, kISpElementLabel_Btn_MouseOne );
+	mouse = AddDevice( kISpDeviceClass_Mouse );
+	AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_Delta_Y );
+	/* a usable one */
+	mouse = AddDevice( kISpDeviceClass_Mouse );
+	x = AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_Delta_Cursor_X );
+	y = AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_Delta_Cursor_Y );
+	buttons[0] = AddElement( mouse, kISpElementKind_Button, kISpElementLabel_None );
+	for ( i = 0 ; i < 110 ; i++ ) {
+		AddDevice( kISpDeviceClass_Mouse );
+	}
+	Sys_InitInput();
+	Check( numDevices == 1, "only the usable mouse is used" );
+	Check( mouse->active && !ispDevices[41].active && !ispDevices[42].active,
+		"only the usable mouse is activated" );
+	CheckMouse( x, y, buttons, 1 );
+}
+
+/* #17: InputSprocket failing on some mice, then on every mouse */
+static void IspErrors( void ) {
+	fakeDevice_t	*mouse;
+	fakeElement_t	*x, *y, *buttons[1];
+	int				i;
+
+	for ( i = 0 ; i < 3 ; i++ ) {
+		mouse = AddDevice( kISpDeviceClass_Mouse );
+		x = AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_Delta_X );
+		y = AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_Delta_Y );
+		buttons[0] = AddElement( mouse, kISpElementKind_Button, kISpElementLabel_Btn_MouseOne );
+	}
+	ispDevices[0].listErr = -50;
+	ispDevices[1].extractErr = -50;
+	Sys_InitInput();
+	Check( numDevices == 1 && mouse->active, "the mouse InputSprocket works with is used" );
+	CheckMouse( x, y, buttons, 1 );
+}
+
+static void IspNoUsableMouse( qboolean activateFails ) {
+	fakeDevice_t	*mouse;
+
+	AddDevice( kISpDeviceClass_Keyboard );
+	if ( activateFails ) {
+		DefaultDevices();
+		ispDevices[2].activateErr = -50;
+	} else {
+		AddDevice( kISpDeviceClass_Mouse );
+		mouse = AddDevice( kISpDeviceClass_Mouse );
+		AddElement( mouse, kISpElementKind_Button, kISpElementLabel_Btn_MouseOne );
+		AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_Delta_X );
+	}
+	Sys_InitInput();
+	Check( !inputActive && !ispStarted && shutdownCalls == 1,
+		"without a usable mouse InputSprocket is shut down" );
+	Check( cursorLevel == 0, "and the cursor is left shown" );
+	/* the Event Manager's mouse button is the mouse now */
+	Frame();
+	ClearCounts();
+	macModifiers = 0;	/* button down */
+	Frame();
+	Check( downEvents[K_MOUSE1] == 1, "the Event Manager's button presses mouse 1" );
+	macModifiers = btnState;
+	Frame();
+	Check( upEvents[K_MOUSE1] == 1 && !AnyKeyDown(), "and releases it" );
+	Suspend();
+	Frame();
+	Resume();
+	Frame();
+	Check( cursorLevel == 0 && !suspendCalls && !resumeCalls, "suspend and resume leave InputSprocket alone" );
+}
+
+/* #19: the Finder's Quit Application */
+static void AppleEventQuit( void ) {
+	Check( numAEHandlers == 3, "three Apple Event handlers are installed" );
+	Frame();
+	Check( !cbufText[0], "nothing queued before the event" );
+	PostAppleEvent( kCoreEventClass, kAEQuitApplication );
+	Frame();
+	Check( aeProcessed == 1, "the high-level event goes to AEProcessAppleEvent" );
+	Check( lastAEResult == noErr, "Quit Application is handled" );
+	Check( !strcmp( cbufText, "quit\n" ), "Quit Application queues the quit command (Com_Quit_f)" );
+}
+
+/* #19: Open Application and Open Documents are accepted and do nothing;
+ * others are left unhandled */
+static void AppleEventOpen( void ) {
+	Check( numAEHandlers == 3, "three Apple Event handlers are installed" );
+	PostAppleEvent( kCoreEventClass, kAEOpenApplication );
+	Frame();
+	Check( aeProcessed == 1 && lastAEResult == noErr, "Open Application is handled" );
+	PostAppleEvent( kCoreEventClass, kAEOpenDocuments );
+	Frame();
+	Check( aeProcessed == 2 && lastAEResult == noErr, "Open Documents is handled" );
+	PostAppleEvent( kCoreEventClass, kAEPrintDocuments );
+	Frame();
+	Check( aeProcessed == 3 && lastAEResult == errAEEventNotHandled, "Print Documents is not" );
+	Check( !cbufText[0], "none of them queues a command" );
+}
+
+/* #19: update events for the game window and the console window */
+static void UpdateEvents( void ) {
+	Frame();
+	PostEvent( updateEvt, (long)gameWindow );
+	Frame();
+	Check( updatesBegun == 1 && updatesEnded == 1, "the game window's update is begun and ended" );
+	Check( aglUpdates == 1, "and AGL is told" );
+	Check( !consoleDrawn, "the console is not drawn for the game window" );
+	Check( currentPort == &otherPortStorage, "the port is restored" );
+	PostEvent( updateEvt, (long)consoleWindow );
+	Frame();
+	Check( updatesBegun == 2 && updatesEnded == 2, "the console window's update is begun and ended" );
+	Check( consoleDrawn == consoleWindow, "the console window is redrawn" );
+	Check( aglUpdates == 1, "AGL is not told about the console window" );
+	Check( currentPort == &otherPortStorage, "the port is restored" );
+}
+
+/* #19: suspend and resume highlight the front window (doesActivateOnFGSwitch) */
+static void SuspendHilite( void ) {
+	Frame();
+	Suspend();
+	Frame();
+	Check( hilites == 1 && !hilited, "the front window is unhighlighted on suspend" );
+	Resume();
+	Frame();
+	Check( hilites == 2 && hilited, "and highlighted on resume" );
+}
+
+/* #19: the renderer's Sys_PumpEvents pumps */
+static void PumpEvents( void ) {
+	Frame();
+	ClearCounts();
+	PostEvent( keyDown, ( 0x0D << 8 ) | 'w' );	/* the W key */
+	Sys_PumpEvents();
+	Check( scriptedTail == scriptedHead, "Sys_PumpEvents takes the Event Manager's event" );
+	IspEvent( K_MOUSE1, 1 );
+	Sys_PumpEvents();
+	Check( !defaultButtons[0]->queued, "Sys_PumpEvents takes InputSprocket's button event" );
+	/* the queue holds them until the engine reads it */
+	Check( !downEvents['w'] && !downEvents[K_MOUSE1], "nothing is delivered yet" );
+	Frame();
+	Check( downEvents['w'] == 1 && downEvents[K_MOUSE1] == 1, "Sys_PumpEvents queued the key and the button" );
+}
+
 int main( int argc, char **argv ) {
 	if ( argc != 2 ) {
 		fprintf( stderr, "usage: %s case\n", argv[0] );
 		return 2;
 	}
 	currentCase = argv[1];
-	inputActive = qtrue;	/* Sys_InitInput found a mouse */
-	ispStarted = qtrue;
-	cursorLevel = -1;		/* and hid the cursor */
+	Sys_InitAppleEvents();	/* as Sys_Init */
+
+	if ( !strncmp( currentCase, "isp-", 4 ) && strcmp( currentCase, "isp-press-at-suspend" )
+			&& strcmp( currentCase, "isp-press-during-suspend" ) ) {
+		/* the case sets up its own devices */
+	} else {
+		if ( !strcmp( currentCase, "no-isp" ) ) {
+			noMouseCvar.integer = 1;
+		}
+		DefaultDevices();
+		Sys_InitInput();
+		if ( !strcmp( currentCase, "no-isp" ) ) {
+			Check( !inputActive && cursorLevel == 0, "in_nomouse leaves input off and the cursor shown" );
+		} else {
+			Check( inputActive && cursorLevel == -1, "Sys_InitInput found the mouse and hid the cursor" );
+		}
+	}
 
 	if ( !strcmp( currentCase, "modifier-alone" ) ) {
 		ModifierAlone( qfalse );
@@ -589,6 +1197,30 @@ int main( int argc, char **argv ) {
 		Overflow();
 	} else if ( !strcmp( currentCase, "overflow-releases" ) ) {
 		OverflowReleases();
+	} else if ( !strcmp( currentCase, "isp-shuffled" ) ) {
+		IspShuffled();
+	} else if ( !strcmp( currentCase, "isp-many-buttons" ) ) {
+		IspManyButtons();
+	} else if ( !strcmp( currentCase, "isp-over-capacity" ) ) {
+		IspOverCapacity();
+	} else if ( !strcmp( currentCase, "isp-many-devices" ) ) {
+		IspManyDevices();
+	} else if ( !strcmp( currentCase, "isp-errors" ) ) {
+		IspErrors();
+	} else if ( !strcmp( currentCase, "isp-no-usable-mouse" ) ) {
+		IspNoUsableMouse( qfalse );
+	} else if ( !strcmp( currentCase, "isp-activate-fails" ) ) {
+		IspNoUsableMouse( qtrue );
+	} else if ( !strcmp( currentCase, "apple-event-quit" ) ) {
+		AppleEventQuit();
+	} else if ( !strcmp( currentCase, "apple-event-open" ) ) {
+		AppleEventOpen();
+	} else if ( !strcmp( currentCase, "update-events" ) ) {
+		UpdateEvents();
+	} else if ( !strcmp( currentCase, "suspend-hilite" ) ) {
+		SuspendHilite();
+	} else if ( !strcmp( currentCase, "pump-events" ) ) {
+		PumpEvents();
 	} else {
 		fprintf( stderr, "unknown case %s\n", currentCase );
 		return 2;

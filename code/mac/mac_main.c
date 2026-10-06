@@ -294,32 +294,7 @@ sysEvent_t Sys_GetEvent( void ) {
     }
     */
 
-    // Pump Mac OS events (keyboard via WaitNextEvent)
-    Sys_SendKeyEvents();
-    // Pump InputSprocket events (mouse)
-    Sys_Input();
-
-    // Check for network packets and queue them as SE_PACKET (same pattern
-    // as unix_main.c). Without this, Sys_GetPacket had no caller at all and
-    // the engine could never receive UDP traffic.
-    {
-        static byte sys_packetReceived[MAX_MSGLEN];
-        msg_t       netmsg;
-        netadr_t    adr;
-
-        MSG_Init( &netmsg, sys_packetReceived, sizeof( sys_packetReceived ) );
-        if ( Sys_GetPacket( &adr, &netmsg ) ) {
-            netadr_t  *buf;
-            int       len;
-
-            // copy out to a separate buffer for queuing; freed by Com_EventLoop
-            len = sizeof( netadr_t ) + netmsg.cursize;
-            buf = Z_Malloc( len );
-            *buf = adr;
-            memcpy( buf+1, netmsg.data, netmsg.cursize );
-            Sys_QueEvent( 0, SE_PACKET, 0, 0, len, buf );
-        }
-    }
+    Sys_PumpEvents();
 
     if ( eventOverflows ) {
         Com_Printf( "Sys_QueEvent: overflow, dropped %i events\n", eventOverflows );
@@ -364,6 +339,9 @@ void Sys_Init( void ) {
     // Read every frame in Sys_SendKeyEvents once DSp fullscreen is active;
     // was declared but never registered (NULL deref in fullscreen).
     sys_waitNextEvent = Cvar_Get( "sys_waitNextEvent", "0", CVAR_ARCHIVE );
+
+    // the Finder's Open Application, Open Documents and Quit (#19)
+    Sys_InitAppleEvents();
 
     Sys_InitNetworking();
     Sys_InitInput();
@@ -460,9 +438,42 @@ unsigned Sys_Entropy( void ) {
     return micros.lo ^ ((unsigned)micros.hi << 16) ^ ((unsigned)TickCount() << 24);
 }
 
+/*
+==================
+Sys_PumpEvents
+
+Queues what has arrived: at most one Event Manager event, the InputSprocket
+mouse, and one network packet.  Called by Sys_GetEvent and, as on retail, by
+the renderer during long frames (tr_backend.c), so that key releases,
+updates and suspend, resume and Apple Events are not left waiting (#19).
+It was empty, so those calls did nothing.  Nothing it calls pumps again.
+==================
+*/
 void Sys_PumpEvents( void ) {
-    // Basic event loop pump if needed here
-    // Usually handled in Sys_GetEvent or main loop
+    static byte sys_packetReceived[MAX_MSGLEN];
+    msg_t       netmsg;
+    netadr_t    adr;
+
+    // Pump Mac OS events (keyboard via WaitNextEvent)
+    Sys_SendKeyEvents();
+    // Pump InputSprocket events (mouse)
+    Sys_Input();
+
+    // Check for network packets and queue them as SE_PACKET (same pattern
+    // as unix_main.c). Without this, Sys_GetPacket had no caller at all and
+    // the engine could never receive UDP traffic.
+    MSG_Init( &netmsg, sys_packetReceived, sizeof( sys_packetReceived ) );
+    if ( Sys_GetPacket( &adr, &netmsg ) ) {
+        netadr_t  *buf;
+        int       len;
+
+        // copy out to a separate buffer for queuing; freed by Com_EventLoop
+        len = sizeof( netadr_t ) + netmsg.cursize;
+        buf = Z_Malloc( len );
+        *buf = adr;
+        memcpy( buf+1, netmsg.data, netmsg.cursize );
+        Sys_QueEvent( 0, SE_PACKET, 0, 0, len, buf );
+    }
 }
 
 // Yield to system to prevent timing race conditions

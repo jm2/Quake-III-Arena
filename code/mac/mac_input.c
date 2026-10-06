@@ -9,13 +9,22 @@ qboolean			inputSystemSuspended;	// set by DoOSEvent on suspend/resume
 
 #define	MAX_INPUT_DEVICES	100
 ISpDeviceReference	devices[MAX_INPUT_DEVICES];
-ISpElementListReference	elementList;
 
 #define	MAX_ELEMENTS	512
 #define	MAX_MOUSE_DEVICES	2
-UInt32				numDevices;
-UInt32				numElements[MAX_MOUSE_DEVICES];
-ISpElementReference	elements[MAX_MOUSE_DEVICES][MAX_ELEMENTS];
+#define	MAX_MOUSE_BUTTONS	5	// K_MOUSE1 .. K_MOUSE5
+
+// The elements Sys_InitInput found on a mouse, by kind and label (#17): an
+// element list need not be X, Y and then the buttons, and a mouse can list
+// more buttons than there are mouse keys.
+typedef struct {
+	ISpElementReference	xAxis, yAxis;
+	ISpElementReference	buttons[MAX_MOUSE_BUTTONS];	// NULL: no such button
+} macMouse_t;
+
+UInt32				numDevices;		// mice in use, in mice[]
+macMouse_t			mice[MAX_MOUSE_DEVICES];
+static ISpElementReference	elements[MAX_ELEMENTS];
 
 cvar_t				*in_nomouse;
 
@@ -24,15 +33,124 @@ void Input_GetState( void );
 
 /*
 =================
+Sys_InitMouse
+
+Finds a mouse's X and Y movement and its buttons by element kind and label,
+and activates it.  Returns qfalse, leaving the device inactive, if
+InputSprocket fails or the mouse has no X and Y movement.
+=================
+*/
+static qboolean Sys_InitMouse( ISpDeviceReference device, macMouse_t *mouse ) {
+	ISpElementListReference	elementList;
+	ISpElementInfo		info;
+	ISpElementReference	deltas[2];		// other movement, in list order
+	ISpElementReference	others[MAX_MOUSE_BUTTONS];	// buttons not labeled mou1-3
+	UInt32				count;
+	int					i, button, numDeltas, numOthers;
+	OSStatus			err;
+
+	memset( mouse, 0, sizeof( *mouse ) );
+
+	err = ISpDevice_GetElementList( device, &elementList );
+	if ( err ) {
+		Com_Printf( "ISpDevice_GetElementList failed: %i\n", (int)err );
+		return qfalse;
+	}
+	err = ISpElementList_Extract( elementList, MAX_ELEMENTS, &count, elements );
+	if ( err ) {
+		Com_Printf( "ISpElementList_Extract failed: %i\n", (int)err );
+		return qfalse;
+	}
+	Com_Printf("%i elements in list\n", (int)count );
+	if ( count > MAX_ELEMENTS ) {
+		Com_Printf( "clamping element list to %i entries\n", MAX_ELEMENTS );
+		count = MAX_ELEMENTS;
+	}
+
+	numDeltas = numOthers = 0;
+	for ( i = 0 ; i < count ; i++ ) {
+		if ( ISpElement_GetInfo( elements[i], &info ) ) {
+			continue;
+		}
+		PStringToCString( (char *)info.theString );
+		Com_Printf( "%i : %s\n", i, info.theString );
+
+		if ( info.theKind == kISpElementKind_Delta ) {
+			if ( ( info.theLabel == kISpElementLabel_Delta_X
+				|| info.theLabel == kISpElementLabel_Delta_Cursor_X ) && !mouse->xAxis ) {
+				mouse->xAxis = elements[i];
+			} else if ( ( info.theLabel == kISpElementLabel_Delta_Y
+				|| info.theLabel == kISpElementLabel_Delta_Cursor_Y ) && !mouse->yAxis ) {
+				mouse->yAxis = elements[i];
+			} else if ( info.theLabel != kISpElementLabel_Delta_Z && numDeltas < 2 ) {
+				deltas[numDeltas++] = elements[i];
+			}
+		} else if ( info.theKind == kISpElementKind_Button ) {
+			if ( info.theLabel == kISpElementLabel_Btn_MouseOne ) {
+				button = 0;
+			} else if ( info.theLabel == kISpElementLabel_Btn_MouseTwo ) {
+				button = 1;
+			} else if ( info.theLabel == kISpElementLabel_Btn_MouseThree ) {
+				button = 2;
+			} else {
+				button = -1;
+			}
+			if ( button >= 0 && !mouse->buttons[button] ) {
+				mouse->buttons[button] = elements[i];
+			} else if ( numOthers < MAX_MOUSE_BUTTONS ) {
+				others[numOthers++] = elements[i];
+			}
+		}
+	}
+
+	// Movement not labeled X or Y (other than the wheel) is X then Y, as
+	// retail assumed of the first two elements.
+	i = 0;
+	if ( !mouse->xAxis && i < numDeltas ) {
+		mouse->xAxis = deltas[i++];
+	}
+	if ( !mouse->yAxis && i < numDeltas ) {
+		mouse->yAxis = deltas[i++];
+	}
+	if ( !mouse->xAxis || !mouse->yAxis ) {
+		Com_Printf( "no X and Y movement, skipping this device\n" );
+		return qfalse;
+	}
+
+	// the other buttons, in list order, take the mouse keys left over;
+	// any beyond K_MOUSE5 are ignored
+	button = 0;
+	for ( i = 0 ; i < numOthers ; i++ ) {
+		while ( button < MAX_MOUSE_BUTTONS && mouse->buttons[button] ) {
+			button++;
+		}
+		if ( button == MAX_MOUSE_BUTTONS ) {
+			break;
+		}
+		mouse->buttons[button] = others[i];
+	}
+
+	err = ISpDevices_Activate( 1, &device );
+	if ( err ) {
+		Com_Printf( "ISpDevices_Activate failed: %i\n", (int)err );
+		return qfalse;
+	}
+	return qtrue;
+}
+
+/*
+=================
 Sys_InitInput
 =================
 */
 void Sys_InitInput( void ) {
 	NumVersion		ver;
-	ISpElementInfo	info;
-	int				i, j;
+	UInt32			count;
+	int				i;
 	OSStatus		err;
 	
+	numDevices = 0;
+
 	// no input with dedicated servers
 	if ( com_dedicated->integer ) {
 		return;
@@ -57,51 +175,56 @@ void Sys_InitInput( void ) {
 	}
 
 	// disable everything
-	ISpDevices_Extract( MAX_INPUT_DEVICES, &numDevices, devices );
-	Com_Printf("%i total devices\n", (int)numDevices);
-	if (numDevices > MAX_INPUT_DEVICES) {
-		numDevices = MAX_INPUT_DEVICES;
+	err = ISpDevices_Extract( MAX_INPUT_DEVICES, &count, devices );
+	if ( err ) {
+		Com_Printf( "ISpDevices_Extract failed: %i\n", (int)err );
+		goto fail;
 	}
-	err = ISpDevices_Deactivate(
-			numDevices,
-			devices);
+	Com_Printf("%i total devices\n", (int)count);
+	if ( count > MAX_INPUT_DEVICES ) {
+		count = MAX_INPUT_DEVICES;
+	}
+	err = ISpDevices_Deactivate( count, devices );
+	if ( err ) {
+		Com_Printf( "ISpDevices_Deactivate failed: %i\n", (int)err );
+		goto fail;
+	}
 	
-	// enable mouse
+	// enable the first mice with X and Y movement
 	err = ISpDevices_ExtractByClass(
 			kISpDeviceClass_Mouse,
 			MAX_INPUT_DEVICES,
-			&numDevices,
+			&count,
 			devices);
-	Com_Printf("%i mouse devices\n", (int)numDevices);
-	if (numDevices > MAX_MOUSE_DEVICES) {
-		numDevices = MAX_MOUSE_DEVICES;
+	if ( err ) {
+		Com_Printf( "ISpDevices_ExtractByClass failed: %i\n", (int)err );
+		goto fail;
 	}
-	
-	err = ISpDevices_Activate( numDevices, devices);
-	for ( i = 0 ; i < numDevices ; i++ ) {
-		ISpDevice_GetElementList( devices[i], &elementList );
-	
-//	ISpGetGlobalElementList( &elementList );
-	
-		// go through all the elements and asign them Quake key codes
-		ISpElementList_Extract( elementList, MAX_ELEMENTS, &numElements[i], elements[i] );
-		Com_Printf("%i elements in list\n", (int)numElements[i] );
-		if ( numElements[i] > MAX_ELEMENTS ) {
-			Com_Printf( "clamping element list to %i entries\n", MAX_ELEMENTS );
-			numElements[i] = MAX_ELEMENTS;
+	Com_Printf("%i mouse devices\n", (int)count);
+	if ( count > MAX_INPUT_DEVICES ) {
+		count = MAX_INPUT_DEVICES;
+	}
+	for ( i = 0 ; i < count && numDevices < MAX_MOUSE_DEVICES ; i++ ) {
+		if ( Sys_InitMouse( devices[i], &mice[numDevices] ) ) {
+			numDevices++;
 		}
-		
-		for ( j = 0 ; j	< numElements[i] ; j++ ) {
-			ISpElement_GetInfo( elements[i][j], &info );
-			PStringToCString( (char *)info.theString );
-			Com_Printf( "%i : %s\n", i, info.theString );
-		}
+	}
+	if ( !numDevices ) {
+		Com_Printf( "no usable InputSprocket mouse\n" );
+		goto fail;
 	}
 	
 	inputActive = true;
 
 	HideCursor();
 
+	Com_Printf( "------------------------------------\n" );
+	return;
+
+fail:
+	// nothing is active, and the cursor stays as it is
+	ISpShutdown();
+	numDevices = 0;
 	Com_Printf( "------------------------------------\n" );
 }
 
@@ -117,6 +240,7 @@ void Sys_ShutdownInput( void ) {
 	ShowCursor();
 	ISpShutdown();
 	inputActive = qfalse;
+	numDevices = 0;
 }
 
 void Sys_SuspendInput( void ) {
@@ -151,8 +275,10 @@ void Sys_ResumeInput( void ) {
 	// that came after DoOSEvent drained the queues was not released by
 	// Sys_ReleaseKeys, and its release went to the front process.
 	for ( device = 0 ; device < numDevices ; device++ ) {
-		for ( button = 2 ; button < numElements[device] ; button++ ) {
-			ISpElement_Flush( elements[device][button] );
+		for ( button = 0 ; button < MAX_MOUSE_BUTTONS ; button++ ) {
+			if ( mice[device].buttons[button] ) {
+				ISpElement_Flush( mice[device].buttons[button] );
+			}
 		}
 	}
 }
@@ -170,6 +296,7 @@ void Sys_Input( void ) {
 	int					button;
 	static int xtotal, ytotal;
 	int					device;
+	macMouse_t			*mouse;
 	
 	if ( !inputActive ) {
 		return;
@@ -206,23 +333,24 @@ void Sys_Input( void ) {
 
 	// send all button events
 	for ( device = 0 ; device < numDevices ; device++ ) {
-		if ( numElements[device] < 2 ) {
-			continue;
-		}
+		mouse = &mice[device];
 
 		// mouse buttons
 		
-		for ( button = 2 ; button < numElements[device] ; button++ ) {
+		for ( button = 0 ; button < MAX_MOUSE_BUTTONS ; button++ ) {
 			int eventCount = 0;
+			if ( !mouse->buttons[button] ) {
+				continue;
+			}
 			while ( 1 ) {
-				ISpElement_GetNextEvent( elements[device][button], sizeof( event ), &event, &wasEvent );
-				if ( !wasEvent ) {
+				if ( ISpElement_GetNextEvent( mouse->buttons[button], sizeof( event ), &event, &wasEvent )
+					|| !wasEvent ) {
 					break;
 				}
 				if ( event.data ) {
-					Sys_QueEvent( 0, SE_KEY, K_MOUSE1 + button - 2, 1, 0, NULL );
+					Sys_QueEvent( 0, SE_KEY, K_MOUSE1 + button, 1, 0, NULL );
 				} else {
-					Sys_QueEvent( 0, SE_KEY, K_MOUSE1 + button - 2, 0, 0, NULL );
+					Sys_QueEvent( 0, SE_KEY, K_MOUSE1 + button, 0, 0, NULL );
 				}
 				// Safety break to prevent infinite loop. Checked AFTER
 				// queueing: the old order discarded the event it had just
@@ -238,10 +366,14 @@ void Sys_Input( void ) {
 		
 #define	MAC_MOUSE_SCALE		163		// why this constant?
 		// send mouse event
-		ISpElement_GetSimpleState( elements[device][0], &state );
+		if ( ISpElement_GetSimpleState( mouse->xAxis, &state ) ) {
+			state = 0;
+		}
 		xmove = (int)state / MAC_MOUSE_SCALE;
 		
-		ISpElement_GetSimpleState( elements[device][1], &state2 );
+		if ( ISpElement_GetSimpleState( mouse->yAxis, &state2 ) ) {
+			state2 = 0;
+		}
 		ymove = (int)state2 / -MAC_MOUSE_SCALE;
 		
 		if ( xmove || ymove ) {
