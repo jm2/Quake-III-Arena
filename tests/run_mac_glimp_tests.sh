@@ -5,7 +5,7 @@ Q3_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 Q3_TEST_DIR="$(mktemp -d -p "${TMPDIR:-/var/tmp}" q3-mac-glimp.XXXXXX)"
 trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 
-# Issues #3, #34, #15 and #16: the classic Mac renderer's GLimp_Init and
+# Issues #3, #34, #15, #16, #6 and #7: the classic Mac renderer's GLimp_Init and
 # GLimp_Shutdown.  The fixture compiles the real code/mac/mac_glimp.c and
 # code/mac/MacGamma.c against a fake AGL, DrawSprocket, Window Manager,
 # video driver and Memory Manager.  Their Toolbox headers resolve to

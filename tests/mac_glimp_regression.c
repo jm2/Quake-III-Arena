@@ -1,4 +1,4 @@
-/* Issues #3, #34, #15 and #16: the classic Mac renderer's GLimp_Init and
+/* Issues #3, #34, #15, #16, #6 and #7: the classic Mac renderer's GLimp_Init and
  * GLimp_Shutdown.
  *
  * #3: GLimp_Extensions read r_ext_texture_filter_anisotropic->integer from
@@ -18,6 +18,14 @@
  * #16: GetSystemGammas (MacGamma.c) returned a half-built snapshot when an
  * allocation failed, which GLimp_Shutdown then walked, and GLimp_Init
  * claimed hardware gamma whether or not the desktop gamma could be put back.
+ *
+ * #6: GLimp_Init forced r_fullscreen 0, and its fallback no longer set
+ * r_fullscreen 1 as retail did, so a windowed attempt that failed (accelerated
+ * GL on an 8-bit desktop) was fatal instead of recovering fullscreen at
+ * 640x480x16.
+ *
+ * #7: r_colorbits 16, the fallback's, asked AGL for 8/8/8 color, so the
+ * fallback failed again on a 16-bit-only accelerator.
  *
  * The fixture compiles the real mac_glimp.c (its #includes blanked by the
  * runner) and MacGamma.c against tests/mac_glimp_fake.h.  The fake AGL,
@@ -508,6 +516,7 @@ struct OpaqueDSpContextReference {
 
 static struct OpaqueDSpContextReference	dspDisplay;
 static int								dspStarted;
+static DSpDepthMask						dspDepth;	/* of the reserved display */
 
 OSStatus DSpStartup( void ) {
 	if ( Fail( "DSpStartup" ) ) {
@@ -540,7 +549,10 @@ OSStatus DSpContext_Reserve( DSpContextReference inContext, DSpContextAttributes
 		return -30442;
 	}
 	Check( !inContext->reserved, "a display is reserved once" );
+	Check( inDesiredAttributes->displayDepthMask == inDesiredAttributes->backBufferDepthMask,
+		"the display and back buffer depths agree" );
 	inContext->reserved = 1;
+	dspDepth = inDesiredAttributes->displayDepthMask;
 	return noErr;
 }
 
@@ -579,6 +591,7 @@ OSStatus DSpContext_FadeGammaIn( const void *inZeroIntensityColor, void *inCallb
 
 struct FakeAGLPixelFormat {
 	int		magic;
+	GLint	red;
 };
 
 struct FakeAGLContext {
@@ -596,18 +609,51 @@ static GLenum		aglError;
 static int			swaps;
 static int			aglEnables;
 
+/* the attributes of the last aglChoosePixelFormat */
+static GLint		pfRGBA, pfRed, pfGreen, pfBlue, pfDepth, pfStencil;
+static int			pfChosen;
+/* an accelerator that has only 16-bit (5/5/5) formats, and one that
+ * can't draw into a window on the desktop (an 8-bit one, say) */
+static int			only16Bit, noWindowedGL;
+
 void aglGetVersion( GLint *major, GLint *minor ) {
 	*major = 2;
 	*minor = 1;
 }
 
 AGLPixelFormat aglChoosePixelFormat( const AGLDevice *gdevs, GLint ndev, const GLint *attribs ) {
-	if ( Fail( "aglChoosePixelFormat" ) ) {
+	AGLPixelFormat	pix;
+	int				i;
+
+	pfRGBA = 0;
+	pfRed = pfGreen = pfBlue = pfDepth = pfStencil = -1;
+	for ( i = 0 ; attribs[i] != AGL_NONE ; i++ ) {
+		switch ( attribs[i] ) {
+		case AGL_RGBA:			pfRGBA = 1; break;
+		case AGL_DOUBLEBUFFER:
+		case AGL_NO_RECOVERY:
+		case AGL_ACCELERATED:	break;
+		case AGL_RED_SIZE:		pfRed = attribs[++i]; break;
+		case AGL_GREEN_SIZE:	pfGreen = attribs[++i]; break;
+		case AGL_BLUE_SIZE:		pfBlue = attribs[++i]; break;
+		case AGL_ALPHA_SIZE:	++i; break;
+		case AGL_DEPTH_SIZE:	pfDepth = attribs[++i]; break;
+		case AGL_STENCIL_SIZE:	pfStencil = attribs[++i]; break;
+		default:
+			Check( 0, "aglChoosePixelFormat gets known attributes" );
+			break;
+		}
+	}
+	pfChosen++;
+	if ( Fail( "aglChoosePixelFormat" )
+		|| ( only16Bit && pfRed > 5 ) || ( noWindowedGL && !dspDisplay.active ) ) {
 		aglError = AGL_BAD_ALLOC;
 		return NULL;
 	}
 	fmtsLive++;
-	return calloc( 1, sizeof( struct FakeAGLPixelFormat ) );
+	pix = calloc( 1, sizeof( struct FakeAGLPixelFormat ) );
+	pix->red = pfRed;
+	return pix;
 }
 
 void aglDestroyPixelFormat( AGLPixelFormat pix ) {
@@ -619,7 +665,7 @@ GLboolean aglDescribePixelFormat( AGLPixelFormat pix, GLint attrib, GLint *value
 	Check( pix != NULL, "aglDescribePixelFormat gets a pixel format" );
 	pix->magic += 0;
 	switch ( attrib ) {
-	case AGL_RED_SIZE:		*value = 8; break;
+	case AGL_RED_SIZE:		*value = pix->red; break;
 	case AGL_DEPTH_SIZE:	*value = 16; break;
 	default:				*value = 0; break;
 	}
@@ -641,6 +687,7 @@ GLboolean aglDestroyContext( AGLContext ctx ) {
 	if ( ctx == currentContext ) {
 		currentContext = NULL;
 	}
+	Check( ctx->drawable == NULL, "the drawable is detached before the context is destroyed" );
 	if ( ctx->drawable ) {
 		ctx->drawable->attached--;
 	}
@@ -755,6 +802,9 @@ static void ResetAll( void ) {
 	ptrAllocs = 0;
 	fatalErrors = 0;
 	aglError = AGL_NO_ERROR;
+	only16Bit = 0;
+	noWindowedGL = 0;
+	pfChosen = 0;
 	glExtensions = "GL_ARB_multitexture GL_EXT_texture_env_add";
 	CvarSet( "r_mode", "4" );
 	CvarSet( "r_fullscreen", "0" );
@@ -953,8 +1003,11 @@ static void TestFaults( void ) {
 					if ( !strcmp( calls[c], "DSpStartup" ) ) {
 						/* as retail, a missing DrawSprocket leaves a window */
 						Check( !glConfig.isFullscreen, "without DrawSprocket the mode is windowed" );
-					} else if ( fullscreen ) {
-						Check( glConfig.isFullscreen, "the fallback is fullscreen" );
+					} else if ( fullscreen || failed ) {
+						/* the mode asked for, or the fullscreen fallback
+						 * a failed windowed one falls back to, as retail */
+						Check( glConfig.isFullscreen, "the mode or its fallback is fullscreen" );
+						Check( r_fullscreen->integer == 1, "r_fullscreen says fullscreen" );
 					}
 				} else {
 					Check( nth == 0 && strcmp( calls[c], "DSpStartup" ),
@@ -978,6 +1031,104 @@ static void TestFaults( void ) {
 			}
 		}
 	}
+}
+
+/* #6: r_fullscreen is honoured, and a windowed mode that accelerated GL
+ * can't draw (an 8-bit desktop) falls back to 640x480x16 fullscreen, as
+ * retail (c79ba93b) and win32 do, instead of failing */
+static void TestFullscreenConfig( void ) {
+	int		fullscreen;
+
+	for ( fullscreen = 0 ; fullscreen < 2 ; fullscreen++ ) {
+		currentCase = fullscreen ? "r_fullscreen 1" : "r_fullscreen 0";
+		ResetAll();
+		CvarSet( "r_fullscreen", fullscreen ? "1" : "0" );
+		Check( Init(), "GLimp_Init succeeds" );
+		CheckLive();
+		Check( pfChosen == 1, "the first mode is used" );
+		Check( r_fullscreen->integer == fullscreen && r_mode->integer == 4,
+			"GLimp_Init keeps the configured r_fullscreen and r_mode" );
+		Check( glConfig.isFullscreen == fullscreen, "the mode is fullscreen exactly when asked" );
+		Check( glConfig.vidWidth == 800 && glConfig.vidHeight == 600, "the configured mode is set" );
+		GLimp_Shutdown();
+		CheckReleased();
+	}
+
+	currentCase = "windowed fails, fullscreen fallback";
+	ResetAll();
+	noWindowedGL = 1;
+	Check( Init(), "GLimp_Init falls back instead of failing" );
+	CheckLive();
+	Check( pfChosen == 2, "the windowed mode was tried first" );
+	Check( r_fullscreen->integer == 1, "the fallback sets r_fullscreen 1" );
+	Check( glConfig.isFullscreen, "the fallback is fullscreen" );
+	Check( r_mode->integer == 3 && glConfig.vidWidth == 640 && glConfig.vidHeight == 480,
+		"the fallback is mode 3" );
+	Check( r_colorbits->integer == 16 && dspDepth == kDSpDepthMask_16, "the fallback display is 16-bit" );
+	Check( pfRed == 5 && pfGreen == 5 && pfBlue == 5 && pfDepth == 16 && pfStencil == 0,
+		"the fallback asks for 5/5/5 color, 16-bit depth and no stencil" );
+	GLimp_Shutdown();
+	CheckReleased();
+}
+
+/* #7: the color AGL is asked for follows r_colorbits, matching the display
+ * depth GLimp_ChangeDisplay sets, and the 16-bit fallback runs on a
+ * 16-bit-only accelerator */
+static void TestPixelFormat( void ) {
+	static const char	*colorbits[] = { "0", "15", "16", "24", "32" };
+	static char			name[64];
+	int					c, fullscreen, size, high;
+
+	for ( fullscreen = 0 ; fullscreen < 2 ; fullscreen++ ) {
+		for ( c = 0 ; c < (int)( sizeof( colorbits ) / sizeof( colorbits[0] ) ) ; c++ ) {
+			snprintf( name, sizeof( name ), "pixel format r_colorbits %s %s", colorbits[c],
+				fullscreen ? "fullscreen" : "windowed" );
+			currentCase = name;
+			ResetAll();
+			CvarSet( "r_fullscreen", fullscreen ? "1" : "0" );
+			CvarSet( "r_colorbits", colorbits[c] );
+			CvarSet( "r_depthbits", fullscreen ? "0" : "24" );
+			CvarSet( "r_stencilbits", fullscreen ? "8" : "0" );
+			high = atoi( colorbits[c] ) > 16;
+			size = high ? 8 : 5;
+			Check( Init(), "GLimp_Init succeeds" );
+			CheckLive();
+			Check( pfChosen == 1, "the first mode is used" );
+			Check( pfRGBA, "AGL is asked for RGBA" );
+			Check( pfRed == size && pfGreen == size && pfBlue == size,
+				high ? "above 16 bits asks for 8/8/8" : "16 bits or fewer asks for 5/5/5" );
+			Check( pfDepth == ( fullscreen ? 16 : 24 ), "AGL is asked for r_depthbits, or 16" );
+			Check( pfStencil == ( fullscreen ? 8 : 0 ), "AGL is asked for r_stencilbits" );
+			Check( glConfig.colorBits == size * 3, "glConfig has the format's color bits" );
+			if ( fullscreen ) {
+				Check( dspDepth == ( high ? kDSpDepthMask_32 : kDSpDepthMask_16 ),
+					"the display depth matches the color asked for" );
+			}
+			GLimp_Shutdown();
+			CheckReleased();
+		}
+	}
+
+	currentCase = "16-bit-only accelerator, r_colorbits 16";
+	ResetAll();
+	only16Bit = 1;
+	CvarSet( "r_colorbits", "16" );
+	Check( Init(), "GLimp_Init succeeds" );
+	CheckLive();
+	Check( pfChosen == 1 && !glConfig.isFullscreen, "a 16-bit request needs no fallback" );
+	GLimp_Shutdown();
+	CheckReleased();
+
+	currentCase = "16-bit-only accelerator, r_colorbits 32";
+	ResetAll();
+	only16Bit = 1;
+	Check( Init(), "GLimp_Init falls back instead of failing" );
+	CheckLive();
+	Check( pfChosen == 2 && r_colorbits->integer == 16, "the 16-bit fallback is used" );
+	Check( pfRed == 5 && pfGreen == 5 && pfBlue == 5, "the fallback asks for 5/5/5" );
+	Check( glConfig.isFullscreen && dspDepth == kDSpDepthMask_16, "the fallback display is 16-bit" );
+	GLimp_Shutdown();
+	CheckReleased();
 }
 
 /* is the snapshot complete enough that restoring it puts every device back */
@@ -1082,6 +1233,8 @@ int main( void ) {
 	TestRestartCycles();
 	TestBadMode();
 	TestFaults();
+	TestFullscreenConfig();
+	TestPixelFormat();
 	TestGamma();
 
 	FreeDevices();

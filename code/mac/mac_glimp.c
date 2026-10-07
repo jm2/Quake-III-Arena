@@ -703,6 +703,9 @@ qboolean GLimp_SetMode( void ) {
 	attrib[i++] = AGL_NO_RECOVERY;
 	attrib[i++] = AGL_ACCELERATED;
 
+	// r_colorbits 24 or 32 asks for 8/8/8, as on the 32-bit display
+	// GLimp_ChangeDisplay sets; 16 (the fallback) and 0 (the default) ask
+	// for 5/5/5, as on its 16-bit display
 	if ( r_colorbits->integer > 16 ) {
 		attrib[i++] = AGL_RED_SIZE;
 		attrib[i++] = 8;
@@ -872,7 +875,10 @@ void GLimp_Init( void ) {
 		return;
 	}
 
-	// fall back to the known-good mode
+	// fall back to the known-good mode: 640x480, 16-bit, fullscreen, as
+	// retail and win32 do, so a desktop accelerated GL can't draw a window
+	// on (8-bit, say) still gets a display it can use
+	ri.Cvar_Set( "r_fullscreen", "1" );
 	ri.Cvar_Set( "r_mode", "3" );
 	ri.Cvar_Set( "r_stereo", "0" );
 	ri.Cvar_Set( "r_depthBits", "16" );
