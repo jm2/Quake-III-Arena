@@ -2,8 +2,8 @@
  * retro::ConsoleWindow for tests/mac_toolbox_init_regression.c to compile the
  * real code/mac/mac_consolehooks.cc on the host.  run_mac_toolbox_init_tests.sh
  * installs this file as retro/ConsoleWindow.h.  The window itself is the
- * test's: FakeConsoleWindowOpen, FakeConsoleWindowWrite and
- * FakeConsoleWindowReadLine. */
+ * test's: FakeConsoleWindowOpen, FakeConsoleWindowWrite,
+ * FakeConsoleWindowReadLine and FakeConsoleWindowDraw. */
 #ifndef MAC_CONSOLE_WINDOW_FAKE_H
 #define MAC_CONSOLE_WINDOW_FAKE_H
 
@@ -28,6 +28,7 @@ void InsetRect( Rect *r, short dh, short dv );
 GrafPtr FakeConsoleWindowOpen( const Rect *r );
 void FakeConsoleWindowWrite( const char *s, int n );
 const char *FakeConsoleWindowReadLine( void );
+void FakeConsoleWindowDraw( void );
 void FakeConsoleWindowDelete( void );
 
 #ifdef __cplusplus
@@ -42,6 +43,7 @@ namespace retro {
 
 		void write( const char *s, int n ) { FakeConsoleWindowWrite( s, n ); }
 		std::string ReadLine() { return FakeConsoleWindowReadLine(); }
+		void Draw() { FakeConsoleWindowDraw(); }
 	};
 
 	/* Only mac_consolehooks.cc includes this header. */

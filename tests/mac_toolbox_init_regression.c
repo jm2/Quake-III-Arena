@@ -108,6 +108,7 @@ static void GetKeys( KeyMap keys ) {
 int Sys_ConsoleWanted( int fd );
 ssize_t _consolewrite( int fd, const void *buf, size_t count );
 ssize_t _consoleread( int fd, void *buf, size_t count );
+void Sys_ConsoleDraw( GrafPtr window );	/* mac_consolehooks.cc */
 
 static int			windowOpen;
 static char			windowText[16384];
@@ -123,6 +124,12 @@ GrafPtr FakeConsoleWindowOpen( const Rect *r ) {
 	Event( "console window" );
 	windowOpen = 1;
 	return &consolePort;
+}
+
+static int			windowDraws;
+void FakeConsoleWindowDraw( void ) {
+	Check( windowOpen, "only an open window is drawn" );
+	windowDraws++;
 }
 
 void FakeConsoleWindowWrite( const char *s, int n ) {
@@ -541,6 +548,11 @@ int main( int argc, char **argv ) {
 	Sys_Print( "engine: mid-game\n" );
 	Check( strstr( windowText, "engine: mid-game\n" ) != NULL, "engine output reaches the window" );
 	Check( currentPort == &gamePort, "writing to the console window keeps the current port" );
+	/* #19: DoUpdate redraws the console window, and only that window */
+	Sys_ConsoleDraw( &gamePort );
+	Check( windowDraws == 0, "an update of the game window does not draw the console" );
+	Sys_ConsoleDraw( &consolePort );
+	Check( windowDraws == 1, "an update of the console window redraws it" );
 
 	/* Shift held: the prompt is shown in the window and the typed line used */
 	result = RunMain( "Shift prompt", 1, "+set s_initsound 1\n", "+set fs_game ignored\n", 0 );

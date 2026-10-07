@@ -339,6 +339,7 @@ extern macGlInfo sys_gl;
 // mac_event.c
 extern	int	vkeyToQuakeKey[256];
 void Sys_SendKeyEvents (void);
+void Sys_InitAppleEvents( void );
 qboolean Sys_WaitEvent( long sleepTicks, qboolean *cancel );
 
 // mac_net.c
@@ -371,6 +372,9 @@ int		Sys_ConsoleWanted( int fd );
 void	Sys_Print( const char *text );
 char	*Sys_ConsoleInput( void );
 qboolean Sys_ConsoleEvent( EventRecord *event );
+
+// mac_consolehooks.cc
+void	Sys_ConsoleDraw( WindowPtr window );
 
 void Debug_Breadcrumb( int color );
 

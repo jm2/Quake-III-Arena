@@ -223,6 +223,12 @@ void	DoOSEvent(EventRecord	*event)
 	// Previously empty, which left the cursor hidden and ISp capturing
 	// input while the game was in the background.
 	if ( ( ( event->message >> 24 ) & 0xFF ) == suspendResumeMessage ) {
+		// doesActivateOnFGSwitch (mac_resources.r): no activate events
+		// come with suspend and resume, so (un)highlight the front window
+		// here, or it stays highlighted in the background (#19).
+		if ( FrontWindow() ) {
+			HiliteWindow( FrontWindow(), ( event->message & resumeFlag ) != 0 );
+		}
 		if ( event->message & resumeFlag ) {
 			inputSystemSuspended = qfalse;
 			Sys_ResumeInput();
@@ -245,35 +251,49 @@ void	DoOSEvent(EventRecord	*event)
 static qboolean ignoreUpdateEvents = qfalse;
 
 /*
-void DoUpdate(WindowPtr	myWindow)
-{ 
-	GrafPtr		origPort;
-	AGLContext	ctx;
-    
-    // DEBUG: Always act on the main window.
-    // The event.message seems to contain garbage or a different handle on Mac OS 9?
-    // "mismatch 0x3d700001 vs 0x4aa53d70"
-    WindowPtr targetWindow = (WindowPtr)sys_gl.drawable;
+==================
+Apple Events (#19)
 
-    if ( !targetWindow ) {
-        return;
-    }
-
-	GetPort(&origPort);
-	SetPort(targetWindow);
-	BeginUpdate(targetWindow);	
-    EndUpdate(targetWindow);
-	
-	// Only update context if one exists (may not during early init)
-	ctx = aglGetCurrentContext();
-
-	if (ctx != NULL) {
-		aglUpdateContext(ctx);
-	}
-	
-	SetPort(origPort);
-}
+The SIZE resource declares the application high-level event aware, so the
+Finder sends it the required Apple Events: Open Application at launch, Open
+Documents for files dropped on it, and Quit Application from its Shutdown and
+Restart.  Retail installed none, so Shutdown could not quit a running game.
+These run inside AEProcessAppleEvent, which Sys_SendKeyEvents calls,
+possibly from inside the renderer (GLimp_EndFrame, Sys_PumpEvents), so Quit
+only queues the quit command, which shuts the game down as the console's
+quit does (Com_Quit_f) once the frame is over, and the reply is sent.
+==================
 */
+static pascal OSErr Sys_AEOpenApplication( const AppleEvent *event, AppleEvent *reply, long refcon ) {
+	return noErr;
+}
+
+static pascal OSErr Sys_AEOpenDocuments( const AppleEvent *event, AppleEvent *reply, long refcon ) {
+	// the game data comes from baseq3, not from documents
+	Com_Printf( "Ignoring the Finder's Open Documents\n" );
+	return noErr;
+}
+
+static pascal OSErr Sys_AEQuitApplication( const AppleEvent *event, AppleEvent *reply, long refcon ) {
+	Cbuf_ExecuteText( EXEC_APPEND, "quit\n" );
+	return noErr;
+}
+
+static void Sys_InstallAppleEventHandler( AEEventID id, AEEventHandlerProcPtr handler ) {
+	OSErr	err;
+
+	err = AEInstallEventHandler( kCoreEventClass, id, NewAEEventHandlerUPP( handler ), 0, false );
+	if ( err ) {
+		Com_Printf( "AEInstallEventHandler failed: %i\n", (int)err );
+	}
+}
+
+void Sys_InitAppleEvents( void ) {
+	Sys_InstallAppleEventHandler( kAEOpenApplication, Sys_AEOpenApplication );
+	Sys_InstallAppleEventHandler( kAEOpenDocuments, Sys_AEOpenDocuments );
+	Sys_InstallAppleEventHandler( kAEQuitApplication, Sys_AEQuitApplication );
+}
+
 //
 // DoUpdate
 //
@@ -289,6 +309,12 @@ void DoUpdate(WindowPtr	myWindow)
 	GetPort(&origPort);
 	SetPort(myWindow);
 	BeginUpdate(myWindow);
+	// The game window is redrawn every frame, but the console window only
+	// when written to: redraw it here, or a part uncovered by another
+	// window stays blank (#19).
+	if ( (void*)myWindow != (void*)sys_gl.drawable ) {
+		Sys_ConsoleDraw( myWindow );
+	}
 	EndUpdate(myWindow);
 
 	// Keep AGL in sync when the game window itself took the update. This
@@ -302,6 +328,10 @@ void DoUpdate(WindowPtr	myWindow)
 	SetPort(origPort);
 }
 
+// Nothing to do: the Window Manager highlights the window, the game window
+// has no controls and is redrawn every frame, and suspend and resume (which
+// do not send activate events, as the SIZE resource sets
+// doesActivateOnFGSwitch) are handled by DoOSEvent.
 void DoActivate( WindowPtr myWindow, int myModifiers) {
 
 }
@@ -479,6 +509,11 @@ qboolean Sys_WaitEvent( long sleepTicks, qboolean *cancel ) {
             Sys_LogPrintf("Sys_SendKeyEvents: osEvt\n");
 			DoOSEvent(&event);
             Sys_LogPrintf("Sys_SendKeyEvents: osEvt done\n");
+		break;
+		case kHighLevelEvent:
+			// the Finder's Apple Events, to Sys_InitAppleEvents' handlers;
+			// any other is answered errAEEventNotHandled
+			AEProcessAppleEvent(&event);
 		break;
 		default:
             //Sys_LogPrintf("Sys_SendKeyEvents: default %d\n", event.what);
