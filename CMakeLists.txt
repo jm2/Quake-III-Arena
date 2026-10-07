@@ -55,7 +55,6 @@ set(CMAKE_CXX_FLAGS_RELEASE "")
 
 # Global definitions
 add_definitions(-D__MACOS__ -D__POWERPC__ -DBOTLIB -DQ3_STATIC)
-add_definitions(-DQUAKEDATA="/Quake3/") # Default path, adjustable
 
 include_directories(
     ${CMAKE_SOURCE_DIR}/code/game
@@ -84,14 +83,14 @@ file(GLOB COMMON_SRCS code/qcommon/*.c)
 file(GLOB SERVER_SRCS code/server/*.c)
 file(GLOB CLIENT_SRCS code/client/*.c)
 file(GLOB RENDERER_SRCS code/renderer/*.c)
-file(GLOB MAC_SRCS code/mac/*.c code/mac/*.cc code/mac/*.r)
+# The .r resource sources are not compiled; Rez builds them below.
+file(GLOB MAC_SRCS code/mac/*.c code/mac/*.cc)
 # mac_consolehooks.cc replaces libRetroConsole's InitConsole.cc (issues #10 and
 # #263) and builds retro::ConsoleWindow from the pinned Retro68 source's headers.
 set_source_files_properties("${CMAKE_SOURCE_DIR}/code/mac/mac_consolehooks.cc"
     PROPERTIES INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/tools/Retro68-src/Console")
 file(GLOB BOTLIB_SRCS code/botlib/*.c)
 file(GLOB JPEG_SRCS code/jpeg-6/*.c)
-file(GLOB NULL_SRCS code/null/*.c) # Might need null implementations for some things?
 
 # Exclude incompatible/architecture-specific files
 list(REMOVE_ITEM COMMON_SRCS 
@@ -173,13 +172,8 @@ target_compile_definitions(cgame_obj PRIVATE
     -DCGAME_MODULE
 )
 
+# code/ui is the Team Arena UI (ui_mp_obj below); Quake3 links q3_ui.
 file(GLOB UI_SRCS code/ui/*.c)
-add_library(ui_obj STATIC ${UI_SRCS})
-target_compile_definitions(ui_obj PRIVATE
-    -DvmMain=UI_vmMain
-    -DdllEntry=UI_dllEntry
-    -DUI_MODULE
-)
 
 # Q3 UI (Original Quake 3 Arena - hardcoded menus)
 # Using STATIC library to work around Retro68 linker crash with OBJECT libraries
@@ -280,9 +274,6 @@ endif()
 
 # Link Libraries
 # Note: Retro68/GCC expects libraries to be -lName (searching libName.a) or full path.
-
-set(MPW_LIB_DIR "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Libraries/SharedLibraries")
-set(OGL_LIB_DIR "${CMAKE_SOURCE_DIR}/tools/Retro68-src/InterfacesAndLibraries/Libraries")
 
 # --whole-archive forces every .o in game_obj/cgame_obj into the link, so
 # game/cgame functions only reachable via VM_Call dispatch (rather than direct

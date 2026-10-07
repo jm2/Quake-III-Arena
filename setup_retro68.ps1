@@ -5,6 +5,20 @@
 
 $ErrorActionPreference = "Stop"
 
+# Work from the repository root whatever the caller's location (issue #231):
+# run again from there, then give the caller back its location.
+if (-not $Quake3AtRepositoryRoot -and (Get-Location).ProviderPath -ne $PSScriptRoot) {
+    $Quake3AtRepositoryRoot = $true
+    Push-Location -LiteralPath $PSScriptRoot -StackName Quake3Caller
+    try {
+        & $PSCommandPath @args
+        exit $LASTEXITCODE
+    }
+    finally {
+        Pop-Location -StackName Quake3Caller
+    }
+}
+
 # Add default MSYS2 binary path if it exists
 if (Test-Path "C:\msys64\usr\bin") {
     $env:PATH = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;$env:PATH"
@@ -59,6 +73,186 @@ function Read-Retro68Versions {
 }
 $Pins = Read-Retro68Versions (Join-Path (Get-Location) "retro68-versions.txt")
 
+# Retro68 at the pinned commit, as in setup_retro68.sh. An existing checkout
+# is never pulled, switched or updated, its submodules included (issue #406):
+# one at another commit, or with a submodule that is missing, at another
+# commit or in conflict, stops setup before anything changes. That includes
+# the early exit for a working toolchain and the unar build below.
+function Invoke-Git {
+    param([string[]]$Arguments)
+
+    & git @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "git $($Arguments -join ' ') failed (exit status $LASTEXITCODE)."
+    }
+}
+
+# " <commit> <path>" for every submodule, as `git submodule status` flags it:
+# ' ' at the commit Retro68 records, '-' not checked out, '+' at another
+# commit, 'U' in conflict.
+function Get-CheckedOutSubmodules {
+    param([string]$Dir)
+
+    $Status = @(& git -C $Dir submodule status --recursive)
+    if ($LASTEXITCODE -ne 0) {
+        throw "git -C $Dir submodule status --recursive failed (exit status $LASTEXITCODE)."
+    }
+    return @($Status | ForEach-Object {
+        $_.Substring(0, 41) + " " + ($_.Substring(42) -replace " \(.*\)$", "")
+    } | Sort-Object -CaseSensitive)
+}
+$PinnedSubmodules = @($Pins.RETRO68_SUBMODULE | ForEach-Object {
+    $SubmodulePath, $SubmoduleCommit = $_ -split " ", 2
+    " $SubmoduleCommit $SubmodulePath"
+} | Sort-Object -CaseSensitive)
+
+# True when the checkout at $Dir is at the pinned commit with the pinned
+# submodules; otherwise says why.
+function Test-PinnedCheckout {
+    param([string]$Dir)
+
+    $Commit = "not a git checkout"
+    if (Test-Path (Join-Path $Dir ".git")) {
+        $Commit = "$(& git -C $Dir rev-parse --verify HEAD)"
+        if ($LASTEXITCODE -ne 0) {
+            $Commit = "unknown"
+        }
+    }
+    if ($Commit -cne $Pins.RETRO68_COMMIT) {
+        Write-Host "Error: $Dir is at $Commit, but" -ForegroundColor Red
+        Write-Host "retro68-versions.txt pins Retro68 $($Pins.RETRO68_COMMIT)."
+        return $false
+    }
+    $CheckedOutSubmodules = Get-CheckedOutSubmodules $Dir
+    if (($CheckedOutSubmodules -join "`n") -cne ($PinnedSubmodules -join "`n")) {
+        Write-Host "Error: the submodules of $Dir are not the ones retro68-versions.txt pins." -ForegroundColor Red
+        Write-Host "  Checked out (git submodule status --recursive):"
+        $CheckedOutSubmodules | ForEach-Object { Write-Host "    $_" }
+        Write-Host "  Pinned:"
+        $PinnedSubmodules | ForEach-Object { Write-Host "    $_" }
+        return $false
+    }
+    return $true
+}
+
+if (Test-Path $SOURCE_DIR) {
+    Write-Host "Retro68 source already present at $SOURCE_DIR (not pulling)."
+    if (-not (Get-Command "git" -ErrorAction SilentlyContinue)) {
+        Write-Host "Error: 'git' is required to check $SOURCE_DIR against retro68-versions.txt." -ForegroundColor Red
+        exit 1
+    }
+    if (-not (Test-PinnedCheckout $SOURCE_DIR)) {
+        Write-Host "Nothing was changed: setup never pulls, switches or updates an existing"
+        Write-Host "checkout or its submodules. To build the pinned toolchain, move tools\Retro68-src,"
+        Write-Host "tools\Retro68-build and tools\Retro68-work aside and run setup_retro68.ps1 again."
+        exit 1
+    }
+}
+
+# A compiler alone is not a complete install for this project. The renderer
+# also requires prepared OpenGL headers and the generated import library.
+# The tools must also run: after a host OS upgrade they can remain installed
+# but fail to load a DLL (issue #269), and only a full rebuild repairs them.
+# check_retro68.ps1 exits 1 only for tools that cannot run. Any other status
+# means the check itself could not run (for example no usable TEMP
+# directory), which says nothing about the toolchain: stop and change nothing.
+$PreparedOpenGLDir = Join-Path $INSTALL_DIR "powerpc-apple-macos\include"
+$PreparedGl = Join-Path $PreparedOpenGLDir "gl.h"
+$PreparedAgl = Join-Path $PreparedOpenGLDir "agl.h"
+$OpenGLStubLib = Join-Path $SOURCE_DIR "InterfacesAndLibraries\SharedLibraries\libOpenGLLibraryStub.a"
+$MoveBrokenToolchain = $false
+if (((Test-Path "$INSTALL_DIR\bin\powerpc-apple-macos-gcc.exe") -or
+     (Test-Path "$INSTALL_DIR\bin\powerpc-apple-macos-gcc")) -and
+    (Test-Path $PreparedGl) -and
+    (Test-Path $PreparedAgl) -and
+    (Test-Path $OpenGLStubLib)) {
+    $CheckScript = Join-Path (Get-Location) "check_retro68.ps1"
+    $CheckStatus = 3
+    if (Test-Path $CheckScript -PathType Leaf) {
+        try {
+            & $CheckScript -InstallDir $INSTALL_DIR
+            $CheckStatus = $LASTEXITCODE
+        }
+        catch {
+            Write-Host "check_retro68.ps1 failed: $_"
+        }
+    }
+    else {
+        Write-Host "check_retro68.ps1 was not found at $CheckScript."
+    }
+    if ($CheckStatus -eq 0) {
+        Write-Host "Retro68 appears to be installed in $INSTALL_DIR."
+        exit 0
+    }
+    if ($CheckStatus -ne 1) {
+        Write-Host "Error: could not check the installed Retro68 toolchain (exit status $CheckStatus)." -ForegroundColor Red
+        Write-Host "Nothing was changed; fix the problem above and run setup_retro68.ps1 again."
+        exit 1
+    }
+    Write-Host "The installed Retro68 toolchain cannot run (see above); rebuilding it." -ForegroundColor Yellow
+    $MoveBrokenToolchain = $true
+}
+
+Write-Host "Retro68 not found locally."
+Write-Host "NOTE: This script will download and BUILD Retro68 from source."
+Write-Host "This process can take 20-60 minutes."
+Write-Host "Retro68 works best on Windows via Cygwin or MSYS2."
+Start-Sleep -Seconds 3
+
+# Dependency Checking. Retro68's build-toolchain.bash runs make-multiverse.rb,
+# so ruby is needed too, as setup_retro68.sh checks (issue #231).
+$Dependencies = @("cmake", "git", "bison", "flex", "makeinfo", "bash", "ruby")
+$MissingDeps = $false
+
+foreach ($dep in $Dependencies) {
+    if (-not (Get-Command $dep -ErrorAction SilentlyContinue)) {
+        Write-Host "Error: Required command '$dep' not found in PATH." -ForegroundColor Red
+        $MissingDeps = $true
+    }
+}
+
+if ($MissingDeps) {
+    Write-Host "--------------------------------------------------------" -ForegroundColor Yellow
+    Write-Host "Please install missing dependencies manually." -ForegroundColor Yellow
+    Write-Host "Recommended installation via Cygwin or MSYS2 (pacman)."
+    Write-Host "Packages: cmake git bison flex texinfo ruby gcc g++ make boost libmpc-devel mpfr-devel gmp-devel"
+    Write-Host "--------------------------------------------------------"
+    exit 1
+}
+
+
+# A fresh clone is made next to tools\Retro68-src and renamed to it only once
+# it is at the pinned commit and submodules, so a clone or checkout that fails
+# leaves nothing behind that would stop the next run (issue #406).
+if (-not (Test-Path $SOURCE_DIR)) {
+    Write-Host "Checking out Retro68 $($Pins.RETRO68_COMMIT)..." -ForegroundColor Green
+    New-Item -ItemType Directory -Force -Path "tools" | Out-Null
+    $PartialSourceDir = "$SOURCE_DIR.partial"
+    if (Test-Path $PartialSourceDir) {
+        Remove-Item -Recurse -Force $PartialSourceDir
+    }
+    $Cloned = $false
+    try {
+        Invoke-Git @("clone", "--no-checkout", $Pins.RETRO68_URL, $PartialSourceDir)
+        Invoke-Git @("-C", $PartialSourceDir, "-c", "advice.detachedHead=false",
+            "checkout", "--detach", $Pins.RETRO68_COMMIT)
+        Invoke-Git @("-C", $PartialSourceDir, "submodule", "update", "--init", "--recursive")
+        $Cloned = Test-PinnedCheckout $PartialSourceDir
+    }
+    catch {
+        Write-Host "$_" -ForegroundColor Red
+    }
+    if (-not $Cloned) {
+        if (Test-Path $PartialSourceDir) {
+            Remove-Item -Recurse -Force $PartialSourceDir
+        }
+        Write-Host "Error: could not check out Retro68 $($Pins.RETRO68_COMMIT) and its pinned" -ForegroundColor Red
+        Write-Host "submodules (see above). The partial clone was removed; nothing else changed."
+        exit 1
+    }
+    Rename-Item -LiteralPath $PartialSourceDir -NewName (Split-Path $SOURCE_DIR -Leaf)
+}
+
 # Check for unar, build if missing. A unar built here earlier is in tools\unar-bin.
 $BuiltUnarDir = Join-Path (Get-Location) "tools\unar-bin"
 if (Test-Path $BuiltUnarDir) { $env:PATH = "$BuiltUnarDir$([System.IO.Path]::PathSeparator)$env:PATH" }
@@ -75,21 +269,30 @@ if (-not (Get-Command "unar" -ErrorAction SilentlyContinue)) {
     $ToolsDir = "tools"
     if (-not (Test-Path $ToolsDir)) { New-Item -ItemType Directory -Path $ToolsDir | Out-Null }
     
-    # 1. Clone repositories
+    # 1. Clone repositories, pinned like Retro68 (issue #406) so every setup
+    # builds the same unar.
     $XAD_URL = "https://github.com/MacPaw/XADMaster.git"
+    $XAD_COMMIT = "7cb9ee0abbb163f261e4cb74501e15067032319c"
     $UD_URL = "https://github.com/MacPaw/universal-detector.git"
+    $UD_COMMIT = "4eb832d999628edcd3d134e46bd35357c8c99a85"
     
     $XAD_DIR = Join-Path (Get-Location) "$ToolsDir\XADMaster"
     $UD_DIR = Join-Path (Get-Location) "$ToolsDir\UniversalDetector"
     
-    if (-not (Test-Path $XAD_DIR)) {
-        Write-Host "Cloning XADMaster..."
-        git clone "$XAD_URL" "$XAD_DIR"
-    }
-    
-    if (-not (Test-Path $UD_DIR)) {
-        Write-Host "Cloning universal-detector..."
-        git clone "$UD_URL" "$UD_DIR"
+    foreach ($Repository in @(@($XAD_URL, $XAD_DIR, $XAD_COMMIT), @($UD_URL, $UD_DIR, $UD_COMMIT))) {
+        $RepositoryUrl, $RepositoryDir, $RepositoryCommit = $Repository
+        if (-not (Test-Path $RepositoryDir)) {
+            Write-Host "Cloning $RepositoryUrl at $RepositoryCommit..."
+            Invoke-Git @("clone", "--no-checkout", $RepositoryUrl, $RepositoryDir)
+            Invoke-Git @("-C", $RepositoryDir, "-c", "advice.detachedHead=false",
+                "checkout", "--detach", $RepositoryCommit)
+        }
+        $RepositoryHead = "$(& git -C $RepositoryDir rev-parse --verify HEAD)"
+        if ($LASTEXITCODE -ne 0 -or $RepositoryHead -cne $RepositoryCommit) {
+            Write-Host "Error: $RepositoryDir is at $RepositoryHead, not the pinned $RepositoryCommit." -ForegroundColor Red
+            Write-Host "Move it aside and run setup_retro68.ps1 again."
+            exit 1
+        }
     }
     
     # 1.5 Patch Makefiles for Clang/MSYS2
@@ -182,6 +385,11 @@ if (-not (Get-Command "unar" -ErrorAction SilentlyContinue)) {
     
     # Run make using Makefile.windows with explicit PATH export
     bash -c "export PATH=/mingw64/bin:/usr/bin:`$PATH; cd '$XAD_DIR_UNIX' && make -f Makefile.windows clean && make -f Makefile.windows unar lsar"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: building XADMaster failed (exit status $LASTEXITCODE)." -ForegroundColor Red
+        Write-Host "Ensure MSYS2 packages: clang, gnustep-base, and gnustep-make are installed."
+        exit 1
+    }
     
     # 3. Copy binaries
     $UnarExeExe = Join-Path $XAD_DIR "unar.exe"
@@ -204,136 +412,10 @@ if (-not (Get-Command "unar" -ErrorAction SilentlyContinue)) {
         $env:PATH = "$UnarBinDir$([System.IO.Path]::PathSeparator)$env:PATH"
     }
     else {
-        Write-Host "Warning: XADMaster build failed." -ForegroundColor Red
+        Write-Host "Error: the XADMaster build wrote no unar." -ForegroundColor Red
         Write-Host "Ensure MSYS2 packages: clang, gnustep-base, and gnustep-make are installed."
-    }
-}
-
-# A compiler alone is not a complete install for this project. The renderer
-# also requires prepared OpenGL headers and the generated import library.
-# The tools must also run: after a host OS upgrade they can remain installed
-# but fail to load a DLL (issue #269), and only a full rebuild repairs them.
-# check_retro68.ps1 exits 1 only for tools that cannot run. Any other status
-# means the check itself could not run (for example no usable TEMP
-# directory), which says nothing about the toolchain: stop and change nothing.
-$PreparedOpenGLDir = Join-Path $INSTALL_DIR "powerpc-apple-macos\include"
-$PreparedGl = Join-Path $PreparedOpenGLDir "gl.h"
-$PreparedAgl = Join-Path $PreparedOpenGLDir "agl.h"
-$OpenGLStubLib = Join-Path $SOURCE_DIR "InterfacesAndLibraries\SharedLibraries\libOpenGLLibraryStub.a"
-$MoveBrokenToolchain = $false
-if (((Test-Path "$INSTALL_DIR\bin\powerpc-apple-macos-gcc.exe") -or
-     (Test-Path "$INSTALL_DIR\bin\powerpc-apple-macos-gcc")) -and
-    (Test-Path $PreparedGl) -and
-    (Test-Path $PreparedAgl) -and
-    (Test-Path $OpenGLStubLib)) {
-    $CheckScript = Join-Path (Get-Location) "check_retro68.ps1"
-    $CheckStatus = 3
-    if (Test-Path $CheckScript -PathType Leaf) {
-        try {
-            & $CheckScript -InstallDir $INSTALL_DIR
-            $CheckStatus = $LASTEXITCODE
-        }
-        catch {
-            Write-Host "check_retro68.ps1 failed: $_"
-        }
-    }
-    else {
-        Write-Host "check_retro68.ps1 was not found at $CheckScript."
-    }
-    if ($CheckStatus -eq 0) {
-        Write-Host "Retro68 appears to be installed in $INSTALL_DIR."
-        exit 0
-    }
-    if ($CheckStatus -ne 1) {
-        Write-Host "Error: could not check the installed Retro68 toolchain (exit status $CheckStatus)." -ForegroundColor Red
-        Write-Host "Nothing was changed; fix the problem above and run setup_retro68.ps1 again."
         exit 1
     }
-    Write-Host "The installed Retro68 toolchain cannot run (see above); rebuilding it." -ForegroundColor Yellow
-    $MoveBrokenToolchain = $true
-}
-
-Write-Host "Retro68 not found locally."
-Write-Host "NOTE: This script will download and BUILD Retro68 from source."
-Write-Host "This process can take 20-60 minutes."
-Write-Host "Retro68 works best on Windows via Cygwin or MSYS2."
-Start-Sleep -Seconds 3
-
-# Dependency Checking
-# Dependency Checking
-$Dependencies = @("cmake", "git", "bison", "flex", "makeinfo", "bash")
-$MissingDeps = $false
-
-foreach ($dep in $Dependencies) {
-    if (-not (Get-Command $dep -ErrorAction SilentlyContinue)) {
-        Write-Host "Error: Required command '$dep' not found in PATH." -ForegroundColor Red
-        $MissingDeps = $true
-    }
-}
-
-if ($MissingDeps) {
-    Write-Host "--------------------------------------------------------" -ForegroundColor Yellow
-    Write-Host "Please install missing dependencies manually." -ForegroundColor Yellow
-    Write-Host "Recommended installation via Cygwin or MSYS2 (pacman)."
-    Write-Host "Packages: cmake git bison flex texinfo gcc g++ make boost libmpc-devel mpfr-devel gmp-devel"
-    Write-Host "--------------------------------------------------------"
-    exit 1
-}
-
-
-# Retro68 at the pinned commit, as in setup_retro68.sh. An existing checkout
-# is never pulled or switched: one at another commit stops setup before
-# anything changes.
-Write-Host "Checking out Retro68 $($Pins.RETRO68_COMMIT)..." -ForegroundColor Green
-New-Item -ItemType Directory -Force -Path "tools" | Out-Null
-
-function Invoke-Git {
-    param([string[]]$Arguments)
-
-    & git @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "git $($Arguments -join ' ') failed (exit status $LASTEXITCODE)."
-    }
-}
-
-if (-not (Test-Path $SOURCE_DIR)) {
-    Invoke-Git @("clone", "--no-checkout", $Pins.RETRO68_URL, $SOURCE_DIR)
-    Invoke-Git @("-C", $SOURCE_DIR, "-c", "advice.detachedHead=false",
-        "checkout", "--detach", $Pins.RETRO68_COMMIT)
-}
-else {
-    Write-Host "Retro68 source already present at $SOURCE_DIR (not pulling)."
-}
-$SourceCommit = "not a git checkout"
-if (Test-Path (Join-Path $SOURCE_DIR ".git")) {
-    $SourceCommit = "$(& git -C $SOURCE_DIR rev-parse --verify HEAD)"
-    if ($LASTEXITCODE -ne 0) {
-        $SourceCommit = "unknown"
-    }
-}
-if ($SourceCommit -cne $Pins.RETRO68_COMMIT) {
-    Write-Host "Error: $SOURCE_DIR is at $SourceCommit, but" -ForegroundColor Red
-    Write-Host "retro68-versions.txt pins Retro68 $($Pins.RETRO68_COMMIT). Nothing was changed."
-    Write-Host "To build the pinned toolchain, move tools\Retro68-src and tools\Retro68-build"
-    Write-Host "aside and run setup_retro68.ps1 again."
-    exit 1
-}
-Invoke-Git @("-C", $SOURCE_DIR, "submodule", "update", "--init", "--recursive")
-# " <commit> <path>" for every submodule, as `git submodule status` flags it.
-$CheckedOutSubmodules = @(& git -C $SOURCE_DIR submodule status --recursive | ForEach-Object {
-    $_.Substring(0, 41) + " " + ($_.Substring(42) -replace " \(.*\)$", "")
-} | Sort-Object -CaseSensitive)
-$PinnedSubmodules = @($Pins.RETRO68_SUBMODULE | ForEach-Object {
-    $SubmodulePath, $SubmoduleCommit = $_ -split " ", 2
-    " $SubmoduleCommit $SubmodulePath"
-} | Sort-Object -CaseSensitive)
-if (($CheckedOutSubmodules -join "`n") -cne ($PinnedSubmodules -join "`n")) {
-    Write-Host "Error: the submodules of $SOURCE_DIR are not the ones retro68-versions.txt pins." -ForegroundColor Red
-    Write-Host "  Checked out (git submodule status --recursive):"
-    $CheckedOutSubmodules | ForEach-Object { Write-Host "    $_" }
-    Write-Host "  Pinned:"
-    $PinnedSubmodules | ForEach-Object { Write-Host "    $_" }
-    exit 1
 }
 
 # 2. Prepare InterfacesAndLibraries
@@ -401,18 +483,28 @@ if (-not (Test-Path $SDK_DEST)) {
     New-Item -ItemType Directory -Path $SDK_DEST | Out-Null
 }
 
-# Extract function using unar (assuming available as checked)
+# Extract function using unar (assuming available as checked). The archive is
+# hashed again right before it is extracted, since it was checked before the
+# other one (issue #406).
 function Extract-Site {
-    param($File, $DestDir)
+    param($File, $Sha256, $DestDir)
+    if (-not (Test-SitArchive $File $Sha256)) {
+        Write-Host "Error: $File changed after it was checked; it was not extracted." -ForegroundColor Red
+        exit 1
+    }
     if (Test-Path $DestDir) { Remove-Item -Recurse -Force $DestDir }
     Write-Host "Extracting $File..."
     # unar usage: unar -f file.sit -o output_dir
     # we need to be careful with paths in powershell calling binaries
     & unar -f $File -o $DestDir | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: unar could not extract $File (exit status $LASTEXITCODE)." -ForegroundColor Red
+        exit 1
+    }
 }
 
 # Process MPW
-Extract-Site -File $MpwSit -DestDir "tools\temp_mpw"
+Extract-Site -File $MpwSit -Sha256 $Pins.MPW_SHA256 -DestDir "tools\temp_mpw"
 $MPW_I_AND_L = Get-ChildItem -Path "tools\temp_mpw" -Recurse -Directory -Filter "Interfaces&Libraries" | Select-Object -First 1
 if ($MPW_I_AND_L) {
     Write-Host "Injecting MPW Interfaces&Libraries..."
@@ -424,7 +516,7 @@ else {
 }
 
 # Process OpenGL
-Extract-Site -File $OpenGLSit -DestDir "tools\temp_opengl"
+Extract-Site -File $OpenGLSit -Sha256 $Pins.OPENGL_SHA256 -DestDir "tools\temp_opengl"
 $OGL_LIBS = Get-ChildItem -Path "tools\temp_opengl" -Recurse -Directory -Filter "Libraries" | Select-Object -First 1
 $OGL_HEADERS = Get-ChildItem -Path "tools\temp_opengl" -Recurse -Directory -Filter "Headers" | Select-Object -First 1
 
@@ -546,6 +638,9 @@ if ($LASTEXITCODE -eq 0) {
         # MakeImport runs powerpc-apple-macos-as from PATH (issue #387).
         $env:PATH = "$(Join-Path $INSTALL_DIR "bin")$([System.IO.Path]::PathSeparator)$env:PATH"
         & $MakeImport $StubSource $OpenGLStubLib
+        if ($LASTEXITCODE -ne 0) {
+            throw "MakeImport could not generate $OpenGLStubLib (exit status $LASTEXITCODE)."
+        }
     }
 
     if (-not (Test-Path $PreparedGl) -or
@@ -560,3 +655,4 @@ else {
     Write-Host "Build failed." -ForegroundColor Red
     exit 1
 }
+exit 0
