@@ -443,21 +443,36 @@ unsigned Sys_Entropy( void ) {
 Sys_PumpEvents
 
 Queues what has arrived: at most one Event Manager event, the InputSprocket
-mouse, and one network packet.  Called by Sys_GetEvent and, as on retail, by
-the renderer during long frames (tr_backend.c), so that key releases,
-updates and suspend, resume and Apple Events are not left waiting (#19).
-It was empty, so those calls did nothing.  Nothing it calls pumps again.
+mouse, a dedicated server's console line, and one network packet.  Called by
+Sys_GetEvent and, as on retail, by the renderer during long frames
+(tr_backend.c), so that key releases, updates and suspend, resume and Apple
+Events are not left waiting (#19).  It was empty, so those calls did
+nothing.  Nothing it calls pumps again.
 ==================
 */
 void Sys_PumpEvents( void ) {
     static byte sys_packetReceived[MAX_MSGLEN];
     msg_t       netmsg;
     netadr_t    adr;
+    char        *s;
 
     // Pump Mac OS events (keyboard via WaitNextEvent)
     Sys_SendKeyEvents();
     // Pump InputSprocket events (mouse)
     Sys_Input();
+
+    // A dedicated server's console commands, as id's Sys_PumpEvents and
+    // unix_main.c read them
+    s = Sys_ConsoleInput();
+    if ( s ) {
+        char    *b;
+        int     len;
+
+        len = strlen( s ) + 1;
+        b = Z_Malloc( len );
+        strcpy( b, s );
+        Sys_QueEvent( 0, SE_CONSOLE, 0, 0, len, b );
+    }
 
     // Check for network packets and queue them as SE_PACKET (same pattern
     // as unix_main.c). Without this, Sys_GetPacket had no caller at all and

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Issue #230: the SIZE minimum in code/mac/mac_resources.r must hold the
 # engine's fixed demand (hunk, zone, small zone, sound pool, stack and image)
-# with headroom. cmake/mac_partition.py reads the Mac defaults from the sources;
+# with headroom, and Com_InitHunkMemory's MaxBlock() reserve must agree with
+# that budget. cmake/mac_partition.py reads the Mac defaults from the sources;
 # a larger default, or a smaller SIZE, fails here. The Retro68 build runs the
 # same check on the link map, so a larger image fails that build.
 set -euo pipefail
@@ -58,6 +59,32 @@ assert text.replace("\r\n", "\n").count(old) == 1
 text = text.replace(old, '#else\n#define DEF_COMHUNKMEGS "64"').replace(old.replace("\n", "\r\n"), '#else\r\n#define DEF_COMHUNKMEGS "64"')
 open(path, "w", newline="").write(text)
 PY
+expect_refusal host
+
+# The hunk clamp's reserve: too small for the sound pool and headroom, or so
+# large that the default hunk no longer fits beside it at the minimum.
+set_reserve() {
+    python3 - "$Q3_TEST_DIR/root/code/qcommon/common.c" "$1" <<'PY'
+import sys
+path, value = sys.argv[1:]
+text = open(path, newline="").read()
+old = "#define MAC_HUNK_RESERVE_KB\t( 12368 + 8 * 1024 )"
+assert text.count(old) == 1
+open(path, "w", newline="").write(text.replace(old, "#define MAC_HUNK_RESERVE_KB\t" + value))
+PY
+}
+Q3_TEST_CASE="a hunk reserve without the headroom"
+copy_tree
+set_reserve "( 12368 + 4 * 1024 )"
+expect_refusal host
+Q3_TEST_CASE="a hunk reserve that clamps the default hunk at the minimum"
+copy_tree
+set_reserve "( 12368 + 24 * 1024 )"
+expect_refusal host
+Q3_TEST_CASE="no hunk reserve"
+copy_tree
+sed -i 's/^#define MAC_HUNK_RESERVE_KB/#define MAC_HUNK_RESERVE/' "$Q3_TEST_DIR/root/code/qcommon/common.c"
+command grep -q '^#define MAC_HUNK_RESERVE	' "$Q3_TEST_DIR/root/code/qcommon/common.c"
 expect_refusal host
 
 # The link-map check: an image within the allowance passes, a larger one fails.

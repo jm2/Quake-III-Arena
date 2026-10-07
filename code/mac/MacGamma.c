@@ -196,8 +196,10 @@ Ptr GetSystemGammas (void)
 	short devCount = 0;												// number of devices attached
 	Boolean fail = false;
 	GDHandle hGDevice;
+	GammaTblPtr pTableGammaDevice;
+	precDeviceGamma pDevGamma;
 	
-	pSysGammaOut = (precSystemGamma) NewPtr (sizeof (recSystemGamma)); // allocate for structure
+	pSysGammaOut = (precSystemGamma) NewPtrClear (sizeof (recSystemGamma)); // allocate for structure, cleared for DisposeSystemGammas
 	if (!pSysGammaOut)												// was only checked after the deref below
 		return NULL;
 	
@@ -208,7 +210,7 @@ Ptr GetSystemGammas (void)
 		hGDevice = GetNextDevice (hGDevice);						// next device
 	} while (hGDevice);
 	
-	pSysGammaOut->devGamma = (precDeviceGamma *) NewPtr (sizeof (precDeviceGamma) * devCount); // allocate for array of pointers to device records
+	pSysGammaOut->devGamma = (precDeviceGamma *) NewPtrClear (sizeof (precDeviceGamma) * devCount); // allocate for array of pointers to device records
 	if (pSysGammaOut->devGamma)
 	{
 		pSysGammaOut->numDevices = devCount;						// stuff count
@@ -217,11 +219,18 @@ Ptr GetSystemGammas (void)
 		hGDevice = GetDeviceList ();
 		do
 		{
-			pSysGammaOut->devGamma [devCount] = (precDeviceGamma) NewPtr (sizeof (recDeviceGamma));	  // new device record
-			if (pSysGammaOut->devGamma [devCount])					// if we actually allocated memory
+			pDevGamma = (precDeviceGamma) NewPtrClear (sizeof (recDeviceGamma));	  // new device record
+			pSysGammaOut->devGamma [devCount] = pDevGamma;
+			if (pDevGamma)											// if we actually allocated memory
 			{
-				pSysGammaOut->devGamma [devCount]->hGD = hGDevice;										  // stuff handle
-				pSysGammaOut->devGamma [devCount]->pDeviceGamma = (GammaTblPtr)GetDeviceGamma (hGDevice); // copy gamma table
+				pDevGamma->hGD = hGDevice;							// stuff handle
+				pTableGammaDevice = NULL;
+				if ((GetGammaTable (hGDevice, &pTableGammaDevice) == noErr) && pTableGammaDevice) // a device without a gamma table has none to restore
+				{
+					pDevGamma->pDeviceGamma = (GammaTblPtr)CopyGammaTable (pTableGammaDevice); // copy gamma table
+					if (!pDevGamma->pDeviceGamma)					// a gamma we could not save we could not restore
+						fail = true;
+				}
 			}
 			else													// otherwise dump record on exit
 			 fail = true;
@@ -229,6 +238,8 @@ Ptr GetSystemGammas (void)
 			hGDevice = GetNextDevice (hGDevice);						
 		} while (hGDevice);
 	}
+	else															// no array: numDevices stays 0 for the dispose
+		fail = true;
 	if (!fail)														// if we did not fail
 		return (Ptr) pSysGammaOut;									// return pointer to structure
 	else
@@ -249,9 +260,10 @@ void RestoreSystemGammas (Ptr pSystemGammas)
 {
 	short i;
 	precSystemGamma pSysGammaIn = (precSystemGamma) pSystemGammas;
-	if (pSysGammaIn)
+	if (pSysGammaIn && pSysGammaIn->devGamma)
 		for ( i = 0; i < pSysGammaIn->numDevices; i++)			// for all devices
-			RestoreDeviceGamma (pSysGammaIn->devGamma [i]->hGD, (Ptr) pSysGammaIn->devGamma [i]->pDeviceGamma);	// restore gamma
+			if (pSysGammaIn->devGamma [i])						// if pointer is valid
+				RestoreDeviceGamma (pSysGammaIn->devGamma [i]->hGD, (Ptr) pSysGammaIn->devGamma [i]->pDeviceGamma);	// restore gamma
 }
 
 // --------------------------------------------------------------------------
@@ -270,13 +282,16 @@ void DisposeSystemGammas (Ptr* ppSystemGammas)
 		if (pSysGammaIn)
 		{
 			short i;
-			for (i = 0; i < pSysGammaIn->numDevices; i++)		// for all devices
-				if (pSysGammaIn->devGamma [i])						// if pointer is valid
-				{
-					DisposeGammaTable ((Ptr) pSysGammaIn->devGamma [i]->pDeviceGamma); // dump gamma table
-					DisposePtr ((Ptr) pSysGammaIn->devGamma [i]);						 // dump device info
-				}
-			DisposePtr ((Ptr) pSysGammaIn->devGamma);				// dump device pointer array		
+			if (pSysGammaIn->devGamma)
+			{
+				for (i = 0; i < pSysGammaIn->numDevices; i++)	// for all devices
+					if (pSysGammaIn->devGamma [i])					// if pointer is valid
+					{
+						DisposeGammaTable ((Ptr) pSysGammaIn->devGamma [i]->pDeviceGamma); // dump gamma table
+						DisposePtr ((Ptr) pSysGammaIn->devGamma [i]);						 // dump device info
+					}
+				DisposePtr ((Ptr) pSysGammaIn->devGamma);			// dump device pointer array
+			}
 			DisposePtr ((Ptr) pSysGammaIn);							// dump system structure
 			*ppSystemGammas = NULL;
 		}	

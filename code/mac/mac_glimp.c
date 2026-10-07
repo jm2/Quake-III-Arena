@@ -55,16 +55,20 @@ GLimp_ResetDisplay
 =====================
 */
 void GLimp_ResetDisplay( void ) {
-	if ( !glConfig.isFullscreen ) {
+	glConfig.isFullscreen = qfalse;
+
+	// sys_gl.DSpContext is set only while GLimp_ChangeDisplay holds the
+	// display; glConfig is cleared by GLimp_Init, so it can't say
+	if ( !sys_gl.DSpContext ) {
 		return;
 	}
-	glConfig.isFullscreen = qfalse;
 	
 	// put the context into the inactive state
 	DSpContext_SetState( sys_gl.DSpContext, kDSpContextState_Inactive );
 
 	// release the context
 	DSpContext_Release( sys_gl.DSpContext );
+	sys_gl.DSpContext = NULL;
 
 	// shutdown draw sprockets
 	DSpShutdown();
@@ -73,11 +77,15 @@ void GLimp_ResetDisplay( void ) {
 /*
 =====================
 GLimp_ChangeDisplay
+
+Returns qfalse, with DrawSprocket shut down again, if the display could
+not be switched to the mode, so another mode can be tried
 =====================
 */
-void GLimp_ChangeDisplay( int *actualWidth, int *actualHeight ) {
+qboolean GLimp_ChangeDisplay( int *actualWidth, int *actualHeight ) {
 	OSStatus				theError;
 	DSpContextAttributes 	inAttributes;
+	DSpContextReference		context;
 	int						colorBits;
 	
 	// startup DrawSprocket
@@ -86,7 +94,7 @@ void GLimp_ChangeDisplay( int *actualWidth, int *actualHeight ) {
 		ri.Printf( PRINT_ALL, "DSpStartup() failed: %i\n", (int)theError );
 		*actualWidth = 640;
 		*actualHeight = 480;
-		return;
+		return qtrue;	// as retail: carry on in a window, holding nothing
 	}	
 	
 	if ( r_colorbits->integer == 24 || r_colorbits->integer == 32 ) {
@@ -115,7 +123,13 @@ void GLimp_ChangeDisplay( int *actualWidth, int *actualHeight ) {
 	inAttributes.reserved3[2]				= 0;
 	inAttributes.reserved3[3]				= 0;
 
-	theError = DSpFindBestContext( &inAttributes, &sys_gl.DSpContext );
+	context = NULL;
+	theError = DSpFindBestContext( &inAttributes, &context );
+	if ( theError || !context ) {
+		ri.Printf( PRINT_ALL, "DSpFindBestContext() failed: %i\n", (int)theError );
+		DSpShutdown();
+		return qfalse;
+	}
 
 	inAttributes.displayWidth				= glConfig.vidWidth;
 	inAttributes.displayHeight				= glConfig.vidHeight;
@@ -125,21 +139,36 @@ void GLimp_ChangeDisplay( int *actualWidth, int *actualHeight ) {
 	inAttributes.displayBestDepth			= colorBits;
 	inAttributes.pageCount					= 1;
 
-	theError = DSpContext_Reserve( sys_gl.DSpContext, &inAttributes );
+	theError = DSpContext_Reserve( context, &inAttributes );
+	if ( theError ) {
+		ri.Printf( PRINT_ALL, "DSpContext_Reserve() failed: %i\n", (int)theError );
+		DSpShutdown();
+		return qfalse;
+	}
 
 	// find out what res we actually got
-	theError = DSpContext_GetAttributes( sys_gl.DSpContext, &inAttributes );
+	theError = DSpContext_GetAttributes( context, &inAttributes );
+
+	if ( !theError ) {
+		// put the context into the active state
+		theError = DSpContext_SetState( context, kDSpContextState_Active );
+	}
+	if ( theError ) {
+		ri.Printf( PRINT_ALL, "DSpContext activation failed: %i\n", (int)theError );
+		DSpContext_Release( context );
+		DSpShutdown();
+		return qfalse;
+	}
 	
 	*actualWidth = inAttributes.displayWidth;
 	*actualHeight = inAttributes.displayHeight;
 	
-	// put the context into the active state
-	theError = DSpContext_SetState( sys_gl.DSpContext, kDSpContextState_Active );
-
 	// fade back in
 	theError = DSpContext_FadeGammaIn( NULL, NULL );
 
+	sys_gl.DSpContext = context;
 	glConfig.isFullscreen = qtrue;
+	return qtrue;
 }
 
 //=======================================================================
@@ -547,7 +576,9 @@ static qboolean CreateGameWindow( void ) {
 		Sys_LogPrintf("DEBUG: CreateGameWindow: Fullscreen mode, calling GLimp_ChangeDisplay\n");
 		
 		// change display resolution
-		GLimp_ChangeDisplay( &actualWidth, &actualHeight );
+		if ( !GLimp_ChangeDisplay( &actualWidth, &actualHeight ) ) {
+			return qfalse;
+		}
 		
 		x = ( actualWidth - glConfig.vidWidth ) / 2;
 		y = ( actualHeight - glConfig.vidHeight ) / 2;
@@ -606,6 +637,36 @@ static qboolean CreateGameWindow( void ) {
 
 /*
 ===================
+GLimp_ReleaseMode
+
+Undoes, in reverse order, whatever GLimp_SetMode got done, so a failed
+attempt leaves nothing behind for the fallback mode, vid_restart or quit
+===================
+*/
+static void GLimp_ReleaseMode( void ) {
+	if ( sys_gl.context ) {
+		aglSetCurrentContext( NULL );
+		aglSetDrawable( sys_gl.context, NULL );
+		aglDestroyContext( sys_gl.context );
+		sys_gl.context = 0;
+	}
+	if ( sys_gl.fmt ) {
+	    aglDestroyPixelFormat( sys_gl.fmt );
+		sys_gl.fmt = 0;
+	}
+	if ( sys_gl.drawable ) {
+		DisposeWindow( (GrafPort *) sys_gl.drawable );
+		sys_gl.drawable = 0;
+	}
+	GLimp_ResetDisplay();
+
+	// drop the error a failed AGL call left pending, or the next
+	// attempt's first CheckErrors would make it fatal
+	aglGetError();
+}
+
+/*
+===================
 GLimp_SetMode
 
 Returns false if the mode / fullscrenn / options combination failed,
@@ -622,6 +683,7 @@ qboolean GLimp_SetMode( void ) {
 	if ( !CreateGameWindow() ) {
 		Sys_LogPrintf("DEBUG: GLimp_SetMode: CreateGameWindow FAILED\n");
 		ri.Printf( PRINT_ALL, "GLimp_Init: window could not be created" );
+		GLimp_ReleaseMode();
 		return qfalse;
 	}
 	
@@ -687,6 +749,7 @@ qboolean GLimp_SetMode( void ) {
 	if(!sys_gl.fmt) {
 		Sys_LogPrintf("DEBUG: GLimp_SetMode: aglChoosePixelFormat FAILED\n");
 		ri.Printf( PRINT_ALL, "GLimp_Init: Pixel format could not be achieved\n");
+		GLimp_ReleaseMode();
 		return qfalse;
 	}
 	Sys_LogPrintf("DEBUG: GLimp_SetMode: aglChoosePixelFormat succeeded, fmt=0x%x\n", (int)sys_gl.fmt);
@@ -705,6 +768,7 @@ qboolean GLimp_SetMode( void ) {
 	sys_gl.context = aglCreateContext(sys_gl.fmt, NULL);
 	if(!sys_gl.context) {
 		ri.Printf( PRINT_ALL, "GLimp_init: Context could not be created\n");
+		GLimp_ReleaseMode();
 		return qfalse;
 	}
 	
@@ -717,6 +781,7 @@ qboolean GLimp_SetMode( void ) {
 		GLenum err = aglGetError();
         Sys_LogPrintf("DEBUG: GLimp_SetMode: aglSetDrawable FAILED, err=%d\n", (int)err);
 		ri.Printf( PRINT_ALL, "GLimp_Init: Could not attach to context\n" );
+		GLimp_ReleaseMode();
 		return qfalse;
 	}
     Sys_LogPrintf("DEBUG: GLimp_SetMode: aglSetDrawable succeeded. drawable=%p\n", sys_gl.drawable);
@@ -725,6 +790,7 @@ qboolean GLimp_SetMode( void ) {
 	
 	if( !aglSetCurrentContext(sys_gl.context) ) {
 		ri.Printf( PRINT_ALL, "GLimp_Init: Could not attach to context");
+		GLimp_ReleaseMode();
 		return qfalse;
 	}
     Sys_LogPrintf("DEBUG: GLimp_SetMode: aglSetCurrentContext succeeded. drawable=%p\n", sys_gl.drawable);
@@ -768,7 +834,6 @@ Don't return unless OpenGL has been properly initialized
 */
 void GLimp_Init( void ) {
 	GLint		major, minor;
-	static		qboolean	registered;
 	
 	ri.Printf( PRINT_ALL, "--- GLimp_Init ---\n" );
 	Sys_LogPrintf("DEBUG: GLimp_Init: Starting\n");
@@ -782,11 +847,9 @@ void GLimp_Init( void ) {
 	r_ext_texture_filter_anisotropic = ri.Cvar_Get(
 		"r_ext_texture_filter_anisotropic", "0", CVAR_LATCH | CVAR_ARCHIVE );
 	
-	if ( !registered ) {
-		ri.Cmd_AddCommand( "aglDescribe", GLimp_AglDescribe_f );
-		ri.Cmd_AddCommand( "aglState", GLimp_AglState_f );
-		registered = qtrue;
-	}
+	// GLimp_Shutdown removes these, as they use the context
+	ri.Cmd_AddCommand( "aglDescribe", GLimp_AglDescribe_f );
+	ri.Cmd_AddCommand( "aglState", GLimp_AglState_f );
 	
 	memset( &glConfig, 0, sizeof( glConfig ) );
 	memset( &glConfigExt, 0, sizeof( glConfigExt ) );
@@ -795,10 +858,14 @@ void GLimp_Init( void ) {
 	r_swapInterval->modified = qtrue;	// force a set next frame
 
 
-	glConfig.deviceSupportsGamma = qtrue;
-	
 	// FIXME: try for a voodoo first
 	sys_gl.systemGammas = GetSystemGammas();
+
+	// change the desktop gamma only if GLimp_Shutdown can put it back
+	glConfig.deviceSupportsGamma = sys_gl.systemGammas ? qtrue : qfalse;
+	if ( !glConfig.deviceSupportsGamma ) {
+		ri.Printf( PRINT_ALL, "...could not save the desktop gamma, not using hardware gamma\n" );
+	}
 
 	if ( GLimp_SetMode() ) {
 		ri.Printf( PRINT_ALL, "------------------\n" );
@@ -849,25 +916,16 @@ GLimp_Shutdown
 ===============
 */
 void GLimp_Shutdown( void ) {	
+	ri.Cmd_RemoveCommand( "aglDescribe" );
+	ri.Cmd_RemoveCommand( "aglState" );
+
 	if ( sys_gl.systemGammas ) {
 		RestoreSystemGammas( sys_gl.systemGammas );
 		DisposeSystemGammas( &sys_gl.systemGammas );
 		sys_gl.systemGammas = 0;
 	}
 	
-	if ( sys_gl.context ) {
-		aglDestroyContext(sys_gl.context);
-		sys_gl.context = 0;
-	}
-	if ( sys_gl.fmt ) {
-	    aglDestroyPixelFormat(sys_gl.fmt);
-		sys_gl.fmt = 0;
-	}
-	if ( sys_gl.drawable ) {
-		DisposeWindow((GrafPort *) sys_gl.drawable);
-		sys_gl.drawable = 0;
-	}
-	GLimp_ResetDisplay();
+	GLimp_ReleaseMode();
 	
 	memset( &glConfig, 0, sizeof( glConfig ) );
 	memset( &glConfigExt, 0, sizeof( glConfigExt ) );
@@ -904,6 +962,11 @@ void		GLimp_SetGamma( unsigned char red[256],
 							unsigned char blue[256] ) {
 	char	color[3][256];
 	int		i;
+
+	// no snapshot, no way to put the desktop gamma back
+	if ( !sys_gl.systemGammas ) {
+		return;
+	}
 
 	for ( i = 0 ; i < 256 ; i++ ) {
 		color[0][i] = red[i];

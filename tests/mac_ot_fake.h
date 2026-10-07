@@ -17,7 +17,16 @@
  * FAKE_OT_RESOLVER.  Ports in fakeOTBusyPorts are taken: binding one fails
  * with kOTAddressBusyErr, or with fakeOTBindReassigns succeeds on another
  * port as XTI's t_bind may.  The fakeOTFail* settings make one stage fail
- * with FAKE_OT_INJECTED_ERR, and fakeOTResolveError makes resolving fail. */
+ * with FAKE_OT_INJECTED_ERR, and fakeOTResolveError makes resolving fail.
+ *
+ * For NET_Sleep and the asynchronous lookups (#21, #33) the fake keeps a
+ * virtual clock, fakeOTNow, in msec.  OTInstallNotifier and OTSetAsynchronous
+ * are recorded.  On a synchronous endpoint OTResolveAddress blocks, moving the
+ * clock on by the lookup's time.  On an asynchronous one it returns at once
+ * and the lookup completes fakeOTResolveDelay msec later (never if negative),
+ * reported to the notifier when FakeOT_Advance passes that time, as is a
+ * datagram FakeOT_ArriveAt schedules (T_DATA).  WakeUpProcess is counted, so
+ * the fake WaitNextEvent can end its sleep early. */
 #ifndef MAC_OT_FAKE_H
 #define MAC_OT_FAKE_H
 
@@ -46,6 +55,15 @@ typedef UInt32		OTXTILevel;
 typedef UInt32		OTXTIName;
 typedef void		*ProviderRef;
 typedef struct OTConfiguration	*OTConfigurationRef;
+typedef UInt32		OTEventCode;
+typedef void		( *OTNotifyUPP )( void *contextPtr, OTEventCode code, OTResult result, void *cookie );
+typedef struct {
+	unsigned long	highLongOfPSN;
+	unsigned long	lowLongOfPSN;
+} ProcessSerialNumber;
+
+#define pascal					/* Mac calling convention: nothing on the host */
+#define NewOTNotifyUPP( proc )	( proc )
 
 #define kOTInvalidEndpointRef		((EndpointRef)0L)
 #define kOTInvalidConfigurationPtr	((OTConfigurationRef)-1L)
@@ -56,8 +74,10 @@ enum { false = 0, true = 1 };	/* MacTypes.h */
 enum { T_MORE = 0x0001 };
 enum { noErr = 0 };
 enum { kOTLookErr = -3158, kOTNoDataErr = -3162 };
-enum { kOTBadAddressErr = -3150, kOTOutStateErr = -3155, kOTAddressBusyErr = -3172,
-	kOTOutOfMemoryErr = -3211, kOTBadConfigurationErr = -3282 };
+enum { kOTBadAddressErr = -3150, kOTOutStateErr = -3155, kOTStateChangeErr = -3168,
+	kOTBadNameErr = -3170, kOTAddressBusyErr = -3172, kOTOutOfMemoryErr = -3211,
+	kETIMEDOUTErr = -3259, kOTBadConfigurationErr = -3282 };
+enum { T_DATA = 0x0004, T_RESOLVEADDRCOMPLETE = 0x20000009 };
 enum { INET_IP = 0x00, IP_BROADCAST = 0x20, T_YES = 1 };
 enum { kOTAnyInetAddress = 0 };
 enum { AF_DNS = 42 };
@@ -102,6 +122,28 @@ typedef struct {
 	OTAddressType	fAddressType;	/* always AF_DNS */
 	InetDomainName	fName;
 } DNSAddress;
+
+typedef struct {
+	TNetbuf		addr;
+	TNetbuf		opt;
+	int32_t		error;
+} TUDErr;
+
+typedef struct {
+	InetHost		fAddress;
+	InetHost		fNetmask;
+	InetHost		fBroadcastAddr;
+	InetHost		fDefaultGatewayAddr;
+	InetHost		fDNSAddr;
+	UInt16			fVersion;
+	UInt16			fHWAddrLen;
+	UInt8			*fHWAddr;
+	UInt32			fIfMTU;
+	UInt8			*fReservedPtrs[2];
+	InetDomainName	fDomainName;
+	UInt32			fIPSecondaryCount;
+	UInt8			fReserved[252];
+} InetInterfaceInfo;
 
 #define FAKE_OT_ENDPOINT	((EndpointRef)&fakeOTDatagrams)
 #define FAKE_OT_RESOLVER	((EndpointRef)&fakeOTResolvedHost)
@@ -196,25 +238,128 @@ OTByteCount OTInitDNSAddress( DNSAddress *addr, char *str ) {
 	return fakeOTDNSLength;
 }
 
-OSStatus OTResolveAddress( EndpointRef ref, TBind *reqAddr, TBind *retAddr, OTTimeout timeOut ) {
+/* ---------- the virtual clock, notifiers and asynchronous lookups ---------- */
+
+static int		fakeOTNow;				/* msec */
+static int		fakeOTWakeups;			/* WakeUpProcess calls */
+static int		fakeOTProcessKnown;		/* GetCurrentProcess was called */
+static int		fakeOTCountCalls;		/* OTCountDataBytes calls */
+static int		fakeOTResolveDelay;		/* msec a lookup takes; < 0: never completes */
+static int		fakeOTArriveAt = -1;	/* when a scheduled datagram arrives */
+static const UInt8	*fakeOTArriveData;
+static int		fakeOTArriveLength;
+
+/* the lookup in progress on the asynchronous resolver */
+static int		fakeOTResolvePending;
+static int		fakeOTResolveDue;		/* fakeOTNow it completes at, < 0: never */
+static TBind	*fakeOTResolveRet;
+
+static void FakeOT_Notify( EndpointRef ref, OTEventCode code, OTResult result );
+static void FakeOT_QueueDatagram( const UInt8 *data, int length, const UInt8 ip[4], const UInt8 port[2] );
+
+void GetCurrentProcess( ProcessSerialNumber *psn ) {
+	psn->highLongOfPSN = 0;
+	psn->lowLongOfPSN = 5;	/* kCurrentProcess is 2: a real PSN is not */
+	fakeOTProcessKnown = 1;
+}
+
+void WakeUpProcess( const ProcessSerialNumber *psn ) {
+	if ( !fakeOTProcessKnown || psn->lowLongOfPSN != 5 ) {
+		fakeOTWakeups = -1000;	/* woke no process this one knows */
+		return;
+	}
+	fakeOTWakeups++;
+}
+
+/* Resolve the name OTInitDNSAddress built into retAddr, or fail. */
+static OSStatus FakeOT_Resolve( TBind *retAddr ) {
 	InetAddress	result;
 
-	(void)timeOut;
-	fakeOTResolveCalls++;
 	if ( fakeOTResolveError ) {
 		return fakeOTResolveError;
 	}
-	if ( ref != FAKE_OT_RESOLVER || reqAddr->addr.buf != (UInt8 *)fakeOTDNSAddress
-		|| reqAddr->addr.len != fakeOTDNSLength || retAddr->addr.maxlen < sizeof( result ) ) {
-		return kOTNoDataErr;	/* not the request OTInitDNSAddress built */
-	}
 	memcpy( fakeOTResolvedName, fakeOTDNSAddress->fName, sizeof( fakeOTResolvedName ) );
-
 	memset( &result, 0, sizeof( result ) );
 	result.fAddressType = AF_INET;
 	result.fHost = fakeOTResolvedHost;
 	memcpy( retAddr->addr.buf, &result, sizeof( result ) );
 	retAddr->addr.len = sizeof( result );
+	return 0;
+}
+
+/* Move the clock on to when, delivering what falls due on the way. */
+static void FakeOT_Advance( int when ) {
+	static const UInt8 ip[4] = { 10, 0, 0, 9 }, port[2] = { 0x6d, 0x40 };
+
+	for ( ;; ) {
+		if ( fakeOTArriveAt >= 0 && fakeOTArriveAt <= when ) {
+			fakeOTNow = fakeOTArriveAt;
+			fakeOTArriveAt = -1;
+			FakeOT_QueueDatagram( fakeOTArriveData, fakeOTArriveLength, ip, port );
+			FakeOT_Notify( FAKE_OT_ENDPOINT, T_DATA, 0 );
+		} else if ( fakeOTResolvePending && fakeOTResolveDue >= 0 && fakeOTResolveDue <= when ) {
+			fakeOTNow = fakeOTResolveDue;
+			fakeOTResolvePending = 0;
+			FakeOT_Notify( FAKE_OT_RESOLVER, T_RESOLVEADDRCOMPLETE, FakeOT_Resolve( fakeOTResolveRet ) );
+		} else {
+			break;
+		}
+	}
+	if ( fakeOTNow < when ) {
+		fakeOTNow = when;
+	}
+}
+
+/* The next time something falls due, or -1. */
+static int FakeOT_NextDue( void ) {
+	int due = -1;
+
+	if ( fakeOTArriveAt >= 0 ) {
+		due = fakeOTArriveAt;
+	}
+	if ( fakeOTResolvePending && fakeOTResolveDue >= 0 && ( due < 0 || fakeOTResolveDue < due ) ) {
+		due = fakeOTResolveDue;
+	}
+	return due;
+}
+
+/* A datagram arrives on the game endpoint after delay msec. */
+static void FakeOT_ArriveAt( int delay, const UInt8 *data, int length ) {
+	fakeOTArriveAt = fakeOTNow + delay;
+	fakeOTArriveData = data;
+	fakeOTArriveLength = length;
+}
+
+static int FakeOT_IsAsync( EndpointRef ref );
+
+OSStatus OTResolveAddress( EndpointRef ref, TBind *reqAddr, TBind *retAddr, OTTimeout timeOut ) {
+	fakeOTResolveCalls++;
+	if ( ref != FAKE_OT_RESOLVER || reqAddr->addr.buf != (UInt8 *)fakeOTDNSAddress
+		|| reqAddr->addr.len != fakeOTDNSLength || retAddr->addr.maxlen < sizeof( InetAddress ) ) {
+		return kOTNoDataErr;	/* not the request OTInitDNSAddress built */
+	}
+	if ( !FakeOT_IsAsync( ref ) ) {
+		/* synchronous: the whole lookup happens in here, the Mac frozen */
+		if ( fakeOTResolveDelay < 0 || fakeOTResolveDelay > (int)timeOut ) {
+			FakeOT_Advance( fakeOTNow + timeOut );
+			return kETIMEDOUTErr;
+		}
+		FakeOT_Advance( fakeOTNow + fakeOTResolveDelay );
+		return FakeOT_Resolve( retAddr );
+	}
+	if ( fakeOTResolvePending ) {
+		return kOTStateChangeErr;	/* one lookup at a time */
+	}
+	fakeOTResolvePending = 1;
+	fakeOTResolveRet = retAddr;
+	fakeOTResolveDue = -1;
+	if ( fakeOTResolveDelay >= 0 ) {
+		/* OT's own timeout reports a lookup that takes too long */
+		fakeOTResolveDue = fakeOTNow + ( fakeOTResolveDelay > (int)timeOut ? (int)timeOut : fakeOTResolveDelay );
+		if ( fakeOTResolveDelay > (int)timeOut ) {
+			fakeOTResolveError = kETIMEDOUTErr;
+		}
+	}
 	return 0;
 }
 
@@ -228,6 +373,9 @@ typedef struct {
 	EndpointRef	ref;
 	int			opened, closed;		/* times */
 	int			nonBlocking;
+	int			async;
+	OTNotifyUPP	notifier;
+	void		*context;
 	int			bound;
 	InetPort	port;				/* as bound */
 	InetHost	host;
@@ -247,6 +395,8 @@ static int		fakeOTFailConfig;		/* this OTCreateConfiguration call (from 1) retur
 static int		fakeOTFailOpen;			/* this OTOpenEndpoint call (from 1) fails */
 static int		fakeOTFailNonBlocking;	/* OTSetNonBlocking fails */
 static EndpointRef	fakeOTFailBind;		/* OTBind on this endpoint fails */
+static EndpointRef	fakeOTFailNotifier;	/* OTInstallNotifier on this endpoint fails */
+static int		fakeOTFailAsync;		/* OTSetAsynchronous fails */
 
 static void FakeOT_ResetLifetime( void ) {
 	memset( fakeOTEndpoints, 0, sizeof( fakeOTEndpoints ) );
@@ -256,8 +406,14 @@ static void FakeOT_ResetLifetime( void ) {
 	fakeOTOpenCalls = fakeOTBindCalls = fakeOTMisuse = 0;
 	fakeOTBusyCount = fakeOTBindReassigns = 0;
 	fakeOTFailInit = fakeOTFailConfig = fakeOTFailOpen = fakeOTFailNonBlocking = 0;
-	fakeOTFailBind = kOTInvalidEndpointRef;
+	fakeOTFailBind = fakeOTFailNotifier = kOTInvalidEndpointRef;
+	fakeOTFailAsync = 0;
 	fakeOTResolveError = noErr;
+	fakeOTNow = 1000;
+	fakeOTWakeups = fakeOTProcessKnown = fakeOTCountCalls = 0;
+	fakeOTResolveDelay = 30;
+	fakeOTArriveAt = -1;
+	fakeOTResolvePending = 0;
 }
 
 static void FakeOT_BusyPort( int port ) {
@@ -327,7 +483,9 @@ EndpointRef OTOpenEndpoint( OTConfigurationRef config, OTOpenFlags oflag, TEndpo
 
 	(void)oflag;
 	fakeOTOpenCalls++;
-	if ( !fakeOTInited || fakeOTOpenCalls > 2 ) {
+	/* the first is the game endpoint, the rest resolvers, one at a time */
+	ep = &fakeOTEndpoints[fakeOTOpenCalls == 1 ? 0 : 1];
+	if ( !fakeOTInited || ep->opened > ep->closed ) {
 		fakeOTMisuse++;
 		*err = kOTOutStateErr;
 		return kOTInvalidEndpointRef;
@@ -340,9 +498,9 @@ EndpointRef OTOpenEndpoint( OTConfigurationRef config, OTOpenFlags oflag, TEndpo
 		*err = FAKE_OT_INJECTED_ERR;
 		return kOTInvalidEndpointRef;
 	}
-	ep = &fakeOTEndpoints[fakeOTOpenCalls - 1];
 	ep->opened++;
-	ep->nonBlocking = ep->bound = 0;
+	ep->nonBlocking = ep->async = ep->bound = 0;
+	ep->notifier = NULL;
 	if ( info ) {
 		memset( info, 0, sizeof( *info ) );
 		info->addr = sizeof( InetAddress );
@@ -362,6 +520,66 @@ OSStatus OTSetNonBlocking( ProviderRef ref ) {
 		return FAKE_OT_INJECTED_ERR;
 	}
 	ep->nonBlocking = 1;
+	return noErr;
+}
+
+OSStatus OTSetAsynchronous( ProviderRef ref ) {
+	fakeOTEndpoint_t *ep = FakeOT_Endpoint( ref );
+
+	if ( !ep ) {
+		return kOTOutStateErr;
+	}
+	if ( !ep->bound || !ep->notifier ) {
+		fakeOTMisuse++;		/* bound synchronously first, completions need a notifier */
+	}
+	if ( fakeOTFailAsync ) {
+		return FAKE_OT_INJECTED_ERR;
+	}
+	ep->async = 1;
+	return noErr;
+}
+
+OSStatus OTInstallNotifier( ProviderRef ref, OTNotifyUPP proc, void *contextPtr ) {
+	fakeOTEndpoint_t *ep = FakeOT_Endpoint( ref );
+
+	if ( !ep || !proc || ep->notifier ) {
+		fakeOTMisuse++;
+		return kOTOutStateErr;
+	}
+	if ( !fakeOTProcessKnown ) {
+		fakeOTMisuse++;		/* a notifier that cannot wake the process yet */
+	}
+	if ( ref == fakeOTFailNotifier ) {
+		return FAKE_OT_INJECTED_ERR;
+	}
+	ep->notifier = proc;
+	ep->context = contextPtr;
+	return noErr;
+}
+
+static int FakeOT_IsAsync( EndpointRef ref ) {
+	return ref == FAKE_OT_RESOLVER && fakeOTEndpoints[1].opened > fakeOTEndpoints[1].closed
+		&& fakeOTEndpoints[1].async;
+}
+
+/* Call ref's notifier, as OT does at deferred task time, if it has one. */
+static void FakeOT_Notify( EndpointRef ref, OTEventCode code, OTResult result ) {
+	fakeOTEndpoint_t *ep = &fakeOTEndpoints[ref == FAKE_OT_RESOLVER];
+
+	if ( ep->opened > ep->closed && ep->notifier ) {
+		ep->notifier( ep->context, code, result, NULL );
+	}
+}
+
+OTResult OTCountDataBytes( EndpointRef ref, OTByteCount *countPtr ) {
+	fakeOTCountCalls++;
+	if ( !FakeOT_Endpoint( ref ) ) {
+		return kOTOutStateErr;
+	}
+	if ( ref != FAKE_OT_ENDPOINT || fakeOTNext == fakeOTQueued ) {
+		return kOTNoDataErr;
+	}
+	*countPtr = fakeOTDatagrams[fakeOTNext].length - fakeOTOffset;
 	return noErr;
 }
 
@@ -418,6 +636,9 @@ OSStatus OTCloseProvider( ProviderRef ref ) {
 	}
 	ep->closed++;
 	ep->bound = 0;
+	if ( ref == FAKE_OT_RESOLVER ) {
+		fakeOTResolvePending = 0;	/* closing abandons the lookup: no notification */
+	}
 	return noErr;
 }
 

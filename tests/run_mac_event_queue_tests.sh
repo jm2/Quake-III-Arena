@@ -5,14 +5,16 @@ Q3_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 Q3_TEST_DIR="$(mktemp -d -p "${TMPDIR:-/var/tmp}" q3-mac-event-queue.XXXXXX)"
 trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 
-# Issues #256, #291, #18, #17 and #19: classic Mac modifier keys,
-# suspend/resume, the event queue, InputSprocket setup and Apple Events.
-# mac_main.c and mac_event.c need the whole Mac Toolbox, so the fixture takes
-# the event queue (from "// Event Queue" to the "// mac_event.c" line after
-# it), Sys_GetEvent and Sys_PumpEvents from mac_main.c, and the functions that
-# turn Event Manager events into key events, updates and Apple Events from
-# mac_event.c, verbatim, and all of mac_input.c after its #includes (each with
-# a #line so reports name those files), and fakes the Toolbox and
+# Issues #256, #291, #18, #21, #17 and #19: classic Mac modifier keys,
+# suspend/resume, the event queue, dedicated console input, InputSprocket
+# setup and Apple Events.  mac_main.c, mac_event.c and mac_console.c need the
+# whole Mac Toolbox, so the fixture takes the event queue (from "// Event
+# Queue" to the "// mac_event.c" line after it), Sys_GetEvent and
+# Sys_PumpEvents from mac_main.c, the functions that turn Event Manager events
+# into key events, updates and Apple Events from mac_event.c, and the
+# console's line input from mac_console.c, verbatim, and all of mac_input.c
+# after its #includes (each with a #line so reports name those files), and
+# fakes the Toolbox and
 # InputSprocket around them.  Sys_QueEvent is renamed so the fixture can
 # wrap it and fail any Com_Printf from inside the queue.
 Q3_TEST_EXTRACT() {
@@ -51,6 +53,16 @@ done
 Q3_TEST_EXTRACT '^static[[:space:]]+void[[:space:]]+Sys_InstallAppleEventHandler[[:space:]]*[(][^;]*$' "$Q3_TEST_EVENT" "$Q3_TEST_DIR/mac_event_extracted.c"
 Q3_TEST_EXTRACT '^void[[:space:]]+Sys_InitAppleEvents[[:space:]]*[(][^;]*$' "$Q3_TEST_EVENT" "$Q3_TEST_DIR/mac_event_extracted.c"
 Q3_TEST_EXTRACT '^void[[:space:]]+Sys_SendKeyEvents[[:space:]]*[(][^;]*$' "$Q3_TEST_EVENT" "$Q3_TEST_DIR/mac_event_extracted.c"
+Q3_TEST_EXTRACT '^qboolean[[:space:]]+Sys_WaitEvent[[:space:]]*[(][^;]*$' "$Q3_TEST_EVENT" "$Q3_TEST_DIR/mac_event_extracted.c"
+Q3_TEST_CONSOLE="$Q3_TEST_ROOT/code/mac/mac_console.c"
+awk -v file="$Q3_TEST_CONSOLE" '
+    /^#define[[:space:]]+CONSOLE_MASK[[:space:]]/ || /^static[[:space:]]+(char|int)[[:space:]]+console/ {
+        printf "#line %d \"%s\"\n%s\n", NR, file, $0; count++ }
+    END { exit count == 3 ? 0 : 1 }
+' "$Q3_TEST_CONSOLE" > "$Q3_TEST_DIR/mac_console_extracted.c" ||
+    { echo "run_mac_event_queue_tests: no console ring in $Q3_TEST_CONSOLE" >&2; exit 1; }
+Q3_TEST_EXTRACT '^qboolean[[:space:]]+Sys_ConsoleEvent[[:space:]]*[(][^;]*$' "$Q3_TEST_CONSOLE" "$Q3_TEST_DIR/mac_console_extracted.c"
+Q3_TEST_EXTRACT '^char[[:space:]]*[*]Sys_ConsoleInput[[:space:]]*[(][^;]*$' "$Q3_TEST_CONSOLE" "$Q3_TEST_DIR/mac_console_extracted.c"
 Q3_TEST_INPUT="$Q3_TEST_ROOT/code/mac/mac_input.c"
 awk -v file="$Q3_TEST_INPUT" '
     found { print }
@@ -70,6 +82,7 @@ for Q3_TEST_CASE in modifier-alone modifier-alone-fullscreen background-modifier
         suspend-releases isp-press-at-suspend isp-press-during-suspend no-isp \
         cursor-after-shutdown \
         overflow overflow-releases \
+        console-dedicated console-long console-client wait-cancel \
         isp-shuffled isp-many-buttons isp-over-capacity isp-many-devices isp-errors \
         isp-no-usable-mouse isp-activate-fails \
         apple-event-quit apple-event-open update-events suspend-hilite pump-events; do

@@ -38,11 +38,20 @@
  * front window is unhighlighted on suspend and highlighted on resume; and
  * Sys_PumpEvents, which the renderer calls during long frames, pumps.
  *
+ * #21: a dedicated server has no game window, so, as in id's SIOUX version,
+ * keys typed go to the console window: echoed there, and each line handed to
+ * the engine as an SE_CONSOLE event by Sys_GetEvent, with Delete taking back
+ * a character.  A line longer than the ring is cut, not overflowed.
+ * Command keys, and every key in a game that is not dedicated, still reach
+ * the game.  Sys_WaitEvent, which NET_Sleep and the name lookup wait in,
+ * passes its sleep to WaitNextEvent and reports Esc and Command-period.
+ *
  * The runner extracts the real queue (Sys_QueEvent and its helpers),
  * Sys_GetEvent and Sys_PumpEvents from mac_main.c, and Sys_MsecForMacEvent,
  * vkeyToQuakeKey, DoKeyDown, DoKeyUp, Sys_ModifierEvents, DoOSEvent,
- * DoUpdate, the Apple Event handlers, Sys_InitAppleEvents and
- * Sys_SendKeyEvents from mac_event.c, verbatim, and includes all of
+ * DoUpdate, the Apple Event handlers, Sys_InitAppleEvents, Sys_SendKeyEvents
+ * and Sys_WaitEvent from mac_event.c, the console ring, Sys_ConsoleEvent and
+ * Sys_ConsoleInput from mac_console.c, verbatim, and includes all of
  * mac_input.c after its #includes (Sys_QueEvent renamed
  * Sys_QueEvent_extracted, so a wrapper can tell when the queue is running).
  * The Event Manager is a fake that returns scripted events and otherwise null
@@ -113,8 +122,10 @@ static Boolean NextEvent( EventRecord *event ) {
 	return 0;
 }
 
+static long		lastSleep = -1;
 static Boolean WaitNextEvent( EventMask mask, EventRecord *event, unsigned long sleep, void *rgn ) {
-	(void)mask; (void)sleep; (void)rgn;
+	(void)mask; (void)rgn;
+	lastSleep = sleep;
 	return NextEvent( event );
 }
 static Boolean GetOSEvent( EventMask mask, EventRecord *event ) {
@@ -558,6 +569,7 @@ void Sys_QueEvent( int time, sysEventType_t type, int value, int value2, int ptr
 void Sys_QueEvent_extracted( int time, sysEventType_t type, int value, int value2, int ptrLength, void *ptr );
 void Sys_ReleaseKeys( void );
 void Sys_SendKeyEvents( void );
+qboolean Sys_WaitEvent( long sleepTicks, qboolean *cancel );
 void Sys_ModifierEvents( int modifiers );
 void Sys_Input( void );
 void Sys_SuspendInput( void );
@@ -566,7 +578,6 @@ void Sys_ShutdownInput( void );
 void Sys_InitInput( void );
 void Sys_InitAppleEvents( void );
 void Sys_PumpEvents( void );
-static qboolean Sys_ConsoleEvent( EventRecord *event ) { (void)event; return qfalse; }
 void DoMouseDown( EventRecord *event ) { (void)event; }
 void DoMouseUp( EventRecord *event ) { (void)event; }
 void DoDiskEvent( EventRecord *event ) { (void)event; }
@@ -618,6 +629,23 @@ void QDECL Com_Printf( const char *fmt, ... ) {
 	va_end( ap );
 }
 
+/* what the console echoes */
+static char			echoed[4096];
+static int ConsoleEcho( const char *fmt, ... ) {
+	va_list	ap;
+	size_t	len = strlen( echoed );
+
+	va_start( ap, fmt );
+	vsnprintf( echoed + len, sizeof( echoed ) - len, fmt, ap );
+	va_end( ap );
+	return 0;
+}
+#define printf		ConsoleEcho
+#define fflush( f )	( (void)( f ) )
+#include "mac_console_extracted.c"
+#undef printf
+#undef fflush
+
 #include "mac_event_extracted.c"
 #include "mac_main_extracted.c"
 #include "mac_input_extracted.c"
@@ -630,6 +658,8 @@ static int			keyDownState[256];
 static int			downEvents[256], upEvents[256];
 static int			packetsSeen, lastPacket;
 static int			mouseX, mouseY;
+static char			consoleLines[4096];
+static int			consoleEvents;
 
 static void Check( int ok, const char *message ) {
 	if ( !ok ) {
@@ -668,6 +698,12 @@ static void Frame( void ) {
 		if ( ev.evType == SE_MOUSE ) {
 			mouseX += ev.evValue;
 			mouseY += ev.evValue2;
+		}
+		if ( ev.evType == SE_CONSOLE ) {
+			Check( ev.evPtrLength == (int)strlen( ev.evPtr ) + 1, "a console line comes with its length" );
+			consoleEvents++;
+			strncat( consoleLines, ev.evPtr, sizeof( consoleLines ) - strlen( consoleLines ) - 2 );
+			strcat( consoleLines, "\n" );
 		}
 		if ( ev.evType == SE_PACKET ) {
 			packetsSeen++;
@@ -1153,6 +1189,84 @@ static void PumpEvents( void ) {
 	Check( downEvents['w'] == 1 && downEvents[K_MOUSE1] == 1, "Sys_PumpEvents queued the key and the button" );
 }
 
+/* #21: type text at the console, a frame per key, as the Mac delivers them */
+static void Type( const char *text, int keyCode ) {
+	for ( ; *text ; text++ ) {
+		PostEvent( keyDown, ( keyCode << 8 ) | (unsigned char)*text );
+		Frame();
+	}
+}
+
+static void ConsoleDedicated( void ) {
+	dedicatedCvar.integer = 1;
+	Frame();
+	ClearCounts();
+	Type( "statux\bs\r", 0x24 );
+	Check( !strcmp( consoleLines, "status\n" ), "a line typed at the console is one console command" );
+	Type( "map q3dm1\r", 0x24 );
+	Type( "\r", 0x24 );		/* an empty line */
+	Type( "quit", 0x24 );
+	Check( !strcmp( consoleLines, "status\nmap q3dm1\n\n" ) && consoleEvents == 3,
+		"each line is a command once it is entered" );
+	Type( "\b\b\b\b\b\b", 0x33 );	/* deletes quit, and no further */
+	Type( "\r", 0x24 );
+	Check( !strcmp( consoleLines, "status\nmap q3dm1\n\n\n" ) && consoleEvents == 4,
+		"Delete takes back the line, and stops at its start" );
+	Check( !strcmp( echoed, "statux\033[D \033[Ds\nmap q3dm1\n\nquit"
+		"\033[D \033[D\033[D \033[D\033[D \033[D\033[D \033[D\n" ), "what is typed is echoed" );
+	Check( !AnyKeyDown() && !downEvents[K_ENTER] && !downEvents[K_BACKSPACE], "the console keys reach no game" );
+	/* Command-Q is still the menus' */
+	macModifiers = btnState | cmdKey;
+	PostEvent( keyDown, ( 0x0C << 8 ) | 'q' );
+	Frame();
+	Check( downEvents['q'] == 1 && consoleEvents == 4, "a command key is not typed at the console" );
+}
+
+static void ConsoleLong( void ) {
+	static char text[1201];
+	int length;
+
+	dedicatedCvar.integer = 1;
+	memset( text, 'x', 1200 );
+	Type( text, 0x07 );
+	Type( "\r", 0x24 );
+	length = strlen( consoleLines );
+	Check( consoleEvents == 1 && length == 1024 && consoleLines[1023] == '\n',
+		"a line longer than the ring is cut to 1023 characters" );
+	echoed[0] = consoleLines[0] = 0;
+	Type( "status\r", 0x24 );
+	Check( !strcmp( consoleLines, "status\n" ) && !strcmp( echoed, "status\n" ), "and the next line is whole" );
+}
+
+static void ConsoleClient( void ) {
+	Frame();
+	ClearCounts();
+	Type( "a", 0x00 );
+	Type( "\r", 0x24 );
+	Check( consoleEvents == 0 && !echoed[0], "a game that is not dedicated keeps its keys" );
+	Check( downEvents['a'] == 1, "and gets them as key events" );
+}
+
+static void WaitCancel( void ) {
+	qboolean cancel;
+
+	cancel = qfalse;
+	Check( !Sys_WaitEvent( 7, &cancel ) && lastSleep == 7 && !cancel, "with no event the wait sleeps as asked" );
+	PostEvent( keyDown, ( 0x00 << 8 ) | 'a' );
+	Check( Sys_WaitEvent( 3, &cancel ) && lastSleep == 3 && !cancel, "a key is an event, not a cancel" );
+	PostEvent( keyDown, ( 0x35 << 8 ) | 27 );
+	Check( Sys_WaitEvent( 3, &cancel ) && cancel, "Esc cancels" );
+	cancel = qfalse;
+	macModifiers = btnState | cmdKey;
+	PostEvent( keyDown, ( 0x2F << 8 ) | '.' );
+	Check( Sys_WaitEvent( 3, &cancel ) && cancel, "Command-period cancels" );
+	macModifiers = btnState;
+	PostEvent( keyDown, ( 0x35 << 8 ) | 27 );
+	Check( Sys_WaitEvent( 3, NULL ), "a wait that cannot be cancelled takes Esc as a key" );
+	Sys_SendKeyEvents();
+	Check( lastSleep == 0, "Sys_SendKeyEvents does not sleep" );
+}
+
 int main( int argc, char **argv ) {
 	if ( argc != 2 ) {
 		fprintf( stderr, "usage: %s case\n", argv[0] );
@@ -1221,6 +1335,14 @@ int main( int argc, char **argv ) {
 		SuspendHilite();
 	} else if ( !strcmp( currentCase, "pump-events" ) ) {
 		PumpEvents();
+	} else if ( !strcmp( currentCase, "console-dedicated" ) ) {
+		ConsoleDedicated();
+	} else if ( !strcmp( currentCase, "console-long" ) ) {
+		ConsoleLong();
+	} else if ( !strcmp( currentCase, "console-client" ) ) {
+		ConsoleClient();
+	} else if ( !strcmp( currentCase, "wait-cancel" ) ) {
+		WaitCancel();
 	} else {
 		fprintf( stderr, "unknown case %s\n", currentCase );
 		return 2;

@@ -33,6 +33,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <winsock.h>
 #endif
 #endif
+#ifdef __MACOS__
+#include <MacMemory.h>
+#endif
 
 int demo_protocols[] =
 { 66, 67, 68, 0 };
@@ -47,6 +50,16 @@ int demo_protocols[] =
 #else
 #define DEF_COMHUNKMEGS "56"
 #define DEF_COMZONEMEGS "16"
+#endif
+#ifdef __MACOS__
+// What the hunk leaves free in the application heap for allocations made
+// after it (issue #230): the sound pool at the Mac com_soundMegs default
+// (4 * 1536 buffers of 2060 bytes, plus the 8 KB scratch buffer: 12,368 KB)
+// and 8 MB for AGL/OpenGL, the Sound Manager, InputSprocket and
+// fragmentation.  The zone and small zone are allocated before the hunk, so
+// MaxBlock() already leaves them out.  cmake/mac_partition.py checks this
+// against the SIZE minimum.
+#define MAC_HUNK_RESERVE_KB	( 12368 + 8 * 1024 )
 #endif
 
 int		com_argc;
@@ -1630,6 +1643,39 @@ void Com_InitHunkMemory( void ) {
 	} else {
 		s_hunkTotal = cv->integer * 1024 * 1024;
 	}
+
+#ifdef __MACOS__
+	// The Finder gives the application one fixed partition, and Retro68's
+	// calloc is NewPtrClear in its heap.  A com_hunkMegs archived from a PC
+	// config (often 128) would fail to allocate, or leave too little for the
+	// sound pool and AGL, so take only what fits beside MAC_HUNK_RESERVE_KB.
+	// The cvar keeps the value the user set.
+	{
+		long	largest = MaxBlock() - 31;
+		long	reserve = MAC_HUNK_RESERVE_KB * 1024L;
+		int		requested = cv->integer < nMinAlloc ? nMinAlloc : cv->integer;
+		int		fits = largest > reserve ? ( largest - reserve ) / ( 1024 * 1024 ) : 0;
+
+		if ( requested > fits ) {
+			if ( largest < (long)nMinAlloc * 1024 * 1024 ) {
+				Sys_Error( "Not enough memory for the %i MB hunk (the largest free block is %li KB).\n"
+					"Give Quake 3 at least %li KB more memory in the Finder's Get Info window.",
+					nMinAlloc, ( largest + 31 ) / 1024,
+					( (long)nMinAlloc * 1024 * 1024 + reserve - largest + 1023 ) / 1024 );
+			}
+			if ( fits < nMinAlloc ) {
+				fits = nMinAlloc;
+				Com_Printf( "WARNING: the minimum %i MB hunk leaves less than %i KB for sound and OpenGL; "
+					"give Quake 3 more memory in the Finder's Get Info window.\n", nMinAlloc, MAC_HUNK_RESERVE_KB );
+			}
+			if ( requested > fits ) {
+				Com_Printf( "com_hunkMegs %i does not fit in this memory partition, allocating %i megs. "
+					"Give Quake 3 more memory in the Finder's Get Info window to use more.\n", requested, fits );
+			}
+			s_hunkTotal = fits * 1024 * 1024;
+		}
+	}
+#endif
 
 
 	// bk001205 - was malloc

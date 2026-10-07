@@ -409,9 +409,24 @@ Sys_SendKeyEvents
 ==================
 */
 void Sys_SendKeyEvents (void) {
+	Sys_WaitEvent( 0, NULL );
+}
+
+/*
+==================
+Sys_WaitEvent
+
+Handles one Mac event as Sys_SendKeyEvents does, but lets WaitNextEvent sleep
+up to sleepTicks for it, giving the time to other processes: NET_Sleep and
+the name lookup in Sys_StringToAdr wait here.  Returns qtrue when an event
+was handled.  *cancel, when given, is set by Esc or Command-period.
+==================
+*/
+qboolean Sys_WaitEvent( long sleepTicks, qboolean *cancel ) {
 	Boolean		   gotEvent;
 	EventRecord	   event;
     EventMask      mask = everyEvent;
+	int			   c;
 
     if (ignoreUpdateEvents) {
         mask &= ~updateMask;
@@ -422,7 +437,7 @@ void Sys_SendKeyEvents (void) {
 		// this call involves 68k code and task switching.
 		// do it on the desktop, or if they explicitly ask for
 		// it when fullscreen
-		gotEvent = WaitNextEvent(mask, &event, 0, nil);
+		gotEvent = WaitNextEvent(mask, &event, sleepTicks, nil);
 	} else {
 		gotEvent = GetOSEvent( mask, &event );
 	}
@@ -439,13 +454,20 @@ void Sys_SendKeyEvents (void) {
 	sys_lastEventTic = event.when;
 
 	if ( !gotEvent ) {
-		return;
+		return qfalse;
 	}
     
     //Sys_LogPrintf("Sys_SendKeyEvents: Processing event types=%d\n", event.what);
 
+	if ( cancel && event.what == keyDown ) {
+		c = event.message & charCodeMask;
+		if ( c == 27 || ( c == '.' && ( event.modifiers & cmdKey ) ) ) {
+			*cancel = qtrue;
+		}
+	}
+
 	if ( Sys_ConsoleEvent(&event) ) {
-		return;
+		return qtrue;
 	}
 	switch(event.what)
 	{
@@ -498,4 +520,5 @@ void Sys_SendKeyEvents (void) {
 		break;
 	}
     //Sys_LogPrintf("Sys_SendKeyEvents: Done\n");
+	return qtrue;
 }

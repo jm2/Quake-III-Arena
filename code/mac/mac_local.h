@@ -340,6 +340,7 @@ extern macGlInfo sys_gl;
 extern	int	vkeyToQuakeKey[256];
 void Sys_SendKeyEvents (void);
 void Sys_InitAppleEvents( void );
+qboolean Sys_WaitEvent( long sleepTicks, qboolean *cancel );
 
 // mac_net.c
 void Sys_InitNetworking( void );
