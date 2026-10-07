@@ -124,10 +124,11 @@ check() {
 }
 
 # run_check [ARG...]: check_retro68.sh with $Q3_CHECK_ENV (VAR=value words).
+# ${a[@]+"${a[@]}"}: bash 3.2 (macOS) treats an empty array as unset under set -u.
 Q3_CHECK_ENV=()
 run_check() {
     Q3_STATUS=0
-    env TMPDIR="$Q3_CHECK_TMP" "${Q3_CHECK_ENV[@]}" \
+    env TMPDIR="$Q3_CHECK_TMP" ${Q3_CHECK_ENV[@]+"${Q3_CHECK_ENV[@]}"} \
         bash "$Q3_TEST_ROOT/check_retro68.sh" "$@" > "$Q3_OUT" 2>&1 || Q3_STATUS=$?
 }
 
@@ -423,7 +424,7 @@ run_check_in_tmp() {
     local tmp="$1"
     shift
     Q3_STATUS=0
-    env TMPDIR="$tmp" "${Q3_CHECK_ENV[@]}" \
+    env TMPDIR="$tmp" ${Q3_CHECK_ENV[@]+"${Q3_CHECK_ENV[@]}"} \
         bash "$Q3_TEST_ROOT/check_retro68.sh" "$@" > "$Q3_OUT" 2>&1 || Q3_STATUS=$?
 }
 run_check_in_tmp "$Q3_TMP_MISSING" "$TC"

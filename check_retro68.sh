@@ -131,7 +131,9 @@ report_missing_libraries() {
     command -v ldd > /dev/null 2>&1 || return 0
     missing=$(
         for file in "$BIN"/* "$INSTALL_DIR/libexec/gcc/$TARGET"/*/*; do
-            case "${file##*/}" in m68k-*) continue ;; esac
+            # (pattern): bash 3.2 (macOS /bin/bash) cannot parse a case
+            # pattern's bare ")" inside $( ).
+            case "${file##*/}" in (m68k-*) continue ;; esac
             [ -f "$file" ] && [ -x "$file" ] || continue
             ldd "$file" < /dev/null 2> /dev/null |
                 awk -v tool="${file##*/}" '/=> not found/ { print $1, tool }'
