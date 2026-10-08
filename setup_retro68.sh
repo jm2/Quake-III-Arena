@@ -1,5 +1,9 @@
 #!/bin/bash
-set -e
+set -euo pipefail
+
+# Work from the repository root whatever the caller's directory (issue #231):
+# tools/, retro68-versions.txt and check_retro68.sh are all found from there.
+cd "$(dirname "${BASH_SOURCE[0]}")"
 
 # Detect OS
 OS_NAME=$(uname -s)
@@ -145,35 +149,19 @@ if [ -x "$INSTALL_DIR/bin/ConvertDiskImage" ] && [ -d "$BUILD_WORK_DIR" ]; then
 fi
 
 # 1. Retro68 at the pinned commit. A fresh clone checks out RETRO68_COMMIT and
-# its submodules. An existing checkout is never pulled or switched: this
-# script makes in-tree edits (Boost patch, InterfacesAndLibraries population)
-# that block a checkout, and the toolchain was built from that commit. So a
-# checkout at another commit stops setup before anything changes.
+# its submodules. An existing checkout is never pulled, switched or updated,
+# its submodules included (issue #406): this script makes in-tree edits
+# (Boost patch, InterfacesAndLibraries population) that block a checkout, and
+# the toolchain was built from that commit. So a checkout at another commit,
+# or with a submodule that is missing, at another commit or in conflict,
+# stops setup before anything changes.
 echo "Step 1: Ensuring Retro68 source is at commit $RETRO68_COMMIT..."
-if [ ! -d "$SOURCE_DIR" ]; then
-    git clone --no-checkout "$RETRO68_URL" "$SOURCE_DIR"
-    git -C "$SOURCE_DIR" -c advice.detachedHead=false checkout --detach "$RETRO68_COMMIT"
-else
-    echo "Retro68 source already present at $SOURCE_DIR (not pulling)."
-fi
-SOURCE_COMMIT="not a git checkout"
-if [ -e "$SOURCE_DIR/.git" ]; then
-    SOURCE_COMMIT=$(git -C "$SOURCE_DIR" rev-parse --verify HEAD) || SOURCE_COMMIT="unknown"
-fi
-if [ "$SOURCE_COMMIT" != "$RETRO68_COMMIT" ]; then
-    echo "Error: $SOURCE_DIR is at $SOURCE_COMMIT, but"
-    echo "retro68-versions.txt pins Retro68 $RETRO68_COMMIT. Nothing was changed."
-    echo "To build the pinned toolchain, move tools/Retro68-src, tools/Retro68-build"
-    echo "and tools/Retro68-work aside and run setup_retro68.sh again."
-    exit 1
-fi
-git -C "$SOURCE_DIR" submodule update --init --recursive
 
-# " <commit> <path>" for every submodule, as `git submodule status` flags it:
-# ' ' checked out at the commit Retro68 records, '-' not checked out, '+' at
-# another commit.
+# " <commit> <path>" for every submodule of the checkout at $1, as `git
+# submodule status` flags it: ' ' checked out at the commit Retro68 records,
+# '-' not checked out, '+' at another commit, 'U' in conflict.
 checked_out_submodules() {
-    git -C "$SOURCE_DIR" submodule status --recursive |
+    git -C "$1" submodule status --recursive |
         awk '{ path = substr($0, 43); sub(/ \(.*\)$/, "", path); print substr($0, 1, 41), path }' |
         LC_ALL=C sort
 }
@@ -183,13 +171,55 @@ pinned_submodules() {
         echo " ${pin#* } ${pin%% *}"
     done | LC_ALL=C sort
 }
-if [ "$(checked_out_submodules)" != "$(pinned_submodules)" ]; then
-    echo "Error: the submodules of $SOURCE_DIR are not the ones retro68-versions.txt pins."
-    echo "  Checked out (git submodule status --recursive):"
-    checked_out_submodules | sed 's/^/    /'
-    echo "  Pinned:"
-    pinned_submodules | sed 's/^/    /'
-    exit 1
+
+# Succeeds when the checkout at $1 is at the pinned commit with the pinned
+# submodules; otherwise says why.
+at_pinned_checkout() {
+    local dir="$1" commit="not a git checkout"
+    if [ -e "$dir/.git" ]; then
+        commit=$(git -C "$dir" rev-parse --verify HEAD) || commit="unknown"
+    fi
+    if [ "$commit" != "$RETRO68_COMMIT" ]; then
+        echo "Error: $dir is at $commit, but"
+        echo "retro68-versions.txt pins Retro68 $RETRO68_COMMIT."
+        return 1
+    fi
+    if [ "$(checked_out_submodules "$dir")" != "$(pinned_submodules)" ]; then
+        echo "Error: the submodules of $dir are not the ones retro68-versions.txt pins."
+        echo "  Checked out (git submodule status --recursive):"
+        checked_out_submodules "$dir" | sed 's/^/    /' || true
+        echo "  Pinned:"
+        pinned_submodules | sed 's/^/    /'
+        return 1
+    fi
+}
+
+if [ ! -e "$SOURCE_DIR" ]; then
+    # Clone next to tools/Retro68-src and rename the clone only once it is
+    # at the pinned commit and submodules, so a clone or checkout that fails
+    # leaves nothing behind that would stop the next run (issue #406).
+    PARTIAL_SOURCE_DIR="$SOURCE_DIR.partial"
+    fresh_clone_failed() {
+        rm -rf "$PARTIAL_SOURCE_DIR"
+        echo "Error: could not check out Retro68 $RETRO68_COMMIT and its pinned"
+        echo "submodules (see above). The partial clone was removed; nothing else changed."
+        exit 1
+    }
+    rm -rf "$PARTIAL_SOURCE_DIR"
+    git clone --no-checkout "$RETRO68_URL" "$PARTIAL_SOURCE_DIR" || fresh_clone_failed
+    git -C "$PARTIAL_SOURCE_DIR" -c advice.detachedHead=false checkout --detach "$RETRO68_COMMIT" ||
+        fresh_clone_failed
+    git -C "$PARTIAL_SOURCE_DIR" submodule update --init --recursive || fresh_clone_failed
+    at_pinned_checkout "$PARTIAL_SOURCE_DIR" || fresh_clone_failed
+    mv "$PARTIAL_SOURCE_DIR" "$SOURCE_DIR"
+else
+    echo "Retro68 source already present at $SOURCE_DIR (not pulling)."
+    if ! at_pinned_checkout "$SOURCE_DIR"; then
+        echo "Nothing was changed: setup never pulls, switches or updates an existing"
+        echo "checkout or its submodules. To build the pinned toolchain, move tools/Retro68-src,"
+        echo "tools/Retro68-build and tools/Retro68-work aside and run setup_retro68.sh again."
+        exit 1
+    fi
 fi
 
 # 2. Prepare InterfacesAndLibraries
@@ -267,36 +297,42 @@ locate_or_fetch_sit() {
     echo "tools/$fname"
 }
 
-# Drop the legacy 0-byte placeholder so locate_or_fetch_sit picks the real one.
-[ -f "tools/MPW_fully_updated.sit" ] && [ ! -s "tools/MPW_fully_updated.sit" ] && rm -f "tools/MPW_fully_updated.sit"
-
 # Check both archives before extracting either.
 MPW_SIT=$(locate_or_fetch_sit "$MPW_FILE" "$MPW_URL" "$MPW_SHA256") || exit 1
 OPENGL_SIT=$(locate_or_fetch_sit "$OPENGL_FILE" "$OPENGL_URL" "$OPENGL_SHA256") || exit 1
 mkdir -p "$SDK_DEST"
 
+# extract_sit ARCHIVE SHA256 DEST: hash the archive again right before
+# extracting it, since it was checked before the other one (issue #406).
+extract_sit() {
+    if ! sit_matches "$1" "$2"; then
+        echo "Error: $1 changed after it was checked; it was not extracted."
+        exit 1
+    fi
+    rm -rf "$3"
+    unar -q -f "$1" -o "$3"
+}
+
 # Extract MPW
 echo "Extracting MPW..."
-rm -rf "tools/temp_mpw"
-unar -q -f "$MPW_SIT" -o "tools/temp_mpw"
+extract_sit "$MPW_SIT" "$MPW_SHA256" "tools/temp_mpw"
 
 # Move Interfaces&Libraries content from MPW to Retro68 src
 echo "Injecting MPW Interfaces&Libraries..."
-MPW_I_AND_L=$(find tools/temp_mpw -type d -name "Interfaces&Libraries" | head -n 1)
+MPW_I_AND_L=$(find tools/temp_mpw -type d -name "Interfaces&Libraries" -print -quit)
 
 if [ -n "$MPW_I_AND_L" ] && [ -d "$MPW_I_AND_L" ]; then
     echo "Found MPW I&L at: $MPW_I_AND_L"
     cp -r "$MPW_I_AND_L/"* "$SDK_DEST/"
 else
     echo "Error: Could not find Interfaces&Libraries in extracted MPW"
-    ls -R tools/temp_mpw | head -n 20
+    ls -R tools/temp_mpw | head -n 20 || true
     exit 1
 fi
 
 # Extract OpenGL
 echo "Extracting OpenGL SDK..."
-rm -rf "tools/temp_opengl"
-unar -q -f "$OPENGL_SIT" -o "tools/temp_opengl"
+extract_sit "$OPENGL_SIT" "$OPENGL_SHA256" "tools/temp_opengl"
 
 echo "Injecting OpenGL headers/libs..."
 mkdir -p "$SDK_DEST/Libraries"
@@ -307,7 +343,7 @@ mkdir -p "$SDK_DEST/Interfaces/CIncludes"
 # contains nested e.g. Source/Libraries/ that we do not want; without the
 # constraint, find's traversal order is filesystem-dependent and we
 # silently picked the wrong one on some runs.
-OGL_LIBS=$(find tools/temp_opengl -maxdepth 2 -type d -name "Libraries" | head -n 1)
+OGL_LIBS=$(find tools/temp_opengl -maxdepth 2 -type d -name "Libraries" -print -quit)
 if [ -n "$OGL_LIBS" ]; then
     echo "Copying OpenGL Libs from $OGL_LIBS..."
     mkdir -p "$SDK_DEST/SharedLibraries"
@@ -316,7 +352,7 @@ else
     echo "Warning: Could not find Libraries in OpenGL SDK"
 fi
 
-OGL_HEADERS=$(find tools/temp_opengl -maxdepth 2 -type d -name "Headers" | head -n 1)
+OGL_HEADERS=$(find tools/temp_opengl -maxdepth 2 -type d -name "Headers" -print -quit)
 if [ -n "$OGL_HEADERS" ]; then
     echo "Copying OpenGL Headers from $OGL_HEADERS..."
     cp -r "$OGL_HEADERS/"* "$SDK_DEST/Interfaces/CIncludes/"
@@ -409,7 +445,7 @@ host_cxx_dialect() {
         return
     done
 }
-HOST_CXX_DIALECT=$(host_cxx_dialect)
+HOST_CXX_DIALECT=$(host_cxx_dialect) || HOST_CXX_DIALECT=""
 if [[ $HOST_CXX_DIALECT =~ ^[0-9]+$ ]] && [ "$HOST_CXX_DIALECT" -gt 201703 ]; then
     case " ${CXXFLAGS:-} " in
         *" -std="*)
@@ -423,7 +459,8 @@ if [[ $HOST_CXX_DIALECT =~ ^[0-9]+$ ]] && [ "$HOST_CXX_DIALECT" -gt 201703 ]; th
     esac
 fi
 
-bash "$SOURCE_DIR/build-toolchain.bash" --prefix="$INSTALL_DIR" "${SKIP_FLAGS[@]}"
+# ${a[@]+...}: bash 3.2 (macOS) treats an empty array as unset under set -u.
+bash "$SOURCE_DIR/build-toolchain.bash" --prefix="$INSTALL_DIR" ${SKIP_FLAGS[@]+"${SKIP_FLAGS[@]}"}
 
 # 6. Post-Build Fixes
 echo "Step 6: Post-Build Fixes..."

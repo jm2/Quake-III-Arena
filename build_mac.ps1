@@ -3,6 +3,21 @@
 
 $ErrorActionPreference = "Stop"
 
+# Work from the repository root whatever the caller's location (issue #231):
+# run again from there, then give the caller back its location. Its own stack
+# holds that location, as a failed run can leave build_mac pushed.
+if (-not $Quake3AtRepositoryRoot -and (Get-Location).ProviderPath -ne $PSScriptRoot) {
+    $Quake3AtRepositoryRoot = $true
+    Push-Location -LiteralPath $PSScriptRoot -StackName Quake3Caller
+    try {
+        & $PSCommandPath @args
+        exit $LASTEXITCODE
+    }
+    finally {
+        Pop-Location -StackName Quake3Caller
+    }
+}
+
 function Show-Usage {
     Write-Host "Usage: .\build_mac.ps1 [package|--package] [--base-only|--team-arena] [-h|--help]"
     Write-Host ""
@@ -60,6 +75,28 @@ foreach ($Argument in $args) {
 # Add default MSYS2 binary path if it exists
 if (Test-Path "C:\msys64\usr\bin") {
     $env:PATH = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;$env:PATH"
+}
+
+# Every program the build needs, checked before anything is done (issue #231).
+$MissingCommands = @(@("cmake", "python") | Where-Object {
+    -not (Get-Command $_ -ErrorAction SilentlyContinue)
+})
+# Package mode writes an HFS image with one of these.
+$MkIsoFs = $null
+if ($PackageMode) {
+    if (Get-Command "genisoimage" -ErrorAction SilentlyContinue) {
+        $MkIsoFs = "genisoimage"
+    }
+    elseif (Get-Command "mkisofs" -ErrorAction SilentlyContinue) {
+        $MkIsoFs = "mkisofs"
+    }
+    else {
+        # A normal ZIP does not preserve the application's resource fork.
+        $MissingCommands += "genisoimage (or mkisofs)"
+    }
+}
+if ($MissingCommands.Count -ne 0) {
+    throw "Required commands not found: $($MissingCommands -join ', '). Install them and run build_mac.ps1 again; nothing was built."
 }
 
 $BuildDir = "build_mac"
@@ -135,7 +172,10 @@ function Install-PreparedOpenGLSupport {
 if (-not (Install-PreparedOpenGLSupport)) {
     Write-Host "Retro68 compiler or prepared OpenGL SDK support not found." -ForegroundColor Yellow
     Write-Host "Running setup_retro68.ps1..."
-    .\setup_retro68.ps1
+    & (Join-Path $PSScriptRoot "setup_retro68.ps1")
+    if ($LASTEXITCODE -ne 0) {
+        throw "setup_retro68.ps1 failed (exit status $LASTEXITCODE)."
+    }
     if (-not (Install-PreparedOpenGLSupport)) {
         throw "Retro68 setup did not install the compiler, prepared gl.h/agl.h headers, and OpenGL import library."
     }
@@ -155,7 +195,7 @@ elseif ($LASTEXITCODE -ne 0) {
 }
 
 # Add tools dir to PATH for this session
-$env:PATH = "$ToolsDir;$env:PATH"
+$env:PATH = "$ToolsDir$([System.IO.Path]::PathSeparator)$env:PATH"
 
 # Enter build dir
 Push-Location $BuildDir
@@ -246,9 +286,19 @@ if ($LASTEXITCODE -eq 0) {
         if ($LASTEXITCODE -ne 0) {
             throw "$App is not a complete Classic application."
         }
-        # The PEF's SHA-256 and the toolchain that built it (issue #227).
+        # The PEF's SHA-256 and the toolchain that built it (issue #227). A
+        # manifest that does not hash this PEF describes another build (#406).
         if (-not (Test-Path "$App.manifest.txt")) {
             throw "The build did not write $App.manifest.txt next to $Pef."
+        }
+        $ManifestSha256 = @(Get-Content "$App.manifest.txt" |
+            Where-Object { $_ -cmatch "^pef_sha256=" } |
+            ForEach-Object { $_.Substring(11) }) -join ","
+        $PefSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $Pef).Hash.ToLowerInvariant()
+        if ($ManifestSha256 -cne $PefSha256) {
+            Write-Host "Error: $App.manifest.txt records pef_sha256=$(if ($ManifestSha256) { $ManifestSha256 } else { '(none)' }),"
+            Write-Host "but $Pef has SHA-256 $PefSha256."
+            throw "$App.manifest.txt does not describe $Pef."
         }
     }
 
@@ -394,19 +444,7 @@ if ($PackageMode) {
         Copy-ClassicApplication $App $AppDir
     }
 
-    # 3. Create Image
-    # Check for mkisofs/genisoimage
-    if (Get-Command "genisoimage" -ErrorAction SilentlyContinue) {
-        $MkIsoFs = "genisoimage"
-    }
-    elseif (Get-Command "mkisofs" -ErrorAction SilentlyContinue) {
-        $MkIsoFs = "mkisofs"
-    }
-    else {
-        throw ("An HFS-capable genisoimage or mkisofs is required. A normal ZIP " +
-            "does not preserve this application's resource fork.")
-    }
-    
+    # 3. Create Image ($MkIsoFs was chosen before the build)
     Write-Host "Creating HFS Disk Image..."
     
     # Mapping file (EXTN XLate CREATOR TYPE Comment); the codes must be quoted
@@ -498,3 +536,4 @@ if ($PackageMode) {
     Write-Host "Cleaning up temp files..."
     Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue
 }
+exit 0

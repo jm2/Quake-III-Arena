@@ -2,6 +2,10 @@
 
 set(CMAKE_SYSTEM_NAME Retro68)
 set(CMAKE_SYSTEM_VERSION 1)
+# CMake looks for Platform/<CMAKE_SYSTEM_NAME>.cmake on the module path and
+# warns "System is unknown to cmake" without it (issue #232). As Retro68's own
+# toolchain files do, ship one; the setup is all in this file.
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
 
 set(RETRO68_ROOT "${CMAKE_SOURCE_DIR}/tools/Retro68-build")
 list(APPEND CMAKE_PREFIX_PATH "${RETRO68_ROOT}")

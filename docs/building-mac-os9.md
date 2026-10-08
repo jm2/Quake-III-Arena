@@ -5,7 +5,9 @@ application. The base game is the default; Team Arena is an explicit option.
 
 ## Linux/macOS host
 
-From the repository root:
+From the repository root (the scripts work from the repository root whatever
+directory they are started from, so `~/Quake-III-Arena/build_mac.sh` works
+too):
 
 ```sh
 ./setup_retro68.sh
@@ -49,9 +51,12 @@ python3 mac_app.py verify --pef build_mac/Quake3.pef \
 
 Next to the PEF, `build_mac/Quake3.manifest.txt` records its SHA-256 and the
 toolchain that built it; see [Pinned toolchain inputs](#pinned-toolchain-inputs).
+The script stops unless the manifest's `pef_sha256` is the PEF's.
 
 Building needs Retro68 (compiler, MakePEF, Rez and its `RIncludes`), CMake
-3.12 or newer, and Python 3.
+3.12 or newer, make, and Python 3 (`build_mac.ps1`: CMake and Python). Package
+mode also needs genisoimage or mkisofs (or hdiutil on macOS). The scripts
+check for these before they start.
 
 ## Pinned toolchain inputs
 
@@ -60,18 +65,26 @@ build the toolchain from (issue #227): Retro68 commit `83b9c8d2c5` (GCC 12.2.0)
 and its `multiversal` submodule, and the SHA-256 of the MPW
 (`MPW_fully_updated.sit`) and OpenGL SDK 1.2 (`OpenGL_SDK_1.2.sit`) archives.
 
-- A fresh setup clones Retro68, checks out the pinned commit and its
-  submodules, and stops unless `git submodule status --recursive` lists
-  exactly the pinned submodule commits.
-- An existing `tools/Retro68-src` is never pulled or switched. If it is at
-  another commit or is not a git checkout, setup stops before anything
-  changes. To build the pinned toolchain, move `tools/Retro68-src`,
-  `tools/Retro68-build` and `tools/Retro68-work` aside and run setup again.
+- A fresh setup clones Retro68 into `tools/Retro68-src.partial`, checks out
+  the pinned commit and its submodules, and renames the clone to
+  `tools/Retro68-src` only if `git submodule status --recursive` lists exactly
+  the pinned submodule commits. Otherwise it removes the partial clone and
+  stops.
+- An existing `tools/Retro68-src` is never pulled, switched or updated, its
+  submodules included. If it is at another commit, is not a git checkout, or
+  has a submodule that is missing, at another commit or in conflict, setup
+  stops before anything changes (`setup_retro68.ps1` also before it accepts
+  an installed toolchain or builds unar). To build the pinned toolchain, move
+  `tools/Retro68-src`, `tools/Retro68-build` and `tools/Retro68-work` aside
+  and run setup again.
 - Setup looks for each archive in `tools/`, then at the repository root, and
   otherwise downloads it to `tools/<name>.part`. It extracts neither archive
-  until both match their pinned SHA-256. A local copy that does not match
-  (truncated, damaged or another file) is reported and left in place; a
-  download that does not match is discarded.
+  until both match their pinned SHA-256, and hashes each again right before
+  extracting it. A local copy that does not match (truncated, damaged, empty
+  or another file) is reported and left in place; a download that does not
+  match is discarded.
+- On Windows without `unar`, `setup_retro68.ps1` builds it from XADMaster and
+  universal-detector at pinned commits.
 
 To move to another Retro68 commit, change `RETRO68_COMMIT` and every
 `RETRO68_SUBMODULE` line together, then rebuild the toolchain.

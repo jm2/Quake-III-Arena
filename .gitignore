@@ -10,3 +10,4 @@ missionpack/
 *.bin
 build_mac.log
 package_mac.log
+__pycache__/

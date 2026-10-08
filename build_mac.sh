@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 usage() {
     cat <<EOF
@@ -58,6 +58,46 @@ for argument in "$@"; do
             ;;
     esac
 done
+
+# Work from the repository root whatever the caller's directory (issue #231):
+# build_mac/, tools/, release_mac/ and the helper scripts are all found there.
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+# Every program the build needs, checked before anything is done (issue #231).
+MISSING_COMMANDS=""
+for cmd in cmake make python3 od; do
+    command -v "$cmd" > /dev/null 2>&1 || MISSING_COMMANDS="$MISSING_COMMANDS $cmd"
+done
+# The PEF's SHA-256 is checked against its build manifest.
+if ! command -v sha256sum > /dev/null 2>&1 && ! command -v shasum > /dev/null 2>&1; then
+    MISSING_COMMANDS="$MISSING_COMMANDS sha256sum(or shasum)"
+fi
+# Package mode writes an HFS image with one of these.
+MKISOFS=""
+if [ "$PACKAGE_MODE" -eq 1 ]; then
+    if [ "$(uname)" == "Darwin" ] && command -v hdiutil &> /dev/null; then
+        MKISOFS="hdiutil"
+    elif command -v genisoimage &> /dev/null; then
+        MKISOFS="genisoimage"
+    elif command -v mkisofs &> /dev/null; then
+        MKISOFS="mkisofs"
+    else
+        MISSING_COMMANDS="$MISSING_COMMANDS genisoimage(or mkisofs/hdiutil)"
+    fi
+fi
+if [ -n "$MISSING_COMMANDS" ]; then
+    echo "Error: required commands not found:$MISSING_COMMANDS" >&2
+    echo "Install them and run $(basename "$0") again; nothing was built." >&2
+    exit 1
+fi
+
+sha256_of() {
+    if command -v sha256sum &> /dev/null; then
+        sha256sum < "$1" | cut -d ' ' -f 1
+    else
+        shasum -a 256 < "$1" | cut -d ' ' -f 1
+    fi
+}
 
 function download_file() {
     local url="$1"
@@ -209,11 +249,13 @@ validate_pef() {
         return 1
     fi
 
-    local magic1 magic2 arch size
-    magic1=$(xxd -s 0 -l 4 -p "$pef_file" 2>/dev/null)
-    magic2=$(xxd -s 4 -l 4 -p "$pef_file" 2>/dev/null)
-    arch=$(xxd -s 8 -l 4 -p "$pef_file" 2>/dev/null)
-    size=$(wc -c < "$pef_file")
+    # od is POSIX; xxd (a vim component) is often missing (issue #231).
+    local header magic1 magic2 arch size
+    header=$(od -A n -t x1 -N 12 "$pef_file" 2>/dev/null | tr -d ' \n') || header=""
+    magic1="${header:0:8}"
+    magic2="${header:8:8}"
+    arch="${header:16:8}"
+    size=$(wc -c < "$pef_file" | tr -d ' ')
 
     if [[ "$magic1" != "4a6f7921" ]]; then
         echo "PEF validation FAILED: $pef_file magic1='$magic1' (want 'Joy!' = 4a6f7921)"
@@ -249,9 +291,17 @@ for app in $APPLICATIONS; do
     validate_pef "$app.pef" || exit 1
     python3 ../mac_app.py verify --pef "$app.pef" \
         "$app.bin" "$app.dsk" "%$app.ad" || exit 1
-    # The PEF's SHA-256 and the toolchain that built it (issue #227).
+    # The PEF's SHA-256 and the toolchain that built it (issue #227). A
+    # manifest that does not hash this PEF describes another build (#406).
     if [ ! -s "$app.manifest.txt" ]; then
         echo "Error: the build did not write $app.manifest.txt next to $app.pef."
+        exit 1
+    fi
+    MANIFEST_SHA256=$(sed -n 's/^pef_sha256=//p' "$app.manifest.txt")
+    PEF_SHA256=$(sha256_of "$app.pef")
+    if [ "$MANIFEST_SHA256" != "$PEF_SHA256" ]; then
+        echo "Error: $app.manifest.txt records pef_sha256=${MANIFEST_SHA256:-(none)},"
+        echo "but $app.pef has SHA-256 $PEF_SHA256."
         exit 1
     fi
 done
@@ -305,15 +355,6 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
         find "$PAK0_DIR" -maxdepth 1 -type f -name "pak*.pk3" \
             -exec cp {} "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/" \;
         
-        # FIX: Copy menus.txt for older pak0 versions
-        if [ -f "ui/menus.txt" ]; then
-             mkdir -p "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/ui"
-             cp "ui/menus.txt" "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/ui/"
-             echo "Copied ui/menus.txt to baseq3/ui/"
-        fi
-        
-
-        
         if [ "$BUILD_TEAM_ARENA_ENABLED" -eq 1 ]; then
              if [ -z "$MP_PAK0_PATH" ]; then
                  echo "Error: Team Arena is enabled but missionpack/pak0.pk3 was not found."
@@ -348,6 +389,10 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
             
             if [ -f "$TEMP_DIR/$PR_FILE" ]; then
                 echo "Extracting Updates..."
+                if ! command -v unzip &> /dev/null; then
+                    echo "Error: unzip is required to extract $PR_FILE." >&2
+                    exit 1
+                fi
                 # Extract ZIP
                 unzip -q -o "$TEMP_DIR/$PR_FILE" -d "$TEMP_DIR/pr_extract"
                 
@@ -386,17 +431,7 @@ Quake3 Raw   'IDQ3' 'APPL' "Quake 3 App"
 Quake3_TeamArena Raw 'IDQ3' 'APPL' "Quake 3 Team Arena"
 EOF
     
-    if [ "$(uname)" == "Darwin" ] && command -v hdiutil &> /dev/null; then
-         MKISOFS="hdiutil"
-    elif command -v genisoimage &> /dev/null; then
-        MKISOFS="genisoimage"
-    elif command -v mkisofs &> /dev/null; then
-        MKISOFS="mkisofs"
-    else
-         echo "Error: genisoimage/mkisofs/hdiutil not found."
-         exit 1
-    fi
-    
+    # MKISOFS was chosen before the build.
     # Stage an application the build step produced. Rez already wrote it in
     # host-independent containers, so packaging neither recompiles resources
     # nor depends on how Rez stores resource forks on this host.
@@ -495,13 +530,6 @@ EOF
     for app in $APPLICATIONS; do
         stage_application "$app" "$BIN_CONTENT_DIR"
     done
-
-    # FIX: Include ui/menus.txt in binaries image too
-    if [ -f "ui/menus.txt" ]; then
-         mkdir -p "$BIN_CONTENT_DIR/baseq3/ui"
-         cp "ui/menus.txt" "$BIN_CONTENT_DIR/baseq3/ui/"
-    fi
-
 
     
     if [[ "$MKISOFS" != "hdiutil" ]]; then
