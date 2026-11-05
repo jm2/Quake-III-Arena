@@ -272,7 +272,23 @@ static void FullLightMasks(void) {
 		Check(tr.refdef.num_dlights==(count?32:0) && (unsigned int)faces[0].dlightBits[0]==expected && !live,"public light count preserves legacy upper clamp and safely handles negative internal count");
 	}
 }
+/* R_MarkLeaves: q3map can give a leaf a cluster and no area (-1), which has no bit in the door mask. */
+static void MarkOneLeaf(mnode_t *leaf,int area,int closed,int visible) {
+	static byte open[8];static cvar_t off;int i,count=s_worldData.numnodes;
+	r_lockpvs=r_novis=r_showcluster=&off;memset(open,255,sizeof(open));
+	s_worldData.vis=NULL;s_worldData.novis=open;s_worldData.numClusters=1;tr.world=&s_worldData;
+	for(i=0;i<count;i++)s_worldData.nodes[i].cluster=-1;
+	s_worldData.nodes[s_worldData.numDecisionNodes].cluster=s_worldData.nodes[s_worldData.numDecisionNodes+1].cluster=0;
+	memset(tr.refdef.areamask,0,sizeof(tr.refdef.areamask));memset(&tr.refdef.rdflags,255,sizeof(tr.refdef.rdflags));
+	if(closed)tr.refdef.areamask[0]=1<<area;
+	leaf->area=area;tr.viewCluster=-2;leaf->visframe=0;R_MarkLeaves();
+	Check((leaf->visframe==tr.visCount)==visible,"area mask decides leaf visibility");
+}
+static void LeafAreas(void) {
+	mnode_t *leaf=s_worldData.nodes+s_worldData.numDecisionNodes;
+	MarkOneLeaf(leaf,3,0,1);MarkOneLeaf(leaf,3,1,0);MarkOneLeaf(leaf,-1,0,1);
+}
 int main(void) {
 	ri.Error=Com_Error;ri.Printf=Print;ri.FS_ReadFile=FS_ReadFile;ri.FS_FreeFile=FS_FreeFile;ri.Hunk_Alloc=RendererHunk;ri.Malloc=RendererMalloc;ri.Free=RendererFree;subdivisions.value=4;
-	Load(3);References();Deep();FullLightMasks();Check(!live && peak==2 && !fileAllocation,"all renderer traversal ownership released");FreeHunks();puts("BSP iterative world traversal, stock culling/draw goldens, full lighting masks and growth ownership regressions passed (issue #45)");return 0;
+	Load(3);References();Deep();FullLightMasks();LeafAreas();Check(!live && peak==2 && !fileAllocation,"all renderer traversal ownership released");FreeHunks();puts("BSP iterative world traversal, stock culling/draw goldens, full lighting masks and growth ownership regressions passed (issue #45)");return 0;
 }

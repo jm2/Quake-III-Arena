@@ -61,7 +61,7 @@ int main(void) {
 	for(i=0;i<2;i++) { BadWord(offset+offsetof(dnode_t,children)+i*4,1);BadWord(offset+offsetof(dnode_t,children)+i*4,0xfffffffeu);BadWord(offset+offsetof(dnode_t,children)+i*4,0x80000000u); }
 	for(i=0;i<3;i++)BadWord(At(LUMP_LEAFSURFACES,i,4),3);BadWord(At(LUMP_LEAFBRUSHES,0,4),1);
 	offset=At(LUMP_LEAFS,0,sizeof(dleaf_t));
-	BadWord(offset+offsetof(dleaf_t,cluster),1);BadWord(offset+offsetof(dleaf_t,cluster),0xfffffffeu);BadWord(offset+offsetof(dleaf_t,cluster),0x80000000u);BadWord(offset+offsetof(dleaf_t,area),256);BadWord(offset+offsetof(dleaf_t,area),0xffffffffu);
+	BadWord(offset+offsetof(dleaf_t,cluster),1);BadWord(offset+offsetof(dleaf_t,cluster),0xfffffffeu);BadWord(offset+offsetof(dleaf_t,cluster),0x80000000u);BadWord(offset+offsetof(dleaf_t,area),256);BadWord(offset+offsetof(dleaf_t,area),0xfffffffeu);
 	BadWord(offset+offsetof(dleaf_t,firstLeafSurface),4);BadWord(offset+offsetof(dleaf_t,numLeafSurfaces),4);BadWord(offset+offsetof(dleaf_t,firstLeafBrush),1);BadWord(offset+offsetof(dleaf_t,numLeafBrushes),2);
 	for(i=0;i<3;i++) { BadWord(offset+offsetof(dleaf_t,firstLeafSurface),bad[i]);BadWord(offset+offsetof(dleaf_t,numLeafSurfaces),bad[i]);BadWord(offset+offsetof(dleaf_t,firstLeafBrush),bad[i]);BadWord(offset+offsetof(dleaf_t,numLeafBrushes),bad[i]); }
 	for(i=0;i<2;i++) { offset=At(LUMP_MODELS,i,sizeof(dmodel_t));BadWord(offset+offsetof(dmodel_t,firstSurface),4);BadWord(offset+offsetof(dmodel_t,numSurfaces),4);BadWord(offset+offsetof(dmodel_t,firstBrush),1);BadWord(offset+offsetof(dmodel_t,numBrushes),2);for(j=0;j<3;j++) { BadWord(offset+offsetof(dmodel_t,firstSurface),bad[j]);BadWord(offset+offsetof(dmodel_t,numSurfaces),bad[j]);BadWord(offset+offsetof(dmodel_t,firstBrush),bad[j]);BadWord(offset+offsetof(dmodel_t,numBrushes),bad[j]); } }
@@ -75,6 +75,8 @@ int main(void) {
 	offset=At(LUMP_SURFACES,1,sizeof(dsurface_t));BadWord(offset+offsetof(dsurface_t,lightmapNum),0xfffffffbu);BadWord(offset+offsetof(dsurface_t,lightmapNum),0x80000000u);
 	for(i=0;i<5;i++) { int required[]={LUMP_SHADERS,LUMP_PLANES,LUMP_NODES,LUMP_LEAFS,LUMP_MODELS};Restore();Word(12+required[i]*8,0);RejectReferences(); }
 	Restore();Word(At(LUMP_LEAFS,0,sizeof(dleaf_t))+offsetof(dleaf_t,area),255);AcceptReferences();LoadGolden("area255.bsp");Check(cm.numAreas==256,"retail area mask boundary");
+	/* q3map's "cluster has area set to -1": a leaf with a cluster and no area, as retail loaded it. */
+	Restore();Word(At(LUMP_LEAFS,0,sizeof(dleaf_t))+offsetof(dleaf_t,area),0xffffffffu);AcceptReferences();LoadGolden("cluster-unassigned.bsp");Check(cm.numAreas==0,"clustered leaf area -1 loads");
 	Restore();Word(At(LUMP_LEAFS,0,sizeof(dleaf_t))+offsetof(dleaf_t,cluster),0xffffffffu);AcceptReferences();LoadGolden("opaque.bsp");
 	Word(At(LUMP_LEAFS,0,sizeof(dleaf_t))+offsetof(dleaf_t,area),0xffffffffu);AcceptReferences();LoadGolden("opaque-unassigned.bsp");Check(cm.numAreas==0,"opaque leaf area -1 convention preserved");
 	for(i=0;i<4;i++) { Restore();Word(At(LUMP_SURFACES,1,sizeof(dsurface_t))+offsetof(dsurface_t,lightmapNum),0xfffffffcu+i);AcceptReferences(); }
