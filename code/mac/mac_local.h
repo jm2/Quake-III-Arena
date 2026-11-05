@@ -378,6 +378,8 @@ void	Sys_ConsoleDraw( WindowPtr window );
 
 void Debug_Breadcrumb( int color );
 
+#include "mac_bootlog.h"
+
 void Sys_LogPrintf( const char *fmt, ... ) Q_PRINTF_FORMAT( 1, 2 );
 void Sys_LogRecord( const char *text );
 void Sys_DumpRetroLogs( const char *fileName );

@@ -114,6 +114,9 @@ qboolean	com_fullyInitialized;
 char	com_errorMessage[MAXPRINTMSG];
 
 // Flight Recorder
+#ifdef __MACOS__
+void Sys_BootLogWrite( const char *text );	// mac_bootlog.c
+#endif
 #define FLIGHT_RECORDER_SIZE (256 * 1024)
 static char flightRecorderBuffer[FLIGHT_RECORDER_SIZE];
 static int flightRecorderHead = 0;
@@ -137,6 +140,10 @@ void QDECL Com_FlightRecord( const char *fmt, ... ) {
 
     if ( len < 0 ) return;
     if ( len > sizeof(text)-1 ) len = sizeof(text)-1;
+
+#ifdef __MACOS__
+    Sys_BootLogWrite( text );
+#endif
 
     for ( i = 0; i < len; i++ ) {
         flightRecorderBuffer[flightRecorderHead] = text[i];

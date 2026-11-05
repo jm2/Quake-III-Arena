@@ -350,6 +350,12 @@ void QDECL Com_Printf( const char *fmt, ... ) {
 
 static qboolean	consoleDisplayed;	/* mac_console.c's */
 
+/* The boot log (mac_bootlog.c has its own regression). */
+static void Sys_StartBootLog( const char *commandLine ) { Event( "Sys_StartBootLog" ); }
+static void Sys_Heartbeat( void ) { }
+void Sys_BootLogFlush( void ) { Event( "Sys_BootLogFlush" ); }
+void Sys_BootLogClose( void ) { Event( "Sys_BootLogClose" ); }
+
 #define printf		FakePrintf
 #define fprintf		FakeFprintf
 #define fflush		FakeFflush
@@ -492,6 +498,8 @@ static void RunSysError( const char *name, qboolean fullscreen, const char *fmt,
 
 static void CheckGetKeysAfterToolbox( void ) {
 	Check( EventIndex( "GetKeys" ) > EventIndex( "InitCursor" ), "GetKeys runs after the Toolbox is initialized" );
+	Check( EventIndex( "Sys_StartBootLog" ) >= 0 && EventIndex( "Sys_StartBootLog" ) < EventIndex( "Com_Init" ),
+		"the boot log is running before Com_Init can freeze" );
 }
 
 int main( int argc, char **argv ) {

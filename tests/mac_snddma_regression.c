@@ -236,6 +236,7 @@ static int		exitStatus;
 static void Sys_ShutdownInput( void ) { }
 static void Sys_ShutdownNetworking( void ) { }
 static void Sys_DumpRetroLogs( const char *fileName ) { }
+static void Sys_BootLogClose( void ) { }
 static void FakeExit( int status ) __attribute__(( noreturn ));
 static void FakeExit( int status ) {
 	exitStatus = status;
