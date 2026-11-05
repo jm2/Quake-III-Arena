@@ -1035,6 +1035,22 @@ static void IspOverCapacity( void ) {
 	CheckMouse( x, y, buttons, 2 );
 }
 
+/* A driver whose movement is not delta elements: retail took the first two
+ * elements whatever they were, so that mouse must not be lost.  Delta elements
+ * still win (IspOverCapacity lists axes before them). */
+static void IspOtherKinds( void ) {
+	fakeDevice_t	*mouse;
+	fakeElement_t	*x, *y, *buttons[1];
+
+	mouse = AddDevice( kISpDeviceClass_Mouse );
+	x = AddElement( mouse, kISpElementKind_Axis, kISpElementLabel_None );
+	y = AddElement( mouse, kISpElementKind_Axis, kISpElementLabel_None );
+	buttons[0] = AddElement( mouse, kISpElementKind_Button, kISpElementLabel_Btn_MouseOne );
+	Sys_InitInput();
+	Check( strstr( printed, "element(s) of another kind" ) != NULL, "the log says the movement is not delta elements" );
+	CheckMouse( x, y, buttons, 1 );
+}
+
 /* #17: more devices than the buffer, and mice that cannot be used */
 static void IspManyDevices( void ) {
 	fakeDevice_t	*mouse;
@@ -1315,6 +1331,8 @@ int main( int argc, char **argv ) {
 		IspShuffled();
 	} else if ( !strcmp( currentCase, "isp-many-buttons" ) ) {
 		IspManyButtons();
+	} else if ( !strcmp( currentCase, "isp-other-kinds" ) ) {
+		IspOtherKinds();
 	} else if ( !strcmp( currentCase, "isp-over-capacity" ) ) {
 		IspOverCapacity();
 	} else if ( !strcmp( currentCase, "isp-many-devices" ) ) {

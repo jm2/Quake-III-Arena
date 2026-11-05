@@ -44,9 +44,10 @@ static qboolean Sys_InitMouse( ISpDeviceReference device, macMouse_t *mouse ) {
 	ISpElementListReference	elementList;
 	ISpElementInfo		info;
 	ISpElementReference	deltas[2];		// other movement, in list order
+	ISpElementReference	axes[2];		// elements of any other kind, in list order
 	ISpElementReference	others[MAX_MOUSE_BUTTONS];	// buttons not labeled mou1-3
 	UInt32				count;
-	int					i, button, numDeltas, numOthers;
+	int					i, button, numDeltas, numAxes, numOthers;
 	OSStatus			err;
 
 	memset( mouse, 0, sizeof( *mouse ) );
@@ -67,13 +68,14 @@ static qboolean Sys_InitMouse( ISpDeviceReference device, macMouse_t *mouse ) {
 		count = MAX_ELEMENTS;
 	}
 
-	numDeltas = numOthers = 0;
+	numDeltas = numAxes = numOthers = 0;
 	for ( i = 0 ; i < count ; i++ ) {
 		if ( ISpElement_GetInfo( elements[i], &info ) ) {
 			continue;
 		}
 		PStringToCString( (char *)info.theString );
-		Com_Printf( "%i : %s\n", i, info.theString );
+		Com_Printf( "%i : %s (kind 0x%x, label 0x%x)\n", i, info.theString,
+			(unsigned)info.theKind, (unsigned)info.theLabel );
 
 		if ( info.theKind == kISpElementKind_Delta ) {
 			if ( ( info.theLabel == kISpElementLabel_Delta_X
@@ -100,6 +102,8 @@ static qboolean Sys_InitMouse( ISpDeviceReference device, macMouse_t *mouse ) {
 			} else if ( numOthers < MAX_MOUSE_BUTTONS ) {
 				others[numOthers++] = elements[i];
 			}
+		} else if ( numAxes < 2 ) {
+			axes[numAxes++] = elements[i];
 		}
 	}
 
@@ -111,6 +115,19 @@ static qboolean Sys_InitMouse( ISpDeviceReference device, macMouse_t *mouse ) {
 	}
 	if ( !mouse->yAxis && i < numDeltas ) {
 		mouse->yAxis = deltas[i++];
+	}
+	// Retail did not look at the kind at all, so a driver that reports its
+	// movement some other way worked there: without this it would lose the
+	// mouse, and the menus with it.
+	i = 0;
+	if ( !mouse->xAxis && i < numAxes ) {
+		mouse->xAxis = axes[i++];
+	}
+	if ( !mouse->yAxis && i < numAxes ) {
+		mouse->yAxis = axes[i++];
+	}
+	if ( i ) {
+		Com_Printf( "using %i element(s) of another kind for mouse movement\n", i );
 	}
 	if ( !mouse->xAxis || !mouse->yAxis ) {
 		Com_Printf( "no X and Y movement, skipping this device\n" );
