@@ -355,6 +355,7 @@ static void Sys_StartBootLog( const char *commandLine ) { Event( "Sys_StartBootL
 static void Sys_Heartbeat( void ) { }
 void Sys_BootLogFlush( void ) { Event( "Sys_BootLogFlush" ); }
 void Sys_BootLogClose( void ) { Event( "Sys_BootLogClose" ); }
+void Sys_InstallCrashHandler( void ) { Event( "Sys_InstallCrashHandler" ); }
 
 /* mac_glimp.c's, which tests/mac_glimp_regression.c covers */
 void GLimp_ReleaseDisplay( void ) {
@@ -506,6 +507,8 @@ static void CheckGetKeysAfterToolbox( void ) {
 	Check( EventIndex( "GetKeys" ) > EventIndex( "InitCursor" ), "GetKeys runs after the Toolbox is initialized" );
 	Check( EventIndex( "Sys_StartBootLog" ) >= 0 && EventIndex( "Sys_StartBootLog" ) < EventIndex( "Com_Init" ),
 		"the boot log is running before Com_Init can freeze" );
+	Check( EventIndex( "Sys_InstallCrashHandler" ) >= 0 && EventIndex( "Sys_InstallCrashHandler" ) < EventIndex( "Com_Init" ),
+		"crashes are caught from before Com_Init" );
 }
 
 int main( int argc, char **argv ) {
