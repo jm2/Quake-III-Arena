@@ -1,0 +1,187 @@
+# Running the port on a real Mac
+
+How to install a build on Mac OS 9, test it one subsystem at a time, and bring
+back what is needed to fix what breaks. Emulators cannot pass the accelerated
+renderer check (#268), so this needs real hardware with a 3D accelerator.
+
+## What to copy
+
+Build with `./build_mac.sh --base-only` and take `build_mac/Quake3.bin` to the
+Mac. It is MacBinary: StuffIt Expander decodes it. Keep `build_mac/Quake3.xcoff`
+on the build machine. It turns crash addresses into source lines, and only the
+XCOFF from the same build will do.
+
+Do not use the old contents of `release_mac/`: they are the failed April run,
+with demo data. Do not run from `Quake3.dsk` or a locked image: there is no
+`baseq3` beside the application there, and a locked disk cannot hold the logs.
+
+## Install
+
+Everything goes in one folder on a writable disk. The engine looks for `baseq3`
+beside the application, and writes its config and logs there:
+
+```text
+Quake III Arena:
+    Quake3
+    MacQuake3Parms.txt      (from the stages below)
+    baseq3:
+        pak0.pk3 ... pak8.pk3
+        bringup.cfg         (below)
+```
+
+- `pak0.pk3` must be the retail one, from the CD. `pak1.pk3` to `pak8.pk3` are
+  the point releases, and 1.32 needs them all. The demo's `pak0.pk3` stops at
+  `Couldn't load default.cfg`, because it has no `productid.txt`.
+- Give the application at least 120 MB in Get Info. It needs a Mac with enough
+  RAM for that, or virtual memory on.
+- Use Thousands of colors for windowed stages. On 256 colors, windowed mode can
+  stop with "at least four megs of video memory", because no accelerated
+  renderer is reported on that desktop.
+- Launching needs `InputSprocketLib`, `DrawSprocketLib` and `OpenGLLibrary` in
+  the Extensions folder, and Open Transport. A missing library stops the launch
+  with a message naming it.
+- MacsBug is worth installing. See [Crashes](#crashes).
+
+## Logs
+
+| File, beside the application | Written | Survives a freeze |
+| --- | --- | --- |
+| `q3boot.log` | line by line | yes |
+| `q3boot.prev.log` | the previous launch's `q3boot.log` | yes |
+| `flight_record_init.txt` | at the end of `Com_Init` | if it got there |
+| `crashdump.txt`, `retro68_console_crash.txt` | at a fatal error | no |
+| `retro68_console.txt` | at quit, and on Cmd-D | no |
+
+`q3boot.log` is the one that matters. It has a fixed length of 2 MB until a
+clean quit, so its size says nothing, and the end of the text is marked
+`<<< end of log >>>`. Each line starts with seconds since launch. It starts with
+the revision, the machine and the memory partition, and a `heartbeat:` line every
+5 seconds gives a rough frame rate. If the last line is a heartbeat, the game
+froze between frames. If the heartbeats stop in the middle of loading, look at
+what was printed last.
+
+**Restarting after a freeze moves `q3boot.log` to `q3boot.prev.log`, and a
+second restart loses it.** Copy it somewhere before the next launch.
+
+Writing every line to disk slows map loads a little. `+set sys_bootlog 0` turns
+it off, if the log itself is ever in doubt.
+
+## Stages
+
+Each stage adds one subsystem that has never run on this build, so a failure
+says where to look. Put the lines in `MacQuake3Parms.txt` and launch. Holding
+Shift at launch types them instead, for one launch, and ignores the file.
+
+To reset between stages, delete `baseq3:q3config.cfg`, or add `safe` as the first
+line, which ignores it. Settings are saved there, so a setting from one stage
+otherwise follows you into the next. A line that does not start with `set`, such
+as `+map`, also skips the opening cinematic, as on other platforms.
+
+### 1. Window, no network, no sound
+
+```text
++set r_fullscreen 0
++set net_noudp 1
++exec bringup.cfg
+```
+
+`bringup.cfg`, in `baseq3`, runs a bot match by itself. It covers four maps, a
+`vid_restart`, a disconnect and a quit:
+
+```text
+set bot_enable 1
+set sv_maxclients 8
+map q3dm1
+wait 300
+addbot sarge 2
+addbot grunt 2
+wait 1500
+echo ==== stage: q3dm17
+map q3dm17
+wait 300
+addbot sarge 3
+wait 1500
+echo ==== stage: vid_restart
+vid_restart
+wait 300
+echo ==== stage: q3tourney2
+map q3tourney2
+wait 600
+echo ==== stage: disconnect
+disconnect
+wait 300
+echo ==== stage: quit
+quit
+```
+
+Expect `Loading dll file` and never `interpreting it` for stock paks: that line
+means a pak's checksum is not a retail one, and the game will run far slower.
+Expect a clean quit, and `q3boot.log` then shrinks to its text.
+
+### 2. Fullscreen
+
+The same, without the `r_fullscreen` line. This is DrawSprocket. It should
+return to the desktop with the right colors, after a quit and after a fatal
+error.
+
+### 3. Mouse and keyboard
+
+Without `+exec bringup.cfg`, add `+map q3dm1` and play. Check Ctrl alone fires,
+Shift runs, and the mouse turns. `q3boot.log` lists the mouse's elements with
+their kind and label. `using ... element(s) of another kind` means the driver
+reports its movement some other way, and the sensitivity may be wrong.
+
+### 4. Cinematic and menus
+
+```text
++set net_noudp 1
+```
+
+This plays `idlogo.RoQ`, then the menus. Without a `baseq3:q3key` file, the CD key
+screen comes first. Esc should skip the cinematic.
+
+### 5. Sound
+
+```text
++set net_noudp 1
++set s_initsound 1
+```
+
+Sound is off unless asked for. Check for clean menu sounds, `snd_restart` several
+times at the console, and a clean quit.
+
+### 6. Network
+
+Leave out `net_noudp`, then try `connect` to a server. Esc gives up on a name
+lookup.
+
+## What to bring back
+
+- `q3boot.log` and `q3boot.prev.log`, from every failure.
+- The stage, and what was on screen.
+- `aglDescribe` output from the console, if it gets that far.
+- The heartbeat frame rate at each stage.
+
+## Crashes
+
+A fault writes `*** CRASH:` to `q3boot.log`, with the registers and callers, and
+shows the error alert. On the build machine:
+
+```sh
+python3 mac_symbolize.py q3boot.log build_mac/Quake3.xcoff
+```
+
+prints the source line of each `code+0xNNNN` address.
+
+With MacsBug installed, the handler still runs first. To stop in MacsBug at the
+fault instead, add `+set sys_crashhandler 0`. A `stack overflowed` line means the
+1 MB `cfrg` stack was too small.
+
+| What happened | Look at |
+| --- | --- |
+| The Finder will not launch it | The library it names, or Get Info's memory |
+| `Couldn't load default.cfg` | `pak0.pk3` is the demo's, or `baseq3` is not beside the application |
+| `video memory` error | 256 colors, or no accelerated renderer for the desktop |
+| Freeze, no alert | The end of `q3boot.prev.log` after one restart. Copy it before launching again |
+| Machine resets or bombs, no `*** CRASH` | The fault was somewhere the handler cannot run. Try MacsBug |
+| Black screen, then desktop | The end of `q3boot.log`, and stage 1 to rule out fullscreen |
