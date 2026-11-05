@@ -10,6 +10,16 @@ head while retaining checks on the merged default branch. A newer PR head
 cancels the older run. Push runs use one concurrency group per commit, so
 merging several PRs in a row never cancels or drops a master run.
 
+## Real content
+
+Game data cannot be committed, so `tests/run_real_content_tests.sh` skips
+unless `Q3_DEMO_PAK0` names the Quake III demo's `pak0.pk3`, and CI does not run
+it. Run it by hand after changing a loader or validator. It links the engine as
+`CMakeLists.txt` does, with `tests/real_content_sys.c` in place of `code/mac`
+and a no-op GL, runs a bot match on each map in the pak, a disconnect and a
+clean quit, with `sv_pure` on and the static modules standing for the stock
+QVMs, then walks the menus with seeded input. It takes a few minutes.
+
 ## Required checks
 
 - `Scripts and review ledger`
