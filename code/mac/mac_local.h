@@ -363,6 +363,7 @@ void SNDDMA_Shutdown( void );
 
 // mac_glimp.c
 extern glconfig_t glConfig;
+void GLimp_ReleaseDisplay( void );
 
 // mac_console.c
 

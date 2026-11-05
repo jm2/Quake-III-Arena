@@ -388,6 +388,9 @@ void Sys_Error( const char *error, ... ) {
     Sys_LogRecord( "\n" );
     Sys_DumpRetroLogs("retro68_console_crash.txt");
     Sys_BootLogFlush();
+    // Com_Error's CL_Shutdown has normally released the display; a recursive
+    // error has not, and nothing could be seen or answered on a captured one
+    GLimp_ReleaseDisplay();
     fprintf( stderr, "Sys_Error: %s\n", text );
     // a recursive error skips CL_Shutdown: stop the channel looping the
     // last mixed buffer under the alert, and close it before exit
@@ -396,21 +399,17 @@ void Sys_Error( const char *error, ... ) {
     Sys_ShutdownNetworking();
 
     // As retail, a Stop alert (ALRT 128, mac_resources.r) keeps the message
-    // on screen until it is dismissed. Com_Error's CL_Shutdown releases a
-    // DrawSprocket display first; while one is still held (a recursive
-    // error), the alert could be neither seen nor answered, so skip it.
-    if ( !glConfig.isFullscreen ) {
-        strcpy( (char *)title + 1, "Quake 3 Error:" );
-        title[0] = strlen( (char *)title + 1 );
-        length = strlen( text );
-        if ( length > 255 ) {
-            length = 255;
-        }
-        message[0] = length;
-        memcpy( message + 1, text, length );
-        ParamText( title, message, message, message );
-        StopAlert( 128, NULL );
+    // on screen until it is dismissed.
+    strcpy( (char *)title + 1, "Quake 3 Error:" );
+    title[0] = strlen( (char *)title + 1 );
+    length = strlen( text );
+    if ( length > 255 ) {
+        length = 255;
     }
+    message[0] = length;
+    memcpy( message + 1, text, length );
+    ParamText( title, message, message, message );
+    StopAlert( 128, NULL );
     Sys_BootLogClose();
     exit( 1 );
 }
