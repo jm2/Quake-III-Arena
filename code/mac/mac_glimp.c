@@ -637,6 +637,28 @@ static qboolean CreateGameWindow( void ) {
 
 /*
 ===================
+GLimp_ReleaseDisplay
+
+Gives the screen back after a fatal error or crash that GLimp_Shutdown will
+not run for (a recursive Com_Error skips CL_Shutdown), so the Stop alert can
+be seen and the desktop is not left captured, with the game's gamma, behind
+it. The caller is exiting, so nothing else is released. Safe to call when
+GLimp_Shutdown has run, or before GLimp_Init.
+===================
+*/
+void GLimp_ReleaseDisplay( void ) {
+	if ( sys_gl.systemGammas ) {
+		RestoreSystemGammas( sys_gl.systemGammas );
+	}
+	if ( sys_gl.context ) {
+		aglSetCurrentContext( NULL );
+		aglSetDrawable( sys_gl.context, NULL );
+	}
+	GLimp_ResetDisplay();
+}
+
+/*
+===================
 GLimp_ReleaseMode
 
 Undoes, in reverse order, whatever GLimp_SetMode got done, so a failed
