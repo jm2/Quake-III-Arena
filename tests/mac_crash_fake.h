@@ -34,9 +34,22 @@ enum {
 };
 
 typedef struct {
+	unsigned long	theArea;
+	void			*theAddress;
+	long			theError;
+	unsigned long	theReference;
+} MemoryExceptionInformation;
+
+typedef union {
+	MemoryExceptionInformation	*memoryInfo;
+} ExceptionInfo;
+
+typedef struct {
 	ExceptionKind		theKind;
 	MachineInformation	*machineState;
 	RegisterInformation	*registerImage;
+	void				*FPUImage;
+	ExceptionInfo		info;
 } ExceptionInformation;
 
 typedef OSStatus (*ExceptionHandler)( ExceptionInformation *theException );
