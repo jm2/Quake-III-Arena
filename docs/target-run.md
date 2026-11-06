@@ -166,8 +166,8 @@ Leave out `net_noudp`, then try `connect` to a server. Esc gives up on a name
 lookup. Try an ioquake3 server, then a retail one: the client starts on protocol
 71 and falls back to 68.
 
-The server browser's Internet list asks `sv_master1`, and `globalservers 1` at the
-console asks `sv_master2`. `+set cl_motd 1` asks id's update server at each
+The server browser's Internet list asks `sv_master1`, and `/globalservers 1 71` at
+the console asks `sv_master2`. `+set cl_motd 1` asks id's update server at each
 `connect`, and `+set com_authServer <host>` asks an authorize server. Neither is
 asked by default: the old ones no longer answer, and the second is sent the CD key,
 so that one can only be set on the command line.
