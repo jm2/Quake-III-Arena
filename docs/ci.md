@@ -13,8 +13,12 @@ merging several PRs in a row never cancels or drops a master run.
 ## Real content
 
 Game data cannot be committed, so `tests/run_real_content_tests.sh` skips
-unless `Q3_DEMO_PAK0` names the Quake III demo's `pak0.pk3`, and CI does not run
-it. Run it by hand after changing a loader or validator. It links the engine as
+unless `Q3_DEMO_PAK0` names the Quake III demo's `pak0.pk3`, or
+`Q3_RETAIL_BASEQ3` a `baseq3` with the retail paks, and CI does not run it. Run
+it by hand after changing a loader or validator, on retail data if there is any:
+the demo pak has no optimized AAS files, and missed that retail bots could not
+load. A full retail run takes over an hour, and `Q3_REAL_CONTENT_MAPS` limits it
+to the maps named. It links the engine as
 `CMakeLists.txt` does, with `tests/real_content_sys.c` in place of `code/mac`
 and a no-op GL, runs a bot match on each map in the pak, a disconnect and a
 clean quit, with `sv_pure` on and the static modules standing for the stock

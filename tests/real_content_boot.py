@@ -164,11 +164,20 @@ def install(work, pak):
     data = os.path.join(work, 'data')
     base = os.path.join(data, 'baseq3')
     os.makedirs(base)
-    os.symlink(os.path.abspath(pak), os.path.join(base, 'pak0.pk3'))
-    with zipfile.ZipFile(os.path.join(base, 'pak1.pk3'), 'w') as archive:
-        archive.writestr('productid.txt', product_id())
-    with zipfile.ZipFile(pak) as archive:
-        maps = sorted(name[5:-4] for name in archive.namelist() if re.match(r'maps/[^/]+\.bsp$', name))
+    retail = os.environ.get('Q3_RETAIL_BASEQ3')
+    paks = sorted(glob.glob(os.path.join(retail, 'pak?.pk3'))) if retail else [pak]
+    for path in paks:
+        os.symlink(os.path.abspath(path), os.path.join(base, os.path.basename(path)))
+    if not retail:
+        with zipfile.ZipFile(os.path.join(base, 'pak1.pk3'), 'w') as archive:
+            archive.writestr('productid.txt', product_id())
+    maps = set()
+    for path in paks:
+        with zipfile.ZipFile(path) as archive:
+            maps |= set(name[5:-4] for name in archive.namelist() if re.match(r'maps/[^/]+\.bsp$', name))
+    maps = sorted(maps)
+    if os.environ.get('Q3_REAL_CONTENT_MAPS'):
+        maps = [name for name in maps if name in os.environ['Q3_REAL_CONTENT_MAPS'].split()]
     if not maps:
         fail('%s has no maps' % pak)
     wait = os.environ.get('Q3_REAL_CONTENT_WAIT', '400')
@@ -192,6 +201,9 @@ def run(binary, data, seconds, extra, env=None):
 def bot_match(binary, data, maps):
     code, log = run(binary, data, TIME_LIMIT, ['+set', 'com_introplayed', '1', '+exec', 'run.cfg'])
     text = re.sub(r'\^[0-9]', '', log)
+    if os.environ.get('Q3_REAL_CONTENT_LOG'):
+        with open(os.environ['Q3_REAL_CONTENT_LOG'], 'w') as out:
+            out.write(text)
     problems = []
     if code != 0 or 'Sys_Quit: clean exit' not in text:
         problems.append('no clean quit (exit %s)' % code)
@@ -199,7 +211,7 @@ def bot_match(binary, data, maps):
         if '==== %s\n' % name not in text.replace('==== %s \n' % name, '==== %s\n' % name):
             problems.append('never reached ' + name)
     for line in text.split('\n'):
-        if re.search(r'Sys_Error|Unpure client|interpreting it|invalid BSP|malformed|Fatal', line) and 'chat' not in line:
+        if re.search(r'Sys_Error|Unpure client|interpreting it|invalid BSP|malformed|Fatal|Bot initialization failed', line) and 'chat' not in line:
             problems.append(line.strip())
     if problems:
         sys.stdout.write(log[-3000:])
@@ -224,8 +236,8 @@ def fuzz(binary, data):
 
 def main():
     pak = os.environ.get('Q3_DEMO_PAK0')
-    if not pak or not os.path.exists(pak):
-        fail('Q3_DEMO_PAK0 must name the demo pak0.pk3')
+    if not os.environ.get('Q3_RETAIL_BASEQ3') and (not pak or not os.path.exists(pak)):
+        fail('Q3_DEMO_PAK0 must name the demo pak0.pk3, or Q3_RETAIL_BASEQ3 a retail baseq3')
     work = tempfile.mkdtemp(prefix='q3-real-content.', dir=os.environ.get('TMPDIR', '/var/tmp'))
     try:
         binary = build(work)
