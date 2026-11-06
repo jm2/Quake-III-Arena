@@ -31,6 +31,9 @@ FUZZ_SECONDS = 30
 SCRIPT = """set bot_enable 1
 set sv_maxclients 8
 {maps}
+echo ==== vid_restart
+vid_restart
+wait 60
 echo ==== disconnect
 disconnect
 wait 60
@@ -213,7 +216,10 @@ def fuzz(binary, data):
         if code not in (None, 0):
             sys.stdout.write(log[-2000:])
             fail('menu input seed %s exited %s' % (seed, code))
-        print('menu input seed %s ran %d seconds without a fault' % (seed, FUZZ_SECONDS))
+        if code is None:
+            print('menu input seed %s ran %d seconds without a fault' % (seed, FUZZ_SECONDS))
+        else:
+            print('menu input seed %s quit cleanly, by way of the menus, within %d seconds' % (seed, FUZZ_SECONDS))
 
 
 def main():
