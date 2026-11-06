@@ -9,7 +9,8 @@ packet is validated before allocating or writing output.
 Supported native types remain 2 (RGB), 3 (uncompressed grayscale), and 10
 (RLE RGB), without color maps. Type 3 also retains the native loader's
 24/32-bit acceptance; unsupported depths fail before allocation. RLE runs
-and raw packets may cross rows, but may not exceed the remaining image.
+and raw packets may cross rows; a packet past the last pixel ends the image,
+as retail's did, and its unused data need not exist.
 Image ID bytes must fit the file; optional trailing TGA metadata remains
 accepted. The decoder writes exactly four RGBA bytes per declared pixel.
 
@@ -31,7 +32,7 @@ mixed run/raw packets crossing rows, one-pixel and 128-pixel packet endpoints,
 optional dimensions and trailing metadata. Wide/tall 65535-pixel grayscale
 files exercise unsigned header extents without large image allocations.
 
-Malformed cases include either packet kind exceeding the image, a later bad
+Malformed cases include a short image, a later bad
 packet after an earlier valid one, every ID/payload truncation, unsupported
 types/depths/color maps, zero and overflowing dimensions, absent raw payload,
 negative reported length, allocation failure and missing files. Rejection
