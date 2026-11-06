@@ -132,6 +132,11 @@ The same, without the `r_fullscreen` line. This is DrawSprocket. It should
 return to the desktop with the right colors, after a quit and after a fatal
 error.
 
+Modes can be changed in the menus. If DrawSprocket cannot confirm a mode is safe
+for the display, `q3boot.log` says the mode is unconfirmed. A Radeon 9200 did
+this at 1024x768. If the screen then stays blank, add `safe` as the first line of
+`MacQuake3Parms.txt`, which ignores the saved mode.
+
 ### 3. Mouse and keyboard
 
 Without `+exec bringup.cfg`, add `+map q3dm1` and play. Check Ctrl alone fires,

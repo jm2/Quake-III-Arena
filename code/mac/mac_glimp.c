@@ -74,6 +74,9 @@ void GLimp_ResetDisplay( void ) {
 	DSpShutdown();
 }
 
+// kDSpConfirmSwitchWarning, which the Retro68 headers lack
+#define DSP_CONFIRM_SWITCH_WARNING	-30448
+
 /*
 =====================
 GLimp_ChangeDisplay
@@ -152,6 +155,13 @@ qboolean GLimp_ChangeDisplay( int *actualWidth, int *actualHeight ) {
 	if ( !theError ) {
 		// put the context into the active state
 		theError = DSpContext_SetState( context, kDSpContextState_Active );
+		if ( theError == DSP_CONFIRM_SWITCH_WARNING ) {
+			// the display has switched, and the game is meant to ask if it
+			// can be seen. Retail ignored this result altogether
+			ri.Printf( PRINT_ALL, "This display mode is unconfirmed. If the screen stays blank, "
+				"start with safe in MacQuake3Parms.txt\n" );
+			theError = noErr;
+		}
 	}
 	if ( theError ) {
 		ri.Printf( PRINT_ALL, "DSpContext activation failed: %i\n", (int)theError );
