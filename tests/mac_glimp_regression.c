@@ -1226,6 +1226,32 @@ static void TestGamma( void ) {
 	}
 }
 
+/* A recursive Com_Error reaches Sys_Error with the display still captured. */
+static void TestFatalRelease( void ) {
+	static unsigned char	ramp[3][256];
+	int						i;
+
+	for ( i = 0 ; i < 256 ; i++ ) {
+		ramp[0][i] = ramp[1][i] = ramp[2][i] = (unsigned char)( 255 - i );
+	}
+
+	currentCase = "fatal release";
+	ResetAll();
+	CvarSet( "r_fullscreen", "1" );
+	Check( Init(), "GLimp_Init succeeds" );
+	Check( glConfig.isFullscreen && sys_gl.DSpContext, "fullscreen holds the display" );
+	GLimp_SetGamma( ramp[0], ramp[1], ramp[2] );
+	GLimp_ReleaseDisplay();
+	Check( !glConfig.isFullscreen && !sys_gl.DSpContext && !dspDisplay.reserved && !dspStarted,
+		"the display is released" );
+	Check( GammaIsOriginal( 0 ) && GammaIsOriginal( 1 ), "the desktop gamma is back" );
+	Check( !currentContext, "no context stays current" );
+	GLimp_ReleaseDisplay();		/* a second fatal error, or one after shutdown */
+	GLimp_Shutdown();
+	CheckReleased();
+	GLimp_ReleaseDisplay();
+}
+
 int main( void ) {
 	Setup();
 
@@ -1236,6 +1262,7 @@ int main( void ) {
 	TestFullscreenConfig();
 	TestPixelFormat();
 	TestGamma();
+	TestFatalRelease();
 
 	FreeDevices();
 	if ( failures ) {
