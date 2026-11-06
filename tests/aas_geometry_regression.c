@@ -128,10 +128,10 @@ static void ReferenceGeometry(void) {
     }
 }
 /* Retail 1.32's pak4 AAS files: bspc -optimize left no vertexes, one dummy edge and one dummy face. */
-static void OptimizedBuild(int version,int edges) {
+static void OptimizedBuild(int version,int edges,int edgeIndexes) {
     static const int counts[AAS_LUMPS]={2,0,2,1,0,1,0,2,2,0,2,0,0,0};int i,offset=124,offsets[AAS_LUMPS],n;
     memset(source,0,sizeof(source));Word(0,AASID);Word(4,version);Word(8,12345);
-    for(i=0;i<AAS_LUMPS;i++){n=i==AASLUMP_EDGES?edges:counts[i];offsets[i]=offset;Word(12+8*i,offset);Word(16+8*i,sizes[i]*n);offset+=sizes[i]*n;geometryOffsets[i]=offsets[i];}
+    for(i=0;i<AAS_LUMPS;i++){n=i==AASLUMP_EDGES?edges:i==AASLUMP_EDGEINDEX?edgeIndexes:counts[i];offsets[i]=offset;Word(12+8*i,offset);Word(16+8*i,sizes[i]*n);offset+=sizes[i]*n;geometryOffsets[i]=offsets[i];}
     sourceSize=advertised=readable=offset;
     for(i=0;i<2;i++){offset=offsets[0]+i*32;Word(offset,i?4:2);Word(offset+8,0xc1700000u);Word(offset+12,0xc1700000u);Word(offset+16,0xc1c00000u);Word(offset+20,0x41700000u);Word(offset+24,0x41700000u);Word(offset+28,i?0x41000000u:0x42000000u);}
     Word(offsets[2]+8,0x3f800000u);Word(offsets[2]+16,2);Word(offsets[2]+28,0xbf800000u);Word(offsets[2]+36,2);
@@ -142,10 +142,11 @@ static void OptimizedBuild(int version,int edges) {
 static void OptimizedFiles(void) {
     int version,field;
     for(version=4;version<=5;version++) {
-        OptimizedBuild(version,1);Counters();OldWorld();
+        OptimizedBuild(version,1,0);Counters();OldWorld();
         Check(AAS_LoadAASFile("fixture.aas")==BLERR_NOERROR&&aasworld.loaded&&!aasworld.numvertexes&&aasworld.numedges==1&&aasworld.vertexes&&!memcmp(aasworld.vertexes,"\0\0\0\0\0\0\0\0\0\0\0\0",12),"a file optimized down to dummy edge 0 loads, with a zeroed vertex behind that edge");
-        for(field=0;field<2;field++){OptimizedBuild(version,1);Counters();OldWorld();Encode(version);Word(geometryOffsets[AASLUMP_EDGES]+field*4,1);Encode(version);GeometryReject();}
-        OptimizedBuild(version,2);Counters();OldWorld();GeometryReject();
+        for(field=0;field<2;field++){OptimizedBuild(version,1,0);Counters();OldWorld();Encode(version);Word(geometryOffsets[AASLUMP_EDGES]+field*4,1);Encode(version);GeometryReject();}
+        OptimizedBuild(version,2,0);Counters();OldWorld();GeometryReject();
+        OptimizedBuild(version,1,1);Counters();OldWorld();GeometryReject();
     }
 }
 int main(int argc,char **argv) {

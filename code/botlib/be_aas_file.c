@@ -414,8 +414,10 @@ static qboolean AAS_ValidateGeometry(void)
 	{
 		// Files bspc optimized (pak4's) have no vertexes and just the dummy
 		// edge 0, whose zeros name the zeroed element AAS_LoadAASLump still
-		// allocates for an empty lump.
-		if (!i && !aasworld.numvertexes && !aasworld.edges[0].v[0] && !aasworld.edges[0].v[1])
+		// allocates for an empty lump. Nothing may index it: the optimizer
+		// copies the edges a file's index names, and has no room for that.
+		if (!i && !aasworld.numvertexes && !aasworld.edgeindexsize &&
+			!aasworld.edges[0].v[0] && !aasworld.edges[0].v[1])
 			continue;
 		for (axis = 0; axis < 2; axis++)
 			if (aasworld.edges[i].v[axis] < 0 ||
