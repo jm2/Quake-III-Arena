@@ -1627,6 +1627,9 @@ int main( int argc, char **argv ) {
     }
     Sys_LogPrintf( "main: command line: %s\n", commandLine );
     Sys_StartBootLog( commandLine );
+    if ( !strstr( commandLine, "sys_crashhandler 0" ) ) {
+        Sys_InstallCrashHandler();
+    }
 
     // Note: Sys_Init() is called by Com_Init() after the cvar/zone systems
     // exist. Calling it here too (as this port once did) dereferenced the

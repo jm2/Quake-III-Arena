@@ -365,6 +365,9 @@ void SNDDMA_Shutdown( void );
 extern glconfig_t glConfig;
 void GLimp_ReleaseDisplay( void );
 
+// mac_crash.c
+void Sys_InstallCrashHandler( void );
+
 // mac_console.c
 
 void	Sys_InitConsole( void );
