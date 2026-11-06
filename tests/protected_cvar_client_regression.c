@@ -336,6 +336,33 @@ static void TestSystemInfo( void ) {
 	CheckPaths( "a server moved a systeminfo protected path" );
 }
 
+/** A client of the server in this process shares its cvars: a gamestate left
+ * over from the last map must not put the server's sv_serverid back, or
+ * SV_Frame publishes it and the client is resent the gamestate for ever. */
+static void TestLocalServerGamestate( void ) {
+	static const char stale[] = "\\sv_serverid\\100\\sv_referencedPaks\\1 2";
+
+	module = "local gamestate";
+	Cvar_Get( "sv_serverid", "0", CVAR_SYSTEMINFO | CVAR_ROM );
+	Cvar_Get( "sv_referencedPaks", "", CVAR_SYSTEMINFO | CVAR_ROM );
+	Cvar_Set( "sv_serverid", "200" );
+	Cvar_Set( "sv_referencedPaks", "3 4" );
+	cvar_modifiedFlags &= ~CVAR_SYSTEMINFO;
+
+	clc.netchan.remoteAddress.type = NA_LOOPBACK;
+	SystemInfo( stale, qfalse );
+	Check( cl.serverId == 100, "a local client ignored the gamestate's serverId" );
+	Check( Is( "sv_serverid", "200" ), "a stale gamestate put the local server's sv_serverid back" );
+	Check( Is( "sv_referencedPaks", "3 4" ), "a stale gamestate put the local server's pak list back" );
+	Check( !( cvar_modifiedFlags & CVAR_SYSTEMINFO ), "a stale gamestate made SV_Frame republish systeminfo" );
+
+	clc.netchan.remoteAddress.type = NA_IP;
+	SystemInfo( stale, qfalse );
+	Check( cl.serverId == 100 && Is( "sv_serverid", "100" ) && Is( "sv_referencedPaks", "1 2" ),
+		"a remote server's systeminfo was not applied" );
+	clc.netchan.remoteAddress.type = NA_BOT;
+}
+
 int main( void ) {
 	int pass;
 
@@ -349,6 +376,7 @@ int main( void ) {
 		}
 	}
 	TestSystemInfo();
+	TestLocalServerGamestate();
 	munmap( vm.dataBase, IMAGE_SIZE );
 	puts( "cgame, UI and systeminfo keep the filesystem paths and engine commands (issue #39)" );
 	return 0;
