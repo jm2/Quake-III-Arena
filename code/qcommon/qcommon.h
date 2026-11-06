@@ -250,11 +250,14 @@ extern int demo_protocols[];
 
 #define	UPDATE_SERVER_NAME	"update.quake3arena.com"
 // override on command line, config files etc.
+// sv_master1 and sv_master2, which globalservers 0 and 1 ask.  Both answered
+// getservers for protocols 68 and 71 when last checked, on 2026-11-05;
+// master.ioquake3.org did not.
 #ifndef MASTER_SERVER_NAME
 #define MASTER_SERVER_NAME	"master.quake3arena.com"
 #endif
-#ifndef AUTHORIZE_SERVER_NAME
-#define	AUTHORIZE_SERVER_NAME	"authorize.quake3arena.com"
+#ifndef MASTER2_SERVER_NAME
+#define MASTER2_SERVER_NAME	"master.maverickservers.com"
 #endif
 
 #define	PORT_MASTER			27950
@@ -822,6 +825,7 @@ extern	cvar_t	*com_cl_running;
 extern	cvar_t	*com_viewlog;			// 0 = hidden, 1 = visible, 2 = minimized
 extern	cvar_t	*com_version;
 extern	cvar_t	*com_protocol;
+extern	cvar_t	*com_authServer;
 extern	cvar_t	*com_blood;
 extern	cvar_t	*com_buildScript;		// for building release pak files
 extern	cvar_t	*com_journal;

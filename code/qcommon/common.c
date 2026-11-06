@@ -89,6 +89,7 @@ cvar_t	*com_logfile;		// 1 = buffer log, 2 = flush after each print
 cvar_t	*com_showtrace;
 cvar_t	*com_version;
 cvar_t	*com_protocol;
+cvar_t	*com_authServer;
 cvar_t	*com_blood;
 cvar_t	*com_buildScript;	// for automated data building scripts
 cvar_t	*com_introPlayed;
@@ -2586,6 +2587,12 @@ void Com_Init( char *commandLine ) {
 	Sys_LogPrintf("Com_Init: FS_InitFilesystem\n"); 
 	FS_InitFilesystem ();
 	Sys_LogPrintf("Com_Init: FS done\n"); 
+
+	// The authorize server. id's no longer answers, so nothing is asked unless
+	// this names one. The client sends it the CD key, so only the command line
+	// may: CVAR_INIT keeps config files out, which is why this comes before the
+	// first exec below, and CVAR_PROTECTED keeps out VMs, and so servers' pk3s.
+	com_authServer = Cvar_Get( "com_authServer", "", CVAR_INIT | CVAR_PROTECTED );
 
 	Com_InitJournaling();
 	Sys_LogPrintf("Com_Init: Journaling done\n"); 

@@ -115,15 +115,22 @@ void SV_GetChallenge( netadr_t from ) {
 		return;
 	}
 
+	// with no authorize server there is nobody to wait for
+	if ( !com_authServer->string[0] ) {
+		challenge->pingTime = svs.time;
+		SV_ChallengeResponse( challenge );
+		return;
+	}
+
 	// look up the authorize server's IP
 	if ( !svs.authorizeAddress.ip[0] && svs.authorizeAddress.type != NA_BAD ) {
-		Com_Printf( "Resolving %s\n", AUTHORIZE_SERVER_NAME );
-		if ( !NET_StringToAdr( AUTHORIZE_SERVER_NAME, &svs.authorizeAddress ) ) {
+		Com_Printf( "Resolving %s\n", com_authServer->string );
+		if ( !NET_StringToAdr( com_authServer->string, &svs.authorizeAddress ) ) {
 			Com_Printf( "Couldn't resolve address\n" );
 			return;
 		}
 		svs.authorizeAddress.port = BigShort( PORT_AUTHORIZE );
-		Com_Printf( "%s resolved to %i.%i.%i.%i:%i\n", AUTHORIZE_SERVER_NAME,
+		Com_Printf( "%s resolved to %i.%i.%i.%i:%i\n", com_authServer->string,
 			svs.authorizeAddress.ip[0], svs.authorizeAddress.ip[1],
 			svs.authorizeAddress.ip[2], svs.authorizeAddress.ip[3],
 			BigShort( svs.authorizeAddress.port ) );

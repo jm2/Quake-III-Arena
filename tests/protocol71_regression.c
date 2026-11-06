@@ -78,6 +78,8 @@ qboolean CL_GameCommand( void ) { Check( 0, "client game command" ); return qfal
 qboolean UI_GameCommand( void ) { Check( 0, "UI command" ); return qfalse; }
 void Com_BeginRedirect( char *buffer, int buffersize, void ( *flush )( char * ) ) { (void)buffer; (void)buffersize; (void)flush; Check( 0, "rcon" ); }
 void Com_EndRedirect( void ) { Check( 0, "rcon" ); }
+static cvar_t authServerCvar = { .string = "authorize.example.com" };
+cvar_t *com_authServer = &authServerCvar;
 /** Every address but `wan` is on the LAN: challenges are answered at once, and no CD key is authorized. */
 qboolean Sys_IsLANAddress( netadr_t adr ) { return !NET_CompareBaseAdr( adr, wan ); }
 qboolean Sys_StringToAdr( const char *name, netadr_t *address ) {
@@ -636,6 +638,16 @@ static void Protocol71( void ) {
 	ToClient( server, out, Packet71( out, sequence + 2, challenge, qfalse, queuedPlain, queuedLength ) );
 	Check( Parsed( queuedPlain, queuedLength, 8 ) && Demo( sequence + 2, queuedPlain, queuedLength ), "demo message" );
 	clc.demorecording = qfalse; clc.demofile = 0;
+
+	/* by default there is no authorize server: nothing is asked, the CD key stays here, and nobody waits */
+	authServerCvar.string = "";
+	CL_RequestAuthorization();
+	Check( Quiet() && !cls.authorizeServer.port, "no authorize server, no CD key sent" );
+	ServerGets( wan, "getchallenge 76 Quake3Arena" );
+	Check( Server_Challenge( wan, &n, &refused ) && !strcmp( Text( Next( wan ) ), va( "challengeResponse %i 76 71", n ) ),
+	       "no authorize server, a challenge answered at once" );
+	Server_Refuse( wan );
+	authServerCvar.string = "authorize.example.com";
 
 	/* a challenge from an address outside the LAN, once the authorize server has timed out, also echoes */
 	ServerGets( wan, "getchallenge 77 Quake3Arena" );
