@@ -406,13 +406,12 @@ The ppc32 big-endian job runs Linux ELF binaries from Ubuntu's
 Retro68's compiler, the Mac OS PowerPC ABI's struct alignment, the `__MACOS__`
 header paths or real PowerPC hardware.
 
-For every PR, require successful CI on the current head and an approving
-review of that exact head by an independent adversarial reviewer agent that
-did not write the change (posted as a PR comment). Resolve blocking findings,
-push fixes, and obtain successful checks and a renewed approval on the new
-head. CodeRabbit findings are addressed when it reviews a PR but do not block
-merging. Absent, pending, or failed CI or review is not approval. (Changed on
-2026-09-23: Codex review credits are exhausted and CodeRabbit is throttled.)
+A PR merges automatically once it is clean: no conflicts, successful CI on the
+current head, and every bot review finding (CodeRabbit and the like) fixed or
+answered with a reason. Absent, pending, or failed CI is not clean. If bot
+reviews are throttled, the PR's one original bot review is enough. If even that
+was blocked, a fresh reviewer agent that did not write the change reviews it
+first, and the PR merges once that review comes back clean.
 
 The user has deferred retail-content and Mac OS 9 live testing to a follow-up
 session. Host-tested fixes may merge with those limitations recorded; do not
