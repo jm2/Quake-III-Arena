@@ -189,13 +189,12 @@ static int retroLogTotal = 0;
 
 // Sys_LogPrintf implementation
 //
-// Writes to the in-memory ring buffer, and to the Retro68 console window
-// once that is shown (Sys_ConsoleWanted, mac_consolehooks.cc).
-// Intentionally does NOT touch the disk per call: on Mac OS 9 each
-// fopen/fwrite/fclose triplet traps into the File Manager and yields
-// cooperatively, and Sys_LogPrintf is called many times per frame from
-// Sys_GetEvent. The ring is flushed to disk by Sys_DumpRetroLogs, which
-// is called from Sys_Quit, Sys_Error, and the Cmd-D panic-key handler.
+// Writes to the in-memory ring buffer and the boot log (mac_bootlog.c), and to
+// the Retro68 console window once that is shown (Sys_ConsoleWanted,
+// mac_consolehooks.cc). The ring reaches the disk through Sys_DumpRetroLogs,
+// which is called from Sys_Quit, Sys_Error, and the Cmd-D panic-key handler.
+// Each line of the boot log is a disk write, so keep this out of loops that
+// run every frame.
 // Append raw text to the in-memory ring and the boot log (no console output).
 // Used by Sys_Print so that ALL engine console output reaches the crash-dump
 // ring even when the on-screen console is hidden (viewlog 0).

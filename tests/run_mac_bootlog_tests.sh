@@ -20,3 +20,13 @@ done
 ASAN_OPTIONS=detect_leaks=${Q3_TEST_DETECT_LEAKS:-1}:halt_on_error=1 \
 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
     "$Q3_TEST_DIR/mac_bootlog"
+
+# What feeds the log. The fixtures that run main and Sys_Error have their own
+# Sys_LogRecord, so check the real ones' text.
+Q3_TEST_BODY() {
+    awk -v start="$1" '$0 ~ start { found = 1 } found { print } found && /^}/ { exit }' "$2"
+}
+Q3_TEST_BODY '^void Sys_LogRecord' "$Q3_TEST_ROOT/code/mac/mac_main.c" | grep -q 'Sys_BootLogWrite( text )' ||
+    { echo "Sys_LogRecord does not feed the boot log" >&2; exit 1; }
+Q3_TEST_BODY '^void QDECL Com_FlightRecord' "$Q3_TEST_ROOT/code/qcommon/common.c" | grep -q 'Sys_BootLogWrite( text )' ||
+    { echo "Com_FlightRecord does not feed the boot log" >&2; exit 1; }
