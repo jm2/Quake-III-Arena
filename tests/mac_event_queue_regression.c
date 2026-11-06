@@ -280,7 +280,10 @@ typedef struct { UInt8 majorRev, minorAndBugRev, stage, nonRelRev; } NumVersion;
 enum {
 	kISpDeviceClass_Mouse = 'mous', kISpDeviceClass_Keyboard = 'keyd',
 	kISpElementKind_Button = 'butn', kISpElementKind_Axis = 'axis', kISpElementKind_Delta = 'dlta',
+	kISpElementKind_DPad = 'dpad',
 	kISpElementLabel_None = 'none',
+	kISpElementLabel_Axis_XAxis = 'xaxi', kISpElementLabel_Axis_YAxis = 'yaxi',
+	kISpElementLabel_Axis_ZAxis = 'zaxi',
 	kISpElementLabel_Delta_X = 'xdlt', kISpElementLabel_Delta_Y = 'ydlt',
 	kISpElementLabel_Delta_Z = 'zdlt',
 	kISpElementLabel_Delta_Cursor_X = 'curx', kISpElementLabel_Delta_Cursor_Y = 'cury',
@@ -1035,6 +1038,71 @@ static void IspOverCapacity( void ) {
 	CheckMouse( x, y, buttons, 2 );
 }
 
+/* A driver whose movement is axes: retail took the first two elements whatever
+ * they were, so that mouse must not be lost.  Delta elements still win
+ * (IspOverCapacity lists axes before them). */
+static void IspOtherKinds( void ) {
+	fakeDevice_t	*mouse;
+	fakeElement_t	*x, *y, *buttons[1];
+
+	mouse = AddDevice( kISpDeviceClass_Mouse );
+	x = AddElement( mouse, kISpElementKind_Axis, kISpElementLabel_None );
+	y = AddElement( mouse, kISpElementKind_Axis, kISpElementLabel_None );
+	buttons[0] = AddElement( mouse, kISpElementKind_Button, kISpElementLabel_Btn_MouseOne );
+	Sys_InitInput();
+	Check( strstr( printed, "axis element(s)" ) != NULL, "the log says the movement is axes" );
+	CheckMouse( x, y, buttons, 1 );
+}
+
+/* Axes may be a joystick's: their resting value would turn the view, so a
+ * device with them is not used beside a mouse, whatever the order. */
+static void IspAxesBesideMouse( void ) {
+	fakeDevice_t	*stick, *pad, *mouse;
+	fakeElement_t	*x, *y, *buttons[1];
+
+	stick = AddDevice( kISpDeviceClass_Mouse );
+	AddElement( stick, kISpElementKind_Axis, kISpElementLabel_Axis_XAxis );
+	AddElement( stick, kISpElementKind_Axis, kISpElementLabel_Axis_YAxis );
+	pad = AddDevice( kISpDeviceClass_Mouse );
+	AddElement( pad, kISpElementKind_DPad, kISpElementLabel_None );
+	AddElement( pad, kISpElementKind_DPad, kISpElementLabel_None );
+	mouse = AddDevice( kISpDeviceClass_Mouse );
+	x = AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_Delta_X );
+	y = AddElement( mouse, kISpElementKind_Delta, kISpElementLabel_Delta_Y );
+	buttons[0] = AddElement( mouse, kISpElementKind_Button, kISpElementLabel_Btn_MouseOne );
+	Sys_InitInput();
+	Check( numDevices == 1, "only the mouse is used" );
+	Check( mouse->active && !stick->active && !pad->active, "only the mouse is activated" );
+	Check( strstr( printed, "axis element(s)" ) == NULL, "no axis is used" );
+	CheckMouse( x, y, buttons, 1 );
+}
+
+/* Labels decide among axes, and the Z axis is not movement. */
+static void IspAxisLabels( void ) {
+	fakeDevice_t	*mouse;
+	fakeElement_t	*x, *y, *buttons[1];
+
+	mouse = AddDevice( kISpDeviceClass_Mouse );
+	AddElement( mouse, kISpElementKind_Axis, kISpElementLabel_Axis_ZAxis );
+	y = AddElement( mouse, kISpElementKind_Axis, kISpElementLabel_Axis_YAxis );
+	x = AddElement( mouse, kISpElementKind_Axis, kISpElementLabel_Axis_XAxis );
+	buttons[0] = AddElement( mouse, kISpElementKind_Button, kISpElementLabel_Btn_MouseOne );
+	Sys_InitInput();
+	CheckMouse( x, y, buttons, 1 );
+}
+
+/* Only axes stand in for movement. */
+static void IspDPadOnly( void ) {
+	fakeDevice_t	*pad;
+
+	pad = AddDevice( kISpDeviceClass_Mouse );
+	AddElement( pad, kISpElementKind_DPad, kISpElementLabel_None );
+	AddElement( pad, kISpElementKind_DPad, kISpElementLabel_None );
+	Sys_InitInput();
+	Check( !numDevices && !inputActive, "a device with no movement is not a mouse" );
+	Check( cursorLevel == 0, "the cursor stays" );
+}
+
 /* #17: more devices than the buffer, and mice that cannot be used */
 static void IspManyDevices( void ) {
 	fakeDevice_t	*mouse;
@@ -1315,6 +1383,14 @@ int main( int argc, char **argv ) {
 		IspShuffled();
 	} else if ( !strcmp( currentCase, "isp-many-buttons" ) ) {
 		IspManyButtons();
+	} else if ( !strcmp( currentCase, "isp-other-kinds" ) ) {
+		IspOtherKinds();
+	} else if ( !strcmp( currentCase, "isp-axes-beside-mouse" ) ) {
+		IspAxesBesideMouse();
+	} else if ( !strcmp( currentCase, "isp-axis-labels" ) ) {
+		IspAxisLabels();
+	} else if ( !strcmp( currentCase, "isp-dpad-only" ) ) {
+		IspDPadOnly();
 	} else if ( !strcmp( currentCase, "isp-over-capacity" ) ) {
 		IspOverCapacity();
 	} else if ( !strcmp( currentCase, "isp-many-devices" ) ) {
