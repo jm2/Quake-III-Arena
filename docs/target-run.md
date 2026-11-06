@@ -166,10 +166,11 @@ Leave out `net_noudp`, then try `connect` to a server. Esc gives up on a name
 lookup. Try an ioquake3 server, then a retail one: the client starts on protocol
 71 and falls back to 68.
 
-The server browser asks `sv_master1` and `sv_master2`. Set at launch, `+set
-cl_motd 1` asks id's update server, and `+set com_authServer <host>` an authorize
-server. Neither is asked by default: the old ones no longer answer, and the second
-is sent the CD key.
+The server browser's Internet list asks `sv_master1`, and `globalservers 1` at the
+console asks `sv_master2`. `+set cl_motd 1` asks id's update server at each
+`connect`, and `+set com_authServer <host>` asks an authorize server. Neither is
+asked by default: the old ones no longer answer, and the second is sent the CD key,
+so that one can only be set on the command line.
 
 `Dropped a packet with no source address` is harmless: such packets are not used,
 and a game recovers. Send it along with its numbers, as the cause is not known.
@@ -183,8 +184,8 @@ and a game recovers. Send it along with its numbers, as the cause is not known.
 
 ## Crashes
 
-A fault writes `*** CRASH:` to `q3boot.log`, with the fault address, registers
-and callers, and shows the error alert. On the build machine:
+A fault writes `*** CRASH:` to `q3boot.log`, with the registers and callers, and
+for a memory fault its address, and shows the error alert. On the build machine:
 
 ```sh
 python3 mac_symbolize.py q3boot.log build_mac/Quake3.xcoff
@@ -194,8 +195,8 @@ prints the source line of each `code+0xNNNN` address. Trust `fault address` over
 `DAR`, `DSISR` and `MSR`, which were wrong under emulation.
 
 Not every bug is a fault: low memory is mapped, so a write through NULL carries on
-regardless, and there is no guard below the stack, so an overflow runs into the
-heap and hangs with no report.
+regardless. And nothing stops the stack at once: deliberate runaway recursion ran
+into the heap and hung, with no report.
 
 With MacsBug installed, the handler should run first, though this is untested. To
 stop in MacsBug at the fault instead, add `+set sys_crashhandler 0`. A line saying
@@ -231,8 +232,8 @@ wrapper. An HFS volume can be filled, and its logs read back, with `hfsutils`.
 | Seen there | What it means |
 | --- | --- |
 | Green cinematics, or everything green with `r_texturebits 32` | [ClassicMac #40](https://github.com/amcchord/ClassicMac/issues/40): the retail demo does the same. The port passes the right data |
-| `r_fullscreen 0` starts fullscreen, until a `vid_restart` | The first accelerated `aglChoosePixelFormat` of a launch fails. Not known whether a real card does this |
-| `r_colorbits 32` ends up 16-bit | The same failure, and the fallback sets 16 |
+| `r_fullscreen 0` starts fullscreen | The first accelerated `aglChoosePixelFormat` of a launch fails, and the fallback sets `r_fullscreen 1` and 16 bits, which reach `q3config.cfg`. Set `r_fullscreen 0` and `vid_restart` for a window. Not known whether a real card does this |
+| `r_colorbits 32` ends up 16-bit | The same failure and fallback |
 
 It says nothing about a real card's quirks, Rage Pro paths or real speed, and a
 hard stop cannot lose what a real drive had cached, so the log still needs that
