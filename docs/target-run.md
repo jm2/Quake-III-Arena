@@ -62,7 +62,10 @@ is a heartbeat, the game stopped somewhere in the next few seconds without
 printing anything. Otherwise, what was printed last says how far it got.
 
 **Restarting after a freeze moves `q3boot.log` to `q3boot.prev.log`, and a
-second restart loses it.** Copy it somewhere before the next launch.
+second restart loses it.** Copy it somewhere before the next launch. Close it
+first: with `q3boot.prev.log` open in another application, a launch cannot start
+a new log, so `q3boot.log` stays as an older run's. The time in the Finder shows
+which run a log is from.
 
 Every line is a disk write, which slows startup and map loads a little, and a
 warning printed every frame would slow the game. `+set sys_bootlog 0` turns the
@@ -190,5 +193,5 @@ a fault on another stack, at interrupt time, reads the same.
 | `video memory` error | 256 colors, or no accelerated renderer for the desktop |
 | Freeze, no alert | The end of `q3boot.prev.log` after one restart. Copy it before launching again |
 | Machine resets or bombs, no `*** CRASH` | The fault was somewhere the handler cannot run. Try MacsBug |
-| Freeze just after `*** CRASH` | A fault at interrupt time, in sound or networking, where the report cannot finish. Its registers are in the log |
+| Freeze just after `*** CRASH` | A fault at interrupt time, in sound or networking, where the report cannot finish. Whatever it wrote before stopping is in the log |
 | Black screen, then desktop | The end of `q3boot.log`, and stage 1 to rule out fullscreen |
