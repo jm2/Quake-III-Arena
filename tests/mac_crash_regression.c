@@ -14,7 +14,8 @@
 #define CRASH_CODE_END		CODE_END
 
 #define STACK_LOW		0x00100000u
-#define STACK_HIGH		0x00110000u
+#define STACK_HIGH		0x00140000u
+#define STACK_GOOD		( STACK_LOW + 0x30000u )	/* more room than CRASH_STACK_NEEDED */
 
 static uint32_t		fakeStack[( STACK_HIGH - STACK_LOW ) / 4];
 static int			failures, badReads;
@@ -28,6 +29,8 @@ static uint32_t ReadFake( uint32_t address ) {
 #define CRASH_READ( address )		ReadFake( address )
 static const uint32_t	reportVector[2] = { 0x10123450, 0x40031000 };
 #define CRASH_TVECTOR( function )	reportVector
+static int			snifferOffs;
+#define CRASH_SNIFFER_OFF()		( snifferOffs++ )
 
 #include "../code/mac/mac_crash.c"
 
@@ -39,6 +42,8 @@ static ExceptionHandler	installed;
 
 void Sys_LogRecord( const char *text ) { strncat( logText, text, sizeof( logText ) - strlen( logText ) - 1 ); }
 void Sys_BootLogFlush( void ) { flushes++; }
+static int			unlocks;
+void Sys_BootLogUnlock( void ) { unlocks++; }
 void Sys_Error( const char *error, ... ) {
 	va_list	args;
 
@@ -65,7 +70,7 @@ static ExceptionInformation	info;
 static void Reset( ExceptionKind kind, uint32_t pc, uint32_t sp ) {
 	crashing = 0;
 	logText[0] = errorText[0] = 0;
-	flushes = flushesBeforeError = badReads = 0;
+	flushes = flushesBeforeError = badReads = snifferOffs = unlocks = 0;
 	memset( fakeStack, 0, sizeof( fakeStack ) );
 	memset( &machine, 0, sizeof( machine ) );
 	memset( &registers, 0, sizeof( registers ) );
@@ -125,16 +130,33 @@ static void Passes( void ) {
 static void Resumes( void ) {
 	uint32_t	stack;
 
-	Reset( kAccessException, CODE_START + 0x1000, STACK_LOW + 0x4000 );
+	Reset( kAccessException, CODE_START + 0x1000, STACK_GOOD );
 	Check( Sys_CrashHandler( &info ) == noErr, "a fault is handled" );
 	Check( machine.PC.lo == reportVector[0], "execution resumes at the report" );
 	Check( registers.R2.lo == reportVector[1], "with this fragment's TOC" );
+	Check( registers.R1.lo < STACK_GOOD - CRASH_RED_ZONE + 16 && registers.R1.lo >= STACK_GOOD - CRASH_RED_ZONE - 16
+		&& !( registers.R1.lo & 15 ), "below the frames it will walk, on the stack that faulted" );
+	Check( !crashOnOwnStack, "a healthy stack keeps the stack sniffer happy" );
+	Report();
+	Check( !snifferOffs, "and leaves it running" );
+	Check( unlocks == 1, "a fault inside a log write cannot silence the report" );
+
+	/* too little stack left, or r1 not on the stack at all */
+	Reset( kAccessException, CODE_START + 0x1000, STACK_LOW + CRASH_STACK_NEEDED - 16 );
+	Check( Sys_CrashHandler( &info ) == noErr && crashOnOwnStack, "a nearly full stack is not used" );
+	Reset( kAccessException, CODE_START + 0x1000, STACK_HIGH + 16 );
+	Check( Sys_CrashHandler( &info ) == noErr && crashOnOwnStack, "nor is r1 above it" );
+	Reset( kAccessException, CODE_START + 0x1000, STACK_LOW + 0x4000 );
+	Check( Sys_CrashHandler( &info ) == noErr, "a fault is handled" );
 	stack = (uint32_t)(uintptr_t)( crashStack + CRASH_STACK_SIZE );
-	Check( registers.R1.lo != STACK_LOW + 0x4000 && !( registers.R1.lo & 15 ), "on its own aligned stack" );
+	Check( crashOnOwnStack && registers.R1.lo != STACK_LOW + 0x4000 && !( registers.R1.lo & 15 ), "it gets an aligned stack of its own" );
 	Check( stack - registers.R1.lo >= CRASH_STACK_MARGIN && stack - registers.R1.lo < CRASH_STACK_MARGIN + 16,
 		"with room for the frame it may write above itself" );
 	Check( crashRegisters.R1.lo == STACK_LOW + 0x4000 && crashMachine.PC.lo == CODE_START + 0x1000,
 		"the registers at the fault are kept" );
+	Report();
+	Check( snifferOffs == 1, "and turns off the stack sniffer, which would call that stack an overflow" );
+	crashing = 1;
 
 	/* the report itself faults */
 	Check( Sys_CrashHandler( &info ) != noErr, "a second fault passes on" );
@@ -164,13 +186,15 @@ static void Outside( void ) {
 	Sys_CrashHandler( &info );
 	Report();
 	Check( strstr( logText, "PC 40800000 (outside the application)" ) != NULL, "a PC in a library is not given an offset" );
+	Check( strstr( errorText, "40800000, outside the application" ) != NULL && !strstr( errorText, "code+" ),
+		"nor in the alert, where code+0x0 would name the wrong function" );
 }
 
 static void Overflow( void ) {
 	Reset( kAccessException, CODE_START + 0x1000, STACK_LOW - 0x40 );
 	Sys_CrashHandler( &info );
 	Report();
-	Check( strstr( logText, "the stack overflowed" ) != NULL, "r1 under the heap limit is called what it is" );
+	Check( strstr( logText, "a stack overflow, or a fault on another stack" ) != NULL, "r1 under the heap limit is called what it is" );
 	Check( !badReads, "and not walked" );
 }
 

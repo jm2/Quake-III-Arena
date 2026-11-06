@@ -3,11 +3,16 @@
 // A wild pointer otherwise ends in a bomb or a frozen, captured screen, with
 // the last log line as the only clue. The exception handler keeps it small:
 // an exception is no place for the File Manager, so it saves the registers and
-// resumes at Sys_CrashReport, on a stack of its own in case the fault was a
-// stack overflow, and with this fragment's TOC in case it was in a shared
-// library. That runs as ordinary code: it writes the registers and a stack
-// walk to the boot log, then leaves through Sys_Error, which gives the display
-// back and shows the alert.
+// resumes at Sys_CrashReport, with this fragment's TOC in case the fault was
+// in a shared library. That runs as ordinary code: it writes the registers and
+// a stack walk to the boot log, then leaves through Sys_Error, which gives the
+// display back and shows the alert.
+//
+// The report runs on the stack that faulted, below the frames it wants to
+// walk, while that stack has room. crashStack is only for a stack that does
+// not: it lies in the globals, below the heap limit, so the system's stack
+// sniffer would call it an overflow (system error 28), and the report clears
+// the sniffer's low-water mark first, as Apple's Switch Stack sample does.
 //
 // Addresses are logged as code+0xNNNN, offsets into this application's code
 // section, which are the addresses in the XCOFF the build leaves next to the
@@ -17,8 +22,8 @@
 // than handled again. So is any kind of exception a debugger wants. With
 // MacsBug installed this handler runs first, and "+set sys_crashhandler 0"
 // leaves crashes to MacsBug. A fault at interrupt time, in the sound callback
-// or an Open Transport notifier, gets no more care than a fault in the main
-// task, and may not get as far as the log.
+// or an Open Transport notifier, comes here too, and the report's file and
+// dialog calls may then freeze the machine rather than bomb it.
 
 #include <stdio.h>
 #include <stdint.h>
@@ -33,6 +38,8 @@ void Sys_Error( const char *error, ... );
 
 #define CRASH_STACK_SIZE	( 64 * 1024 )
 #define CRASH_STACK_MARGIN	256			// the frame a called function may write into
+#define CRASH_STACK_NEEDED	( 128 * 1024 )	// room the report and Sys_Error need
+#define CRASH_RED_ZONE		1024		// below r1, what a leaf function may be using
 #define CRASH_MAX_FRAMES	32
 #define CRASH_MAIN_SLACK	0x10000		// startup frames above the one that installs this
 
@@ -50,12 +57,17 @@ extern char _text[], _etext[];		// the code section, from the linker
 #ifndef CRASH_READ
 #define CRASH_READ( address )	( *(const UInt32 *)(uintptr_t)( address ) )
 #endif
+#ifndef CRASH_SNIFFER_OFF
+// StkLowPt: 0 stops the VBL stack sniffer. LowMem.h has no accessor for it.
+#define CRASH_SNIFFER_OFF()		( *(volatile UInt32 *)0x110 = 0 )
+#endif
 #ifndef CRASH_TVECTOR
 // a function pointer here points at its transition vector: code address, TOC
 #define CRASH_TVECTOR( function )	( (const UInt32 *)(uintptr_t)( function ) )
 #endif
 
 static volatile int				crashing;
+static int						crashOnOwnStack;
 static ExceptionKind			crashKind;
 static MachineInformation		crashMachine;
 static RegisterInformation		crashRegisters;
@@ -118,7 +130,8 @@ static void Sys_CrashWalkStack( UInt32 sp ) {
 	int		frame;
 
 	if ( sp < stackLow ) {
-		Sys_CrashPrint( "*** r1 %08lx is below the heap limit %08lx: the stack overflowed\n", sp, stackLow, 0, 0 );
+		Sys_CrashPrint( "*** r1 %08lx is below the heap limit %08lx: a stack overflow, or a fault on another stack\n",
+			sp, stackLow, 0, 0 );
 		return;
 	}
 	for ( frame = 0 ; frame < CRASH_MAX_FRAMES ; frame++ ) {
@@ -148,6 +161,10 @@ static void Sys_CrashReport( void ) {
 	const char			*kind = Sys_CrashKindName( crashKind );
 	int					i;
 
+	if ( crashOnOwnStack ) {
+		CRASH_SNIFFER_OFF();
+	}
+	Sys_BootLogUnlock();	// the fault may have been inside a log write
 	Sys_LogRecord( "\n*** CRASH: " );
 	Sys_LogRecord( kind );
 	Sys_LogRecord( "\n" );
@@ -163,8 +180,12 @@ static void Sys_CrashReport( void ) {
 	Sys_CrashWalkStack( crashRegisters.R1.lo );
 	Sys_BootLogFlush();
 
-	Sys_Error( "The game crashed: %s at code+0x%lx. The details are in q3boot.log.",
-		kind, (unsigned long)Sys_CrashCodeOffset( pc ) );
+	if ( Sys_CrashCodeOffset( pc ) ) {
+		Sys_Error( "The game crashed: %s at code+0x%lx. The details are in q3boot.log.",
+			kind, (unsigned long)Sys_CrashCodeOffset( pc ) );
+	}
+	Sys_Error( "The game crashed: %s at %08lx, outside the application. The details are in q3boot.log.",
+		kind, (unsigned long)pc );
 }
 
 /*
@@ -177,6 +198,7 @@ anything else passes the exception on.
 */
 static OSStatus Sys_CrashHandler( ExceptionInformation *info ) {
 	const UInt32	*report;
+	UInt32			sp;
 
 	if ( crashing || !Sys_CrashKindName( info->theKind ) ||
 		!info->machineState || !info->registerImage ) {
@@ -190,8 +212,14 @@ static OSStatus Sys_CrashHandler( ExceptionInformation *info ) {
 	report = CRASH_TVECTOR( Sys_CrashReport );
 	info->machineState->PC.lo = report[0];
 	info->registerImage->R2.lo = report[1];
-	info->registerImage->R1.lo =
-		( (UInt32)(uintptr_t)( crashStack + CRASH_STACK_SIZE - CRASH_STACK_MARGIN ) ) & ~15UL;
+	sp = info->registerImage->R1.lo;
+	crashOnOwnStack = sp < stackLow + CRASH_STACK_NEEDED || sp >= stackHigh;
+	if ( crashOnOwnStack ) {
+		sp = (UInt32)(uintptr_t)( crashStack + CRASH_STACK_SIZE - CRASH_STACK_MARGIN );
+	} else {
+		sp -= CRASH_RED_ZONE;
+	}
+	info->registerImage->R1.lo = sp & ~15UL;
 	return noErr;
 }
 
