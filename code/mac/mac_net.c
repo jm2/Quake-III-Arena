@@ -714,6 +714,53 @@ void Sys_SendPacket( int length, const void *data, netadr_t to ) {
 
 /*
 ==================
+Sys_ReportDroppedPacket
+
+Run on Mac OS 9, a client saw bursts of pieces with no source address after
+long stalls, a report for each. The cause is not known, so a report says what
+Open Transport returned. An error waiting on the endpoint explains the piece,
+and clears it. Otherwise this prints once a second at most: a print can be a
+disk write, and these come in bursts, in the frames that can least afford it.
+==================
+*/
+#define	DROPPED_PACKET_REPORT_MSEC	1000
+
+static void Sys_ReportDroppedPacket( const netadr_t *from, OTByteCount addrLen, OTByteCount length, OTFlags flags ) {
+	static int	lastReport;
+	static int	suppressed;
+	OTResult	look;
+	int			now;
+
+	look = OTLook( endpoint );
+	if ( look == T_UDERR ) {
+		RcvUDErr( endpoint );
+		if ( addrLen == 0 ) {
+			return;
+		}
+	}
+
+	now = Sys_Milliseconds();
+	if ( lastReport && now - lastReport < DROPPED_PACKET_REPORT_MSEC ) {
+		suppressed++;
+		return;
+	}
+	lastReport = now ? now : 1;
+
+	if ( addrLen ) {
+		Com_Printf( "Oversize packet from %s\n", NET_AdrToString( *from ) );
+	} else {
+		Com_Printf( "Dropped a packet with no source address: %i bytes, flags 0x%x, OTLook %i\n",
+			(int)length, (unsigned int)flags, (int)look );
+	}
+	if ( suppressed ) {
+		Com_Printf( "%i more packets dropped since the last report\n", suppressed );
+		suppressed = 0;
+	}
+}
+
+
+/*
+==================
 Sys_GetPacket
 
 Never called by the game logic, just the system event queing
@@ -764,10 +811,12 @@ qboolean	Sys_GetPacket ( netadr_t *net_from, msg_t *net_message ) {
 	// Read the rest, or the next call would return it as a packet of its own
 	// with no source address, and drop the whole datagram as unix_net.c and
 	// win_net.c do; like them, also drop one that exactly fills the buffer.
-	// A piece with no source address is the rest of a datagram whose drain
-	// failed on an earlier call: drop it the same way.
+	// A piece with no source address is not a packet: drop it the same way.
 	if ( ( flags & T_MORE ) || (int)d.udata.len >= net_message->maxsize
 		|| d.addr.len == 0 ) {
+		OTFlags		firstFlags = flags;
+		OTByteCount	firstAddrLen = d.addr.len, firstLen = d.udata.len;
+
 		while ( flags & T_MORE ) {
 			err = OTRcvUData( endpoint, &d, &flags );
 			if ( err ) {
@@ -775,7 +824,7 @@ qboolean	Sys_GetPacket ( netadr_t *net_from, msg_t *net_message ) {
 				break;
 			}
 		}
-		Com_Printf( "Oversize packet from %s\n", NET_AdrToString( *net_from ) );
+		Sys_ReportDroppedPacket( net_from, firstAddrLen, firstLen, firstFlags );
 		return qfalse;
 	}
 
