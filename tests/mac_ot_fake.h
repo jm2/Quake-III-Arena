@@ -74,6 +74,7 @@ enum { false = 0, true = 1 };	/* MacTypes.h */
 enum { T_MORE = 0x0001 };
 enum { noErr = 0 };
 enum { kOTLookErr = -3158, kOTNoDataErr = -3162 };
+enum { T_UDERR = 0x0040 };
 enum { kOTBadAddressErr = -3150, kOTOutStateErr = -3155, kOTStateChangeErr = -3168,
 	kOTBadNameErr = -3170, kOTAddressBusyErr = -3172, kOTOutOfMemoryErr = -3211,
 	kETIMEDOUTErr = -3259, kOTBadConfigurationErr = -3282 };
@@ -153,6 +154,7 @@ typedef struct {
 	const UInt8	*data;
 	int			length;
 	InetAddress	from;
+	int			noAddress;
 } fakeOTDatagram_t;
 
 static fakeOTDatagram_t	fakeOTDatagrams[FAKE_OT_MAX_QUEUE];
@@ -182,10 +184,18 @@ static void FakeOT_QueueDatagram( const UInt8 *data, int length, const UInt8 ip[
 
 	d->data = data;
 	d->length = length;
+	d->noAddress = 0;
 	memset( &d->from, 0, sizeof( d->from ) );
 	d->from.fAddressType = AF_INET;
 	memcpy( &d->from.fHost, ip, 4 );
 	memcpy( &d->from.fPort, port, 2 );
+}
+
+/* fakeOTLookEvent is what OTLook reports, until RcvUDErr takes a T_UDERR. */
+static OTResult fakeOTLookEvent;
+OTResult OTLook( EndpointRef ref ) {
+	(void)ref;
+	return fakeOTLookEvent;
 }
 
 OSStatus OTRcvUData( EndpointRef ref, TUnitData *udata, OTFlags *flags ) {
@@ -202,7 +212,7 @@ OSStatus OTRcvUData( EndpointRef ref, TUnitData *udata, OTFlags *flags ) {
 	d = &fakeOTDatagrams[fakeOTNext];
 
 	udata->addr.len = 0;	/* continuation pieces carry no address */
-	if ( fakeOTOffset == 0 && udata->addr.maxlen >= sizeof( d->from ) ) {
+	if ( fakeOTOffset == 0 && !d->noAddress && udata->addr.maxlen >= sizeof( d->from ) ) {
 		memcpy( udata->addr.buf, &d->from, sizeof( d->from ) );
 		udata->addr.len = sizeof( d->from );
 	}
