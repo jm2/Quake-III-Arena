@@ -135,6 +135,8 @@ static void StartEngine( void ) {
 	/* Com_Init: registered before the first exec */
 	Cvar_Get( "com_authServer", "", CVAR_INIT | CVAR_PROTECTED );
 	Cmd_ExecuteString( "seta com_authServer config.example.com" );
+	/* before the command line is applied again, which would hide a config's value */
+	Check( !strcmp( Cvar_VariableString( "com_authServer" ), AUTH_SERVER ), "a config file set the authorize host" );
 	Com_StartupVariable( NULL );
 	Cvar_Get( "sv_master2", "", CVAR_ARCHIVE );	/* SV_Init */
 	Cvar_Get( "rconPassword", "", CVAR_TEMP );
