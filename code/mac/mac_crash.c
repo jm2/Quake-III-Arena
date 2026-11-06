@@ -179,11 +179,11 @@ static void Sys_CrashReport( void ) {
 	Sys_CrashPrintAddress( "PC", pc );
 	Sys_CrashPrintAddress( "LR", crashMachine.LR.lo );
 	// The system's own account of the fault. Under emulation at least, the
-	// DAR, DSISR and MSR below it are not what the processor saw, and nor are
-	// this record's theReference and theError: a write to 0xdead0000 gave
-	// that address, but reference 0 and a meaningless error.
+	// DAR, DSISR and MSR below it are not what the processor saw, and nor is
+	// this record's theError, so that is left out.
 	if ( crashHasMemory ) {
-		Sys_CrashPrint( "*** fault address %08lx\n", (UInt32)(uintptr_t)crashMemory.theAddress, 0, 0, 0 );
+		Sys_CrashPrint( "*** fault address %08lx, reference %lu (0 write, 1 read, 2 execute)\n",
+			(UInt32)(uintptr_t)crashMemory.theAddress, crashMemory.theReference, 0, 0 );
 	}
 	Sys_CrashPrint( "*** CTR %08lx DAR %08lx DSISR %08lx MSR %08lx\n",
 		crashMachine.CTR.lo, crashMachine.DAR.lo, crashMachine.DSISR, crashMachine.MSR );

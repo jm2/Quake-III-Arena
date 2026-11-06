@@ -170,13 +170,14 @@ static void Reports( void ) {
 	Reset( kReadOnlyMemoryException, CODE_START + 0x1000, STACK_LOW + 0x4000 );
 	BuildFrames( STACK_LOW + 0x4000, 3 );
 	memory.theAddress = (void *)(uintptr_t)0xdead0000;
+	memory.theReference = 1;
 	info.info.memoryInfo = &memory;
 	Sys_CrashHandler( &info );
 	Report();
 	Check( strstr( logText, "*** CRASH: write to read-only memory\n" ) != NULL, "the kind is logged" );
 	Check( strstr( logText, "PC 10001000 code+0x1000\n" ) != NULL, "the PC, as an offset" );
 	Check( strstr( logText, "LR 10002000 code+0x2000\n" ) != NULL, "the LR, as an offset" );
-	Check( strstr( logText, "*** fault address dead0000\n" ) != NULL, "the system's record of the fault" );
+	Check( strstr( logText, "*** fault address dead0000, reference 1 " ) != NULL, "the system's record of the fault" );
 	Check( strstr( logText, "DAR deadbeef" ) != NULL, "and the raw processor fields" );
 	Check( strstr( logText, "cafef00d" ) != NULL, "the registers" );
 	Check( strstr( logText, "frame  0 10003000 code+0x3000\n" ) != NULL
