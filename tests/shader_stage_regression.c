@@ -32,7 +32,8 @@ static void *scriptFile;
 static int scriptReads,scriptFrees,listFrees;
 static void Check(int condition,const char *message) { if(!condition) { fprintf(stderr,"Shader stage regression failed: %s\n",message);exit(1); } }
 void QDECL Com_Error(int level,const char *format,...) { (void)level;(void)format;Check(0,"unexpected native error");exit(1); }
-void QDECL Com_Printf(const char *format,...) { (void)format; }
+static int printed;
+void QDECL Com_Printf(const char *format,...) { (void)format;printed++; }
 static void QDECL Print(int level,const char *format,...) { (void)level;(void)format; }
 static void *Allocate(int size,ha_pref preference) { void *p;Check(size>=0 && size<100000 && preference==h_low && allocations<512,"bounded native shader allocation");p=calloc(1,size?size:1);Check(p!=NULL,"shader fixture allocation");owned[allocations++]=p;return p; }
 static void Release(void) { while(allocations)free(owned[--allocations]);memset(&tr,0,sizeof(tr));tr.defaultImage=tr.whiteImage=&white;memset(hashTable,0,sizeof(hashTable));memset(shaderTextHashTable,0,sizeof(shaderTextHashTable));s_shaderText=NULL;s_shaderTextIndexed=qfalse; }
@@ -386,6 +387,10 @@ static void PublicInputs(int proof) {
         Check(!(kind==0?RE_RegisterShader(NULL):kind==1?RE_RegisterShaderNoMip(NULL):RE_RegisterShaderLightMap(NULL,0)),"each exported null-name registration rejects");
         Check(allocations==before && R_FindShader(NULL,LIGHTMAP_NONE,qtrue)==tr.defaultShader,"null native registration imports/allocates nothing");
     }
+    before=printed;Check(!RE_RegisterShader("") && !RE_RegisterShaderNoMip("") && !RE_RegisterShaderLightMap("",0) && printed==before,"empty exported names stay quiet, as menus ask for them every frame");
+    memset(name,'x',MAX_QPATH);name[MAX_QPATH]=0;before=printed;
+    Check(!RE_RegisterShader(name) && !RE_RegisterShaderNoMip(name) && !RE_RegisterShaderLightMap(name,0) && printed==before+3,"each exported overlong name reports");
+    before=printed;Check(!RE_RegisterShader(NULL) && printed==before+1,"a null exported name reports");
     for(i=0;i<MAX_QPATH+7;i++) {
         memset(name,'x',i);name[i]=0;before=allocations;
         if(!i || i>=MAX_QPATH) {
