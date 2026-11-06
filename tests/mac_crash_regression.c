@@ -206,7 +206,7 @@ static void Overflow( void ) {
 }
 
 static void BadChains( void ) {
-	static const uint32_t	links[] = { 0, STACK_LOW + 0x4000, STACK_LOW + 0x3000, STACK_LOW + 0x4002, STACK_HIGH, 0xffffffffu };
+	static const uint32_t	links[] = { 0, STACK_LOW + 0x4000, STACK_LOW + 0x3000, STACK_LOW + 0x4002, STACK_HIGH, STACK_HIGH - 4, 0xfffffffcu, 0xffffffffu };
 	int i;
 
 	for ( i = 0 ; i < (int)( sizeof( links ) / sizeof( links[0] ) ) ; i++ ) {

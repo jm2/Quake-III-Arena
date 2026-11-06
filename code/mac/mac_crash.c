@@ -150,7 +150,7 @@ static void Sys_CrashWalkStack( UInt32 sp ) {
 			return;
 		}
 		next = CRASH_READ( sp + FRAME_BACK_CHAIN );
-		if ( next <= sp || next >= stackHigh || ( next & 3 ) ) {
+		if ( next <= sp || next >= stackHigh - FRAME_SAVED_LR || ( next & 3 ) ) {
 			return;
 		}
 		snprintf( name, sizeof( name ), "frame %2i", frame );
