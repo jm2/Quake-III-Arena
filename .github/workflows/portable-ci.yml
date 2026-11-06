@@ -131,11 +131,25 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install the PowerPC cross compilers and qemu-user
+        # This takes under a minute, but it sometimes hangs until the job's
+        # timeout. Bounding each try leaves the job enough time for the tests.
+        timeout-minutes: 10
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends \
-            gcc-powerpc-linux-gnu g++-powerpc-linux-gnu libc6-dev-powerpc-cross \
-            qemu-user-static
+          packages="gcc-powerpc-linux-gnu g++-powerpc-linux-gnu libc6-dev-powerpc-cross qemu-user-static"
+          installed=
+          for try in 1 2 3; do
+            if sudo timeout -k 10 180 bash -ec "
+              dpkg --configure -a
+              apt-get update -q
+              apt-get install -y -q --no-install-recommends $packages
+            "; then
+              installed=1
+              break
+            fi
+            echo "::warning::Package install try $try of 3 failed or timed out"
+            sleep 5
+          done
+          test -n "$installed"
           if [ ! -e /proc/sys/fs/binfmt_misc/qemu-ppc ]; then
             sudo systemctl restart systemd-binfmt
           fi
