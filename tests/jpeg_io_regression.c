@@ -217,6 +217,38 @@ static void Corrupt( void ) {
 }
 
 /** Cover every small input size/prefix, refill boundaries, malformed dimensions and screenshot failure. */
+/* A baseline JPEG of one MCU row, flat grey: every block is DC 0 and an end of
+ * block, so the entropy data is a run of 0 bits.  The Y plane has twice the
+ * chroma resolution, and scan lists the components of the scan by ID. */
+static void ScanFixture( const byte *scan, int scanComponents, int width ) {
+	static const byte head[]={ 0xff,0xd8, 0xff,0xc4,0,20,0x00,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0xff,0xc4,0,20,0x10,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
+	byte *out=fixture; int i;
+	memcpy(out,head,sizeof(head)); out+=sizeof(head);
+	*out++=0xff;*out++=0xdb;*out++=0;*out++=67;*out++=0; memset(out,1,64); out+=64;
+	*out++=0xff;*out++=0xc0;*out++=0;*out++=17;*out++=8;*out++=0;*out++=16;
+	*out++=(byte)(width>>8);*out++=(byte)width;*out++=3;
+	*out++=1;*out++=0x22;*out++=0; *out++=2;*out++=0x11;*out++=0; *out++=3;*out++=0x11;*out++=0;
+	*out++=0xff;*out++=0xda;*out++=0;*out++=(byte)(6+scanComponents*2);*out++=(byte)scanComponents;
+	for(i=0;i<scanComponents;i++) { *out++=scan[i]; *out++=0; }
+	*out++=0;*out++=63;*out++=0;
+	memset(out,0,512); out+=512;
+	*out++=0xff;*out++=0xd9;
+	fixtureSize=(int)(out-fixture); alignment=0;
+}
+static void ScanComponents( void ) {
+	static const byte stock[]={1,2,3}, reordered[]={2,1,3}, repeated[]={1,1,2}, chromaTwice[]={2,2,3};
+	int column;
+	ScanFixture(stock,3,256); Reset(); Check(Load()&&loadedWidth==256&&loadedHeight==16,"stock scan order");
+	for(column=0;column<256*16*4;column+=4) Check(loaded[column]==128&&loaded[column+1]==128&&loaded[column+2]==128,"flat grey");
+	Free(loaded);
+	/* the scan's order is not the frame's: output planes follow the frame */
+	ScanFixture(reordered,3,256); Reset(); Check(Load()&&loadedWidth==256&&loadedHeight==16,"reordered scan");
+	for(column=0;column<256*16*4;column+=4) Check(loaded[column]==128&&loaded[column+1]==128&&loaded[column+2]==128,"reordered scan decodes the same image");
+	Free(loaded);
+	ScanFixture(repeated,3,256); Reset(); RejectWith("Invalid component ID");
+	ScanFixture(chromaTwice,3,256); Reset(); RejectWith("Invalid component ID");
+}
 int main( int argc, char **argv ) {
 	byte image[8*16*4], color[8*8*4], tiny[4]={31,31,31,0}, *noise=malloc(128*128*4), *copy=malloc(128*128*4);
 	int i,j,size,baseline,position; const int boundaries[]={4095,4096,4097,8191,8192,8193}; unsigned int state=1;
@@ -252,6 +284,7 @@ int main( int argc, char **argv ) {
 	memcpy(fixture,original,originalSize); fixture[position+7]=fixture[position+8]=0; Reset(); Reject();
 	memcpy(fixture,original,originalSize); Reset(); negativeLength=1; RejectWith("invalid file length");
 	Corrupt();
+	ScanComponents();
 	Reset(); missing=1; loaded=(byte *)1; loadedWidth=loadedHeight=-1; R_LoadJPG("missing.jpg",&loaded,&loadedWidth,&loadedHeight); Check(!loaded && !loadedWidth && !loadedHeight && reads==1 && !fileFrees && !live,"missing file");
 	for(i=0;i<8*8;i++) { color[i*4]=180; color[i*4+1]=40; color[i*4+2]=90; color[i*4+3]=i; }
 	Reset(); SaveJPG("color.jpg",100,8,8,color); Check(writes==1 && !warnings && !live,"YCbCr color screenshot"); Reset(); Golden(8,8,color,2);
