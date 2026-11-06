@@ -24,7 +24,7 @@ option(BUILD_TEAM_ARENA "Build the Quake3_TeamArena (mission pack) executable" O
 # defines CHAR_WIDTH (colliding with ui_shared.h). Q3 is C89/GNU89-era code.
 # -fgnu89-inline: ID_INLINE is plain 'inline'; C99 inline semantics emit no
 # external definition (undefined refs to AAS_*_inline at -O0), GNU89 does.
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -fgnu89-inline -g -fno-strict-aliasing")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -fgnu89-inline -O2 -g -fno-strict-aliasing")
 
 # The optimized build is the default. Q3_BRINGUP keeps -O0, whose reloads of
 # every variable and plain frames make a hang or crash on new hardware easier
@@ -36,11 +36,10 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -fgnu89-inline -g -fno-strict-ali
 #       NULL dereference carries on and a later NULL check still has to run.
 #   -ffp-contract=off: no fused multiply-add. fmadds rounds once, so Pmove
 #       and friends would not match the x86 peers of a network game.
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fwrapv -fno-delete-null-pointer-checks -ffp-contract=off")
 option(Q3_BRINGUP "Build at -O0 for hardware bring-up instead of the optimized build" OFF)
 if(Q3_BRINGUP)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
-else()
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -fwrapv -fno-delete-null-pointer-checks -ffp-contract=off")
+  string(REPLACE " -O2 " " -O0 " CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 endif()
 
 # -fsigned-char: Retro68's PowerPC GCC defaults to unsigned 'char'
