@@ -171,15 +171,22 @@ def install(work, pak):
     if not retail:
         with zipfile.ZipFile(os.path.join(base, 'pak1.pk3'), 'w') as archive:
             archive.writestr('productid.txt', product_id())
-    maps = set()
+    maps, routes = set(), set()
     for path in paks:
         with zipfile.ZipFile(path) as archive:
             maps |= set(name[5:-4] for name in archive.namelist() if re.match(r'maps/[^/]+\.bsp$', name))
-    maps = sorted(maps)
+            routes |= set(name[5:-4] for name in archive.namelist() if re.match(r'maps/[^/]+\.aas$', name))
+    # retail's test_bigbox has no bot file, so there can be no bot match on it
+    print('no bot file, skipped: %s' % (' '.join(sorted(maps - routes)) or 'none'))
+    maps = sorted(maps & routes)
     if os.environ.get('Q3_REAL_CONTENT_MAPS'):
-        maps = [name for name in maps if name in os.environ['Q3_REAL_CONTENT_MAPS'].split()]
+        wanted = os.environ['Q3_REAL_CONTENT_MAPS'].split()
+        missing = [name for name in wanted if name not in maps]
+        if missing:
+            fail('no such maps: ' + ' '.join(missing))
+        maps = [name for name in maps if name in wanted]
     if not maps:
-        fail('%s has no maps' % pak)
+        fail('no maps in ' + ' '.join(paks))
     wait = os.environ.get('Q3_REAL_CONTENT_WAIT', '400')
     with open(os.path.join(base, 'run.cfg'), 'w') as out:
         out.write(SCRIPT.format(maps=''.join(MAP_SCRIPT.format(name=name, wait=wait) for name in maps)))
@@ -207,10 +214,19 @@ def bot_match(binary, data, maps):
     problems = []
     if code != 0 or 'Sys_Quit: clean exit' not in text:
         problems.append('no clean quit (exit %s)' % code)
+    # the marker is echoed before the map command, so it only says the script
+    # got there: each map's own part of the log has to show its game starting
+    sections = re.split(r'^==== (\S+) *$', text, flags=re.M)
+    started = dict(zip(sections[1::2], sections[2::2]))
     for name in maps:
-        if '==== %s\n' % name not in text.replace('==== %s \n' % name, '==== %s\n' % name):
+        if name not in started:
             problems.append('never reached ' + name)
+        elif 'Server: %s\n' % name not in started[name] or 'Game Initialization' not in started[name]:
+            problems.append('never started ' + name)
     for line in text.split('\n'):
+        # a drop carries on to a clean quit; the script's own disconnect is the only one wanted
+        if line.startswith('ERROR:') and line != 'ERROR: Disconnected from server':
+            problems.append(line.strip())
         if re.search(r'Sys_Error|Unpure client|interpreting it|invalid BSP|malformed|Fatal|Bot initialization failed', line) and 'chat' not in line:
             problems.append(line.strip())
     if problems:
