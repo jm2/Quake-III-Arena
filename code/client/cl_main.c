@@ -767,10 +767,15 @@ void CL_Disconnect( qboolean showMainMenu ) {
 	// send a disconnect message to the server
 	// send it a few times in case one is dropped
 	if ( cls.state >= CA_CONNECTED ) {
-		CL_AddReliableCommand( "disconnect" );
-		CL_WritePacket();
-		CL_WritePacket();
-		CL_WritePacket();
+		// no room after a command overflow, which is how an ERR_DROP gets
+		// here: a second overflow would be fatal, and the queue has wrapped
+		// over its oldest command, so send nothing and let the server time out
+		if ( clc.reliableSequence - clc.reliableAcknowledge <= MAX_RELIABLE_COMMANDS ) {
+			CL_AddReliableCommand( "disconnect" );
+			CL_WritePacket();
+			CL_WritePacket();
+			CL_WritePacket();
+		}
 	}
 	
 	CL_ClearState ();

@@ -94,7 +94,13 @@ void Test_SV_Shutdown( char *finalmsg ) { (void)finalmsg; Check( 0, "local serve
 void Con_Close( void ) {}
 void SCR_StopCinematic( void ) {}
 void S_ClearSoundBuffer( void ) {}
-void CL_WritePacket( void ) {}	/* the disconnect CL_Disconnect sends */
+/* the disconnect CL_Disconnect sends */
+static char lastReliable[MAX_STRING_CHARS];
+static int packetsWritten;
+void CL_WritePacket( void ) {
+	packetsWritten++;
+	Q_strncpyz( lastReliable, clc.reliableCommands[clc.reliableSequence & ( MAX_RELIABLE_COMMANDS - 1 )], sizeof( lastReliable ) );
+}
 static byte demo[MAX_MSGLEN + 8];
 static int demoLength;
 /** The demo CL_WriteDemoMessage records. */
@@ -1055,6 +1061,32 @@ static void Protocol68Only( void ) {
 	Check( Quiet(), "no other datagrams" );
 }
 
+/** The ERR_DROP of a command overflow calls CL_Disconnect, which must not overflow
+ * again: that error is recursive, and fatal. Com_Error fails this test. */
+static void FullReliableQueue( void ) {
+	Start( "disconnect with no room for the command" );
+	cls.state = CA_ACTIVE;
+	clc.reliableSequence = 3;
+	CL_Disconnect( qfalse );
+	Check( !strcmp( lastReliable, "disconnect" ), "the server is told while there is room" );
+	Check( cls.state == CA_DISCONNECTED, "disconnected" );
+
+	/* the last count CL_AddReliableCommand takes */
+	lastReliable[0] = 0;
+	cls.state = CA_ACTIVE;
+	clc.reliableSequence = MAX_RELIABLE_COMMANDS;
+	CL_Disconnect( qfalse );
+	Check( !strcmp( lastReliable, "disconnect" ), "the server is told while the queue still takes it" );
+
+	lastReliable[0] = 0;
+	packetsWritten = 0;
+	cls.state = CA_ACTIVE;
+	clc.reliableSequence = MAX_RELIABLE_COMMANDS + 1;
+	CL_Disconnect( qfalse );
+	Check( !lastReliable[0], "no command with a full queue" );
+	Check( !packetsWritten, "no packet with a wrapped queue" );
+	Check( cls.state == CA_DISCONNECTED, "disconnected with a full queue" );
+}
 int main( int argc, char **argv ) {
 	int which;
 
@@ -1080,6 +1112,7 @@ int main( int argc, char **argv ) {
 	case 7: Protocol68Only(); break;
 	case 8: StarvedAndChallenges(); break;
 	case 9: RecycledRecord(); break;
+	case 10: FullReliableQueue(); break;
 	default: Check( 0, "case" );
 	}
 	printf( "Protocol 71 regressions passed (issue #37): %s\n", scenario );
