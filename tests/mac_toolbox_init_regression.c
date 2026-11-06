@@ -648,6 +648,9 @@ int main( int argc, char **argv ) {
 	Check( !strcmp( alertTitle, "Quake 3 Error:" ) && !strcmp( alertMessage, "fatal 7" ),
 		"the alert shows the error, as retail" );
 	Check( exitStatus == 1, "Sys_Error exits with 1" );
+	Check( EventIndex( "Sys_BootLogFlush" ) >= 0 && EventIndex( "Sys_BootLogFlush" ) < EventIndex( "alert" ),
+		"the boot log is on disk before the alert waits for the player" );
+	Check( EventIndex( "Sys_BootLogClose" ) > EventIndex( "alert" ), "and closed when the game exits" );
 
 	/* a message longer than a Pascal string is cut at 255 bytes */
 	memset( longLine, 'c', 300 );

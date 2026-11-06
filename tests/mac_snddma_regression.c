@@ -236,7 +236,8 @@ static int		exitStatus;
 static void Sys_ShutdownInput( void ) { }
 static void Sys_ShutdownNetworking( void ) { }
 static void Sys_DumpRetroLogs( const char *fileName ) { }
-static void Sys_BootLogClose( void ) { }
+static int		bootLogCloses;
+static void Sys_BootLogClose( void ) { bootLogCloses++; }
 static void FakeExit( int status ) __attribute__(( noreturn ));
 static void FakeExit( int status ) {
 	exitStatus = status;
@@ -254,6 +255,7 @@ static void Quit( void ) {
 		Check( 0, "Sys_Quit does not return" );
 	}
 	Check( exitStatus == 0, "Sys_Quit exits with 0" );
+	Check( bootLogCloses > 0, "Sys_Quit closes the boot log" );
 }
 
 /* ---- #264: the playback rate ---- */
