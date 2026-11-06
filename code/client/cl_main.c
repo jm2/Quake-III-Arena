@@ -2393,7 +2393,7 @@ void CL_Init( void ) {
 	//
 	cl_noprint = Cvar_Get( "cl_noprint", "0", 0 );
 	// off: update.quake3arena.com no longer answers, and with no DNS the lookup
-	// holds up every launch until it times out
+	// holds up every connect until it times out
 	cl_motd = Cvar_Get ("cl_motd", "0", 0);
     Debug_Breadcrumb(137); // Magenta: Cvars 1 done
 
@@ -3006,6 +3006,7 @@ void CL_GlobalServers_f( void ) {
 	if ( !master[0] ) {
 		master = MASTER_SERVER_NAME;
 	}
+	Com_Memset( &to, 0, sizeof( to ) );
 	resolved = NET_StringToAdr( master, &to );
 	if( cls.masterNum == 1 ) {
 		cls.nummplayerservers = -1;
@@ -3015,7 +3016,6 @@ void CL_GlobalServers_f( void ) {
 		cls.numglobalservers = -1;
 		cls.pingUpdateSource = AS_GLOBAL;
 	}
-	to.type = NA_IP;
 	if ( !strchr( master, ':' ) ) {
 		to.port = BigShort(PORT_MASTER);
 	}
@@ -3024,6 +3024,8 @@ void CL_GlobalServers_f( void ) {
 	cls.masterServer = to;
 	if ( !resolved ) {
 		cls.masterServer.type = NA_BAD;
+		Com_Printf( "Couldn't resolve %s\n", master );
+		return;
 	}
 
 	Com_sprintf( command, sizeof(command), "getservers %s", Cmd_Argv(2) );

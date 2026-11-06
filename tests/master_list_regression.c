@@ -227,7 +227,9 @@ int main( void ) {
 
 	// a failed master lookup accepts no list at all
 	resolveOk = qfalse;
+	n = queries;
 	Query( "0" );
+	Check( queries == n, "nothing is sent to an unresolved master" );
 	Respond( Address( 192, 0, 2, 2, PORT_MASTER ), 0, 3, qtrue );
 	Check( cls.numglobalservers == -1, "list accepted after failed lookup" );
 

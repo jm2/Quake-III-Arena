@@ -19,8 +19,10 @@
 #define COUNT(array) ((int)(sizeof(array) / sizeof((array)[0])))
 
 /* The filesystem paths a module or server must not move (issue #39). */
-static const char *protectedCvars[] = { "fs_basepath", "fs_homepath", "fs_cdpath", "fs_basegame" };
-static const char *protectedValues[] = { INSTALL_PATH, INSTALL_PATH, CD_PATH, BASE_GAME };
+/* the command line's, though a config file tried to set com_authServer in between */
+#define AUTH_SERVER	"commandline.example.com"
+static const char *protectedCvars[] = { "fs_basepath", "fs_homepath", "fs_cdpath", "fs_basegame", "com_authServer" };
+static const char *protectedValues[] = { INSTALL_PATH, INSTALL_PATH, CD_PATH, BASE_GAME, AUTH_SERVER };
 
 cvar_t *com_cl_running;
 cvar_t *com_sv_running;
@@ -108,7 +110,8 @@ static void FS_StartupCvars( void ) {
  * Com_StartupVariable from common.c itself (the runner extracts it). */
 static char *commandLine[] = {
 	"set fs_cdpath \"" CD_PATH "\"", "set fs_basegame " BASE_GAME, "set fs_copyfiles 0",
-	"set rconPassword secret", "set activeAction \"demo intro\""
+	"set rconPassword secret", "set activeAction \"demo intro\"",
+	"set com_authServer " AUTH_SERVER
 };
 int com_numConsoleLines;
 char *com_consoleLines[COUNT( commandLine )];
@@ -129,6 +132,9 @@ static void StartEngine( void ) {
 	Com_StartupVariable( NULL );
 	FS_StartupCvars();
 	Cmd_ExecuteString( "seta sv_master2 master.example.com" );
+	/* Com_Init: registered before the first exec */
+	Cvar_Get( "com_authServer", "", CVAR_INIT | CVAR_PROTECTED );
+	Cmd_ExecuteString( "seta com_authServer config.example.com" );
 	Com_StartupVariable( NULL );
 	Cvar_Get( "sv_master2", "", CVAR_ARCHIVE );	/* SV_Init */
 	Cvar_Get( "rconPassword", "", CVAR_TEMP );

@@ -2588,6 +2588,12 @@ void Com_Init( char *commandLine ) {
 	FS_InitFilesystem ();
 	Sys_LogPrintf("Com_Init: FS done\n"); 
 
+	// The authorize server. id's no longer answers, so nothing is asked unless
+	// this names one. The client sends it the CD key, so only the command line
+	// may: CVAR_INIT keeps config files out, which is why this comes before the
+	// first exec below, and CVAR_PROTECTED keeps out VMs, and so servers' pk3s.
+	com_authServer = Cvar_Get( "com_authServer", "", CVAR_INIT | CVAR_PROTECTED );
+
 	Com_InitJournaling();
 	Sys_LogPrintf("Com_Init: Journaling done\n"); 
 
@@ -2678,10 +2684,6 @@ void Com_Init( char *commandLine ) {
 	// the protocol offered to ioquake3 and Quake3e peers; 68 is always taken,
 	// and setting this to 68 offers nothing else.  Not in the serverinfo, so
 	// that retail clients get retail's
-	// The authorize server. id's no longer answers, so nothing is asked unless
-	// this names one. The client sends it the CD key: CVAR_INIT, so that only
-	// the command line can, not a config file or a server's systeminfo.
-	com_authServer = Cvar_Get( "com_authServer", "", CVAR_INIT );
 	com_protocol = Cvar_Get( "com_protocol", va( "%i", PROTOCOL_CHECKSUM_VERSION ), CVAR_INIT );
 
 	Sys_LogPrintf("Com_Init: Sys_Init\n"); 
