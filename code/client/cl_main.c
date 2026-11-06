@@ -767,10 +767,15 @@ void CL_Disconnect( qboolean showMainMenu ) {
 	// send a disconnect message to the server
 	// send it a few times in case one is dropped
 	if ( cls.state >= CA_CONNECTED ) {
-		CL_AddReliableCommand( "disconnect" );
-		CL_WritePacket();
-		CL_WritePacket();
-		CL_WritePacket();
+		// no room after a command overflow, which is how an ERR_DROP gets
+		// here: a second overflow would be fatal, and the queue has wrapped
+		// over its oldest command, so send nothing and let the server time out
+		if ( clc.reliableSequence - clc.reliableAcknowledge <= MAX_RELIABLE_COMMANDS ) {
+			CL_AddReliableCommand( "disconnect" );
+			CL_WritePacket();
+			CL_WritePacket();
+			CL_WritePacket();
+		}
 	}
 	
 	CL_ClearState ();
@@ -901,15 +906,19 @@ void CL_RequestAuthorization( void ) {
 	int		i, j, l;
 	cvar_t	*fs;
 
+	if ( !com_authServer->string[0] ) {
+		return;
+	}
+
 	if ( !cls.authorizeServer.port ) {
-		Com_Printf( "Resolving %s\n", AUTHORIZE_SERVER_NAME );
-		if ( !NET_StringToAdr( AUTHORIZE_SERVER_NAME, &cls.authorizeServer  ) ) {
+		Com_Printf( "Resolving %s\n", com_authServer->string );
+		if ( !NET_StringToAdr( com_authServer->string, &cls.authorizeServer  ) ) {
 			Com_Printf( "Couldn't resolve address\n" );
 			return;
 		}
 
 		cls.authorizeServer.port = BigShort( PORT_AUTHORIZE );
-		Com_Printf( "%s resolved to %i.%i.%i.%i:%i\n", AUTHORIZE_SERVER_NAME,
+		Com_Printf( "%s resolved to %i.%i.%i.%i:%i\n", com_authServer->string,
 			cls.authorizeServer.ip[0], cls.authorizeServer.ip[1],
 			cls.authorizeServer.ip[2], cls.authorizeServer.ip[3],
 			BigShort( cls.authorizeServer.port ) );
@@ -2388,7 +2397,9 @@ void CL_Init( void ) {
 	// register our variables
 	//
 	cl_noprint = Cvar_Get( "cl_noprint", "0", 0 );
-	cl_motd = Cvar_Get ("cl_motd", "1", 0);
+	// off: update.quake3arena.com no longer answers, and with no DNS the lookup
+	// holds up every connect until it times out
+	cl_motd = Cvar_Get ("cl_motd", "0", 0);
     Debug_Breadcrumb(137); // Magenta: Cvars 1 done
 
 	cl_timeout = Cvar_Get ("cl_timeout", "200", 0);
@@ -2981,6 +2992,7 @@ void CL_GlobalServers_f( void ) {
 	int			i;
 	int			count;
 	char		command[1024];
+	const char	*master;
 	qboolean	resolved;
 	
 	if ( Cmd_Argc() < 3) {
@@ -2995,23 +3007,30 @@ void CL_GlobalServers_f( void ) {
 	// reset the list, waiting for response
 	// -1 is used to distinguish a "no response"
 
+	master = Cvar_VariableString( cls.masterNum == 1 ? "sv_master2" : "sv_master1" );
+	if ( !master[0] ) {
+		master = MASTER_SERVER_NAME;
+	}
+	Com_Memset( &to, 0, sizeof( to ) );
+	resolved = NET_StringToAdr( master, &to );
 	if( cls.masterNum == 1 ) {
-		resolved = NET_StringToAdr( MASTER_SERVER_NAME, &to );
 		cls.nummplayerservers = -1;
 		cls.pingUpdateSource = AS_MPLAYER;
 	}
 	else {
-		resolved = NET_StringToAdr( MASTER_SERVER_NAME, &to );
 		cls.numglobalservers = -1;
 		cls.pingUpdateSource = AS_GLOBAL;
 	}
-	to.type = NA_IP;
-	to.port = BigShort(PORT_MASTER);
+	if ( !strchr( master, ':' ) ) {
+		to.port = BigShort(PORT_MASTER);
+	}
 
 	// only this master may answer with a server list
 	cls.masterServer = to;
 	if ( !resolved ) {
 		cls.masterServer.type = NA_BAD;
+		Com_Printf( "Couldn't resolve %s\n", master );
+		return;
 	}
 
 	Com_sprintf( command, sizeof(command), "getservers %s", Cmd_Argv(2) );

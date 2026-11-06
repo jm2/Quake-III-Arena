@@ -27,7 +27,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 extern refimport_t ri;
 
-/** Validate complete raw/RLE packets and decode their exact pixel count in native row order. */
+/** Validate the raw/RLE packets that fill the image and decode exactly its pixels in native row order. */
 static qboolean R_TGAPixels( imageCursor_t *cursor, unsigned int columns, unsigned int rows,
                             unsigned int bytesPerPixel, qboolean rle, byte *output ) {
 	unsigned int remaining = columns * rows, count, i, row = rows - 1, column = 0;
@@ -39,8 +39,10 @@ static qboolean R_TGAPixels( imageCursor_t *cursor, unsigned int columns, unsign
 		if ( rle ) {
 			if ( !R_ImageBytes(cursor, 1, &packet) ) return qfalse;
 			count = (*packet & 0x7f) + 1; repeat = (*packet & 0x80) != 0;
+			// a packet that runs past the last pixel ends the image, as retail
+			if ( count > remaining ) count = remaining;
 		}
-		if ( count > remaining || !R_ImageBytes(cursor, (repeat ? 1 : count) * bytesPerPixel, &source) ) return qfalse;
+		if ( !R_ImageBytes(cursor, (repeat ? 1 : count) * bytesPerPixel, &source) ) return qfalse;
 		if ( output ) {
 			for ( i = 0; i < count; i++ ) {
 				pixel = source + (repeat ? 0 : i * bytesPerPixel);

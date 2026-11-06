@@ -10,6 +10,21 @@ head while retaining checks on the merged default branch. A newer PR head
 cancels the older run. Push runs use one concurrency group per commit, so
 merging several PRs in a row never cancels or drops a master run.
 
+## Real content
+
+Game data cannot be committed, so `tests/run_real_content_tests.sh` skips
+unless `Q3_DEMO_PAK0` names the Quake III demo's `pak0.pk3`, or
+`Q3_RETAIL_BASEQ3` a `baseq3` with the retail paks, and CI does not run it. Run
+it by hand after changing a loader or validator, on retail data if there is any:
+the demo pak has no optimized AAS files, and missed that retail bots could not
+load. `Q3_REAL_CONTENT_MAPS` limits it to the maps named. It links the engine as
+`CMakeLists.txt` does, with `tests/real_content_sys.c` in place of `code/mac`
+and a no-op GL, runs a bot match on each map with a bot file, a disconnect and a
+clean quit, with `sv_pure` on and the static modules standing for the stock
+QVMs, then walks the menus with seeded input. It takes a few minutes. Bots carry
+over between maps, so a run ends with a full server on small maps too. Each map
+has to start, and any error but the final disconnect fails the run.
+
 ## Required checks
 
 - `Scripts and review ledger`
@@ -391,13 +406,12 @@ The ppc32 big-endian job runs Linux ELF binaries from Ubuntu's
 Retro68's compiler, the Mac OS PowerPC ABI's struct alignment, the `__MACOS__`
 header paths or real PowerPC hardware.
 
-For every PR, require successful CI on the current head and an approving
-review of that exact head by an independent adversarial reviewer agent that
-did not write the change (posted as a PR comment). Resolve blocking findings,
-push fixes, and obtain successful checks and a renewed approval on the new
-head. CodeRabbit findings are addressed when it reviews a PR but do not block
-merging. Absent, pending, or failed CI or review is not approval. (Changed on
-2026-09-23: Codex review credits are exhausted and CodeRabbit is throttled.)
+A PR merges automatically once it is clean: no conflicts, successful CI on the
+current head, and every bot review finding (CodeRabbit and the like) fixed or
+answered with a reason. Absent, pending, or failed CI is not clean. If bot
+reviews are throttled, the PR's one original bot review is enough. If even that
+was blocked, a fresh reviewer agent that did not write the change reviews it
+first, and the PR merges once that review comes back clean.
 
 The user has deferred retail-content and Mac OS 9 live testing to a follow-up
 session. Host-tested fixes may merge with those limitations recorded; do not

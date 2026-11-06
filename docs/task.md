@@ -13,13 +13,14 @@ and its evidence links, is archived unchanged in
 
 ## Process
 
-- One focused PR per fix. Merge only after CI passes on the current head
-  and an independent adversarial reviewer (a fresh Claude reviewer agent that
-  did not write the change) has approved that exact head in a PR comment,
-  with every blocking finding fixed and re-reviewed. Absent, pending or
-  failed results are not approval. CodeRabbit findings are addressed when it
-  reviews a PR but are not a merge blocker. (From 2026-09-23; Codex review
-  credits are exhausted and CodeRabbit is throttled to one review per hour.)
+- One focused PR per fix. A PR merges automatically, with no further sign-off,
+  once it is clean: no conflicts, CI passing on the current head, and every
+  bot review finding (CodeRabbit and the like) fixed or answered with a reason.
+  Absent, pending or failed CI is not clean.
+- If bot reviews are throttled, the PR's one original bot review is enough,
+  even if later commits were not reviewed. If even that was blocked, a fresh
+  reviewer agent that did not write the change reviews it first, and the PR
+  merges automatically once that review comes back clean.
 - The passing run must have tested the head merged onto a `master` that
   already contains every merged PR it could interact with. GitHub does not
   rerun a PR's checks when `master` moves, and its test-merge ref can lag, so

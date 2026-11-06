@@ -8,6 +8,9 @@
 #define TEST_MAX_PACKET	( 32 + MAX_SERVERSPERPACKET * 7 )
 
 static const char *commandArgs[3];
+static char master1[64] = MASTER_SERVER_NAME, master2[64] = MASTER2_SERVER_NAME;
+static const char *expectedMaster = MASTER_SERVER_NAME;
+static int resolvedPort = PORT_SERVER;
 static byte resolvedIp[4] = { 192, 0, 2, 1 };
 static qboolean resolveOk = qtrue;
 static netadr_t queried;
@@ -27,11 +30,13 @@ void Com_Memset( void *out, int value, size_t size ) { memset( out, value, size 
 int Cmd_Argc( void ) { return 3; }
 char *Cmd_Argv( int argument ) { return argument >= 0 && argument < 3 ? (char *)commandArgs[argument] : ""; }
 float Cvar_VariableValue( const char *name ) { (void)name; return 0; }
+char *Cvar_VariableString( const char *name ) { return !strcmp( name, "sv_master1" ) ? master1 : !strcmp( name, "sv_master2" ) ? master2 : ""; }
 /** Resolve the master name to a documentation address; a failed lookup leaves those bytes behind, as the caller's uninitialized netadr_t may. */
 qboolean Sys_StringToAdr( const char *name, netadr_t *address ) {
-	Check( !strcmp( name, MASTER_SERVER_NAME ), "master name" );
+	Check( !strcmp( name, expectedMaster ), "master name" );
 	address->type = NA_IP;
 	memcpy( address->ip, resolvedIp, sizeof( resolvedIp ) );
+	address->port = BigShort( resolvedPort );	/* as NET_StringToAdr: PORT_SERVER, or the name's port */
 	return resolveOk;
 }
 /** Record where the real getservers query is sent. */
@@ -113,6 +118,28 @@ int main( void ) {
 	showpackets = &quiet;
 	master = Address( 192, 0, 2, 1, PORT_MASTER );
 	stranger = Address( 198, 51, 100, 7, PORT_MASTER );
+
+	// sv_master1 and sv_master2 name the masters, by default on PORT_MASTER;
+	// an empty one means the first, and a port in the name is kept
+	expectedMaster = MASTER2_SERVER_NAME;
+	Query( "1" );
+	Check( queries == 1 && BigShort( queried.port ) == PORT_MASTER && cls.pingUpdateSource == AS_MPLAYER, "second master" );
+	strcpy( master2, "" );
+	expectedMaster = MASTER_SERVER_NAME;
+	Query( "1" );
+	Check( queries == 2, "an empty master name falls back" );
+	strcpy( master1, "master.example.com:27951" );
+	expectedMaster = "master.example.com";	/* NET_StringToAdr takes the port off */
+	resolvedPort = 27951;
+	Query( "0" );
+	Check( queries == 3 && BigShort( queried.port ) == 27951, "a port in the master's name is kept" );
+	strcpy( master1, MASTER_SERVER_NAME );
+	expectedMaster = MASTER_SERVER_NAME;
+	resolvedPort = PORT_SERVER;
+	queries = 0;
+	cls.nummplayerservers = cls.numglobalservers = 0;
+	cls.masterServer.type = NA_BAD;
+	memset( &cls.masterServer, 0, sizeof( cls.masterServer ) );
 
 	// nothing is accepted before any master was queried
 	Respond( master, 0, 3, qtrue );
@@ -200,7 +227,9 @@ int main( void ) {
 
 	// a failed master lookup accepts no list at all
 	resolveOk = qfalse;
+	n = queries;
 	Query( "0" );
+	Check( queries == n, "nothing is sent to an unresolved master" );
 	Respond( Address( 192, 0, 2, 2, PORT_MASTER ), 0, 3, qtrue );
 	Check( cls.numglobalservers == -1, "list accepted after failed lookup" );
 

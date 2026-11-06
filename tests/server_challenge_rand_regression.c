@@ -53,6 +53,8 @@ void Cmd_TokenizeString( const char *text ) { (void)text; Unreachable(); }
 qboolean NET_IsLocalAddress( netadr_t adr ) { (void)adr; Unreachable(); return qfalse; }
 qboolean NET_CompareBaseAdr( netadr_t a, netadr_t b ) { (void)a; (void)b; Unreachable(); return qfalse; }
 const char *NET_AdrToString( netadr_t a ) { (void)a; Unreachable(); return ""; }
+static cvar_t authServerCvar = { .string = "authorize.example.com" };
+cvar_t *com_authServer = &authServerCvar;
 qboolean NET_StringToAdr( const char *s, netadr_t *a ) { (void)s; (void)a; Unreachable(); return qfalse; }
 cvar_t *Cvar_Get( const char *name, const char *value, int flags ) { (void)name; (void)value; (void)flags; Unreachable(); return NULL; }
 void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport, int challenge, qboolean compat ) {

@@ -92,6 +92,8 @@ int Cmd_Argc( void ) { return 1; }	/* a bare getchallenge, as retail clients sen
 void Cmd_TokenizeString( const char *text ) { (void)text; Unreachable(); }
 int FS_FileIsInPAK( const char *filename, int *pChecksum ) { (void)filename; (void)pChecksum; Unreachable(); return -1; }
 cvar_t *sv_strictAuth;
+static cvar_t authServerCvar = { .string = "authorize.example.com" };
+cvar_t *com_authServer = &authServerCvar;
 qboolean NET_StringToAdr( const char *s, netadr_t *a ) { (void)s; (void)a; Unreachable(); return qfalse; }
 cvar_t *Cvar_Get( const char *name, const char *value, int flags ) { (void)name; (void)value; (void)flags; Unreachable(); return NULL; }
 const char *FS_LoadedPakPureChecksums( void ) { Unreachable(); return ""; }

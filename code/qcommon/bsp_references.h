@@ -140,8 +140,10 @@ static const char *BSP_ValidateReferences(const void *buffer,const dheader_t *h)
 		   (h->lumps[LUMP_VISIBILITY].filelen && cluster>=visClusters))) return "invalid BSP leaf cluster";
 		/* The retail area-visibility ABI has a fixed MAX_MAP_AREA_BYTES bit vector. */
 		value=BSP_FileWord(record+offsetof(dleaf_t,area));
-		/* Original compilers leave opaque leaves unassigned to an area. */
-		if(value>=MAX_MAP_AREA_BYTES*8 && !(value==0xffffffffu && cluster==0xffffffffu)) return "invalid BSP leaf area";
+		/* q3map leaves opaque leaves unassigned to an area, and also the inner
+		   leaf of a thick areaportal brush, which has a cluster (CheckAreas_r:
+		   "cluster %d has area set to -1"); retail loaded both. */
+		if(value>=MAX_MAP_AREA_BYTES*8 && value!=0xffffffffu) return "invalid BSP leaf area";
 		if(!BSP_ReferenceSpan(BSP_FileWord(record+offsetof(dleaf_t,firstLeafSurface)),BSP_FileWord(record+offsetof(dleaf_t,numLeafSurfaces)),leafSurfaces) ||
 		   !BSP_ReferenceSpan(BSP_FileWord(record+offsetof(dleaf_t,firstLeafBrush)),BSP_FileWord(record+offsetof(dleaf_t,numLeafBrushes)),leafBrushes)) return "invalid BSP leaf span";
 	}
