@@ -197,8 +197,10 @@ OSStatus	DSpContext_FadeGammaIn( const void *inZeroIntensityColor, void *inCallb
 typedef unsigned long	GLenum;
 typedef unsigned char	GLboolean;
 typedef long			GLint;
+typedef int	GLsizei;
 typedef unsigned long	GLbitfield;
 typedef float			GLclampf;
+typedef float			GLfloat;
 typedef unsigned char	GLubyte;
 
 #define GL_FALSE					0
@@ -212,6 +214,13 @@ typedef unsigned char	GLubyte;
 #define GL_TRANSFORM_HINT_APPLE		0x85B1
 
 void	glHint( GLenum target, GLenum mode );
+void	glMultiTexCoord2fARB( GLenum texture, GLfloat s, GLfloat t );
+void	glActiveTextureARB( GLenum texture );
+void	glClientActiveTextureARB( GLenum texture );
+void	glLockArraysEXT( GLint first, GLsizei count );
+void	glUnlockArraysEXT( void );
+void	qglGetIntegerv( GLenum name, GLint *value );
+#define GL_MAX_ACTIVE_TEXTURES_ARB	0x84E2
 
 typedef struct FakeAGLPixelFormat	*AGLPixelFormat;
 typedef struct FakeAGLContext		*AGLContext;

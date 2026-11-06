@@ -130,6 +130,11 @@ Expect `Loading dll file` and never `interpreting it` for stock paks: that line
 means a pak's checksum is not a retail one, and the game will run far slower.
 Expect a clean quit, and `q3boot.log` then shrinks to its text.
 
+Multitexture and compiled vertex arrays are on where the driver has them, and
+`q3boot.log` says `...using` for each. If something renders wrongly or hangs,
+`+set r_ext_multitexture 0` and `+set r_ext_compiled_vertex_array 0` turn them off
+one at a time, for the same result slower.
+
 ### 2. Fullscreen
 
 The same, without the `r_fullscreen` line. This is DrawSprocket. It should

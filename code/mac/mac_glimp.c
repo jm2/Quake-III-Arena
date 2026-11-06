@@ -274,6 +274,7 @@ GLimp_Extensions
 */
 static void GLimp_Extensions( void ) {
 	const char	*extensions;
+	GLint		textureUnits;
 
 	// get our config strings
 	Q_strncpyz( glConfig.vendor_string, (const char *)qglGetString (GL_VENDOR), sizeof( glConfig.vendor_string ) );
@@ -290,11 +291,17 @@ static void GLimp_Extensions( void ) {
 
 	if ( strstr( extensions, "GL_ARB_multitexture" )  ) {
 		if ( r_ext_multitexture->integer && r_allowExtensions->integer ) {
-			// qglMultiTexCoord2fARB = glMultiTexCoord2fARB;
-			// qglActiveTextureARB = glActiveTextureARB;
-			// qglClientActiveTextureARB = glClientActiveTextureARB;
+			qglGetIntegerv( GL_MAX_ACTIVE_TEXTURES_ARB, &textureUnits );
+			glConfig.maxActiveTextures = textureUnits;
+			if ( textureUnits > 1 ) {
+				qglMultiTexCoord2fARB = glMultiTexCoord2fARB;
+				qglActiveTextureARB = glActiveTextureARB;
+				qglClientActiveTextureARB = glClientActiveTextureARB;
 
-			ri.Printf( PRINT_ALL, "...GL_ARB_multitexture found, not used by this build\n" );
+				ri.Printf( PRINT_ALL, "...using GL_ARB_multitexture\n" );
+			} else {
+				ri.Printf( PRINT_ALL, "...not using GL_ARB_multitexture, < 2 texture units\n" );
+			}
 		} else {
 			ri.Printf( PRINT_ALL, "...ignoring GL_ARB_multitexture\n" );
 		}
@@ -308,10 +315,10 @@ static void GLimp_Extensions( void ) {
 
 	if ( strstr( extensions, "GL_EXT_compiled_vertex_array" ) ) {
 		if ( r_ext_compiled_vertex_array->integer && r_allowExtensions->integer ) {
-			// qglLockArraysEXT = glLockArraysEXT;
-			// qglUnlockArraysEXT = glUnlockArraysEXT;
+			qglLockArraysEXT = glLockArraysEXT;
+			qglUnlockArraysEXT = glUnlockArraysEXT;
 
-			ri.Printf( PRINT_ALL, "...GL_EXT_compiled_vertex_array found, not used by this build\n" );
+			ri.Printf( PRINT_ALL, "...using GL_EXT_compiled_vertex_array\n" );
 		} else {
 			ri.Printf( PRINT_ALL, "...ignoring GL_EXT_compiled_vertex_array\n" );
 		}

@@ -89,6 +89,29 @@ void qglClear( GLbitfield mask ) {
 void glHint( GLenum target, GLenum mode ) {
 }
 
+/* the five entry points retail called, which become PEF imports */
+void glMultiTexCoord2fARB( GLenum texture, GLfloat s, GLfloat t ) {
+}
+
+void glActiveTextureARB( GLenum texture ) {
+}
+
+void glClientActiveTextureARB( GLenum texture ) {
+}
+
+void glLockArraysEXT( GLint first, GLsizei count ) {
+}
+
+void glUnlockArraysEXT( void ) {
+}
+
+static GLint	glTextureUnits;
+
+void qglGetIntegerv( GLenum name, GLint *value ) {
+	Check( name == GL_MAX_ACTIVE_TEXTURES_ARB, "only the texture units are asked for" );
+	*value = glTextureUnits;
+}
+
 qboolean R_GetModeInfo( int *width, int *height, float *windowAspect, int mode ) {
 	static const int	modes[][2] = {
 		{ 320, 240 }, { 400, 300 }, { 512, 384 }, { 640, 480 }, { 800, 600 }, { 1024, 768 }
@@ -797,6 +820,7 @@ glconfigExt_t	glConfigExt;
 
 static void ResetAll( void ) {
 	failName = NULL;
+	glTextureUnits = 2;
 	dspConfirmSwitch = 0;
 	failNth = 0;
 	failCount = 0;
@@ -991,6 +1015,64 @@ static void TestConfirmSwitch( void ) {
 	Check( fatalErrors == 0, "the warning is not fatal" );
 	GLimp_Shutdown();
 	CheckReleased();
+}
+
+/* #28: both fast paths are on where the driver has them, and each can be
+ * refused by its cvar */
+static void CheckFastPaths( const char *name, int multitexture, int cva ) {
+	currentCase = name;
+	Check( Init(), "GLimp_Init succeeds" );
+	CheckLive();
+	if ( multitexture ) {
+		Check( qglMultiTexCoord2fARB == (void *)glMultiTexCoord2fARB
+			&& qglActiveTextureARB == (void *)glActiveTextureARB
+			&& qglClientActiveTextureARB == (void *)glClientActiveTextureARB,
+			"multitexture is on" );
+		Check( glConfig.maxActiveTextures == glTextureUnits, "glConfig has the texture units" );
+	} else {
+		Check( !qglMultiTexCoord2fARB && !qglActiveTextureARB && !qglClientActiveTextureARB,
+			"multitexture is off" );
+	}
+	if ( cva ) {
+		Check( qglLockArraysEXT == (void *)glLockArraysEXT
+			&& qglUnlockArraysEXT == (void *)glUnlockArraysEXT, "compiled vertex arrays are on" );
+	} else {
+		Check( !qglLockArraysEXT && !qglUnlockArraysEXT, "compiled vertex arrays are off" );
+	}
+	GLimp_Shutdown();
+	CheckReleased();
+}
+
+static void TestFastPaths( void ) {
+	static const char	both[] = "GL_ARB_multitexture GL_EXT_compiled_vertex_array";
+
+	ResetAll();
+	glExtensions = both;
+	CheckFastPaths( "fast paths, both", 1, 1 );
+
+	glExtensions = "GL_EXT_texture_env_add";
+	CheckFastPaths( "fast paths, no extensions", 0, 0 );
+
+	glExtensions = both;
+	glTextureUnits = 1;
+	CheckFastPaths( "fast paths, one texture unit", 0, 1 );
+	glTextureUnits = 2;
+
+	CvarSet( "r_ext_multitexture", "0" );
+	CheckFastPaths( "fast paths, r_ext_multitexture 0", 0, 1 );
+	CvarSet( "r_ext_multitexture", "1" );
+
+	CvarSet( "r_ext_compiled_vertex_array", "0" );
+	CheckFastPaths( "fast paths, r_ext_compiled_vertex_array 0", 1, 0 );
+	CvarSet( "r_ext_compiled_vertex_array", "1" );
+
+	CvarSet( "r_allowExtensions", "0" );
+	CheckFastPaths( "fast paths, r_allowExtensions 0", 0, 0 );
+	CvarSet( "r_allowExtensions", "1" );
+
+	/* and on again once nothing refuses them */
+	glExtensions = both;
+	CheckFastPaths( "fast paths, restored", 1, 1 );
 }
 
 /* #15: fail each call once, and every time, windowed and fullscreen */
@@ -1280,6 +1362,7 @@ int main( void ) {
 	TestRestartCycles();
 	TestBadMode();
 	TestConfirmSwitch();
+	TestFastPaths();
 	TestFaults();
 	TestFullscreenConfig();
 	TestPixelFormat();
