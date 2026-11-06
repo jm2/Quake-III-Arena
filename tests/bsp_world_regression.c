@@ -286,7 +286,7 @@ static void MarkOneLeaf(mnode_t *leaf,int area,int closed,int visible) {
 }
 static void LeafAreas(void) {
 	mnode_t *leaf=s_worldData.nodes+s_worldData.numDecisionNodes;
-	MarkOneLeaf(leaf,3,0,1);MarkOneLeaf(leaf,3,1,0);MarkOneLeaf(leaf,-1,0,1);
+	MarkOneLeaf(leaf,3,0,1);MarkOneLeaf(leaf,3,1,0);MarkOneLeaf(leaf,0,1,0);MarkOneLeaf(leaf,-1,0,1);
 }
 int main(void) {
 	ri.Error=Com_Error;ri.Printf=Print;ri.FS_ReadFile=FS_ReadFile;ri.FS_FreeFile=FS_FreeFile;ri.Hunk_Alloc=RendererHunk;ri.Malloc=RendererMalloc;ri.Free=RendererFree;subdivisions.value=4;
