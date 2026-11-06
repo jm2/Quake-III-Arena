@@ -40,7 +40,7 @@ void QDECL Com_Error( int level, const char *format, ... ) { (void)level; Check(
 
 /** Inflate the stream, end it, and hand back inflate's result. */
 static int Run( const byte *data, int length, int allocationToFail ) {
-	static byte output[4096];
+	static byte output[65536];
 	z_stream stream;
 	int result;
 
