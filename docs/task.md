@@ -1,6 +1,6 @@
 # Quake III Arena Mac OS 9 burndown ledger
 
-Last updated: 2026-09-24
+Last updated: 2026-11-06
 
 This is the authoritative continuation ledger. It lists every tracked GitHub
 issue exactly once as a checkbox entry, grouped into burndown sections that
@@ -48,8 +48,9 @@ and its evidence links, is archived unchanged in
 
 ## Current evidence
 
-- Last Mac OS 9 run: 2026-04-27, which stopped at `Couldn't load default.cfg`
-  after demo data was packaged as `baseq3` (#8). No target run since.
+- Last Mac OS 9 run: 2026-11-06, on Mac OS 9.2.2 under ClassicMac with retail
+  data. Every stage of [target-run.md](target-run.md) passed there. No run on
+  real hardware yet.
 - `master` at `a7b4e47` cross-builds with Retro68 (GCC 12.2.0, Retro68 `83b9c8d2c5`)
   as launchable Classic applications (#226): `Quake3.pef` 3,809,245 bytes and
   `Quake3_TeamArena.pef` 3,966,307 bytes, both `Joy!peff`/`pwpc`, 0 compiler
@@ -60,8 +61,9 @@ and its evidence links, is archived unchanged in
   `a7b4e47` (2026-09-24). CI runs them in four shards per compiler (#279), and
   since #335 (#224) it also runs every runner on 32-bit big-endian PowerPC
   Linux under qemu-user with AddressSanitizer and UndefinedBehaviorSanitizer.
-- Emulators cannot pass the accelerated-renderer check (#268); rendering,
-  gamma, fullscreen and performance acceptance need real hardware.
+- ClassicMac passes the accelerated-renderer check. It can't show a real card's
+  quirks, Rage Pro paths, real speed, or whether the boot log survives a power
+  cut, so those still need hardware.
 
 ## B0 — Process and CI unblock
 
@@ -77,7 +79,7 @@ Land these first: every later PR depends on a CI run that finishes and a ledger 
 
 Each original entry blocked or corrupted a normal base-game session. Their host-side fixes are merged; the entries still open wait on the first target run.
 
-- [ ] [#270 — SV_GentityNum bound faults the server on botlib passent -1 traces during map load](https://github.com/jm2/Quake-III-Arena/issues/270) — **critical**; server faults on botlib passent -1 traces while loading maps with suspended items; PR #285 merged; needs target test.
+- [x] [#270 — SV_GentityNum bound faults the server on botlib passent -1 traces during map load](https://github.com/jm2/Quake-III-Arena/issues/270) — **critical**; server faults on botlib passent -1 traces while loading maps with suspended items; PR #285 merged; needs target test.
 - [x] [#243 — BSP reference preflight rejects retail q3dm17 (flare surfaces with fogNum 0 and no fogs)](https://github.com/jm2/Quake-III-Arena/issues/243) — **critical**; retail q3dm17 rejected by both BSP loaders; PR #284 merged.
 - [ ] [#233 — Monolithic link aliases botlib g_gametype/bot_developer onto the game's vmCvar_t globals](https://github.com/jm2/Quake-III-Arena/issues/233) — **high**; static link aliases botlib ints onto game vmCvar_t globals; gametype rules corrupt; PR #287 merged; needs target test.
 - [x] [#246 — Unsigned char match-variable offsets make SV_GameBotMatch drop the server on PPC](https://github.com/jm2/Quake-III-Arena/issues/246) — **high**; unsigned char match offsets drop the server on PPC; PR #286 merged.
@@ -107,7 +109,7 @@ A launchable application must come out of every build, from a pinned toolchain, 
 - [ ] [#225 — Packaging on a macOS host fails because Rez output lives in the resource fork](https://github.com/jm2/Quake-III-Arena/issues/225) — **medium**; macOS-host packaging reads the empty data fork; PR #297 merged; the macOS `hdiutil` packaging run remains.
 - [x] [#269 — Toolchain readiness accepts binaries that cannot run, and setup cannot repair them](https://github.com/jm2/Quake-III-Arena/issues/269) — **medium**; readiness accepts a toolchain that cannot run; PR #386 merged.
 - [x] [#227 — Retro68 toolchain and Apple SDK inputs are unpinned and unverified](https://github.com/jm2/Quake-III-Arena/issues/227) — **medium**; Retro68 and SDK inputs unpinned; PR #402 merged.
-- [ ] [#1 — Build scripts accept incomplete Retro68 toolchain and fail on missing prepared OpenGL headers](https://github.com/jm2/Quake-III-Arena/issues/1) — **high**; readiness does not check prepared OpenGL SDK files.
+- [x] [#1 — Build scripts accept incomplete Retro68 toolchain and fail on missing prepared OpenGL headers](https://github.com/jm2/Quake-III-Arena/issues/1) — **high**; readiness does not check prepared OpenGL SDK files.
 - [ ] [#230 — Minimum SIZE partition leaves ~5 MB headroom; enabling sound can corrupt memory](https://github.com/jm2/Quake-III-Arena/issues/230) — **medium**; SIZE partition headroom about 5 MB; sound pool unchecked.
 - [ ] [#8 — Demo packaging fallback produces an unusable directory/layout](https://github.com/jm2/Quake-III-Arena/issues/8) — **high**; retail data required; demo fallback removed.
 - [ ] [#22 — Packaging selects unverified assets and unpinned downloads](https://github.com/jm2/Quake-III-Arena/issues/22) — **high**; asset provenance and pinned downloads.
@@ -147,7 +149,7 @@ Remote memory corruption and denial of service reachable from the network come b
 - [ ] [#271 — Repeated donedl commands queue unbounded gamestate copies and exhaust the server zone](https://github.com/jm2/Quake-III-Arena/issues/271) — **high**; repeated donedl exhausts the server zone; PR #312 merged; needs target test.
 - [x] [#239 — Native cgame trusts server tinfo client numbers and entity weapon indices](https://github.com/jm2/Quake-III-Arena/issues/239) — **high**; server-controlled tinfo/weapon indices write native cgame memory; PR #321 merged.
 - [x] [#238 — UI/cgame syscalls pass unchecked key, ping and entity indices to native arrays](https://github.com/jm2/Quake-III-Arena/issues/238) — **high**; QVM key/ping/sound indices write native arrays; PR #316 merged.
-- [ ] [#37 — Bind connection setup and sequenced packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37) — **high**; challenge binding for connection setup and netchan, 1.32c compatible.
+- [x] [#37 — Bind connection setup and sequenced packets to negotiated challenges](https://github.com/jm2/Quake-III-Arena/issues/37) — **high**; challenge binding for connection setup and netchan, 1.32c compatible.
 - [ ] [#36 — Reject oversized and truncated PK3 entries before allocation](https://github.com/jm2/Quake-III-Arena/issues/36) — **high**; hostile ZIP fixtures around caps and truncation; host criteria met once PR #421 (#413) merged; needs target test.
 - [x] [#272 — One client's userinfo burst overflows every other client's reliable-command window](https://github.com/jm2/Quake-III-Arena/issues/272) — **medium**; userinfo bursts overflow other clients; PRs #317 and #354 merged.
 - [x] [#273 — Clients can remove or forge the server-maintained ip userinfo key and evade IP bans](https://github.com/jm2/Quake-III-Arena/issues/273) — **medium**; client-forged ip userinfo evades bans; PRs #323 and #328 merged.
@@ -195,9 +197,9 @@ Remote memory corruption and denial of service reachable from the network come b
 
 Most items need Mac OS 9 hardware with a 3D accelerator (#268). Entries marked needs target test already have code fixes, except #327, which is an open question for a target experiment.
 
-- [ ] [#268 — Renderer requires accelerated AGL, so Mac OS 9 emulators cannot run acceptance tests](https://github.com/jm2/Quake-III-Arena/issues/268) — **medium**; emulators fail the accelerated-renderer check; define hardware-only checks.
+- [x] [#268 — Renderer requires accelerated AGL, so Mac OS 9 emulators cannot run acceptance tests](https://github.com/jm2/Quake-III-Arena/issues/268) — **medium**; emulators fail the accelerated-renderer check; define hardware-only checks.
 - [ ] [#258 — Retro68 open() requests read/write for every fopen, so locked or read-only data cannot load](https://github.com/jm2/Quake-III-Arena/issues/258) — **high**; Retro68 open() asks for write access; read-only media fail.
-- [ ] [#15 — Mac renderer initialization leaks partial AGL and DrawSprocket state](https://github.com/jm2/Quake-III-Arena/issues/15) — **high**; partial AGL/DrawSprocket state on failure.
+- [x] [#15 — Mac renderer initialization leaks partial AGL and DrawSprocket state](https://github.com/jm2/Quake-III-Arena/issues/15) — **high**; partial AGL/DrawSprocket state on failure.
 - [ ] [#16 — Gamma snapshot allocation failures make restore unsafe](https://github.com/jm2/Quake-III-Arena/issues/16) — **high**; gamma snapshot allocation failure.
 - [ ] [#17 — InputSprocket initialization trusts counts and element ordering](https://github.com/jm2/Quake-III-Arena/issues/17) — **high**; InputSprocket counts and element ordering.
 - [ ] [#19 — Classic Mac event pumping and application event handlers are incomplete](https://github.com/jm2/Quake-III-Arena/issues/19) — **high**; incomplete event pump and application events.
@@ -206,26 +208,26 @@ Most items need Mac OS 9 hardware with a 3D accelerator (#268). Entries marked n
 - [ ] [#259 — Retro68 rename/unlink are stubs; downloads fall back to an unchecked whole-file malloc copy](https://github.com/jm2/Quake-III-Arena/issues/259) — **medium**; rename/unlink stubs; unchecked copy fallback.
 - [ ] [#260 — Unique pk3 reads buffer whole entries in the 16 MB zone and fatally fail on large RoQ/music](https://github.com/jm2/Quake-III-Arena/issues/260) — **medium**; unique pk3 entries buffered whole in the zone.
 - [ ] [#261 — Classic Mac build has no startup parameters: +set, safe and fs_game are unreachable](https://github.com/jm2/Quake-III-Arena/issues/261) — **medium**; no startup parameters on Classic Mac OS.
-- [ ] [#13 — Static built-in modules override QVM-only mods](https://github.com/jm2/Quake-III-Arena/issues/13) — **high**; static modules override QVM-only mods.
+- [x] [#13 — Static built-in modules override QVM-only mods](https://github.com/jm2/Quake-III-Arena/issues/13) — **high**; static modules override QVM-only mods.
 - [ ] [#14 — Intro and idlogo cinematics are unconditionally bypassed](https://github.com/jm2/Quake-III-Arena/issues/14) — **high**; intro/idlogo bypass.
-- [ ] [#18 — Classic Mac event queue overflow leaks payloads and can latch input](https://github.com/jm2/Quake-III-Arena/issues/18) — **high**; event queue ownership; needs stress tests.
-- [ ] [#24 — Classic Mac startup command-line assembly can overflow](https://github.com/jm2/Quake-III-Arena/issues/24) — **high**; bounded command line; input path is dead until #261.
+- [x] [#18 — Classic Mac event queue overflow leaks payloads and can latch input](https://github.com/jm2/Quake-III-Arena/issues/18) — **high**; event queue ownership; needs stress tests.
+- [x] [#24 — Classic Mac startup command-line assembly can overflow](https://github.com/jm2/Quake-III-Arena/issues/24) — **high**; bounded command line; input path is dead until #261.
 - [ ] [#4 — Classic Mac Sys_ListFiles hardcodes filenames and disables mods/custom content](https://github.com/jm2/Quake-III-Arena/issues/4) — **high**; Catalog Manager enumeration; needs target test.
-- [ ] [#3 — Mac GL extension detection dereferences an unregistered anisotropic-filter cvar](https://github.com/jm2/Quake-III-Arena/issues/3) — **high**; anisotropic cvar registered; needs target test.
+- [x] [#3 — Mac GL extension detection dereferences an unregistered anisotropic-filter cvar](https://github.com/jm2/Quake-III-Arena/issues/3) — **high**; anisotropic cvar registered; needs target test.
 - [ ] [#6 — Mac renderer overrides r_fullscreen and cannot honor fullscreen configuration](https://github.com/jm2/Quake-III-Arena/issues/6) — **medium**; r_fullscreen override removed; needs target test.
-- [ ] [#7 — Mac 16-bit pixel-format fallback still requests 24-bit color](https://github.com/jm2/Quake-III-Arena/issues/7) — **medium**; 16-bit 5/5/5 request; needs target test.
+- [x] [#7 — Mac 16-bit pixel-format fallback still requests 24-bit color](https://github.com/jm2/Quake-III-Arena/issues/7) — **medium**; 16-bit 5/5/5 request; needs target test.
 - [ ] [#25 — Fatal engine errors exit with success status](https://github.com/jm2/Quake-III-Arena/issues/25) — **medium**; fatal exit status 1; needs target test.
 - [ ] [#26 — Opening the console while recording freezes client time](https://github.com/jm2/Quake-III-Arena/issues/26) — **medium**; record/console clock fix; needs target test.
-- [ ] [#34 — AGL console commands re-register on every renderer initialization](https://github.com/jm2/Quake-III-Arena/issues/34) — **medium-low**; AGL command registration guard; needs target test.
+- [x] [#34 — AGL console commands re-register on every renderer initialization](https://github.com/jm2/Quake-III-Arena/issues/34) — **medium-low**; AGL command registration guard; needs target test.
 - [ ] [#10 — Startup logging always opens the Retro68 console even when viewlog is hidden](https://github.com/jm2/Quake-III-Arena/issues/10) — **medium**; RetroConsole always opens.
 - [ ] [#21 — Dedicated server networking busy-spins without console input](https://github.com/jm2/Quake-III-Arena/issues/21) — **medium**; dedicated server busy-spins.
 - [ ] [#33 — Synchronous DNS resolution can freeze the Mac client for ten seconds](https://github.com/jm2/Quake-III-Arena/issues/33) — **medium**; synchronous DNS.
-- [ ] [#263 — Toolbox is initialized only as a side effect of the first printf](https://github.com/jm2/Quake-III-Arena/issues/263) — **low**; Toolbox initialized only by the first printf.
+- [x] [#263 — Toolbox is initialized only as a side effect of the first printf](https://github.com/jm2/Quake-III-Arena/issues/263) — **low**; Toolbox initialized only by the first printf.
 - [ ] [#264 — Sound Manager runs at 22254.5 Hz while the mixer assumes 22050 Hz](https://github.com/jm2/Quake-III-Arena/issues/264) — **low**; Sound Manager rate 22254.5 Hz vs mixer 22050 Hz.
 - [ ] [#266 — Mac console input: navigation keys emit control characters and clipboard paste is a stub](https://github.com/jm2/Quake-III-Arena/issues/266) — **low**; navigation keys emit control chars; clipboard stub.
 - [ ] [#267 — Base path at a volume root lacks a trailing ':' and fails catalog enumeration](https://github.com/jm2/Quake-III-Arena/issues/267) — **low**; base path at a volume root.
 - [ ] [#30 — Stereo screen path begins two eyes but renders one centered frame](https://github.com/jm2/Quake-III-Arena/issues/30) — **low**; stereo sequencing.
-- [ ] [#327 — Possible HFS 31-byte name truncation could bypass VM write extension checks](https://github.com/jm2/Quake-III-Arena/issues/327) — **medium**; possible HFS 31-byte name truncation bypassing VM write checks; needs target test.
+- [x] [#327 — Possible HFS 31-byte name truncation could bypass VM write extension checks](https://github.com/jm2/Quake-III-Arena/issues/327) — **medium**; possible HFS 31-byte name truncation bypassing VM write checks; needs target test.
 - [ ] [#291 — Background windowed game reacts to modifier keys pressed in other applications](https://github.com/jm2/Quake-III-Arena/issues/291) — **low**; background windowed game reacts to modifier keys pressed in other applications.
 
 ## B6 — Remaining content-hardening parents
@@ -233,14 +235,14 @@ Most items need Mac OS 9 hardware with a 3D accelerator (#268). Entries marked n
 The paused September queue. Resume only after B1–B4, and fix false positives against real content (#253) before extending checks.
 
 - [ ] [#35 — Harden interpreted QVM validation and sandbox bounds](https://github.com/jm2/Quake-III-Arena/issues/35) — **high**; QVM sandbox: remaining syscall ranges and retail QVM compatibility.
-- [ ] [#41 — Bound RoQ chunks, dimensions, audio output, and decoder cursors](https://github.com/jm2/Quake-III-Arena/issues/41) — **high**; RoQ: retail acceptance.
-- [ ] [#42 — Replace legacy BMP, PCX, and TGA loaders with bounded cursor decoders](https://github.com/jm2/Quake-III-Arena/issues/42) — **high**; BMP/PCX/TGA: retail and PPC acceptance.
-- [ ] [#43 — Make JPEG I/O length-aware and consolidate duplicate libjpeg APIs](https://github.com/jm2/Quake-III-Arena/issues/43) — **high**; JPEG: retail and screenshot acceptance.
-- [ ] [#44 — Validate MD3 and MD4 layout before allocation, copy, or endian swap](https://github.com/jm2/Quake-III-Arena/issues/44) — **high**; MD3/MD4: retail and missionpack acceptance.
+- [x] [#41 — Bound RoQ chunks, dimensions, audio output, and decoder cursors](https://github.com/jm2/Quake-III-Arena/issues/41) — **high**; RoQ: retail acceptance.
+- [x] [#42 — Replace legacy BMP, PCX, and TGA loaders with bounded cursor decoders](https://github.com/jm2/Quake-III-Arena/issues/42) — **high**; BMP/PCX/TGA: retail and PPC acceptance.
+- [x] [#43 — Make JPEG I/O length-aware and consolidate duplicate libjpeg APIs](https://github.com/jm2/Quake-III-Arena/issues/43) — **high**; JPEG: retail and screenshot acceptance.
+- [x] [#44 — Validate MD3 and MD4 layout before allocation, copy, or endian swap](https://github.com/jm2/Quake-III-Arena/issues/44) — **high**; MD3/MD4: retail and missionpack acceptance.
 - [ ] [#45 — Validate BSP lumps and cross-references transactionally](https://github.com/jm2/Quake-III-Arena/issues/45) — **high**; BSP: remaining payload and graph validation.
-- [ ] [#46 — Enforce fixed limits and ownership in shader, skin, and font parsers](https://github.com/jm2/Quake-III-Arena/issues/46) — **high**; shader/skin/font: derived rendering conversions.
-- [ ] [#47 — Validate AAS lumps and graph indexes before enabling bot world](https://github.com/jm2/Quake-III-Arena/issues/47) — **high**; AAS: validate the whole file before loaded.
-- [ ] [#48 — Bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48) — **high**; bot parser: work and recursion limits (open PRs #214–#217).
+- [x] [#46 — Enforce fixed limits and ownership in shader, skin, and font parsers](https://github.com/jm2/Quake-III-Arena/issues/46) — **high**; shader/skin/font: derived rendering conversions.
+- [x] [#47 — Validate AAS lumps and graph indexes before enabling bot world](https://github.com/jm2/Quake-III-Arena/issues/47) — **high**; AAS: validate the whole file before loaded.
+- [x] [#48 — Bound bot preprocessor, token, and path operations](https://github.com/jm2/Quake-III-Arena/issues/48) — **high**; bot parser: work and recursion limits (open PRs #214–#217).
 - [x] [#290 — BotExpandChatMessage accepts match variable index 8 and overflowing digit strings](https://github.com/jm2/Quake-III-Arena/issues/290) — **medium**; out-of-bounds match variable read and stack copy from chat templates; PR #298 merged.
 - [x] [#300 — BotLoadChatMessage reserves 7 bytes for escape sequences of unbounded length](https://github.com/jm2/Quake-III-Arena/issues/300) — **medium**; BotLoadChatMessage reserves 7 bytes for escapes of unbounded length; PR #422 merged.
 - [x] [#307 — Route-cache reader lets zero-time portal entries carry out-of-range reachability numbers](https://github.com/jm2/Quake-III-Arena/issues/307) — **low**; route-cache reader lets zero-time portal entries carry out-of-range reachability numbers; PR #424 merged.
