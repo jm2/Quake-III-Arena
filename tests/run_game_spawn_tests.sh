@@ -8,6 +8,7 @@ trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 # Include the real native g_client.c, for its static spawn sizes: base
 # Quake III and Team Arena, which compile the same file. --gc-sections drops the
 # code that does not take part in choosing a spawn point.
+# -fno-sanitize=null because FOFS takes offsets from a null pointer, which clang traps.
 for Q3_TEST_VARIANT in base missionpack; do
     Q3_TEST_FLAGS=()
     if [[ "$Q3_TEST_VARIANT" == missionpack ]]; then
@@ -15,7 +16,7 @@ for Q3_TEST_VARIANT in base missionpack; do
     fi
     "${CC:-cc}" \
         -std=gnu99 -fsigned-char -fno-omit-frame-pointer -ffunction-sections -fdata-sections \
-        -fsanitize=address,undefined "${Q3_TEST_FLAGS[@]}" \
+        -fsanitize=address,undefined -fno-sanitize=null "${Q3_TEST_FLAGS[@]}" \
         "$Q3_TEST_ROOT/tests/game_spawn_regression.c" \
         "$Q3_TEST_ROOT/code/game/q_math.c" \
         "$Q3_TEST_ROOT/code/game/q_shared.c" \
