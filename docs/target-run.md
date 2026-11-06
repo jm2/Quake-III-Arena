@@ -136,9 +136,8 @@ error.
 
 Without `+exec bringup.cfg`, add `+map q3dm1` and play. Check Ctrl alone fires,
 Shift runs, and the mouse turns. `q3boot.log` lists the mouse's elements with
-their kind and label. `using ... element(s) of another kind` means the driver
-reports its movement some other way, and the view may turn on its own, because
-those elements are read as mouse movement.
+their kind and label. `using ... axis element(s)` means no device reports delta
+movement, so axes are read as mouse movement, and the view may turn on its own.
 
 ### 4. Cinematic and menus
 
