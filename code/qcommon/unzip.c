@@ -2828,7 +2828,6 @@ int inflate_blocks(inflate_blocks_statef *s, z_streamp z, int r)
           r = t;
           LEAVE
         }
-        ZFREE(z, s->sub.trees.blens);
         Tracev(("inflate:       trees ok\n"));
         if ((c = inflate_codes_new(bl, bd, tl, td, z)) == Z_NULL)
         {
@@ -2837,6 +2836,7 @@ int inflate_blocks(inflate_blocks_statef *s, z_streamp z, int r)
         }
         s->sub.decode.codes = c;
       }
+      ZFREE(z, s->sub.trees.blens);
       s->mode = CODES;
     case CODES:
       UPDATE

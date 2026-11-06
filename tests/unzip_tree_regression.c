@@ -3,6 +3,7 @@
  * it again.  A dynamic block that needs a table over MANY gets Z_MEM_ERROR
  * from data alone.  Actual inflate; only the allocator is the test's. */
 #include "../code/qcommon/unzip.c"
+#include Q3_UNZIP_GOOD_TREE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,7 +39,7 @@ void QDECL Com_Printf( const char *format, ... ) { (void)format; }
 void QDECL Com_Error( int level, const char *format, ... ) { (void)level; Check( 0, format ); }
 
 /** Inflate the stream, end it, and hand back inflate's result. */
-static int Run( int allocationToFail ) {
+static int Run( const byte *data, int length, int allocationToFail ) {
 	static byte output[4096];
 	z_stream stream;
 	int result;
@@ -49,8 +50,8 @@ static int Run( int allocationToFail ) {
 	if ( inflateInit2( &stream, -MAX_WBITS ) != Z_OK ) {
 		return Z_MEM_ERROR;
 	}
-	stream.next_in = (byte *)badTree;
-	stream.avail_in = sizeof( badTree );
+	stream.next_in = (byte *)data;
+	stream.avail_in = length;
 	stream.next_out = output;
 	stream.avail_out = sizeof( output );
 	result = inflate( &stream, Z_SYNC_FLUSH );
@@ -61,11 +62,17 @@ static int Run( int allocationToFail ) {
 int main( void ) {
 	int i, allocations;
 
-	Check( Run( 0 ) == Z_MEM_ERROR, "an oversized tree is out of table space" );
+	Check( Run( badTree, sizeof( badTree ), 0 ) == Z_MEM_ERROR, "an oversized tree is out of table space" );
 	allocations = count;
 	/* every allocation failing in turn reaches the BTREE path too */
 	for ( i = 1 ; i <= allocations ; i++ ) {
-		Run( i );
+		Run( badTree, sizeof( badTree ), i );
+	}
+	/* a good dynamic block also fails in inflate_codes_new, with blens held */
+	Check( Run( goodTree, sizeof( goodTree ), 0 ) == Z_STREAM_END, "a good dynamic block inflates" );
+	allocations = count;
+	for ( i = 1 ; i <= allocations ; i++ ) {
+		Run( goodTree, sizeof( goodTree ), i );
 	}
 	puts( "Inflate tree regressions passed" );
 	return 0;
