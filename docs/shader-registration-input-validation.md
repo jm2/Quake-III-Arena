@@ -3,7 +3,9 @@
 This #46 step keeps commercial 1.32c renderer/QVM interfaces and all four native
 negative lighting sentinels. Use a bounded native name check before hashing,
 lookup or registration. Empty/null/overlong names return the existing default
-shader/zero handle. Hash extended filename bytes through unsigned-char ctype
+shader/zero handle. Null and overlong names print a line. Empty ones stay quiet,
+as in retail: Choose Level asks for one every frame for each blank map slot.
+Hash extended filename bytes through unsigned-char ctype
 input. Reject unknown negative lightmap indexes before array access. Native
 nonnegative missing-lightmap fallback to vertex lighting also applies to image
 registration.

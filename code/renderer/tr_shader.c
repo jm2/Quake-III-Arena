@@ -76,6 +76,16 @@ static qboolean ShaderNameValid( const char *name ) {
 	return qfalse;
 }
 
+/*
+An empty name is not an error here, so it stays quiet, as in retail. The menus
+ask for one every frame: Choose Level has a blank slot for each map a tier lacks.
+*/
+static void ShaderNameReport( const char *name ) {
+	if ( !name || name[0] ) {
+		Com_Printf( "Invalid shader name (null or exceeds MAX_QPATH)\n" );
+	}
+}
+
 static qboolean ShaderLightmapValid( int index ) {
 	return index >= 0 || index == LIGHTMAP_NONE || index == LIGHTMAP_BY_VERTEX ||
 	       index == LIGHTMAP_2D || index == LIGHTMAP_WHITEIMAGE;
@@ -2912,7 +2922,7 @@ qhandle_t RE_RegisterShaderLightMap( const char *name, int lightmapIndex ) {
 	shader_t	*sh;
 
 	if ( !ShaderNameValid(name) ) {
-		Com_Printf( "Invalid shader name (empty or exceeds MAX_QPATH)\n" );
+		ShaderNameReport( name );
 		return 0;
 	}
 
@@ -2947,7 +2957,7 @@ qhandle_t RE_RegisterShader( const char *name ) {
 	shader_t	*sh;
 
 	if ( !ShaderNameValid(name) ) {
-		Com_Printf( "Invalid shader name (empty or exceeds MAX_QPATH)\n" );
+		ShaderNameReport( name );
 		return 0;
 	}
 
@@ -2977,7 +2987,7 @@ qhandle_t RE_RegisterShaderNoMip( const char *name ) {
 	shader_t	*sh;
 
 	if ( !ShaderNameValid(name) ) {
-		Com_Printf( "Invalid shader name (empty or exceeds MAX_QPATH)\n" );
+		ShaderNameReport( name );
 		return 0;
 	}
 
