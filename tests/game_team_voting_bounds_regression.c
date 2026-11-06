@@ -115,8 +115,8 @@ gentity_t *G_Find( gentity_t *from, int fieldofs, const char *match ) {
 gentity_t *G_PickTarget( char *targetname ) { (void)targetname; Unexpected( "G_PickTarget" ); return NULL; }
 void G_WriteSessionData( void ) { Unexpected( "G_WriteSessionData" ); }
 void respawn( gentity_t *ent ) { (void)ent; Unexpected( "respawn" ); }
-gentity_t *SelectSpawnPoint( vec3_t avoidPoint, vec3_t origin, vec3_t angles ) {
-	(void)avoidPoint; (void)origin; (void)angles; Unexpected( "SelectSpawnPoint" ); return NULL;
+gentity_t *SelectSpawnPoint( vec3_t avoidPoint, vec3_t origin, vec3_t angles, qboolean isBot ) {
+	(void)avoidPoint; (void)origin; (void)angles; (void)isBot; Unexpected( "SelectSpawnPoint" ); return NULL;
 }
 void SetTeam( gentity_t *ent, char *s ) { (void)ent; (void)s; Unexpected( "SetTeam" ); }
 void SpawnModelsOnVictoryPads( void ) { Unexpected( "SpawnModelsOnVictoryPads" ); }	/* base only */

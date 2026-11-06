@@ -625,7 +625,7 @@ void ClientEvents( gentity_t *ent, int oldEventSequence ) {
 				}
 			}
 #endif
-			SelectSpawnPoint( ent->client->ps.origin, origin, angles );
+			SelectSpawnPoint( ent->client->ps.origin, origin, angles, !!( ent->r.svFlags & SVF_BOT ) );
 			TeleportPlayer( ent, origin, angles );
 			break;
 

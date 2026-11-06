@@ -13,8 +13,8 @@
  * it, and its log lines must still reach the crash-dump ring.
  *
  * The follow-up to #499: Sys_Error writes the crash log before stderr can
- * create the window, then shows retail's Stop alert unless DrawSprocket still
- * holds the display; opening the window mid-game restores the current port;
+ * create the window, releases a display DrawSprocket still holds, then shows
+ * retail's Stop alert; opening the window mid-game restores the current port;
  * every write is gated, so viewlog 0 also stops output to a window the Shift
  * prompt opened; and a static module failure waits for Return.
  *
@@ -355,6 +355,11 @@ static void Sys_StartBootLog( const char *commandLine ) { Event( "Sys_StartBootL
 static void Sys_Heartbeat( void ) { }
 void Sys_BootLogFlush( void ) { Event( "Sys_BootLogFlush" ); }
 void Sys_BootLogClose( void ) { Event( "Sys_BootLogClose" ); }
+/* mac_glimp.c's, which tests/mac_glimp_regression.c covers */
+void GLimp_ReleaseDisplay( void ) {
+	Event( "GLimp_ReleaseDisplay" );
+	glConfig.isFullscreen = qfalse;
+}
 
 #define printf		FakePrintf
 #define fprintf		FakeFprintf
@@ -659,10 +664,12 @@ int main( int argc, char **argv ) {
 	Check( strlen( alertMessage ) == 255 && !strncmp( alertMessage, longLine, 255 ),
 		"the alert shows the first 255 bytes" );
 
-	/* no alert while DrawSprocket still holds the display */
+	/* a recursive error still holds the display: give it back, then show the alert */
 	RunSysError( "Sys_Error fullscreen", qtrue, "recursive" );
-	Check( EventIndex( "crash log" ) >= 0 && EventIndex( "alert" ) < 0 && exitStatus == 1,
-		"Sys_Error exits without an alert while the display is captured" );
+	Check( EventIndex( "crash log" ) >= 0 && EventIndex( "crash log" ) < EventIndex( "GLimp_ReleaseDisplay" ),
+		"the crash log is safe before the display is touched" );
+	Check( EventIndex( "GLimp_ReleaseDisplay" ) >= 0 && EventIndex( "GLimp_ReleaseDisplay" ) < EventIndex( "alert" ) && exitStatus == 1,
+		"Sys_Error releases a captured display, then shows the alert" );
 	Check( EventIndex( "SNDDMA_Shutdown" ) >= 0, "Sys_Error closes the sound channel before it exits" );
 
 	CloseWindow();

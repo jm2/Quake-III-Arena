@@ -369,6 +369,15 @@ void CL_SystemInfoChanged( void ) {
 	t = Info_ValueForKey( systemInfo, "sv_referencedPakNames" );
 	FS_PureServerSetReferencedPaks( s, t );
 
+	// A client of the server in this process has the same cvars as the
+	// server, so there is nothing to copy, and a gamestate left over from
+	// the last map would put old values back. SV_Frame then publishes them,
+	// and with an old sv_serverid no client can enter the map.
+	if ( clc.netchan.remoteAddress.type == NA_LOOPBACK ) {
+		cl_connectedToPureServer = Cvar_VariableValue( "sv_pure" );
+		return;
+	}
+
 	gameSet = qfalse;
 	// scan through all the variables in the systeminfo and locally set cvars to match
 	s = systemInfo;

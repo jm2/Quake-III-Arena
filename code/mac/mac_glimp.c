@@ -284,7 +284,7 @@ static void GLimp_Extensions( void ) {
 			// qglActiveTextureARB = glActiveTextureARB;
 			// qglClientActiveTextureARB = glClientActiveTextureARB;
 
-			ri.Printf( PRINT_ALL, "...using GL_ARB_multitexture (Disabled for compatibility)\n" );
+			ri.Printf( PRINT_ALL, "...GL_ARB_multitexture found, not used by this build\n" );
 		} else {
 			ri.Printf( PRINT_ALL, "...ignoring GL_ARB_multitexture\n" );
 		}
@@ -301,7 +301,7 @@ static void GLimp_Extensions( void ) {
 			// qglLockArraysEXT = glLockArraysEXT;
 			// qglUnlockArraysEXT = glUnlockArraysEXT;
 
-			ri.Printf( PRINT_ALL, "...using GL_EXT_compiled_vertex_array (Disabled for compatibility)\n" );
+			ri.Printf( PRINT_ALL, "...GL_EXT_compiled_vertex_array found, not used by this build\n" );
 		} else {
 			ri.Printf( PRINT_ALL, "...ignoring GL_EXT_compiled_vertex_array\n" );
 		}
@@ -607,7 +607,7 @@ static qboolean CreateGameWindow( void ) {
 		   windowRect.left, windowRect.top, windowRect.right, windowRect.bottom);
 	
 	// Use NewCWindow instead of GetNewCWindow to avoid resource dependency
-	// Window style: 5 = noGrowDocProc (standard document window without grow box)
+	// Window style: 5 = movableDBoxProc (a title bar, no close or grow box)
 	// For fullscreen, use 2 = plainDBox (plain box)
 	{
 		short windowStyle = r_fullscreen->integer ? 2 : 5;
@@ -634,6 +634,28 @@ static qboolean CreateGameWindow( void ) {
 	return qtrue;
 }
 
+
+/*
+===================
+GLimp_ReleaseDisplay
+
+Gives the screen back after a fatal error or crash that GLimp_Shutdown will
+not run for (a recursive Com_Error skips CL_Shutdown), so the Stop alert can
+be seen and the desktop is not left captured, with the game's gamma, behind
+it. The caller is exiting, so nothing else is released. Safe to call when
+GLimp_Shutdown has run, or before GLimp_Init.
+===================
+*/
+void GLimp_ReleaseDisplay( void ) {
+	if ( sys_gl.systemGammas ) {
+		RestoreSystemGammas( sys_gl.systemGammas );
+	}
+	if ( sys_gl.context ) {
+		aglSetCurrentContext( NULL );
+		aglSetDrawable( sys_gl.context, NULL );
+	}
+	GLimp_ResetDisplay();
+}
 
 /*
 ===================
