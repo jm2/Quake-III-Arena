@@ -516,6 +516,7 @@ struct OpaqueDSpContextReference {
 
 static struct OpaqueDSpContextReference	dspDisplay;
 static int								dspStarted;
+static int								dspConfirmSwitch;
 static DSpDepthMask						dspDepth;	/* of the reserved display */
 
 OSStatus DSpStartup( void ) {
@@ -580,7 +581,8 @@ OSStatus DSpContext_SetState( DSpContextReference inContext, DSpContextState inS
 		return -30444;
 	}
 	inContext->active = inState == kDSpContextState_Active;
-	return noErr;
+	/* the switch is made, and the game is told to confirm it can be seen */
+	return inContext->active && dspConfirmSwitch ? -30448 : noErr;
 }
 
 OSStatus DSpContext_FadeGammaIn( const void *inZeroIntensityColor, void *inCallback ) {
@@ -795,6 +797,7 @@ glconfigExt_t	glConfigExt;
 
 static void ResetAll( void ) {
 	failName = NULL;
+	dspConfirmSwitch = 0;
 	failNth = 0;
 	failCount = 0;
 	failed = 0;
@@ -968,6 +971,24 @@ static void TestBadMode( void ) {
 	Check( Init(), "GLimp_Init falls back" );
 	CheckLive();
 	Check( r_mode->integer == 3 && glConfig.vidWidth == 640, "the fallback is mode 3" );
+	GLimp_Shutdown();
+	CheckReleased();
+}
+
+/* kDSpConfirmSwitchWarning from a real Radeon 9200: the display has switched,
+ * so the mode and its depth stay, and only a real error falls back */
+static void TestConfirmSwitch( void ) {
+	currentCase = "confirm-switch";
+	ResetAll();
+	dspConfirmSwitch = 1;
+	CvarSet( "r_fullscreen", "1" );
+	CvarSet( "r_mode", "5" );	/* 1024x768 in this fixture's table */
+	CvarSet( "r_colorbits", "32" );
+	Check( Init(), "GLimp_Init takes the warning as success" );
+	CheckLive();
+	Check( glConfig.isFullscreen && glConfig.vidWidth == 1024, "the warned mode is fullscreen 1024x768" );
+	Check( r_mode->integer == 5 && r_colorbits->integer == 32, "the settings asked for are kept" );
+	Check( fatalErrors == 0, "the warning is not fatal" );
 	GLimp_Shutdown();
 	CheckReleased();
 }
@@ -1258,6 +1279,7 @@ int main( void ) {
 	TestAnisotropic();
 	TestRestartCycles();
 	TestBadMode();
+	TestConfirmSwitch();
 	TestFaults();
 	TestFullscreenConfig();
 	TestPixelFormat();
