@@ -1,8 +1,9 @@
-# Running the port on a real Mac
+# Running the port on Mac OS 9
 
 How to install a build on Mac OS 9, test it one subsystem at a time, and bring
-back what is needed to fix what breaks. Emulators cannot pass the accelerated
-renderer check (#268), so this needs real hardware with a 3D accelerator.
+back what is needed to fix what breaks. This is written for real hardware with a
+3D accelerator. [ClassicMac](#on-classicmac) runs nearly all of it too, and is
+the quicker first step.
 
 ## What to copy
 
@@ -77,7 +78,8 @@ Each stage adds one subsystem that has never run on this build, so a failure
 says where to look. Put the lines in `MacQuake3Parms.txt` and launch. Holding
 Shift at launch types them instead, for one launch, and ignores the file.
 
-To reset between stages, delete `baseq3:q3config.cfg`, or add `safe` as the first
+Commands typed at the console in a game need a leading `/`: as in retail, plain
+text is chat. To reset between stages, delete `baseq3:q3config.cfg`, or add `safe` as the first
 line, which ignores it. Settings are saved there, so a setting from one stage
 otherwise follows you into the next. A line that does not start with `set`, such
 as `+map`, also skips the opening cinematic, as on other platforms. The file holds
@@ -161,7 +163,16 @@ times at the console, and a clean quit.
 ### 6. Network
 
 Leave out `net_noudp`, then try `connect` to a server. Esc gives up on a name
-lookup.
+lookup. Try an ioquake3 server, then a retail one: the client starts on protocol
+71 and falls back to 68.
+
+The server browser asks `sv_master1` and `sv_master2`. Set at launch, `+set
+cl_motd 1` asks id's update server, and `+set com_authServer <host>` an authorize
+server. Neither is asked by default: the old ones no longer answer, and the second
+is sent the CD key.
+
+`Dropped a packet with no source address` is harmless: such packets are not used,
+and a game recovers. Send it along with its numbers, as the cause is not known.
 
 ## What to bring back
 
@@ -172,14 +183,19 @@ lookup.
 
 ## Crashes
 
-A fault writes `*** CRASH:` to `q3boot.log`, with the registers and callers, and
-shows the error alert. On the build machine:
+A fault writes `*** CRASH:` to `q3boot.log`, with the fault address, registers
+and callers, and shows the error alert. On the build machine:
 
 ```sh
 python3 mac_symbolize.py q3boot.log build_mac/Quake3.xcoff
 ```
 
-prints the source line of each `code+0xNNNN` address.
+prints the source line of each `code+0xNNNN` address. Trust `fault address` over
+`DAR`, `DSISR` and `MSR`, which were wrong under emulation.
+
+Not every bug is a fault: low memory is mapped, so a write through NULL carries on
+regardless, and there is no guard below the stack, so an overflow runs into the
+heap and hangs with no report.
 
 With MacsBug installed, the handler should run first, though this is untested. To
 stop in MacsBug at the fault instead, add `+set sys_crashhandler 0`. A line saying
@@ -195,3 +211,29 @@ a fault on another stack, at interrupt time, reads the same.
 | Machine resets or bombs, no `*** CRASH` | The fault was somewhere the handler cannot run. Try MacsBug |
 | Freeze just after `*** CRASH` | A fault at interrupt time, in sound or networking, where the report cannot finish. Whatever it wrote before stopping is in the log |
 | Black screen, then desktop | The end of `q3boot.log`, and stage 1 to rule out fullscreen |
+
+## On ClassicMac
+
+[ClassicMac](https://github.com/amcchord/ClassicMac) emulates a Radeon that Mac
+OS 9's own ATI drivers run on, so AGL reports an accelerated renderer, which gets
+past #268. It renders through the host's GPU, on macOS or Linux (EGL with
+`EGL_MESA_platform_surfaceless`). Its Mac OS 9.2.2 Deluxe image has the drivers.
+
+Every stage above has passed there on retail data: bots on three maps,
+`vid_restart`, DrawSprocket and a window, InputSprocket, cinematics and menus,
+Sound Manager including `snd_restart`, and Open Transport against ioquake3 servers
+on protocols 71 and 68. So have real faults, the fatal alert, and a hard stop of a
+frozen game with `q3boot.log` intact.
+
+Put the game on a second disk rather than the boot disk, which is HFS+ in a
+wrapper. An HFS volume can be filled, and its logs read back, with `hfsutils`.
+
+| Seen there | What it means |
+| --- | --- |
+| Green cinematics, or everything green with `r_texturebits 32` | [ClassicMac #40](https://github.com/amcchord/ClassicMac/issues/40): the retail demo does the same. The port passes the right data |
+| `r_fullscreen 0` starts fullscreen, until a `vid_restart` | The first accelerated `aglChoosePixelFormat` of a launch fails. Not known whether a real card does this |
+| `r_colorbits 32` ends up 16-bit | The same failure, and the fallback sets 16 |
+
+It says nothing about a real card's quirks, Rage Pro paths or real speed, and a
+hard stop cannot lose what a real drive had cached, so the log still needs that
+test on hardware.
