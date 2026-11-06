@@ -115,16 +115,17 @@ qboolean	com_fullyInitialized;
 char	com_errorMessage[MAXPRINTMSG];
 
 // Flight Recorder
+#ifdef __MACOS__
+void Sys_BootLogWrite( const char *text );	// mac_bootlog.c
+#endif
 #define FLIGHT_RECORDER_SIZE (256 * 1024)
 static char flightRecorderBuffer[FLIGHT_RECORDER_SIZE];
 static int flightRecorderHead = 0;
 static int flightRecorderTotal = 0;
 
-// Append to the in-memory flight-recorder ring only. Intentionally does NOT
-// touch the disk per call: on Mac OS 9 each fopen/fwrite/fclose triplet traps
-// into the File Manager and yields cooperatively, and Com_FlightRecord fires
-// from many points in startup. The ring is flushed by Com_DumpFlightRecord,
-// which Sys_Error and the Cmd-D panic-key handler call.
+// Append to the in-memory flight-recorder ring, and on the Mac to the boot log,
+// a disk write per line (mac_bootlog.c). The ring is flushed by
+// Com_DumpFlightRecord, which Sys_Error and the Cmd-D panic-key handler call.
 void QDECL Com_FlightRecord( const char *fmt, ... ) {
     va_list argptr;
     char text[1024];
@@ -138,6 +139,10 @@ void QDECL Com_FlightRecord( const char *fmt, ... ) {
 
     if ( len < 0 ) return;
     if ( len > sizeof(text)-1 ) len = sizeof(text)-1;
+
+#ifdef __MACOS__
+    Sys_BootLogWrite( text );
+#endif
 
     for ( i = 0; i < len; i++ ) {
         flightRecorderBuffer[flightRecorderHead] = text[i];

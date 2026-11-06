@@ -189,19 +189,20 @@ static int retroLogTotal = 0;
 
 // Sys_LogPrintf implementation
 //
-// Writes to the in-memory ring buffer, and to the Retro68 console window
-// once that is shown (Sys_ConsoleWanted, mac_consolehooks.cc).
-// Intentionally does NOT touch the disk per call: on Mac OS 9 each
-// fopen/fwrite/fclose triplet traps into the File Manager and yields
-// cooperatively, and Sys_LogPrintf is called many times per frame from
-// Sys_GetEvent. The ring is flushed to disk by Sys_DumpRetroLogs, which
-// is called from Sys_Quit, Sys_Error, and the Cmd-D panic-key handler.
-// Append raw text to the in-memory ring only (no console output). Used by
-// Sys_Print so that ALL engine console output reaches the crash-dump ring
-// even when the on-screen console is hidden (viewlog 0).
+// Writes to the in-memory ring buffer and the boot log (mac_bootlog.c), and to
+// the Retro68 console window once that is shown (Sys_ConsoleWanted,
+// mac_consolehooks.cc). The ring reaches the disk through Sys_DumpRetroLogs,
+// which is called from Sys_Quit, Sys_Error, and the Cmd-D panic-key handler.
+// Each line of the boot log is a disk write, so keep this out of loops that
+// run every frame.
+// Append raw text to the in-memory ring and the boot log (no console output).
+// Used by Sys_Print so that ALL engine console output reaches the crash-dump
+// ring even when the on-screen console is hidden (viewlog 0).
 void Sys_LogRecord( const char *text ) {
     int len = strlen( text );
     int i;
+
+    Sys_BootLogWrite( text );
 
     for ( i = 0; i < len; i++ ) {
         retroLogBuffer[retroLogHead] = text[i];
@@ -360,6 +361,7 @@ void Sys_Quit( void ) {
     // could never be seen or answered, so every quit and fatal error
     // presented as a machine hang.
     Sys_DumpRetroLogs( "retro68_console.txt" );
+    Sys_BootLogClose();
 
     exit( 0 );
 }
@@ -384,6 +386,7 @@ void Sys_Error( const char *error, ... ) {
     Sys_LogRecord( text );
     Sys_LogRecord( "\n" );
     Sys_DumpRetroLogs("retro68_console_crash.txt");
+    Sys_BootLogFlush();
     // Com_Error's CL_Shutdown has normally released the display; a recursive
     // error has not, and nothing could be seen or answered on a captured one
     GLimp_ReleaseDisplay();
@@ -406,6 +409,7 @@ void Sys_Error( const char *error, ... ) {
     memcpy( message + 1, text, length );
     ParamText( title, message, message, message );
     StopAlert( 128, NULL );
+    Sys_BootLogClose();
     exit( 1 );
 }
 
@@ -1446,6 +1450,101 @@ static void Sys_InitToolbox( void ) {
 	}
 }
 
+#ifndef Q3_BUILD_REV
+#define Q3_BUILD_REV "unknown"
+#endif
+
+// what a log needs to say about the machine it came from
+// the sections, from the linker: PC - _text is the address in the XCOFF
+extern char _text[], _data[];
+
+/*
+==================
+Sys_GestaltValue
+==================
+*/
+static long Sys_GestaltValue( OSType selector ) {
+	long	value;
+
+	if ( Gestalt( selector, &value ) != noErr ) {
+		return -1;
+	}
+	return value;
+}
+
+/*
+==================
+Sys_LogSystemFacts
+
+The first lines of a log: what built it and what it ran on, so a report can
+be read without knowing the machine.
+==================
+*/
+static void Sys_LogSystemFacts( void ) {
+	ProcessSerialNumber	psn;
+	ProcessInfoRec		info;
+	int					stackProbe;
+
+	Sys_LogPrintf( "build: %s, PEF code section at %p, data at %p\n", Q3_BUILD_REV, (void *)_text, (void *)_data );
+	Sys_LogPrintf( "system: 0x%lx, CPU type 0x%lx at %ld Hz, %ld bytes of RAM, %ld logical, VM attributes 0x%lx, Open Transport 0x%lx\n",
+		Sys_GestaltValue( gestaltSystemVersion ), Sys_GestaltValue( gestaltNativeCPUtype ),
+		Sys_GestaltValue( gestaltProcClkSpeed ), Sys_GestaltValue( gestaltPhysicalRAMSize ),
+		Sys_GestaltValue( gestaltLogicalRAMSize ), Sys_GestaltValue( gestaltVMAttr ),
+		Sys_GestaltValue( 'otvr' ) );
+
+	memset( &info, 0, sizeof( info ) );
+	info.processInfoLength = sizeof( info );
+	if ( GetCurrentProcess( &psn ) == noErr && GetProcessInformation( &psn, &info ) == noErr ) {
+		Sys_LogPrintf( "partition: %ld bytes, %ld free, largest block %ld, heap limit %p, stack near %p\n",
+			(long)info.processSize, (long)info.processFreeMem, (long)MaxBlock(), (void *)GetApplLimit(), (void *)&stackProbe );
+	}
+}
+
+/*
+==================
+Sys_StartBootLog
+
+Starts the boot log and gives it what the crash ring has so far. "+set
+sys_bootlog 0" leaves it off.
+==================
+*/
+static void Sys_StartBootLog( const char *commandLine ) {
+	if ( strstr( commandLine, "sys_bootlog 0" ) ) {
+		return;
+	}
+	if ( !Sys_BootLogOpen( Sys_GetCwd() ) ) {
+		Sys_LogPrintf( "main: no boot log this run, so q3boot.log is an older run's\n" );
+		return;
+	}
+	retroLogBuffer[retroLogHead] = 0;	// the ring has not wrapped this early
+	Sys_BootLogWrite( retroLogBuffer );
+	Sys_LogSystemFacts();
+}
+
+/*
+==================
+Sys_Heartbeat
+
+A line every few seconds, so a log that ends says when the game stopped
+running and not only what it last printed, and gives a rough frame rate.
+==================
+*/
+#define HEARTBEAT_MSEC	5000
+static void Sys_Heartbeat( void ) {
+	static int	lastTime, frames;
+	int			now;
+
+	frames++;
+	now = Sys_Milliseconds();
+	if ( now - lastTime < HEARTBEAT_MSEC ) {
+		return;
+	}
+	Sys_LogPrintf( "heartbeat: state %i, %i frames in %i msec, %ld bytes free, largest block %ld\n",
+		cls.state, frames, now - lastTime, (long)FreeMem(), (long)MaxBlock() );
+	lastTime = now;
+	frames = 0;
+}
+
 int main( int argc, char **argv ) {
     int i;
     static char commandLine[MAC_COMMAND_LINE_SIZE];
@@ -1527,6 +1626,7 @@ int main( int argc, char **argv ) {
         }
     }
     Sys_LogPrintf( "main: command line: %s\n", commandLine );
+    Sys_StartBootLog( commandLine );
 
     // Note: Sys_Init() is called by Com_Init() after the cvar/zone systems
     // exist. Calling it here too (as this port once did) dereferenced the
@@ -1543,6 +1643,7 @@ int main( int argc, char **argv ) {
     Com_FlightRecord("main: Entering Com_Frame loop.\n");
     while ( 1 ) {
         Com_Frame();
+        Sys_Heartbeat();
     }
 
     return 0;

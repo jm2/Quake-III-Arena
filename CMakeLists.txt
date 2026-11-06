@@ -83,6 +83,25 @@ file(GLOB COMMON_SRCS code/qcommon/*.c)
 file(GLOB SERVER_SRCS code/server/*.c)
 file(GLOB CLIENT_SRCS code/client/*.c)
 file(GLOB RENDERER_SRCS code/renderer/*.c)
+# The revision built, for the first line of the boot log (mac_main.c).
+find_package(Git QUIET)
+set(QUAKE3_BUILD_REV "unknown")
+if(GIT_FOUND)
+    execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_SOURCE_DIR}" rev-parse --short=10 HEAD
+        OUTPUT_VARIABLE quake3_git_rev OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE quake3_git_result ERROR_QUIET)
+    if(quake3_git_result EQUAL 0)
+        set(QUAKE3_BUILD_REV "${quake3_git_rev}")
+        execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_SOURCE_DIR}" diff --quiet HEAD -- code
+            RESULT_VARIABLE quake3_git_dirty ERROR_QUIET)
+        if(NOT quake3_git_dirty EQUAL 0)
+            string(APPEND QUAKE3_BUILD_REV "-modified")
+        endif()
+    endif()
+endif()
+set_source_files_properties("${CMAKE_SOURCE_DIR}/code/mac/mac_main.c"
+    PROPERTIES COMPILE_DEFINITIONS "Q3_BUILD_REV=\"${QUAKE3_BUILD_REV}\"")
+
 # The .r resource sources are not compiled; Rez builds them below.
 file(GLOB MAC_SRCS code/mac/*.c code/mac/*.cc)
 # mac_consolehooks.cc replaces libRetroConsole's InitConsole.cc (issues #10 and
