@@ -136,26 +136,26 @@ static void Resumes( void ) {
 	Check( registers.R2.lo == reportVector[1], "with this fragment's TOC" );
 	Check( registers.R1.lo < STACK_GOOD - CRASH_RED_ZONE + 16 && registers.R1.lo >= STACK_GOOD - CRASH_RED_ZONE - 16
 		&& !( registers.R1.lo & 15 ), "below the frames it will walk, on the stack that faulted" );
-	Check( !crashOnOwnStack, "a healthy stack keeps the stack sniffer happy" );
-	Report();
+	Check( !crashOnPrivateStack, "a healthy stack keeps the stack sniffer happy" );
 	Check( !snifferOffs, "and leaves it running" );
+	Report();
 	Check( unlocks == 1, "a fault inside a log write cannot silence the report" );
 
 	/* too little stack left, or r1 not on the stack at all */
 	Reset( kAccessException, CODE_START + 0x1000, STACK_LOW + CRASH_STACK_NEEDED - 16 );
-	Check( Sys_CrashHandler( &info ) == noErr && crashOnOwnStack, "a nearly full stack is not used" );
+	Check( Sys_CrashHandler( &info ) == noErr && crashOnPrivateStack, "a nearly full stack is not used" );
 	Reset( kAccessException, CODE_START + 0x1000, STACK_HIGH + 16 );
-	Check( Sys_CrashHandler( &info ) == noErr && crashOnOwnStack, "nor is r1 above it" );
+	Check( Sys_CrashHandler( &info ) == noErr && crashOnPrivateStack, "nor is r1 above it" );
 	Reset( kAccessException, CODE_START + 0x1000, STACK_LOW + 0x4000 );
+	snifferOffs = 0;
 	Check( Sys_CrashHandler( &info ) == noErr, "a fault is handled" );
 	stack = (uint32_t)(uintptr_t)( crashStack + CRASH_STACK_SIZE );
-	Check( crashOnOwnStack && registers.R1.lo != STACK_LOW + 0x4000 && !( registers.R1.lo & 15 ), "it gets an aligned stack of its own" );
+	Check( crashOnPrivateStack && registers.R1.lo != STACK_LOW + 0x4000 && !( registers.R1.lo & 15 ), "it gets an aligned stack of its own" );
 	Check( stack - registers.R1.lo >= CRASH_STACK_MARGIN && stack - registers.R1.lo < CRASH_STACK_MARGIN + 16,
 		"with room for the frame it may write above itself" );
 	Check( crashRegisters.R1.lo == STACK_LOW + 0x4000 && crashMachine.PC.lo == CODE_START + 0x1000,
 		"the registers at the fault are kept" );
-	Report();
-	Check( snifferOffs == 1, "and turns off the stack sniffer, which would call that stack an overflow" );
+	Check( snifferOffs == 1, "and turns off the stack sniffer, which would call that stack an overflow, before anything runs there" );
 	crashing = 1;
 
 	/* the report itself faults */

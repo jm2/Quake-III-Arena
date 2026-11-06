@@ -11,7 +11,7 @@
 // The report runs on the stack that faulted, below the frames it wants to
 // walk, while that stack has room. crashStack is only for a stack that does
 // not: it lies in the globals, below the heap limit, so the system's stack
-// sniffer would call it an overflow (system error 28), and the report clears
+// sniffer would call it an overflow (system error 28), so the handler clears
 // the sniffer's low-water mark first, as Apple's Switch Stack sample does.
 //
 // Addresses are logged as code+0xNNNN, offsets into this application's code
@@ -38,7 +38,7 @@ void Sys_Error( const char *error, ... );
 
 #define CRASH_STACK_SIZE	( 64 * 1024 )
 #define CRASH_STACK_MARGIN	256			// the frame a called function may write into
-#define CRASH_STACK_NEEDED	( 128 * 1024 )	// room the report and Sys_Error need
+#define CRASH_STACK_NEEDED	( 128 * 1024 )	// room left on a stack it will use; the report needs about 34 KB
 #define CRASH_RED_ZONE		1024		// below r1, what a leaf function may be using
 #define CRASH_MAX_FRAMES	32
 #define CRASH_MAIN_SLACK	0x10000		// startup frames above the one that installs this
@@ -58,7 +58,9 @@ extern char _text[], _etext[];		// the code section, from the linker
 #define CRASH_READ( address )	( *(const UInt32 *)(uintptr_t)( address ) )
 #endif
 #ifndef CRASH_SNIFFER_OFF
-// StkLowPt: 0 stops the VBL stack sniffer. LowMem.h has no accessor for it.
+// StkLowPt: 0 stops the VBL stack sniffer. Written directly because
+// LMSetStackLowPoint would be one more hard import, and a missing one stops the
+// application launching at all, for a line only a rare crash reaches.
 #define CRASH_SNIFFER_OFF()		( *(volatile UInt32 *)0x110 = 0 )
 #endif
 #ifndef CRASH_TVECTOR
@@ -67,7 +69,7 @@ extern char _text[], _etext[];		// the code section, from the linker
 #endif
 
 static volatile int				crashing;
-static int						crashOnOwnStack;
+static int						crashOnPrivateStack;
 static ExceptionKind			crashKind;
 static MachineInformation		crashMachine;
 static RegisterInformation		crashRegisters;
@@ -161,9 +163,6 @@ static void Sys_CrashReport( void ) {
 	const char			*kind = Sys_CrashKindName( crashKind );
 	int					i;
 
-	if ( crashOnOwnStack ) {
-		CRASH_SNIFFER_OFF();
-	}
 	Sys_BootLogUnlock();	// the fault may have been inside a log write
 	Sys_LogRecord( "\n*** CRASH: " );
 	Sys_LogRecord( kind );
@@ -213,8 +212,9 @@ static OSStatus Sys_CrashHandler( ExceptionInformation *info ) {
 	info->machineState->PC.lo = report[0];
 	info->registerImage->R2.lo = report[1];
 	sp = info->registerImage->R1.lo;
-	crashOnOwnStack = sp < stackLow + CRASH_STACK_NEEDED || sp >= stackHigh;
-	if ( crashOnOwnStack ) {
+	crashOnPrivateStack = sp < stackLow + CRASH_STACK_NEEDED || sp >= stackHigh;
+	if ( crashOnPrivateStack ) {
+		CRASH_SNIFFER_OFF();
 		sp = (UInt32)(uintptr_t)( crashStack + CRASH_STACK_SIZE - CRASH_STACK_MARGIN );
 	} else {
 		sp -= CRASH_RED_ZONE;
