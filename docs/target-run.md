@@ -56,15 +56,17 @@ Quake III Arena:
 clean quit, so its size says nothing, and the end of the text is marked
 `<<< end of log >>>`. Each line starts with seconds since launch. It starts with
 the revision, the machine and the memory partition, and a `heartbeat:` line every
-5 seconds gives a rough frame rate. If the last line is a heartbeat, the game
-froze between frames. If the heartbeats stop in the middle of loading, look at
-what was printed last.
+5 seconds gives a rough frame rate. Heartbeats come between frames, and a map
+load happens inside one frame, so there are none during a load. If the last line
+is a heartbeat, the game stopped somewhere in the next few seconds without
+printing anything. Otherwise, what was printed last says how far it got.
 
 **Restarting after a freeze moves `q3boot.log` to `q3boot.prev.log`, and a
 second restart loses it.** Copy it somewhere before the next launch.
 
-Writing every line to disk slows map loads a little. `+set sys_bootlog 0` turns
-it off, if the log itself is ever in doubt.
+Every line is a disk write, which slows startup and map loads a little, and a
+warning printed every frame would slow the game. `+set sys_bootlog 0` turns the
+log off, if it is ever in doubt.
 
 ## Stages
 
@@ -75,7 +77,8 @@ Shift at launch types them instead, for one launch, and ignores the file.
 To reset between stages, delete `baseq3:q3config.cfg`, or add `safe` as the first
 line, which ignores it. Settings are saved there, so a setting from one stage
 otherwise follows you into the next. A line that does not start with `set`, such
-as `+map`, also skips the opening cinematic, as on other platforms.
+as `+map`, also skips the opening cinematic, as on other platforms. The file holds
+about 16 `+set` lines, and a command past that limit does not take effect.
 
 ### 1. Window, no network, no sound
 
@@ -85,7 +88,7 @@ as `+map`, also skips the opening cinematic, as on other platforms.
 +exec bringup.cfg
 ```
 
-`bringup.cfg`, in `baseq3`, runs a bot match by itself. It covers four maps, a
+`bringup.cfg`, in `baseq3`, runs a bot match by itself. It covers three maps, a
 `vid_restart`, a disconnect and a quit:
 
 ```text
@@ -129,7 +132,8 @@ error.
 Without `+exec bringup.cfg`, add `+map q3dm1` and play. Check Ctrl alone fires,
 Shift runs, and the mouse turns. `q3boot.log` lists the mouse's elements with
 their kind and label. `using ... element(s) of another kind` means the driver
-reports its movement some other way, and the sensitivity may be wrong.
+reports its movement some other way, and the view may turn on its own, because
+those elements are read as mouse movement.
 
 ### 4. Cinematic and menus
 
@@ -137,8 +141,9 @@ reports its movement some other way, and the sensitivity may be wrong.
 +set net_noudp 1
 ```
 
-This plays `idlogo.RoQ`, then the menus. Without a `baseq3:q3key` file, the CD key
-screen comes first. Esc should skip the cinematic.
+This plays `idlogo.RoQ` and, until `com_introplayed` is saved, which needs a launch
+like this one, `intro.RoQ` after it. Esc should skip each in turn. Then come the
+menus. Without a `baseq3:q3key` file, the CD key screen comes first.
 
 ### 5. Sound
 
@@ -173,9 +178,10 @@ python3 mac_symbolize.py q3boot.log build_mac/Quake3.xcoff
 
 prints the source line of each `code+0xNNNN` address.
 
-With MacsBug installed, the handler still runs first. To stop in MacsBug at the
-fault instead, add `+set sys_crashhandler 0`. A `stack overflowed` line means the
-1 MB `cfrg` stack was too small.
+With MacsBug installed, the handler should run first, though this is untested. To
+stop in MacsBug at the fault instead, add `+set sys_crashhandler 0`. A line saying
+r1 is below the heap limit usually means the 1 MB `cfrg` stack was too small, but
+a fault on another stack, at interrupt time, reads the same.
 
 | What happened | Look at |
 | --- | --- |
@@ -184,4 +190,5 @@ fault instead, add `+set sys_crashhandler 0`. A `stack overflowed` line means th
 | `video memory` error | 256 colors, or no accelerated renderer for the desktop |
 | Freeze, no alert | The end of `q3boot.prev.log` after one restart. Copy it before launching again |
 | Machine resets or bombs, no `*** CRASH` | The fault was somewhere the handler cannot run. Try MacsBug |
+| Freeze just after `*** CRASH` | A fault at interrupt time, in sound or networking, where the report cannot finish. Its registers are in the log |
 | Black screen, then desktop | The end of `q3boot.log`, and stage 1 to rule out fullscreen |
