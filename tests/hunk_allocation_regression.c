@@ -34,6 +34,22 @@ static void Reject(int size) {
 	Check(!memcmp(before,arena,sizeof(arena)),"failure retains arena contents");
 }
 void Com_Memset(void *destination,const int value,const size_t size) { memset(destination,value,size); }
+/* A size near INT_MAX must not wrap the temporary allocator's arithmetic. */
+static void RejectTemp(int size) {
+	int count=errors;expecting=1;
+	if(!setjmp(failure)) { Hunk_AllocateTempMemory(size);Check(0,"oversized temporary allocation accepted"); }
+	expecting=0;Check(errors==count+1,"one recoverable temporary drop");Guards();
+}
+static void TempSizes(int high) {
+	static const int sizes[]={INT_MAX,INT_MAX-1,INT_MAX-2,INT_MAX-3,INT_MAX-4,INT_MAX-8,INT_MAX-16,INT_MAX-40,0x7fffff00,0x7ffffbf0,-1,INT_MIN,1025};
+	int i,fit;void *memory;
+	Reset(high);
+	for(i=0;i<(int)(sizeof(sizes)/sizeof(sizes[0]));i++) RejectTemp(sizes[i]);
+	fit=1024-(int)sizeof(hunkHeader_t);
+	RejectTemp(fit+1);
+	memory=Hunk_AllocateTempMemory(fit);Check(memory!=NULL,"an exact fit is taken");
+	memset(memory,0x5a,fit);Guards();
+}
 int main(void) {
 	int high,size,cost,before,i;void *memory;int boundaries[]={INT_MIN,-1,INT_MAX,INT_MAX-1,INT_MAX-30};
 	for(high=0;high<2;high++)for(size=0;size<=257;size++) {
@@ -53,5 +69,6 @@ int main(void) {
 	}
 	for(size=0;size<=63;size++) { int request=INT_MAX-size;int64_t expected=((int64_t)request+Header()+31)/32*32;Check(Hunk_AllocationSize(request)==(expected>INT_MAX?-1:(int)expected),"signed maximum alignment and debug boundaries"); }
 	Check(Hunk_AllocationSize(-1)==-1 && Hunk_AllocationSize(INT_MIN)==-1,"negative previews reject");
+	TempSizes(0);TempSizes(1);
 	printf("Native hunk allocation checks passed (%s).\n",Header()?"debug":"release");return 0;
 }

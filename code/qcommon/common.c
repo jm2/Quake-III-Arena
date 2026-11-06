@@ -1924,9 +1924,13 @@ void *Hunk_AllocateTempMemory( int size ) {
 
 	Hunk_SwapBanks();
 
+	// a size from a pk3 entry can be near INT_MAX: check before adding to it
+	if ( size < 0 || size > INT_MAX - 3 - (int)sizeof( hunkHeader_t ) ) {
+		Com_Error( ERR_DROP, "Hunk_AllocateTempMemory: failed on %i", size );
+	}
 	size = ( (size+3)&~3 ) + sizeof( hunkHeader_t );
 
-	if ( hunk_temp->temp + hunk_permanent->permanent + size > s_hunkTotal ) {
+	if ( size > s_hunkTotal - hunk_temp->temp - hunk_permanent->permanent ) {
 		Com_Error( ERR_DROP, "Hunk_AllocateTempMemory: failed on %i", size );
 	}
 
