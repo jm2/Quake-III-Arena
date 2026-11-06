@@ -83,6 +83,7 @@ static void Reset( ExceptionKind kind, uint32_t pc, uint32_t sp ) {
 	info.theKind = kind;
 	info.machineState = &machine;
 	info.registerImage = &registers;
+	info.info.memoryInfo = NULL;
 	stackLow = STACK_LOW;
 	stackHigh = STACK_HIGH;
 }
@@ -164,14 +165,20 @@ static void Resumes( void ) {
 }
 
 static void Reports( void ) {
+	static MemoryExceptionInformation	memory;
+
 	Reset( kReadOnlyMemoryException, CODE_START + 0x1000, STACK_LOW + 0x4000 );
 	BuildFrames( STACK_LOW + 0x4000, 3 );
+	memory.theAddress = (void *)(uintptr_t)0xdead0000;
+	memory.theReference = 1;
+	info.info.memoryInfo = &memory;
 	Sys_CrashHandler( &info );
 	Report();
 	Check( strstr( logText, "*** CRASH: write to read-only memory\n" ) != NULL, "the kind is logged" );
 	Check( strstr( logText, "PC 10001000 code+0x1000\n" ) != NULL, "the PC, as an offset" );
 	Check( strstr( logText, "LR 10002000 code+0x2000\n" ) != NULL, "the LR, as an offset" );
-	Check( strstr( logText, "DAR deadbeef" ) != NULL, "the faulting data address" );
+	Check( strstr( logText, "*** fault address dead0000, reference 1 " ) != NULL, "the system's record of the fault" );
+	Check( strstr( logText, "DAR deadbeef" ) != NULL, "and the raw processor fields" );
 	Check( strstr( logText, "cafef00d" ) != NULL, "the registers" );
 	Check( strstr( logText, "frame  0 10003000 code+0x3000\n" ) != NULL
 		&& strstr( logText, "frame  2 10003008 code+0x3008\n" ) != NULL, "the callers, in order" );
@@ -199,7 +206,7 @@ static void Overflow( void ) {
 }
 
 static void BadChains( void ) {
-	static const uint32_t	links[] = { 0, STACK_LOW + 0x4000, STACK_LOW + 0x3000, STACK_LOW + 0x4002, STACK_HIGH, 0xffffffffu };
+	static const uint32_t	links[] = { 0, STACK_LOW + 0x4000, STACK_LOW + 0x3000, STACK_LOW + 0x4002, STACK_HIGH, STACK_HIGH - 4, 0xfffffffcu, 0xffffffffu };
 	int i;
 
 	for ( i = 0 ; i < (int)( sizeof( links ) / sizeof( links[0] ) ) ; i++ ) {
@@ -218,11 +225,26 @@ static void BadChains( void ) {
 	Check( strstr( logText, "frame 31 " ) && !strstr( logText, "frame 32 " ), "the walk has a limit" );
 }
 
+/* memoryInfo means nothing for other kinds, and a record without one has no fault address */
+static void NoMemoryRecord( void ) {
+	Reset( kIllegalInstructionException, CODE_START + 0x1000, STACK_LOW + 0x4000 );
+	info.info.memoryInfo = (MemoryExceptionInformation *)(uintptr_t)1;
+	Sys_CrashHandler( &info );
+	Report();
+	Check( strstr( logText, "*** CRASH: illegal instruction\n" ) != NULL && !strstr( logText, "fault address" ),
+		"another kind's memoryInfo is not read" );
+	Reset( kAccessException, CODE_START + 0x1000, STACK_LOW + 0x4000 );
+	Sys_CrashHandler( &info );
+	Report();
+	Check( !strstr( logText, "fault address" ), "nor a missing one, or a previous fault's" );
+}
+
 int main( void ) {
 	Install();
 	Passes();
 	Resumes();
 	Reports();
+	NoMemoryRecord();
 	Outside();
 	Overflow();
 	BadChains();

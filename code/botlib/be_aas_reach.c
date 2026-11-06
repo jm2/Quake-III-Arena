@@ -117,6 +117,8 @@ float AAS_FaceArea(aas_face_t *face)
 	vec3_t d1, d2, cross;
 	aas_edge_t *edge;
 
+	//the file check lets a face with no edges name the end of the edge index
+	if (face->numedges <= 0) return 0;
 	edgenum = aasworld.edgeindex[face->firstedge];
 	side = edgenum < 0;
 	edge = &aasworld.edges[abs(edgenum)];
@@ -153,8 +155,14 @@ float AAS_AreaVolume(int areanum)
 	aas_area_t *area;
 
 	area = &aasworld.areas[areanum];
-	facenum = aasworld.faceindex[area->firstface];
-	face = &aasworld.faces[abs(facenum)];
+	//an optimized file keeps faces with no edges, which have no corner
+	for (i = 0; i < area->numfaces; i++)
+	{
+		facenum = aasworld.faceindex[area->firstface + i];
+		face = &aasworld.faces[abs(facenum)];
+		if (face->numedges > 0) break;
+	} //end for
+	if (i >= area->numfaces) return 0;
 	edgenum = aasworld.edgeindex[face->firstedge];
 	edge = &aasworld.edges[abs(edgenum)];
 	//

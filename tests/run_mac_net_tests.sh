@@ -43,6 +43,8 @@ Q3_TEST_EXTRACT_SPAN '^(static[[:space:]]+pascal[[:space:]]+void[[:space:]]+NET_
     '^void[[:space:]]+Sys_ShutdownNetworking[[:space:]]*[(]' "$Q3_TEST_NET" "$Q3_TEST_DIR/mac_net_init_extracted.c"
 Q3_TEST_EXTRACT_SPAN '^(static[[:space:]]+qboolean[[:space:]]+NET_StringToHost|qboolean[[:space:]]+Sys_StringToAdr)[[:space:]]*[(]' \
     '^qboolean[[:space:]]+Sys_StringToAdr[[:space:]]*[(]' "$Q3_TEST_NET" "$Q3_TEST_DIR/mac_net_resolve_extracted.c"
+Q3_TEST_EXTRACT_SPAN '^#define[[:space:]]+DROPPED_PACKET_REPORT_MSEC' \
+    '^static[[:space:]]+void[[:space:]]+Sys_ReportDroppedPacket' "$Q3_TEST_NET" "$Q3_TEST_DIR/mac_net_extracted.c"
 Q3_TEST_EXTRACT '^qboolean[[:space:]]+Sys_GetPacket[[:space:]]*[(]' \
     "$Q3_TEST_NET" "$Q3_TEST_DIR/mac_net_extracted.c"
 Q3_TEST_EXTRACT '^void[[:space:]]+NET_Sleep[[:space:]]*[(]' \
@@ -58,7 +60,7 @@ Q3_TEST_EXTRACT '^int[[:space:]]+Com_EventLoop[[:space:]]*[(]' \
 
 # One process per case: AddressSanitizer stops at the first overflow.
 for Q3_TEST_CASE in host-normal host-255 host-256 host-1023 \
-        packet-normal packet-split packet-full packet-drain-error event-oversize \
+        packet-normal packet-split packet-full packet-drain-error packet-dropped-reports event-oversize \
         init-default init-cvars init-port-busy init-port-reassigned init-port-exhausted \
         init-noudp init-fail-ot init-fail-config init-fail-open init-fail-nonblocking \
         init-fail-resolver-open init-fail-resolver-bind init-fail-net-ip \

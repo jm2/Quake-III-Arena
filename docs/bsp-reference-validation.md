@@ -15,7 +15,7 @@ spans and surface-local indices fit their arrays. A block range-max tree
 scans index words once and bounds each shared-span query by at most 62 edge
 words plus logarithmic tree work; overlapping spans remain supported.
 Temporary checked storage is released on success or failure before publication. Leaves support opaque -1
-clusters, including area -1 for opaque leaves, and the fixed retail area
+clusters, area -1 with or without a cluster, and the fixed retail area
 visibility bit vector; cluster counts fit
 native novis allocation arithmetic and declared PVS rows. Collision rejects
 more than its existing MAX_SUBMODELS limit before allocation.
@@ -30,8 +30,10 @@ budgets are not introduced as format caps.
 
 The [original compiler area assignment](https://github.com/id-Software/Quake-III-Arena/blob/master/q3map/portals.c)
 and [leaf writer](https://github.com/id-Software/Quake-III-Arena/blob/master/q3map/writebsp.c)
-retain area -1 for opaque leaves. Visible leaves require an addressable retail
-area bit; a negative visible area would reach a negative renderer mask index.
+retain area -1 for opaque leaves, and for the two thin visible leaves of retail
+`q3tourney4` that it warns about in `CheckAreas_r`. Any other area needs an
+addressable retail area bit. `R_MarkLeaves` only reads the mask for an area of 0
+or more, so area -1 never reaches a negative renderer mask index.
 
 ## Validation
 
@@ -51,7 +53,7 @@ alignments before checksum, hunk allocation, map reset or patch clearing.
 The previous loaded map and caller checksum remain unchanged; FS ownership is
 released before controlled ERR_DROP.
 
-Valid cases preserve area 255, opaque clusters with area 0 or -1, zero-length spans at array
+Valid cases preserve area 255, clusters with area 0 or -1, zero-length spans at array
 ends, all four negative lightmap selectors, positive lightmap fallback and
 ignored patch/flare fields. Actual collision loading accepts 256 submodels;
 257 rejects before state changes. The inherited header fixture uses the same

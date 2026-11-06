@@ -166,13 +166,26 @@ gentity_t *SelectRandomDeathmatchSpawnPoint( void ) {
 }
 
 /*
+================
+SpotAllowed
+
+Spawn points can be for bots or for humans only: q3dm0 keeps bots off the
+initial one. Selection has to apply this, as a retry would pick the same
+spot again if every other one is taken.
+================
+*/
+static qboolean SpotAllowed( gentity_t *spot, qboolean isBot ) {
+	return !( spot->flags & ( isBot ? FL_NO_BOTS : FL_NO_HUMANS ) );
+}
+
+/*
 ===========
 SelectRandomFurthestSpawnPoint
 
 Chooses a player start, deathmatch start, etc
 ============
 */
-gentity_t *SelectRandomFurthestSpawnPoint ( vec3_t avoidPoint, vec3_t origin, vec3_t angles ) {
+gentity_t *SelectRandomFurthestSpawnPoint ( vec3_t avoidPoint, vec3_t origin, vec3_t angles, qboolean isBot ) {
 	gentity_t	*spot;
 	vec3_t		delta;
 	float		dist;
@@ -184,7 +197,7 @@ gentity_t *SelectRandomFurthestSpawnPoint ( vec3_t avoidPoint, vec3_t origin, ve
 	spot = NULL;
 
 	while ((spot = G_Find (spot, FOFS(classname), "info_player_deathmatch")) != NULL) {
-		if ( SpotWouldTelefrag( spot ) ) {
+		if ( !SpotAllowed( spot, isBot ) || SpotWouldTelefrag( spot ) ) {
 			continue;
 		}
 		VectorSubtract( spot->s.origin, avoidPoint, delta );
@@ -212,7 +225,15 @@ gentity_t *SelectRandomFurthestSpawnPoint ( vec3_t avoidPoint, vec3_t origin, ve
 		}
 	}
 	if (!numSpots) {
-		spot = G_Find( NULL, FOFS(classname), "info_player_deathmatch");
+		// all taken: share one this client may use, or any if there are none
+		spot = NULL;
+		while ((spot = G_Find (spot, FOFS(classname), "info_player_deathmatch")) != NULL) {
+			if ( SpotAllowed( spot, isBot ) ) {
+				break;
+			}
+		}
+		if (!spot)
+			spot = G_Find( NULL, FOFS(classname), "info_player_deathmatch");
 		if (!spot)
 			G_Error( "Couldn't find a spawn point" );
 		VectorCopy (spot->s.origin, origin);
@@ -238,8 +259,8 @@ SelectSpawnPoint
 Chooses a player start, deathmatch start, etc
 ============
 */
-gentity_t *SelectSpawnPoint ( vec3_t avoidPoint, vec3_t origin, vec3_t angles ) {
-	return SelectRandomFurthestSpawnPoint( avoidPoint, origin, angles );
+gentity_t *SelectSpawnPoint ( vec3_t avoidPoint, vec3_t origin, vec3_t angles, qboolean isBot ) {
+	return SelectRandomFurthestSpawnPoint( avoidPoint, origin, angles, isBot );
 
 	/*
 	gentity_t	*spot;
@@ -278,18 +299,18 @@ Try to find a spawn point marked 'initial', otherwise
 use normal spawn selection.
 ============
 */
-gentity_t *SelectInitialSpawnPoint( vec3_t origin, vec3_t angles ) {
+gentity_t *SelectInitialSpawnPoint( vec3_t origin, vec3_t angles, qboolean isBot ) {
 	gentity_t	*spot;
 
 	spot = NULL;
 	while ((spot = G_Find (spot, FOFS(classname), "info_player_deathmatch")) != NULL) {
-		if ( spot->spawnflags & 1 ) {
+		if ( ( spot->spawnflags & 1 ) && SpotAllowed( spot, isBot ) ) {
 			break;
 		}
 	}
 
 	if ( !spot || SpotWouldTelefrag( spot ) ) {
-		return SelectSpawnPoint( vec3_origin, origin, angles );
+		return SelectSpawnPoint( vec3_origin, origin, angles, isBot );
 	}
 
 	VectorCopy (spot->s.origin, origin);
@@ -1078,33 +1099,20 @@ void ClientSpawn(gentity_t *ent) {
 		spawnPoint = SelectCTFSpawnPoint ( 
 						client->sess.sessionTeam, 
 						client->pers.teamState.state, 
-						spawn_origin, spawn_angles);
+						spawn_origin, spawn_angles,
+						!!( ent->r.svFlags & SVF_BOT ) );
 	} else {
-		do {
-			// the first spawn should be at a good looking spot
-			if ( !client->pers.initialSpawn && client->pers.localClient ) {
-				client->pers.initialSpawn = qtrue;
-				spawnPoint = SelectInitialSpawnPoint( spawn_origin, spawn_angles );
-			} else {
-				// don't spawn near existing origin if possible
-				spawnPoint = SelectSpawnPoint ( 
-					client->ps.origin, 
-					spawn_origin, spawn_angles);
-			}
-
-			// Tim needs to prevent bots from spawning at the initial point
-			// on q3dm0...
-			if ( ( spawnPoint->flags & FL_NO_BOTS ) && ( ent->r.svFlags & SVF_BOT ) ) {
-				continue;	// try again
-			}
-			// just to be symetric, we have a nohumans option...
-			if ( ( spawnPoint->flags & FL_NO_HUMANS ) && !( ent->r.svFlags & SVF_BOT ) ) {
-				continue;	// try again
-			}
-
-			break;
-
-		} while ( 1 );
+		// the first spawn should be at a good looking spot
+		if ( !client->pers.initialSpawn && client->pers.localClient ) {
+			client->pers.initialSpawn = qtrue;
+			spawnPoint = SelectInitialSpawnPoint( spawn_origin, spawn_angles,
+				!!( ent->r.svFlags & SVF_BOT ) );
+		} else {
+			// don't spawn near existing origin if possible
+			spawnPoint = SelectSpawnPoint ( 
+				client->ps.origin, 
+				spawn_origin, spawn_angles, !!( ent->r.svFlags & SVF_BOT ) );
+		}
 	}
 	client->pers.teamState.state = TEAM_ACTIVE;
 

@@ -71,6 +71,8 @@ extern char _text[], _etext[];		// the code section, from the linker
 static volatile int				crashing;
 static int						crashOnPrivateStack;
 static ExceptionKind			crashKind;
+static MemoryExceptionInformation	crashMemory;
+static int						crashHasMemory;
 static MachineInformation		crashMachine;
 static RegisterInformation		crashRegisters;
 static unsigned char			crashStack[CRASH_STACK_SIZE];
@@ -89,6 +91,13 @@ static const char *Sys_CrashKindName( ExceptionKind kind ) {
 	case kDataAlignmentException:			return "data alignment";
 	}
 	return NULL;
+}
+
+// memoryInfo is only filled in for these
+static int Sys_CrashIsMemoryKind( ExceptionKind kind ) {
+	return kind == kAccessException || kind == kUnmappedMemoryException ||
+		kind == kExcludedMemoryException || kind == kReadOnlyMemoryException ||
+		kind == kUnresolvablePageFaultException;
 }
 
 static void Sys_CrashPrint( const char *fmt, UInt32 a, UInt32 b, UInt32 c, UInt32 d ) {
@@ -141,7 +150,7 @@ static void Sys_CrashWalkStack( UInt32 sp ) {
 			return;
 		}
 		next = CRASH_READ( sp + FRAME_BACK_CHAIN );
-		if ( next <= sp || next >= stackHigh || ( next & 3 ) ) {
+		if ( next <= sp || next >= stackHigh - FRAME_SAVED_LR || ( next & 3 ) ) {
 			return;
 		}
 		snprintf( name, sizeof( name ), "frame %2i", frame );
@@ -169,6 +178,13 @@ static void Sys_CrashReport( void ) {
 	Sys_LogRecord( "\n" );
 	Sys_CrashPrintAddress( "PC", pc );
 	Sys_CrashPrintAddress( "LR", crashMachine.LR.lo );
+	// The system's own account of the fault. Under emulation at least, the
+	// DAR, DSISR and MSR below it are not what the processor saw, and nor is
+	// this record's theError, so that is left out.
+	if ( crashHasMemory ) {
+		Sys_CrashPrint( "*** fault address %08lx, reference %lu (0 write, 1 read, 2 execute)\n",
+			(UInt32)(uintptr_t)crashMemory.theAddress, crashMemory.theReference, 0, 0 );
+	}
 	Sys_CrashPrint( "*** CTR %08lx DAR %08lx DSISR %08lx MSR %08lx\n",
 		crashMachine.CTR.lo, crashMachine.DAR.lo, crashMachine.DSISR, crashMachine.MSR );
 	for ( i = 0 ; i < 32 ; i += 4 ) {
@@ -207,6 +223,11 @@ static OSStatus Sys_CrashHandler( ExceptionInformation *info ) {
 	crashKind = info->theKind;
 	crashMachine = *info->machineState;
 	crashRegisters = *info->registerImage;
+	crashHasMemory = 0;
+	if ( Sys_CrashIsMemoryKind( info->theKind ) && info->info.memoryInfo ) {
+		crashMemory = *info->info.memoryInfo;
+		crashHasMemory = 1;
+	}
 
 	report = CRASH_TVECTOR( Sys_CrashReport );
 	info->machineState->PC.lo = report[0];

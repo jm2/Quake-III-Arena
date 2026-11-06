@@ -112,6 +112,13 @@ const char *NET_AdrToString( netadr_t a ) {
 	return s;
 }
 
+static int rcvUDErrs;
+void RcvUDErr( EndpointRef ep ) {
+	(void)ep;
+	rcvUDErrs++;
+	fakeOTLookEvent = 0;
+}
+
 void HandleOTError( EndpointRef ep, int err, const char *func ) {
 	(void)ep; (void)err; (void)func;
 	handleOTErrors++;
@@ -328,6 +335,8 @@ static const UInt8 *Datagram( int slot, int length ) {
 
 static void ResetEndpoint( void ) {
 	FakeOT_ResetEndpoint();
+	fakeOTLookEvent = 0;
+	fakeOTNow += 2000;		/* past any Sys_ReportDroppedPacket limit */
 	endpoint = FAKE_OT_ENDPOINT;
 	printed[0] = 0;
 	handleOTErrors = 0;
@@ -428,11 +437,62 @@ static void DrainError( void ) {
 
 	Check( !GetPacket( &from, &msg ), "the tail is not delivered as a packet" );
 	Check( fakeOTNext == 1 && fakeOTOffset == 0, "the tail is read from the endpoint" );
-	Check( Printed( "Oversize packet from " ) == 2 && Printed( "\n" ) == 2, "the tail is dropped with the same message" );
+	Check( Printed( "\n" ) == 1, "and a burst prints once" );
 
 	ExpectPacket( next, 1400, serverIP, serverPort );
 	ExpectNoPacket();
 	Check( handleOTErrors == 1, "only the injected error is reported" );
+}
+
+/*
+ * Run on Mac OS 9, pieces with no source address arrived in bursts: each one
+ * was a report, and each report a disk write.
+ */
+static void DroppedPacketReports( void ) {
+	static UInt8 noAddress[4] = { 0, 0, 0, 0 }, noPort[2] = { 0, 0 };
+	const UInt8 *next = Datagram( 1, 1400 );
+	netadr_t from;
+	msg_t msg;
+	int i;
+
+	/* a burst: one line that says what was returned, then a count */
+	ResetEndpoint();
+	for ( i = 0 ; i < 5 ; i++ ) {
+		FakeOT_QueueDatagram( Datagram( 0, 100 ), 100, noAddress, noPort );
+		fakeOTDatagrams[i].noAddress = 1;
+	}
+	FakeOT_QueueDatagram( next, 1400, serverIP, serverPort );
+	for ( i = 0 ; i < 5 ; i++ ) {
+		Check( !GetPacket( &from, &msg ), "a piece with no source address is not a packet" );
+	}
+	Check( Printed( "Dropped a packet with no source address: 100 bytes, flags 0x0, OTLook 0\n" ) == 1
+		&& Printed( "\n" ) == 1, "a burst prints one report, saying what Open Transport returned" );
+	ExpectPacket( next, 1400, serverIP, serverPort );
+
+	printed[0] = 0;
+	fakeOTNow += 1000;
+	FakeOT_QueueDatagram( Datagram( 0, 100 ), 100, noAddress, noPort );
+	fakeOTDatagrams[fakeOTQueued - 1].noAddress = 1;
+	Check( !GetPacket( &from, &msg ), "a later piece is dropped too" );
+	Check( Printed( "4 more packets dropped since the last report\n" ) == 1, "and counts what went unprinted" );
+
+	/* a pending error accounts for the piece, and is cleared */
+	ResetEndpoint();
+	rcvUDErrs = 0;
+	fakeOTLookEvent = T_UDERR;
+	FakeOT_QueueDatagram( Datagram( 0, 100 ), 100, noAddress, noPort );
+	fakeOTDatagrams[0].noAddress = 1;
+	Check( !GetPacket( &from, &msg ), "a piece with an error waiting is dropped" );
+	Check( rcvUDErrs == 1 && !fakeOTLookEvent, "the error is cleared" );
+	Check( !printed[0], "silently" );
+
+	/* a real oversize datagram with an error waiting still names its sender */
+	ResetEndpoint();
+	rcvUDErrs = 0;
+	fakeOTLookEvent = T_UDERR;
+	FakeOT_QueueDatagram( Datagram( 0, MAX_MSGLEN + 600 ), MAX_MSGLEN + 600, clientIP, clientPort );
+	Check( !GetPacket( &from, &msg ), "an oversize datagram is dropped" );
+	Check( rcvUDErrs == 1 && Printed( "Oversize packet from 10.0.0.2:27961\n" ) == 1, "and still reported" );
 }
 
 /* ---------- Com_EventLoop's oversize branch ---------- */
@@ -1013,6 +1073,8 @@ int main( int argc, char **argv ) {
 		OversizeThenNormal( MAX_MSGLEN );
 	} else if ( !strcmp( currentCase, "packet-drain-error" ) ) {
 		DrainError();
+	} else if ( !strcmp( currentCase, "packet-dropped-reports" ) ) {
+		DroppedPacketReports();
 	} else if ( !strcmp( currentCase, "event-oversize" ) ) {
 		EventLoopOversize();
 	} else if ( !strcmp( currentCase, "init-default" ) ) {

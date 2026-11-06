@@ -303,6 +303,12 @@ get_sos (j_decompress_ptr cinfo)
 
   id_found:
 
+    /* Reject a component named twice in one scan (CVE-2013-6629) */
+    for (ci = 0; ci < i; ci++) {
+      if (cinfo->cur_comp_info[ci] == compptr)
+	ERREXIT1(cinfo, JERR_BAD_COMPONENT_ID, cc);
+    }
+
     cinfo->cur_comp_info[i] = compptr;
     compptr->dc_tbl_no = (c >> 4) & 15;
     compptr->ac_tbl_no = (c     ) & 15;

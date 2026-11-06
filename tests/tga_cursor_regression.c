@@ -95,10 +95,13 @@ int main( void ) {
 	Header(3,8,1,65535,0,0); for(i=0;i<65535;i++) { Byte(i%256); wide[i*4]=wide[i*4+1]=wide[i*4+2]=(65534-i)%256; wide[i*4+3]=255; } Valid(wide,1,65535,0); free(wide);
 	Header(2,24,1,1,0,0); Color(0,24); Golden(golden,0,24); complete=fixtureSize;
 	memset(fixture+fixtureSize,0xee,26); fixtureSize+=26; Valid(golden,1,1,0); fixtureSize=complete; LE(8,65535); LE(10,65535); Valid(golden,1,1,0);
-	Header(10,24,1,1,0,0); Byte(0x81); Color(0,24); Reject(0); /* run exceeds entire image */
-	Header(10,24,1,1,0,0); Byte(1); Color(0,24); Color(1,24); Reject(0); /* raw packet exceeds image */
-	Header(10,24,1,2,0,0); Byte(0x80); Color(0,24); Byte(0x81); Color(1,24); Reject(0); /* later bad packet: zero allocation */
-	Header(10,24,1,1,0,0); Byte(0xff); Color(0,24); Reject(0);
+	/* A packet past the last pixel ends the image, as retail's goto breakOut did; the data it uses must still exist. */
+	Header(10,24,1,1,0,0); Byte(0x81); Color(0,24); Golden(golden,0,24); Valid(golden,1,1,0); Truncations(fixtureSize); /* run */
+	Header(10,24,1,1,0,0); Byte(1); Color(0,24); Color(1,24); Golden(golden,0,24); Valid(golden,1,1,0); /* raw packet */
+	Header(10,24,1,1,0,0); Byte(1); Color(0,24); Golden(golden,0,24); Valid(golden,1,1,0); Truncations(fixtureSize); /* raw, with only the pixel it uses */
+	Header(10,24,1,2,0,0); Byte(0x80); Color(0,24); Byte(0x81); Color(1,24); Golden(golden,1,24); Golden(golden+4,0,24); Valid(golden,1,2,0); Truncations(fixtureSize); /* later packet */
+	Header(10,24,1,1,0,0); Byte(0xff); Color(0,24); Golden(golden,0,24); Valid(golden,1,1,0);
+	Header(10,24,1,2,0,0); Byte(0x80); Color(0,24); Reject(0); /* a short image is still malformed */
 	Header(2,24,1,1,0,0); Color(0,24);
 	fixture[0]=255; Reject(0); fixture[0]=0; fixture[1]=1; Reject(0); fixture[1]=0;
 	for(type=0;type<=11;type++) if(type!=2 && type!=3 && type!=10) { fixture[2]=type; Reject(0); } fixture[2]=2;

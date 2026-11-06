@@ -488,6 +488,10 @@ void S_PaintChannelFromADPCM( channel_t *ch, sfx_t *sc, int count, int sampleOff
 		chunk = chunk->next;
 		sampleOffset -= (SND_CHUNK_SIZE*4);
 		i++;
+		if (!chunk) {
+			chunk = sc->soundData;
+			i = 0;
+		}
 	}
 
 	if (i!=sfxScratchIndex || sfxScratchPointer != sc) {
@@ -505,9 +509,13 @@ void S_PaintChannelFromADPCM( channel_t *ch, sfx_t *sc, int count, int sampleOff
 
 		if (sampleOffset == SND_CHUNK_SIZE*4) {
 			chunk = chunk->next;
+			sfxScratchIndex++;
+			if (!chunk) {
+				chunk = sc->soundData;
+				sfxScratchIndex = 0;
+			}
 			S_AdpcmGetSamples( chunk, sfxScratchBuffer);
 			sampleOffset = 0;
-			sfxScratchIndex++;
 		}
 	}
 }

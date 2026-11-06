@@ -412,15 +412,21 @@ static void SV_Ban_f( void ) {
 		return;
 	}
 
+	// bans live on the authorize server
+	if ( !com_authServer->string[0] ) {
+		Com_Printf( "Banning needs an authorize server: +set com_authServer <host> at launch\n" );
+		return;
+	}
+
 	// look up the authorize server's IP
 	if ( !svs.authorizeAddress.ip[0] && svs.authorizeAddress.type != NA_BAD ) {
-		Com_Printf( "Resolving %s\n", AUTHORIZE_SERVER_NAME );
-		if ( !NET_StringToAdr( AUTHORIZE_SERVER_NAME, &svs.authorizeAddress ) ) {
+		Com_Printf( "Resolving %s\n", com_authServer->string );
+		if ( !NET_StringToAdr( com_authServer->string, &svs.authorizeAddress ) ) {
 			Com_Printf( "Couldn't resolve address\n" );
 			return;
 		}
 		svs.authorizeAddress.port = BigShort( PORT_AUTHORIZE );
-		Com_Printf( "%s resolved to %i.%i.%i.%i:%i\n", AUTHORIZE_SERVER_NAME,
+		Com_Printf( "%s resolved to %i.%i.%i.%i:%i\n", com_authServer->string,
 			svs.authorizeAddress.ip[0], svs.authorizeAddress.ip[1],
 			svs.authorizeAddress.ip[2], svs.authorizeAddress.ip[3],
 			BigShort( svs.authorizeAddress.port ) );
@@ -466,15 +472,21 @@ static void SV_BanNum_f( void ) {
 		return;
 	}
 
+	// bans live on the authorize server
+	if ( !com_authServer->string[0] ) {
+		Com_Printf( "Banning needs an authorize server: +set com_authServer <host> at launch\n" );
+		return;
+	}
+
 	// look up the authorize server's IP
 	if ( !svs.authorizeAddress.ip[0] && svs.authorizeAddress.type != NA_BAD ) {
-		Com_Printf( "Resolving %s\n", AUTHORIZE_SERVER_NAME );
-		if ( !NET_StringToAdr( AUTHORIZE_SERVER_NAME, &svs.authorizeAddress ) ) {
+		Com_Printf( "Resolving %s\n", com_authServer->string );
+		if ( !NET_StringToAdr( com_authServer->string, &svs.authorizeAddress ) ) {
 			Com_Printf( "Couldn't resolve address\n" );
 			return;
 		}
 		svs.authorizeAddress.port = BigShort( PORT_AUTHORIZE );
-		Com_Printf( "%s resolved to %i.%i.%i.%i:%i\n", AUTHORIZE_SERVER_NAME,
+		Com_Printf( "%s resolved to %i.%i.%i.%i:%i\n", com_authServer->string,
 			svs.authorizeAddress.ip[0], svs.authorizeAddress.ip[1],
 			svs.authorizeAddress.ip[2], svs.authorizeAddress.ip[3],
 			BigShort( svs.authorizeAddress.port ) );

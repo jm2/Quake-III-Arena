@@ -284,7 +284,7 @@ static void GLimp_Extensions( void ) {
 			// qglActiveTextureARB = glActiveTextureARB;
 			// qglClientActiveTextureARB = glClientActiveTextureARB;
 
-			ri.Printf( PRINT_ALL, "...using GL_ARB_multitexture (Disabled for compatibility)\n" );
+			ri.Printf( PRINT_ALL, "...GL_ARB_multitexture found, not used by this build\n" );
 		} else {
 			ri.Printf( PRINT_ALL, "...ignoring GL_ARB_multitexture\n" );
 		}
@@ -301,7 +301,7 @@ static void GLimp_Extensions( void ) {
 			// qglLockArraysEXT = glLockArraysEXT;
 			// qglUnlockArraysEXT = glUnlockArraysEXT;
 
-			ri.Printf( PRINT_ALL, "...using GL_EXT_compiled_vertex_array (Disabled for compatibility)\n" );
+			ri.Printf( PRINT_ALL, "...GL_EXT_compiled_vertex_array found, not used by this build\n" );
 		} else {
 			ri.Printf( PRINT_ALL, "...ignoring GL_EXT_compiled_vertex_array\n" );
 		}
@@ -607,7 +607,7 @@ static qboolean CreateGameWindow( void ) {
 		   windowRect.left, windowRect.top, windowRect.right, windowRect.bottom);
 	
 	// Use NewCWindow instead of GetNewCWindow to avoid resource dependency
-	// Window style: 5 = noGrowDocProc (standard document window without grow box)
+	// Window style: 5 = movableDBoxProc (a title bar, no close or grow box)
 	// For fullscreen, use 2 = plainDBox (plain box)
 	{
 		short windowStyle = r_fullscreen->integer ? 2 : 5;

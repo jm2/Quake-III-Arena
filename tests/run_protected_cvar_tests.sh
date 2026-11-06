@@ -5,6 +5,20 @@ Q3_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 Q3_TEST_DIR="$(mktemp -d "${TMPDIR:-/var/tmp}/q3-protected-cvar.XXXXXX")"
 trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 
+# Only the command line may name the host the client sends its CD key to: a set
+# in a config file is only refused if it comes after the registration. The
+# fixtures register the cvar themselves, so this ties them to Com_Init's line. It
+# assumes Com_Init stays linear: a helper called later would get past it.
+Q3_TEST_COMMON="$Q3_TEST_ROOT/code/qcommon/common.c"
+Q3_TEST_REGISTERED="$(grep -n 'com_authServer = Cvar_Get( "com_authServer", "", CVAR_INIT | CVAR_PROTECTED );' \
+    "$Q3_TEST_COMMON" | cut -d: -f1 || true)"
+Q3_TEST_FIRST_EXEC="$(grep -n 'exec default.cfg' "$Q3_TEST_COMMON" | cut -d: -f1)"
+if ! [[ "$Q3_TEST_REGISTERED" =~ ^[0-9]+$ && "$Q3_TEST_FIRST_EXEC" =~ ^[0-9]+$ ]] ||
+    (( Q3_TEST_REGISTERED > Q3_TEST_FIRST_EXEC )); then
+    echo "run_protected_cvar_tests: com_authServer must be CVAR_INIT | CVAR_PROTECTED, before the first exec" >&2
+    exit 1
+fi
+
 # Issue #39: modules and servers must not move the filesystem paths or remove
 # engine commands. The fixtures drive the real game, cgame and UI dispatchers
 # (as a QVM and through VM_DllSyscall as a native module) and the real
