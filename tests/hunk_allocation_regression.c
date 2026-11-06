@@ -49,6 +49,9 @@ static void TempSizes(int high) {
 	RejectTemp(fit+1);
 	memory=Hunk_AllocateTempMemory(fit);Check(memory!=NULL,"an exact fit is taken");
 	memset(memory,0x5a,fit);Guards();
+	/* a used hunk: the capacity sum itself must not wrap */
+	Reset(high);hunk_low.permanent=hunk_low.temp=hunk_high.permanent=hunk_high.temp=128;
+	RejectTemp(INT_MAX-11);
 }
 int main(void) {
 	int high,size,cost,before,i;void *memory;int boundaries[]={INT_MIN,-1,INT_MAX,INT_MAX-1,INT_MAX-30};
