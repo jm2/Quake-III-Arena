@@ -94,7 +94,9 @@ void SCR_StopCinematic( void ) {}
 void S_ClearSoundBuffer( void ) {}
 /* the disconnect CL_Disconnect sends */
 static char lastReliable[MAX_STRING_CHARS];
+static int packetsWritten;
 void CL_WritePacket( void ) {
+	packetsWritten++;
 	Q_strncpyz( lastReliable, clc.reliableCommands[clc.reliableSequence & ( MAX_RELIABLE_COMMANDS - 1 )], sizeof( lastReliable ) );
 }
 static byte demo[MAX_MSGLEN + 8];
@@ -1065,10 +1067,12 @@ static void FullReliableQueue( void ) {
 	Check( !strcmp( lastReliable, "disconnect" ), "the server is told while the queue still takes it" );
 
 	lastReliable[0] = 0;
+	packetsWritten = 0;
 	cls.state = CA_ACTIVE;
 	clc.reliableSequence = MAX_RELIABLE_COMMANDS + 1;
 	CL_Disconnect( qfalse );
 	Check( !lastReliable[0], "no command with a full queue" );
+	Check( !packetsWritten, "no packet with a wrapped queue" );
 	Check( cls.state == CA_DISCONNECTED, "disconnected with a full queue" );
 }
 int main( int argc, char **argv ) {
