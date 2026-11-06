@@ -50,6 +50,8 @@ typedef struct {
 
 extern FakeFile	fakeFiles[3];
 extern int		fakeLocked, fakeDiskFullAt, fakeWriteError, fakeFlushError, fakeSyncs, fakeHOpenDFMissing;
+extern OSErr	fakeRenameError;	/* fBsyErr-like, for a log open in an editor */
+extern void		(*fakeWriteHook)( void );	/* runs inside each positioned write */
 
 OSErr HCreate( short v, long d, ConstStr255Param name, OSType creator, OSType type );
 OSErr HDelete( short v, long d, ConstStr255Param name );

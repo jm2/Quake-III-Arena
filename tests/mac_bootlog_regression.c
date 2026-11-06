@@ -11,6 +11,8 @@
 
 FakeFile	fakeFiles[3];
 int			fakeLocked, fakeDiskFullAt, fakeWriteError, fakeFlushError, fakeSyncs, fakeHOpenDFMissing;
+OSErr		fakeRenameError;
+void		(*fakeWriteHook)( void );
 static short	openFile = -1;
 static int		fakeTime = 1000;
 static int		failures;
@@ -83,6 +85,9 @@ OSErr HRename( short v, long d, ConstStr255Param oldName, ConstStr255Param newNa
 	if ( !f ) {
 		return fnfErr;
 	}
+	if ( fakeRenameError ) {
+		return fakeRenameError;
+	}
 	strcpy( strrchr( f->name, ':' ) + 1, leaf );
 	return noErr;
 }
@@ -151,6 +156,9 @@ OSErr PBWriteSync( ParamBlockRec *pb ) {
 	if ( fakeWriteError ) {
 		return ioErr;
 	}
+	if ( fakeWriteHook ) {
+		fakeWriteHook();
+	}
 	return Store( Open( pb->ioParam.ioRefNum ), pb->ioParam.ioPosOffset, pb->ioParam.ioBuffer, pb->ioParam.ioReqCount );
 }
 OSErr PBFlushFileSync( ParamBlockRec *pb ) {
@@ -167,6 +175,8 @@ OSErr PBFlushFileSync( ParamBlockRec *pb ) {
 void FakeFM_Reset( void ) {
 	memset( fakeFiles, 0, sizeof( fakeFiles ) );
 	fakeLocked = fakeDiskFullAt = fakeWriteError = fakeFlushError = fakeSyncs = fakeHOpenDFMissing = 0;
+	fakeRenameError = 0;
+	fakeWriteHook = NULL;
 }
 void FakeFM_HardReset( void ) {
 	int i;
@@ -232,6 +242,14 @@ static void KeepsPrevious( void ) {
 	Check( Sys_BootLogOpen( "Disk:Game" ), "opens a third time" );
 	FakeFM_HardReset();
 	Check( strstr( Text( PREVIOUS_NAME ), "the next run\n" ) != NULL, "only one previous log is kept" );
+
+	/* the log of a freeze cannot move, with the older one open in an editor */
+	Start();
+	Sys_BootLogWrite( "the run that froze\n" );
+	FakeFM_HardReset();
+	fakeRenameError = fnfErr - 1;
+	Check( !Sys_BootLogOpen( "Disk:Game" ), "no log this run" );
+	Check( strstr( Text( LOG_NAME ), "the run that froze\n" ) != NULL, "rather than wipe the last one" );
 }
 
 static void VolumeRoot( void ) {
@@ -280,20 +298,46 @@ static void Wraps( void ) {
 	fakeTime = 1000;
 }
 
-static void RateLimit( void ) {
-	int i;
+/* A burst, then a freeze: the last line printed is the one that says where. */
+static void Burst( void ) {
+	char	line[32];
+	int		i;
 
 	Start();
 	for ( i = 0 ; i < 1000 ; i++ ) {
-		Sys_BootLogWrite( "a flood\n" );
+		snprintf( line, sizeof( line ), "burst line %i\n", i );
+		Sys_BootLogWrite( line );
 	}
-	Check( fakeSyncs <= BOOTLOG_MAX_SYNCS_PER_SECOND + 2, "a flood does not cost a disk write per line" );
-	fakeTime += 1000;
-	Sys_BootLogWrite( "after the flood\n" );
-	Sys_BootLogFlush();
 	FakeFM_HardReset();
-	Check( strstr( Text( LOG_NAME ), "after the flood\n" ) != NULL, "held lines go out with the next one" );
-	fakeTime = 1000;
+	Check( strstr( Text( LOG_NAME ), "burst line 999\n" ) != NULL, "no line waits for a later one" );
+}
+
+static void WriteFromWrite( void ) {
+	fakeWriteHook = NULL;
+	Sys_BootLogWrite( "printed by a write\n" );
+}
+
+/* What a write prints cannot start another write. */
+static void Reentry( void ) {
+	Start();
+	fakeWriteHook = WriteFromWrite;
+	Sys_BootLogWrite( "outer\n" );
+	fakeWriteHook = NULL;
+	FakeFM_HardReset();
+	Check( strstr( Text( LOG_NAME ), "outer\n" ) != NULL, "the outer line is written" );
+	Check( !strstr( Text( LOG_NAME ), "printed by a write" ), "the inner line is dropped" );
+}
+
+/* A fault inside a write, and the crash report that follows. */
+static void Unlock( void ) {
+	Start();
+	writing = 1;
+	Sys_BootLogWrite( "lost\n" );
+	Sys_BootLogUnlock();
+	Sys_BootLogWrite( "the crash report\n" );
+	FakeFM_HardReset();
+	Check( !strstr( Text( LOG_NAME ), "lost" ), "the guard works" );
+	Check( strstr( Text( LOG_NAME ), "the crash report\n" ) != NULL, "the crash handler can write after a fault in a write" );
 }
 
 static void Failures( void ) {
@@ -351,7 +395,9 @@ int main( void ) {
 	VolumeRoot();
 	LongPath();
 	Wraps();
-	RateLimit();
+	Burst();
+	Reentry();
+	Unlock();
 	Failures();
 	CleanClose();
 	if ( failures ) {

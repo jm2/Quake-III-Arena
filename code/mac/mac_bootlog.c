@@ -17,9 +17,11 @@
 // The log of the previous launch is kept as q3boot.prev.log, because the first
 // thing anyone does after a freeze is restart the game.
 //
-// Each line costs a disk write, so at most BOOTLOG_MAX_SYNCS_PER_SECOND go out
-// each second: a flood of warnings slows the game down, not to a crawl. The
-// lines held back go out with the next one.
+// Each line costs a disk write, and each goes out as it is finished: the last
+// line before a freeze is the one that matters, so none is held back. Startup
+// and map loads print a few hundred lines, and a frame normally prints none. A
+// warning printed every frame will slow the game, and "+set sys_bootlog 0" is
+// the way out of that.
 //
 // Sys_BootLogWrite is for the main task only: the File Manager calls here are
 // synchronous, so they must not run at interrupt time.
@@ -38,7 +40,6 @@ int Sys_Milliseconds( void );
 #define BOOTLOG_SIZE					( 2048L * 1024 )
 #define BOOTLOG_KEEP					( 256L * 1024 )
 #define BOOTLOG_PENDING					8192
-#define BOOTLOG_MAX_SYNCS_PER_SECOND	30
 #define BOOTLOG_END						"\n<<< end of log >>>\n"
 #define BOOTLOG_END_LENGTH				( (int)sizeof( BOOTLOG_END ) - 1 )
 #define BOOTLOG_STAMP_LENGTH			16
@@ -54,7 +55,6 @@ static char		pending[BOOTLOG_PENDING + BOOTLOG_END_LENGTH];
 static int		pendingLength;
 static int		atLineStart;
 static int		writing;			// no reentry from what a write prints
-static int		syncSecond, syncCount;
 
 /*
 =================
@@ -177,8 +177,13 @@ int Sys_BootLogOpen( const char *directory ) {
 	previousLeaf[0] = strlen( BOOTLOG_PREVIOUS_NAME );
 	memcpy( previousLeaf + 1, BOOTLOG_PREVIOUS_NAME, previousLeaf[0] );
 
+	// If the last log cannot move out of the way, because q3boot.prev.log is
+	// open in an editor, say, leave it alone: it may be the log of a freeze.
 	HDelete( 0, 0, previousPath );
-	HRename( 0, 0, path, previousLeaf );
+	err = HRename( 0, 0, path, previousLeaf );
+	if ( err != noErr && err != fnfErr ) {
+		return 0;
+	}
 
 	err = HCreate( 0, 0, path, 'ttxt', 'TEXT' );
 	if ( err != noErr && err != dupFNErr ) {
@@ -217,7 +222,6 @@ int Sys_BootLogOpen( const char *directory ) {
 	logWrapped = 0;
 	pendingLength = 0;
 	atLineStart = 1;
-	syncCount = 0;
 	return 1;
 }
 
@@ -227,7 +231,7 @@ Sys_BootLogWrite
 =================
 */
 void Sys_BootLogWrite( const char *text ) {
-	int		now, second, lineEnded;
+	int		now, lineEnded;
 
 	if ( !logRefNum || writing ) {
 		return;
@@ -255,15 +259,7 @@ void Sys_BootLogWrite( const char *text ) {
 	}
 
 	if ( lineEnded ) {
-		second = now / 1000;
-		if ( second != syncSecond ) {
-			syncSecond = second;
-			syncCount = 0;
-		}
-		if ( syncCount < BOOTLOG_MAX_SYNCS_PER_SECOND ) {
-			syncCount++;
-			Sys_BootLogSync();
-		}
+		Sys_BootLogSync();
 	}
 	writing = 0;
 }
@@ -272,13 +268,25 @@ void Sys_BootLogWrite( const char *text ) {
 =================
 Sys_BootLogFlush
 
-Sends the text held back to the disk, however much has gone this second.
+Sends an unfinished line to the disk.
 =================
 */
 void Sys_BootLogFlush( void ) {
 	if ( !writing ) {
 		Sys_BootLogSync();
 	}
+}
+
+/*
+=================
+Sys_BootLogUnlock
+
+The crash handler's: a fault inside Sys_BootLogWrite must not keep the crash
+report out of the log.
+=================
+*/
+void Sys_BootLogUnlock( void ) {
+	writing = 0;
 }
 
 /*
