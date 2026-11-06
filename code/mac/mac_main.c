@@ -1509,7 +1509,11 @@ sys_bootlog 0" leaves it off.
 ==================
 */
 static void Sys_StartBootLog( const char *commandLine ) {
-	if ( strstr( commandLine, "sys_bootlog 0" ) || !Sys_BootLogOpen( Sys_GetCwd() ) ) {
+	if ( strstr( commandLine, "sys_bootlog 0" ) ) {
+		return;
+	}
+	if ( !Sys_BootLogOpen( Sys_GetCwd() ) ) {
+		Sys_LogPrintf( "main: no boot log this run, so q3boot.log is an older run's\n" );
 		return;
 	}
 	retroLogBuffer[retroLogHead] = 0;	// the ring has not wrapped this early
