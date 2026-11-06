@@ -12,6 +12,10 @@ Mac. It is MacBinary: StuffIt Expander decodes it. Keep `build_mac/Quake3.xcoff`
 on the build machine. It turns crash addresses into source lines, and only the
 XCOFF from the same build will do.
 
+This is an optimized build. `--bringup` builds at `-O0` instead, which keeps every
+variable in memory and is easier to read in MacsBug. If something fails only in
+the optimized build, that points at the compiler or at undefined behavior.
+
 Do not use the old contents of `release_mac/`: they are the failed April run,
 with demo data. Do not run from `Quake3.dsk` or a locked image: there is no
 `baseq3` beside the application there, and a locked disk cannot hold the logs.

@@ -19,7 +19,7 @@ if (-not $Quake3AtRepositoryRoot -and (Get-Location).ProviderPath -ne $PSScriptR
 }
 
 function Show-Usage {
-    Write-Host "Usage: .\build_mac.ps1 [package|--package] [--base-only|--team-arena] [-h|--help]"
+    Write-Host "Usage: .\build_mac.ps1 [package|--package] [--base-only|--team-arena] [--bringup] [-h|--help]"
     Write-Host ""
     Write-Host "  (no args)            Configure, build, and validate the launchable Quake3"
     Write-Host "                       application: build_mac\Quake3.bin (MacBinary),"
@@ -29,10 +29,12 @@ function Show-Usage {
     Write-Host "                       Mac OS 9 install image."
     Write-Host "  --base-only          Build only Quake3 (the default)."
     Write-Host "  --team-arena         Build Quake3 and Quake3_TeamArena."
+    Write-Host "  --bringup            Build at -O0 instead of the optimized default."
 }
 
 $PackageMode = $false
 $TeamArenaMode = "OFF"
+$BringupMode = "OFF"
 $PackageModeSet = $false
 $TeamArenaModeSet = $false
 foreach ($Argument in $args) {
@@ -59,6 +61,10 @@ foreach ($Argument in $args) {
             }
             $TeamArenaMode = "ON"
             $TeamArenaModeSet = $true
+            break
+        }
+        "--bringup" {
+            $BringupMode = "ON"
             break
         }
         { $_ -in @("-h", "--help") } {
@@ -209,7 +215,8 @@ Write-Host "Configuring CMake..." -ForegroundColor Green
 # period and passes "$Variable" inside it through unexpanded.
 cmake .. "-DCMAKE_TOOLCHAIN_FILE=../cmake/Retro68.toolchain.cmake" `
     "-DCMAKE_BUILD_TYPE=Release" `
-    "-DBUILD_TEAM_ARENA=$TeamArenaMode"
+    "-DBUILD_TEAM_ARENA=$TeamArenaMode" `
+    "-DQ3_BRINGUP=$BringupMode"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "CMake configuration failed." -ForegroundColor Red

@@ -205,7 +205,13 @@ SURFACE SHADERS
 =============================================================
 */
 
+// tess.xyz is padded for SIMD. At a multiple of 16 into the struct, it needs
+// the struct aligned: R_Init warns otherwise, and -O0 only happened to get it
+#ifdef __GNUC__
+shaderCommands_t	tess __attribute__((aligned(16)));
+#else
 shaderCommands_t	tess;
+#endif
 static qboolean	setArraysOnce;
 
 /*
