@@ -131,22 +131,27 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install the PowerPC cross compilers and qemu-user
-        # This takes under a minute, but it sometimes hangs until the job's
-        # timeout. Bounding each try leaves the job enough time for the tests.
+        # This takes under a minute, but downloads from the Azure mirror stall.
+        # Retrying that mirror stalls again, and apt's default timeouts move on
+        # to the next one too slowly. So give up on a connection sooner, and
+        # after a failed try leave the Azure mirror out.
         timeout-minutes: 10
         run: |
           packages="gcc-powerpc-linux-gnu g++-powerpc-linux-gnu libc6-dev-powerpc-cross qemu-user-static"
+          apt_opts="-o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 -o Acquire::Retries=1"
+          cat /etc/apt/apt-mirrors.txt || true
           installed=
           for try in 1 2 3; do
             if sudo timeout -k 10 180 bash -ec "
               dpkg --configure -a
-              apt-get update -q
-              apt-get install -y -q --no-install-recommends $packages
+              apt-get $apt_opts update -q
+              apt-get $apt_opts install -y -q --no-install-recommends $packages
             "; then
               installed=1
               break
             fi
             echo "::warning::Package install try $try of 3 failed or timed out"
+            sudo sed -i '/azure\.archive/d' /etc/apt/apt-mirrors.txt || true
             sleep 5
           done
           test -n "$installed"
