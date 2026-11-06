@@ -411,9 +411,16 @@ static qboolean AAS_ValidateGeometry(void)
 			if (!AAS_FiniteFloat(plane->normal[axis])) return qfalse;
 	}
 	for (i = 0; i < aasworld.numedges; i++)
+	{
+		// Files bspc optimized (pak4's) have no vertexes and just the dummy
+		// edge 0, whose zeros name the zeroed element AAS_LoadAASLump still
+		// allocates for an empty lump.
+		if (!i && !aasworld.numvertexes && !aasworld.edges[0].v[0] && !aasworld.edges[0].v[1])
+			continue;
 		for (axis = 0; axis < 2; axis++)
 			if (aasworld.edges[i].v[axis] < 0 ||
 				aasworld.edges[i].v[axis] >= aasworld.numvertexes) return qfalse;
+	}
 	for (i = 0; i < aasworld.edgeindexsize; i++)
 		if (!AAS_SignedIndex(aasworld.edgeindex[i], aasworld.numedges)) return qfalse;
 	for (i = 0; i < aasworld.numfaces; i++)

@@ -127,10 +127,31 @@ static void ReferenceGeometry(void) {
         GeometryBuild(version,0);Counters();OldWorld();Encode(version);Word(16+8*AASLUMP_PLANES,20);Encode(version);GeometryReject();
     }
 }
+/* Retail 1.32's pak4 AAS files: bspc -optimize left no vertexes, one dummy edge and one dummy face. */
+static void OptimizedBuild(int version,int edges) {
+    static const int counts[AAS_LUMPS]={2,0,2,1,0,1,0,2,2,0,2,0,0,0};int i,offset=124,offsets[AAS_LUMPS],n;
+    memset(source,0,sizeof(source));Word(0,AASID);Word(4,version);Word(8,12345);
+    for(i=0;i<AAS_LUMPS;i++){n=i==AASLUMP_EDGES?edges:counts[i];offsets[i]=offset;Word(12+8*i,offset);Word(16+8*i,sizes[i]*n);offset+=sizes[i]*n;geometryOffsets[i]=offsets[i];}
+    sourceSize=advertised=readable=offset;
+    for(i=0;i<2;i++){offset=offsets[0]+i*32;Word(offset,i?4:2);Word(offset+8,0xc1700000u);Word(offset+12,0xc1700000u);Word(offset+16,0xc1c00000u);Word(offset+20,0x41700000u);Word(offset+24,0x41700000u);Word(offset+28,i?0x41000000u:0x42000000u);}
+    Word(offsets[2]+8,0x3f800000u);Word(offsets[2]+16,2);Word(offsets[2]+28,0xbf800000u);Word(offsets[2]+36,2);
+    offset=offsets[7]+48;Word(offset,1);Word(offset+24,0x41800000u);Word(offset+28,0x41800000u);Word(offset+36,0x40a80000u);Word(offset+40,0x40a80000u);
+    Word(offsets[8]+28+8,PRESENCE_NORMAL);Word(offsets[10]+12+4,0xffffffffu);
+    Encode(version);
+}
+static void OptimizedFiles(void) {
+    int version,field;
+    for(version=4;version<=5;version++) {
+        OptimizedBuild(version,1);Counters();OldWorld();
+        Check(AAS_LoadAASFile("fixture.aas")==BLERR_NOERROR&&aasworld.loaded&&!aasworld.numvertexes&&aasworld.numedges==1&&aasworld.vertexes&&!memcmp(aasworld.vertexes,"\0\0\0\0\0\0\0\0\0\0\0\0",12),"a file optimized down to dummy edge 0 loads, with a zeroed vertex behind that edge");
+        for(field=0;field<2;field++){OptimizedBuild(version,1);Counters();OldWorld();Encode(version);Word(geometryOffsets[AASLUMP_EDGES]+field*4,1);Encode(version);GeometryReject();}
+        OptimizedBuild(version,2);Counters();OldWorld();GeometryReject();
+    }
+}
 int main(int argc,char **argv) {
     int proof=argc>1?atoi(argv[1]):-1;botimport.Print=Print;botimport.FS_FOpenFile=Open;botimport.FS_Read=Read;botimport.FS_Seek=Seek;botimport.FS_FCloseFile=Close;
     if(proof==0){Build(AASVERSION_OLD,0);Counters();OldWorld();Word(164,0x7f800000u);Check(AAS_LoadAASFile("fixture.aas")==BLERR_CANNOTREADAASLUMP,"nonfinite AAS vertex rejected before loaded");}
     else if(proof==1){Build(AASVERSION_OLD,0);Counters();OldWorld();Word(124+32+12+20,INT_MAX);Check(AAS_LoadAASFile("fixture.aas")==BLERR_CANNOTREADAASLUMP,"out-of-range AAS vertex reference rejected before loaded");}
-    else{GeometryFailures();ValidGeometry();NonfiniteGeometry();ReferenceGeometry();puts("Native AAS geometry numeric/reference rejection and logical ownership passed (issue #47)");}
+    else{GeometryFailures();ValidGeometry();NonfiniteGeometry();ReferenceGeometry();OptimizedFiles();puts("Native AAS geometry numeric/reference rejection and logical ownership passed (issue #47)");}
     ResetArena();return 0;
 }
