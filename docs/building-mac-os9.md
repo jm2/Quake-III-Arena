@@ -284,9 +284,10 @@ applications read their startup parameters from one of two places:
   line replaces the file for this launch only. Press Return to start with no
   parameters.
 
-Use these to set `CVAR_INIT` cvars such as `fs_game`, `com_hunkMegs` and
-`com_zoneMegs`, to turn on the experimental sound backend with
-`+set s_initsound 1`, or to start in `safe` mode. Safe mode skips
+Use these to set cvars that take effect at startup, such as `fs_game` and
+`com_hunkMegs`, to turn on the experimental sound backend with
+`+set s_initsound 1`, or to start in `safe` mode. `com_zoneMegs` cannot be set:
+the zone is allocated before any startup setting is applied. Safe mode skips
 `q3config.cfg`, which is the way back after an archived setting stops the game
 from starting. As on other platforms' command lines, the parameters can be
 at most 1023 bytes once line endings are folded. A longer file or line stops
@@ -301,6 +302,11 @@ The console window stays closed unless something needs it: the Shift prompt,
 an error, or `+set viewlog 1`, which shows the engine's log in it. The log is
 kept in memory either way. It is written to `retro68_console.txt` at quit and
 when Cmd-D is pressed, and to `retro68_console_crash.txt` after a fatal error.
+`q3boot.log` gets every line as it happens, and survives a freeze.
+
+[target-run.md](target-run.md) is the checklist for a run on a real Mac: the
+install layout, the logs, a test for each subsystem in turn, and how to read a
+crash.
 
 ## Current validation level
 
