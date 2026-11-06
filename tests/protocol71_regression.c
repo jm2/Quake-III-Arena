@@ -1057,6 +1057,13 @@ static void FullReliableQueue( void ) {
 	Check( !strcmp( lastReliable, "disconnect" ), "the server is told while there is room" );
 	Check( cls.state == CA_DISCONNECTED, "disconnected" );
 
+	/* the last count CL_AddReliableCommand takes */
+	lastReliable[0] = 0;
+	cls.state = CA_ACTIVE;
+	clc.reliableSequence = MAX_RELIABLE_COMMANDS;
+	CL_Disconnect( qfalse );
+	Check( !strcmp( lastReliable, "disconnect" ), "the server is told while the queue still takes it" );
+
 	lastReliable[0] = 0;
 	cls.state = CA_ACTIVE;
 	clc.reliableSequence = MAX_RELIABLE_COMMANDS + 1;
