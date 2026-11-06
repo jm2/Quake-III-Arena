@@ -28,8 +28,9 @@ $Target = "powerpc-apple-macos"
 
 # Keep in step with CMakeLists.txt, cmake/Retro68.toolchain.cmake and
 # check_retro68.sh.
-$CompileFlags = @("-std=gnu99", "-fgnu89-inline", "-O0", "-g",
-    "-fno-strict-aliasing", "-fsigned-char", "-Wformat=2", "-Wno-format-nonliteral",
+$CompileFlags = @("-std=gnu99", "-fgnu89-inline", "-O2", "-g",
+    "-fno-strict-aliasing", "-fwrapv", "-fno-delete-null-pointer-checks",
+    "-ffp-contract=off", "-fsigned-char", "-Wformat=2", "-Wno-format-nonliteral",
     "-Werror=format", "-Werror=format-security", "-Wno-error=format-overflow",
     "-Wno-error=format-truncation", "-D__MACOS__", "-D__POWERPC__")
 $CxxFlags = @("-fsigned-char")

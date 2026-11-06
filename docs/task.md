@@ -261,7 +261,7 @@ The paused September queue. Resume only after B1–B4, and fix false positives a
 
 ## B7 — Performance
 
-Measure on target after B1; the product still builds at -O0.
+Measure on target after B1. The product builds at -O2, or -O0 with `--bringup`.
 
 - [ ] [#28 — Release builds force debug optimization and disable key GL fast paths](https://github.com/jm2/Quake-III-Arena/issues/28) — **medium**; Release builds at -O0 with GL fast paths disabled.
 - [ ] [#249 — Per-vertex float guards call out-of-line Com_Memcpy (5-13x slower lighting loops)](https://github.com/jm2/Quake-III-Arena/issues/249) — **medium**; per-vertex float guards 5–13x slower.

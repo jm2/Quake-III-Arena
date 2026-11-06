@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [package|--package] [--base-only|--team-arena] [-h|--help]
+Usage: $(basename "$0") [package|--package] [--base-only|--team-arena] [--bringup] [-h|--help]
 
   (no args)            Configure, build, and validate the launchable Quake3
                        application: build_mac/Quake3.bin (MacBinary),
@@ -13,12 +13,14 @@ Usage: $(basename "$0") [package|--package] [--base-only|--team-arena] [-h|--hel
                        Mac OS 9 install image (.img.bin) under release_mac/.
   --base-only          Build only Quake3 (the default).
   --team-arena         Build Quake3 and Quake3_TeamArena.
+  --bringup            Build at -O0 instead of the optimized default.
   -h, --help           Show this message.
 EOF
 }
 
 PACKAGE_MODE=0
 TEAM_ARENA_MODE=OFF
+BRINGUP_MODE=OFF
 PACKAGE_MODE_SET=0
 TEAM_ARENA_MODE_SET=0
 for argument in "$@"; do
@@ -46,6 +48,9 @@ for argument in "$@"; do
             fi
             TEAM_ARENA_MODE=ON
             TEAM_ARENA_MODE_SET=1
+            ;;
+        --bringup)
+            BRINGUP_MODE=ON
             ;;
         -h|--help)
             usage
@@ -209,7 +214,8 @@ export PATH="$LOCAL_BIN:$PATH"
 # Configure with CMake using Retro68 toolchain
 cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/Retro68.toolchain.cmake \
     -DCMAKE_BUILD_TYPE=Release \
-    -DBUILD_TEAM_ARENA="$TEAM_ARENA_MODE"
+    -DBUILD_TEAM_ARENA="$TEAM_ARENA_MODE" \
+    -DQ3_BRINGUP="$BRINGUP_MODE"
 
 # CMake caches this option across runs. Gate every post-build/package action on
 # the configuration that produced this build, never on a possibly stale file.

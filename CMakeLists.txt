@@ -10,7 +10,7 @@ endif()
 # not yet validated on Mac OS 9. Re-enable with -DBUILD_TEAM_ARENA=ON.
 option(BUILD_TEAM_ARENA "Build the Quake3_TeamArena (mission pack) executable" OFF)
 
-# Debug-friendly flags. We deliberately do NOT use:
+# We deliberately do NOT use:
 #   -ffunction-sections / -fdata-sections / -Wl,--gc-sections : section GC can
 #       drop XCOFF sections (TOC entries, init/fini glue, weak refs) that
 #       MakePEF needs to emit a valid PEF, producing a binary that loads but
@@ -24,7 +24,23 @@ option(BUILD_TEAM_ARENA "Build the Quake3_TeamArena (mission pack) executable" O
 # defines CHAR_WIDTH (colliding with ui_shared.h). Q3 is C89/GNU89-era code.
 # -fgnu89-inline: ID_INLINE is plain 'inline'; C99 inline semantics emit no
 # external definition (undefined refs to AAS_*_inline at -O0), GNU89 does.
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -fgnu89-inline -O0 -g -fno-strict-aliasing")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -fgnu89-inline -O2 -g -fno-strict-aliasing")
+
+# The optimized build is the default. Q3_BRINGUP keeps -O0, whose reloads of
+# every variable and plain frames make a hang or crash on new hardware easier
+# to read. -g stays either way: it costs no code, and mac_symbolize.py needs
+# the XCOFF symbols. The flags beside -O2 keep what the code relies on:
+#   -fwrapv: signed overflow wraps. FS_SetRestrictions' LCG once miscompiled
+#       at -O2 without it (PR #430), and id's code assumes it elsewhere.
+#   -fno-delete-null-pointer-checks: low memory is mapped on Mac OS 9, so a
+#       NULL dereference carries on and a later NULL check still has to run.
+#   -ffp-contract=off: no fused multiply-add. fmadds rounds once, so Pmove
+#       and friends would not match the x86 peers of a network game.
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fwrapv -fno-delete-null-pointer-checks -ffp-contract=off")
+option(Q3_BRINGUP "Build at -O0 for hardware bring-up instead of the optimized build" OFF)
+if(Q3_BRINGUP)
+  string(REPLACE " -O2 " " -O0 " CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+endif()
 
 # -fsigned-char: Retro68's PowerPC GCC defaults to unsigned 'char'
 # (__CHAR_UNSIGNED__), but retail 1.32c was built with signed 'char' (x86,
@@ -46,9 +62,9 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsigned-char")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wformat=2 -Wno-format-nonliteral -Werror=format -Werror=format-security -Wno-error=format-overflow -Wno-error=format-truncation")
 
 # CMake appends CMAKE_C_FLAGS_<CONFIG> *after* CMAKE_C_FLAGS on the compile
-# line, and the Release defaults are "-O3 -DNDEBUG" — which silently overrode
-# the -O0 -g above (the last -O flag wins). Clear the per-config flags so the
-# debug-friendly flags actually take effect; build_mac.sh passes
+# line, and the Release defaults are "-O3 -DNDEBUG" — which would silently
+# override the -O flag above (the last one wins) and add NDEBUG. Clear the
+# per-config flags so those above are the ones used; build_mac.sh passes
 # -DCMAKE_BUILD_TYPE=Release.
 set(CMAKE_C_FLAGS_RELEASE "")
 set(CMAKE_CXX_FLAGS_RELEASE "")

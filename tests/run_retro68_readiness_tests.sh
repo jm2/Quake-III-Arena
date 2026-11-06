@@ -265,6 +265,8 @@ cmake_compile_flags() {
     local re_append='^[[:space:]]*string\(APPEND CMAKE_(C|CXX)_FLAGS " ([^"$]*)"\)[[:space:]]*$'
     local re_options='^[[:space:]]*add_compile_options\(([^")$<>]*)\)[[:space:]]*$'
     local re_clear='^[[:space:]]*set\(CMAKE_(C|CXX)_FLAGS_[A-Z]+ ""\)[[:space:]]*$'
+    # Q3_BRINGUP swaps the -O flag: the checks use the default build's
+    local re_bringup='^[[:space:]]*string\(REPLACE " -O2 " " -O0 " CMAKE_C_FLAGS "\$\{CMAKE_C_FLAGS\}"\)[[:space:]]*$'
     for file in "$Q3_TEST_ROOT/CMakeLists.txt" "$Q3_TEST_ROOT/cmake/Retro68.toolchain.cmake"; do
         while IFS= read -r line || [ -n "$line" ]; do
             code="${line%%#*}"
@@ -281,7 +283,7 @@ cmake_compile_flags() {
             elif [[ $code =~ $re_options ]]; then
                 languages="C CXX"
                 flags="${BASH_REMATCH[1]}"
-            elif [[ $code =~ $re_clear ]]; then
+            elif [[ $code =~ $re_clear ]] || [[ $code =~ $re_bringup ]]; then
                 continue
             else
                 echo "  ${file#$Q3_TEST_ROOT/} sets compile flags in a form this test does not parse: $line" >&2
