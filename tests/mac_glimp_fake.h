@@ -89,6 +89,35 @@ void		GetGWorld( CGrafPtr *port, GDHandle *gdh );
 void		SetGWorld( CGrafPtr port, GDHandle gdh );
 void		SetPort( GrafPtr port );
 
+enum {
+	blackColor	= 33,
+	whiteColor	= 30
+};
+
+void		ForeColor( long color );
+void		BackColor( long color );
+void		SetRect( Rect *r, short left, short top, short right, short bottom );
+void		EraseRect( const Rect *r );
+void		MoveTo( short h, short v );
+void		DrawText( const void *textBuf, short firstByte, short byteCount );
+
+/* ---- Events.h ---- */
+
+enum {
+	keyDownMask		= 0x0008,
+	autoKeyMask		= 0x0020,
+	charCodeMask	= 0x000000FF
+};
+
+typedef struct EventRecord {
+	short			what;
+	unsigned long	message;
+} EventRecord;
+
+void			FlushEvents( short whichMask, short stopMask );
+Boolean			WaitNextEvent( short eventMask, EventRecord *theEvent, unsigned long sleep, void *mouseRgn );
+unsigned long	TickCount( void );
+
 WindowPtr	NewCWindow( void *wStorage, const Rect *boundsRect, ConstStr255Param title,
 				Boolean visible, short procID, WindowPtr behind, Boolean goAwayFlag, long refCon );
 void		DisposeWindow( WindowPtr window );
@@ -183,9 +212,15 @@ typedef struct DSpContextAttributes {
 	unsigned long	reserved3[4];
 } DSpContextAttributes;
 
+typedef unsigned long	DisplayIDType;
+
 OSStatus	DSpStartup( void );
 OSStatus	DSpShutdown( void );
 OSStatus	DSpFindBestContext( DSpContextAttributes *inDesiredAttributes, DSpContextReference *outContext );
+OSStatus	DSpGetFirstContext( DisplayIDType inDisplayID, DSpContextReference *outContext );
+OSStatus	DSpGetNextContext( DSpContextReference inCurrentContext, DSpContextReference *outContext );
+OSStatus	DSpContext_GetDisplayID( DSpContextReference inContext, DisplayIDType *outDisplayID );
+OSStatus	DSpContext_GetFrontBuffer( DSpContextReference inContext, CGrafPtr *outFrontBuffer );
 OSStatus	DSpContext_Reserve( DSpContextReference inContext, DSpContextAttributes *inDesiredAttributes );
 OSStatus	DSpContext_Release( DSpContextReference inContext );
 OSStatus	DSpContext_GetAttributes( DSpContextReference inContext, DSpContextAttributes *outAttributes );
