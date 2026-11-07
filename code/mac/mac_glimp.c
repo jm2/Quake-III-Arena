@@ -77,6 +77,197 @@ void GLimp_ResetDisplay( void ) {
 // kDSpConfirmSwitchWarning, which the Retro68 headers lack
 #define DSP_CONFIRM_SWITCH_WARNING	-30448
 
+#define DSP_MAX_CONTEXTS		256
+#define DSP_CONFIRM_SECONDS		15
+#define DSP_MIN_REFRESH			60
+// the fastest refresh picked unasked: a driver can offer more than a CRT shows
+#define DSP_MAX_AUTO_REFRESH	85
+
+static cvar_t	*r_displayConfirm;		// treat every mode as needing confirmation
+static cvar_t	*r_displayConfirmed;	// the mode last confirmed, not asked again
+
+// the fallback mode is being set, so there is nothing to go back to
+static qboolean	glimp_lastResort;
+
+/*
+=====================
+GLimp_ContextHz
+
+0 if the driver doesn't say. The header has a Fixed, but Apple's text says Hz,
+and a Fixed below one can only be the latter
+=====================
+*/
+static int GLimp_ContextHz( const DSpContextAttributes *attributes ) {
+	long	frequency;
+
+	frequency = (long)attributes->frequency;
+	return frequency < 0x10000 ? (int)frequency : (int)( ( frequency + 0x8000 ) >> 16 );
+}
+
+/*
+=====================
+GLimp_RankContext
+
+Higher is better, and always above zero. r_displayRefresh wins if it is offered.
+Otherwise take the fastest refresh DrawSprocket trusts. Of those it doesn't,
+the slowest is the likeliest to be in range of the monitor
+=====================
+*/
+static int GLimp_RankContext( const DSpContextAttributes *attributes ) {
+	int		hz, rank;
+
+	hz = GLimp_ContextHz( attributes );
+	if ( attributes->gameMustConfirmSwitch ) {
+		rank = hz >= DSP_MIN_REFRESH ? 2000 - hz : 1 + hz;
+	} else if ( hz > DSP_MAX_AUTO_REFRESH ) {
+		rank = 5000 - hz;
+	} else if ( hz > 0 ) {
+		rank = 6000 + hz;
+	} else {
+		rank = 3000;
+	}
+	if ( r_displayRefresh->integer && hz == r_displayRefresh->integer ) {
+		rank += 10000;
+	}
+	return rank;
+}
+
+/*
+=====================
+GLimp_PickContext
+
+DrawSprocket ignores the refresh asked of it and chooses for itself, so look at
+each context the display has. Keeps the one DSpFindBestContext found if nothing
+better is listed. The log has the choices before the display changes
+=====================
+*/
+static DSpContextReference GLimp_PickContext( DSpContextReference found, unsigned long depthMask,
+											 DSpContextAttributes *picked ) {
+	DSpContextAttributes	attributes;
+	DSpContextReference		best, context, next;
+	DisplayIDType			display;
+	int						i, rank, bestRank;
+
+	best = found;
+	bestRank = 0;
+	memset( picked, 0, sizeof( *picked ) );
+	if ( !DSpContext_GetAttributes( found, picked ) ) {
+		bestRank = GLimp_RankContext( picked );
+	}
+
+	if ( !DSpContext_GetDisplayID( found, &display )
+		&& !DSpGetFirstContext( display, &context ) ) {
+		for ( i = 0 ; context && i < DSP_MAX_CONTEXTS ; i++ ) {
+			memset( &attributes, 0, sizeof( attributes ) );
+			if ( !DSpContext_GetAttributes( context, &attributes )
+				&& attributes.displayWidth == (unsigned long)glConfig.vidWidth
+				&& attributes.displayHeight == (unsigned long)glConfig.vidHeight
+				&& ( attributes.displayDepthMask & depthMask ) ) {
+				ri.Printf( PRINT_ALL, "...display offers %i Hz%s\n", GLimp_ContextHz( &attributes ),
+					attributes.gameMustConfirmSwitch ? ", to be confirmed" : "" );
+				rank = GLimp_RankContext( &attributes );
+				if ( rank > bestRank ) {
+					best = context;
+					bestRank = rank;
+					*picked = attributes;
+				}
+			}
+			if ( DSpGetNextContext( context, &next ) ) {
+				break;
+			}
+			context = next;
+		}
+	}
+
+	if ( r_displayRefresh->integer && GLimp_ContextHz( picked ) != r_displayRefresh->integer ) {
+		ri.Printf( PRINT_ALL, "...r_displayRefresh %i is not offered for this mode\n",
+			r_displayRefresh->integer );
+	}
+	ri.Printf( PRINT_ALL, "...using %i Hz\n", GLimp_ContextHz( picked ) );
+	return best;
+}
+
+/*
+=====================
+GLimp_DrawConfirmPrompt
+=====================
+*/
+static void GLimp_DrawConfirmPrompt( DSpContextReference context ) {
+	static const char	line1[] = "Can you read this? Press Y to keep this display mode, or N to go back.";
+	char				line2[64];
+	CGrafPtr			front, savedPort;
+	GDHandle			savedDevice;
+	Rect				bounds;
+
+	if ( DSpContext_GetFrontBuffer( context, &front ) || !front ) {
+		return;
+	}
+	GetGWorld( &savedPort, &savedDevice );
+	SetGWorld( front, NULL );
+
+	SetRect( &bounds, 0, 0, glConfig.vidWidth, glConfig.vidHeight );
+	ForeColor( whiteColor );
+	BackColor( blackColor );
+	EraseRect( &bounds );
+
+	MoveTo( glConfig.vidWidth / 8, glConfig.vidHeight / 2 );
+	DrawText( line1, 0, sizeof( line1 ) - 1 );
+	Com_sprintf( line2, sizeof( line2 ), "It goes back by itself in %i seconds.", DSP_CONFIRM_SECONDS );
+	MoveTo( glConfig.vidWidth / 8, glConfig.vidHeight / 2 + 20 );
+	DrawText( line2, 0, strlen( line2 ) );
+
+	SetGWorld( savedPort, savedDevice );
+}
+
+/*
+=====================
+GLimp_ConfirmMode
+
+The display may be showing nothing at all, so only a Y counts as yes: keys
+pressed blind must not keep the mode, and no answer puts the display back
+=====================
+*/
+static qboolean GLimp_ConfirmMode( DSpContextReference context, int depthBits, int hz ) {
+	char			mode[MAX_CVAR_VALUE_STRING];
+	EventRecord		event;
+	unsigned long	end;
+	int				c;
+
+	if ( glimp_lastResort ) {
+		ri.Printf( PRINT_ALL, "...this display mode is unconfirmed, but no other is left\n" );
+		return qtrue;
+	}
+
+	Com_sprintf( mode, sizeof( mode ), "%ix%ix%i@%i", glConfig.vidWidth, glConfig.vidHeight, depthBits, hz );
+	if ( !strcmp( mode, r_displayConfirmed->string ) ) {
+		ri.Printf( PRINT_ALL, "...display mode %s was confirmed before\n", mode );
+		return qtrue;
+	}
+
+	ri.Printf( PRINT_ALL, "...waiting for display mode %s to be confirmed\n", mode );
+	GLimp_DrawConfirmPrompt( context );
+
+	FlushEvents( keyDownMask | autoKeyMask, 0 );
+	end = TickCount() + DSP_CONFIRM_SECONDS * 60;
+	while ( TickCount() < end ) {
+		if ( !WaitNextEvent( keyDownMask, &event, 6, NULL ) ) {
+			continue;
+		}
+		c = event.message & charCodeMask;
+		if ( c == 'y' || c == 'Y' ) {
+			ri.Cvar_Set( "r_displayConfirmed", mode );
+			ri.Printf( PRINT_ALL, "...display mode confirmed\n" );
+			return qtrue;
+		}
+		if ( c == 'n' || c == 'N' || c == 27 ) {
+			break;
+		}
+	}
+
+	ri.Printf( PRINT_ALL, "...display mode %s not confirmed, going back\n", mode );
+	return qfalse;
+}
+
 /*
 =====================
 GLimp_ChangeDisplay
@@ -88,8 +279,10 @@ not be switched to the mode, so another mode can be tried
 qboolean GLimp_ChangeDisplay( int *actualWidth, int *actualHeight ) {
 	OSStatus				theError;
 	DSpContextAttributes 	inAttributes;
+	DSpContextAttributes	picked;
 	DSpContextReference		context;
 	int						colorBits;
+	qboolean				confirm;
 	
 	// startup DrawSprocket
 	theError = DSpStartup();
@@ -134,6 +327,9 @@ qboolean GLimp_ChangeDisplay( int *actualWidth, int *actualHeight ) {
 		return qfalse;
 	}
 
+	context = GLimp_PickContext( context, colorBits, &picked );
+
+	inAttributes.frequency					= picked.frequency;
 	inAttributes.displayWidth				= glConfig.vidWidth;
 	inAttributes.displayHeight				= glConfig.vidHeight;
 	inAttributes.backBufferDepthMask		= colorBits;
@@ -152,14 +348,17 @@ qboolean GLimp_ChangeDisplay( int *actualWidth, int *actualHeight ) {
 	// find out what res we actually got
 	theError = DSpContext_GetAttributes( context, &inAttributes );
 
+	confirm = qfalse;
 	if ( !theError ) {
+		confirm = picked.gameMustConfirmSwitch || inAttributes.gameMustConfirmSwitch
+			|| r_displayConfirm->integer;
+
 		// put the context into the active state
 		theError = DSpContext_SetState( context, kDSpContextState_Active );
 		if ( theError == DSP_CONFIRM_SWITCH_WARNING ) {
-			// the display has switched, and the game is meant to ask if it
-			// can be seen. Retail ignored this result altogether
-			ri.Printf( PRINT_ALL, "This display mode is unconfirmed. If the screen stays blank, "
-				"start with safe in MacQuake3Parms.txt\n" );
+			// the display has switched, and the game must ask if it can be
+			// seen. Retail ignored this result altogether
+			confirm = qtrue;
 			theError = noErr;
 		}
 	}
@@ -178,6 +377,13 @@ qboolean GLimp_ChangeDisplay( int *actualWidth, int *actualHeight ) {
 
 	sys_gl.DSpContext = context;
 	glConfig.isFullscreen = qtrue;
+	glConfig.displayFrequency = GLimp_ContextHz( &picked );
+
+	if ( confirm && !GLimp_ConfirmMode( context, colorBits == kDSpDepthMask_32 ? 32 : 16,
+		glConfig.displayFrequency ) ) {
+		GLimp_ResetDisplay();
+		return qfalse;
+	}
 	return qtrue;
 }
 
@@ -888,6 +1094,9 @@ void GLimp_Init( void ) {
 	r_ext_transform_hint = ri.Cvar_Get( "r_ext_transform_hint", "1", CVAR_LATCH | CVAR_ARCHIVE );
 	r_ext_texture_filter_anisotropic = ri.Cvar_Get(
 		"r_ext_texture_filter_anisotropic", "0", CVAR_LATCH | CVAR_ARCHIVE );
+	r_displayConfirm = ri.Cvar_Get( "r_displayConfirm", "0", 0 );
+	r_displayConfirmed = ri.Cvar_Get( "r_displayConfirmed", "", CVAR_ARCHIVE );
+	glimp_lastResort = qfalse;
 	
 	// GLimp_Shutdown removes these, as they use the context
 	ri.Cmd_AddCommand( "aglDescribe", GLimp_AglDescribe_f );
@@ -923,6 +1132,7 @@ void GLimp_Init( void ) {
 	ri.Cvar_Set( "r_depthBits", "16" );
 	ri.Cvar_Set( "r_colorBits", "16" );
 	ri.Cvar_Set( "r_stencilBits", "0" );
+	glimp_lastResort = qtrue;
 
 	if ( GLimp_SetMode() ) {
 		ri.Printf( PRINT_ALL, "------------------\n" );

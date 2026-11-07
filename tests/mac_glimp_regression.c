@@ -60,7 +60,7 @@ glconfig_t	glConfig;
 static cvar_t	*CvarGet( const char *name, const char *value, int flags );
 static void		CvarSet( const char *name, const char *value );
 
-cvar_t	*r_mode, *r_fullscreen, *r_colorbits, *r_stencilbits, *r_depthbits;
+cvar_t	*r_mode, *r_fullscreen, *r_colorbits, *r_stencilbits, *r_depthbits, *r_displayRefresh;
 cvar_t	*r_swapInterval, *r_ext_multitexture, *r_ext_compiled_vertex_array;
 cvar_t	*r_ext_texture_env_add, *r_allowExtensions;
 
@@ -533,13 +533,23 @@ void SelectWindow( WindowPtr window ) {
 /* ---- fake DrawSprocket ---- */
 
 struct OpaqueDSpContextReference {
-	int		reserved;
-	int		active;
+	int				reserved;		/* of the display, kept in dspDisplay */
+	int				active;
+	unsigned long	width, height;
+	unsigned long	frequency;
+	unsigned long	depthMask;
+	int				mustConfirm;
 };
 
+/* the context DSpFindBestContext gives, and the rest of what the display lists */
 static struct OpaqueDSpContextReference	dspDisplay;
+static struct OpaqueDSpContextReference	dspModes[8];
+static int								dspModeCount;
+static DSpContextReference				dspHeld;	/* the reserved context */
 static int								dspStarted;
 static int								dspConfirmSwitch;
+static int								dspNoDisplayID;
+static int								dspNoFrontBuffer;
 static DSpDepthMask						dspDepth;	/* of the reserved display */
 
 OSStatus DSpStartup( void ) {
@@ -567,49 +577,143 @@ OSStatus DSpFindBestContext( DSpContextAttributes *inDesiredAttributes, DSpConte
 	return noErr;
 }
 
+static int DspKnows( DSpContextReference context ) {
+	return context == &dspDisplay || ( context >= dspModes && context < dspModes + dspModeCount );
+}
+
+OSStatus DSpContext_GetDisplayID( DSpContextReference inContext, DisplayIDType *outDisplayID ) {
+	Check( DspKnows( inContext ), "DSpContext_GetDisplayID gets a context" );
+	*outDisplayID = 1;
+	return dspNoDisplayID ? -30442 : noErr;
+}
+
+OSStatus DSpGetFirstContext( DisplayIDType inDisplayID, DSpContextReference *outContext ) {
+	Check( inDisplayID == 1, "DSpGetFirstContext gets the display" );
+	*outContext = dspModes;
+	return dspModeCount ? noErr : -30446;	/* kDSpContextNotFoundErr */
+}
+
+OSStatus DSpGetNextContext( DSpContextReference inCurrentContext, DSpContextReference *outContext ) {
+	Check( DspKnows( inCurrentContext ), "DSpGetNextContext gets a context" );
+	if ( inCurrentContext + 1 == dspModes + dspModeCount ) {
+		return -30446;
+	}
+	*outContext = inCurrentContext + 1;
+	return noErr;
+}
+
+OSStatus DSpContext_GetFrontBuffer( DSpContextReference inContext, CGrafPtr *outFrontBuffer ) {
+	static struct FakeWindow	front;
+
+	Check( inContext == dspHeld && dspDisplay.active, "the front buffer is of the active context" );
+	*outFrontBuffer = &front;
+	return dspNoFrontBuffer ? -30442 : noErr;
+}
+
 OSStatus DSpContext_Reserve( DSpContextReference inContext, DSpContextAttributes *inDesiredAttributes ) {
-	Check( inContext == &dspDisplay, "DSpContext_Reserve gets the context found" );
+	Check( DspKnows( inContext ), "DSpContext_Reserve gets a context" );
 	if ( Fail( "DSpContext_Reserve" ) ) {
 		return -30442;
 	}
-	Check( !inContext->reserved, "a display is reserved once" );
+	Check( !dspDisplay.reserved, "a display is reserved once" );
 	Check( inDesiredAttributes->displayDepthMask == inDesiredAttributes->backBufferDepthMask,
 		"the display and back buffer depths agree" );
-	inContext->reserved = 1;
+	Check( inDesiredAttributes->frequency == inContext->frequency, "the refresh is the context's" );
+	dspDisplay.reserved = 1;
+	dspHeld = inContext;
 	dspDepth = inDesiredAttributes->displayDepthMask;
 	return noErr;
 }
 
 OSStatus DSpContext_Release( DSpContextReference inContext ) {
-	Check( inContext == &dspDisplay && inContext->reserved, "DSpContext_Release gets a reserved context" );
-	Check( !inContext->active, "a context is made inactive before release" );
-	inContext->reserved = 0;
+	Check( inContext == dspHeld && dspDisplay.reserved, "DSpContext_Release gets a reserved context" );
+	Check( !dspDisplay.active, "a context is made inactive before release" );
+	dspDisplay.reserved = 0;
+	dspHeld = NULL;
 	return noErr;
 }
 
 OSStatus DSpContext_GetAttributes( DSpContextReference inContext, DSpContextAttributes *outAttributes ) {
-	Check( inContext == &dspDisplay, "DSpContext_GetAttributes gets the context found" );
+	Check( DspKnows( inContext ), "DSpContext_GetAttributes gets a context" );
 	if ( Fail( "DSpContext_GetAttributes" ) ) {
 		return -30443;
 	}
 	/* a bigger display than asked for, as DrawSprocket may pick */
-	outAttributes->displayWidth = 1024;
-	outAttributes->displayHeight = 768;
+	outAttributes->displayWidth = inContext->width;
+	outAttributes->displayHeight = inContext->height;
+	outAttributes->frequency = inContext->frequency;
+	outAttributes->displayDepthMask = inContext->depthMask;
+	outAttributes->gameMustConfirmSwitch = inContext->mustConfirm;
 	return noErr;
 }
 
 OSStatus DSpContext_SetState( DSpContextReference inContext, DSpContextState inState ) {
-	Check( inContext == &dspDisplay && inContext->reserved, "DSpContext_SetState gets a reserved context" );
+	Check( inContext == dspHeld && dspDisplay.reserved, "DSpContext_SetState gets a reserved context" );
 	if ( inState == kDSpContextState_Active && Fail( "DSpContext_SetState" ) ) {
 		return -30444;
 	}
-	inContext->active = inState == kDSpContextState_Active;
+	dspDisplay.active = inState == kDSpContextState_Active;
 	/* the switch is made, and the game is told to confirm it can be seen */
-	return inContext->active && dspConfirmSwitch ? -30448 : noErr;
+	return dspDisplay.active && ( dspConfirmSwitch || inContext->mustConfirm ) ? -30448 : noErr;
 }
 
 OSStatus DSpContext_FadeGammaIn( const void *inZeroIntensityColor, void *inCallback ) {
 	return noErr;
+}
+
+/* ---- fake Quickdraw text and the event queue ---- */
+
+static int				promptLines;
+static const char		*keysQueued;	/* before the prompt showed */
+static const char		*keysTyped;		/* after it */
+static unsigned long	ticks;
+
+void ForeColor( long color ) {
+}
+
+void BackColor( long color ) {
+}
+
+void SetRect( Rect *r, short left, short top, short right, short bottom ) {
+	r->left = left;
+	r->top = top;
+	r->right = right;
+	r->bottom = bottom;
+}
+
+void EraseRect( const Rect *r ) {
+	Check( r->right == glConfig.vidWidth && r->bottom == glConfig.vidHeight, "the whole screen is cleared" );
+}
+
+void MoveTo( short h, short v ) {
+	Check( h >= 0 && h < glConfig.vidWidth && v >= 0 && v < glConfig.vidHeight, "the prompt is on the screen" );
+}
+
+void DrawText( const void *textBuf, short firstByte, short byteCount ) {
+	Check( firstByte == 0 && byteCount > 0 && byteCount == (short)strlen( textBuf ), "a whole line is drawn" );
+	promptLines++;
+}
+
+void FlushEvents( short whichMask, short stopMask ) {
+	Check( whichMask & keyDownMask, "keys pressed earlier are dropped" );
+	keysQueued = "";
+}
+
+Boolean WaitNextEvent( short eventMask, EventRecord *theEvent, unsigned long sleep, void *mouseRgn ) {
+	const char	**keys;
+
+	Check( ( eventMask & keyDownMask ) && !mouseRgn, "only keys are waited for" );
+	ticks += sleep;
+	keys = *keysQueued ? &keysQueued : &keysTyped;
+	if ( !**keys ) {
+		return 0;
+	}
+	theEvent->message = 0x1200 | (unsigned char)*(*keys)++;
+	return 1;
+}
+
+unsigned long TickCount( void ) {
+	return ticks;
 }
 
 /* ---- fake AGL ---- */
@@ -822,6 +926,19 @@ static void ResetAll( void ) {
 	failName = NULL;
 	glTextureUnits = 2;
 	dspConfirmSwitch = 0;
+	dspNoDisplayID = 0;
+	dspNoFrontBuffer = 0;
+	dspModeCount = 0;
+	dspHeld = NULL;
+	dspDisplay.width = 1024;
+	dspDisplay.height = 768;
+	dspDisplay.frequency = 0;
+	dspDisplay.depthMask = kDSpDepthMask_16 | kDSpDepthMask_32;
+	dspDisplay.mustConfirm = 0;
+	promptLines = 0;
+	keysQueued = "";
+	keysTyped = "";
+	ticks = 0;
 	failNth = 0;
 	failCount = 0;
 	failed = 0;
@@ -838,6 +955,9 @@ static void ResetAll( void ) {
 	CvarSet( "r_colorbits", "32" );
 	CvarSet( "r_depthbits", "16" );
 	CvarSet( "r_stencilbits", "0" );
+	CvarSet( "r_displayRefresh", "0" );
+	CvarSet( "r_displayConfirm", "0" );
+	CvarSet( "r_displayConfirmed", "" );
 	ResetDevices();
 }
 
@@ -856,6 +976,7 @@ static void Setup( void ) {
 	r_colorbits = CvarGet( "r_colorbits", "32", 0 );
 	r_stencilbits = CvarGet( "r_stencilbits", "0", 0 );
 	r_depthbits = CvarGet( "r_depthbits", "16", 0 );
+	r_displayRefresh = CvarGet( "r_displayRefresh", "0", 0 );
 	r_swapInterval = CvarGet( "r_swapInterval", "0", 0 );
 	r_ext_multitexture = CvarGet( "r_ext_multitexture", "1", 0 );
 	r_ext_compiled_vertex_array = CvarGet( "r_ext_compiled_vertex_array", "1", 0 );
@@ -889,7 +1010,7 @@ static void CheckLive( void ) {
 	if ( glConfig.isFullscreen ) {
 		Check( dspStarted == 1 && dspDisplay.reserved && dspDisplay.active,
 			"a fullscreen renderer holds an active display" );
-		Check( sys_gl.DSpContext == &dspDisplay, "sys_gl has the display" );
+		Check( sys_gl.DSpContext != NULL && sys_gl.DSpContext == dspHeld, "sys_gl has the display" );
 	} else {
 		Check( dspStarted == 0 && !dspDisplay.reserved && !dspDisplay.active,
 			"a windowed renderer holds no display" );
@@ -999,22 +1120,217 @@ static void TestBadMode( void ) {
 	CheckReleased();
 }
 
-/* kDSpConfirmSwitchWarning from a real Radeon 9200: the display has switched,
- * so the mode and its depth stay, and only a real error falls back */
-static void TestConfirmSwitch( void ) {
-	currentCase = "confirm-switch";
+/* kDSpConfirmSwitchWarning from a real Radeon 9200, whose switch left a CRT out
+ * of range: the mode stays only if the player says it can be seen */
+#define	CONFIRM_TICKS	( 15 * 60 )
+
+static void AddMode( int hz, int mustConfirm ) {
+	struct OpaqueDSpContextReference	*mode = &dspModes[dspModeCount++];
+
+	memset( mode, 0, sizeof( *mode ) );
+	mode->width = 1024;
+	mode->height = 768;
+	mode->frequency = (unsigned long)hz << 16;
+	mode->depthMask = kDSpDepthMask_16 | kDSpDepthMask_32;
+	mode->mustConfirm = mustConfirm;
+}
+
+/* starts ResetAll's 1024x768x32 fullscreen, which is mode 5 in this fixture */
+static void ResetFullscreen( const char *name ) {
+	currentCase = name;
 	ResetAll();
-	dspConfirmSwitch = 1;
 	CvarSet( "r_fullscreen", "1" );
-	CvarSet( "r_mode", "5" );	/* 1024x768 in this fixture's table */
+	CvarSet( "r_mode", "5" );
 	CvarSet( "r_colorbits", "32" );
-	Check( Init(), "GLimp_Init takes the warning as success" );
+}
+
+static void CheckKept( void ) {
+	Check( Init(), "GLimp_Init succeeds" );
 	CheckLive();
-	Check( glConfig.isFullscreen && glConfig.vidWidth == 1024, "the warned mode is fullscreen 1024x768" );
+	Check( glConfig.isFullscreen && glConfig.vidWidth == 1024, "the mode is fullscreen 1024x768" );
 	Check( r_mode->integer == 5 && r_colorbits->integer == 32, "the settings asked for are kept" );
-	Check( fatalErrors == 0, "the warning is not fatal" );
+	Check( fatalErrors == 0, "nothing is fatal" );
+}
+
+static void CheckWentBack( void ) {
+	Check( Init(), "GLimp_Init survives a refused mode" );
+	CheckLive();
+	Check( glConfig.isFullscreen && r_mode->integer == 3 && r_colorbits->integer == 16,
+		"the display goes back to the fallback, which the config then keeps" );
+	Check( !CvarFind( "r_displayConfirmed" )->cvar.string[0], "the refused mode is not remembered" );
+	Check( fatalErrors == 0, "nothing is fatal" );
+	Check( promptLines == 2, "only the refused mode was asked about, not the fallback" );
+}
+
+static void TestConfirmSwitch( void ) {
+	static const struct { const char *name, *keys; int soon; } refused[] = {
+		{ "confirm-no-answer", "", 0 },
+		{ "confirm-blind-keys", " \r\tq", 0 },
+		{ "confirm-n", "n", 1 },
+		{ "confirm-escape", "\033", 1 }
+	};
+	int		i;
+
+	/* yes */
+	ResetFullscreen( "confirm-yes" );
+	dspConfirmSwitch = 1;
+	keysTyped = "y";
+	CheckKept();
+	Check( promptLines == 2 && ticks < CONFIRM_TICKS, "the prompt was shown and answered" );
+	Check( !strcmp( CvarFind( "r_displayConfirmed" )->cvar.string, "1024x768x32@0" ), "the answer is remembered" );
 	GLimp_Shutdown();
 	CheckReleased();
+
+	/* and isn't asked again, which a player away from the keys would fail */
+	promptLines = 0;
+	keysTyped = "";
+	ticks = 0;
+	CheckKept();
+	Check( promptLines == 0 && ticks == 0, "a confirmed mode is not asked about again" );
+	GLimp_Shutdown();
+	CheckReleased();
+
+	/* another refresh is another mode */
+	ResetFullscreen( "confirm-other-refresh" );
+	dspConfirmSwitch = 1;
+	dspDisplay.frequency = 85 << 16;
+	CvarSet( "r_displayConfirmed", "1024x768x32@100" );
+	keysTyped = "Y";
+	CheckKept();
+	Check( promptLines == 2, "a different refresh is asked about" );
+	Check( !strcmp( CvarFind( "r_displayConfirmed" )->cvar.string, "1024x768x32@85" ), "the new answer is remembered" );
+	GLimp_Shutdown();
+	CheckReleased();
+
+	/* anything but yes puts the display back; the screen may be blank */
+	for ( i = 0 ; i < (int)( sizeof( refused ) / sizeof( refused[0] ) ) ; i++ ) {
+		ResetFullscreen( refused[i].name );
+		dspConfirmSwitch = 1;
+		keysTyped = refused[i].keys;
+		CheckWentBack();
+		Check( refused[i].soon ? ticks < CONFIRM_TICKS : ticks >= CONFIRM_TICKS,
+			"no answer waits, and no goes back at once" );
+		Check( ticks <= CONFIRM_TICKS + 6, "the wait is over in time" );
+		GLimp_Shutdown();
+		CheckReleased();
+	}
+
+	/* a key pressed before the prompt, as the menu's own, is no answer */
+	ResetFullscreen( "confirm-stale-key" );
+	dspConfirmSwitch = 1;
+	keysQueued = "y";
+	CheckWentBack();
+	GLimp_Shutdown();
+	CheckReleased();
+
+	/* a prompt that can't be drawn still can't keep a mode on its own */
+	ResetFullscreen( "confirm-no-front-buffer" );
+	dspConfirmSwitch = 1;
+	dspNoFrontBuffer = 1;
+	Check( Init(), "GLimp_Init survives" );
+	CheckLive();
+	Check( r_mode->integer == 3 && promptLines == 0, "the display goes back undrawn" );
+	GLimp_Shutdown();
+	CheckReleased();
+
+	/* the flag alone asks, and so does r_displayConfirm */
+	ResetFullscreen( "confirm-flag" );
+	dspDisplay.mustConfirm = 1;
+	keysTyped = "y";
+	dspConfirmSwitch = 0;
+	CheckKept();
+	Check( promptLines == 2, "a flagged mode is asked about" );
+	GLimp_Shutdown();
+	CheckReleased();
+
+	ResetFullscreen( "confirm-forced" );
+	CvarSet( "r_displayConfirm", "1" );
+	keysTyped = "y";
+	CheckKept();
+	Check( promptLines == 2, "r_displayConfirm asks about any mode" );
+	GLimp_Shutdown();
+	CheckReleased();
+
+	ResetFullscreen( "confirm-none-needed" );
+	CheckKept();
+	Check( promptLines == 0 && ticks == 0, "a trusted mode is not asked about" );
+	GLimp_Shutdown();
+	CheckReleased();
+}
+
+/* DrawSprocket ignores the refresh asked for, and chose one a CRT couldn't show */
+static void CheckRefresh( const char *name, int hz, int prompts ) {
+	currentCase = name;
+	keysTyped = "y";
+	CheckKept();
+	Check( glConfig.displayFrequency == hz, "the refresh is chosen and reported" );
+	Check( dspHeld == &dspDisplay || ( (int)( dspHeld->frequency >> 16 ) == hz || dspHeld->frequency == (unsigned long)hz ),
+		"that refresh is the context reserved" );
+	Check( promptLines == prompts, "only an untrusted refresh is asked about" );
+	GLimp_Shutdown();
+	CheckReleased();
+}
+
+static void TestRefresh( void ) {
+	ResetFullscreen( "refresh-fastest-trusted" );
+	AddMode( 60, 0 ); AddMode( 85, 0 ); AddMode( 75, 0 ); AddMode( 120, 0 );
+	CheckRefresh( "refresh-fastest-trusted", 85, 0 );
+
+	ResetFullscreen( "refresh-only-above-limit" );
+	AddMode( 120, 0 ); AddMode( 100, 0 );
+	CheckRefresh( "refresh-only-above-limit", 100, 0 );
+
+	ResetFullscreen( "refresh-trusted-beats-faster" );
+	AddMode( 120, 1 ); AddMode( 100, 1 ); AddMode( 70, 0 );
+	CheckRefresh( "refresh-trusted-beats-faster", 70, 0 );
+
+	/* the Radeon 9200's CRT: the slowest is the likeliest to be in range */
+	ResetFullscreen( "refresh-slowest-untrusted" );
+	AddMode( 120, 1 ); AddMode( 85, 1 ); AddMode( 60, 1 ); AddMode( 75, 1 );
+	dspDisplay.frequency = 120 << 16;	/* DSpFindBestContext's own choice */
+	dspDisplay.mustConfirm = 1;
+	CheckRefresh( "refresh-slowest-untrusted", 60, 2 );
+
+	ResetFullscreen( "refresh-asked-for" );
+	AddMode( 120, 1 ); AddMode( 85, 1 ); AddMode( 60, 0 );
+	CvarSet( "r_displayRefresh", "85" );
+	CheckRefresh( "refresh-asked-for", 85, 2 );
+
+	ResetFullscreen( "refresh-not-offered" );
+	AddMode( 60, 0 ); AddMode( 75, 0 );
+	CvarSet( "r_displayRefresh", "85" );
+	CheckRefresh( "refresh-not-offered", 75, 0 );
+
+	/* a refresh of 0 is unknown, and isn't what r_displayRefresh 0 asks for */
+	ResetFullscreen( "refresh-unknown" );
+	AddMode( 75, 0 ); AddMode( 0, 0 );
+	CheckRefresh( "refresh-unknown", 75, 0 );
+
+	ResetFullscreen( "refresh-plain-hz" );
+	AddMode( 60, 0 );
+	dspModes[0].frequency = 72;
+	CheckRefresh( "refresh-plain-hz", 72, 0 );
+
+	/* a mode of another size is never used */
+	ResetFullscreen( "refresh-other-size" );
+	AddMode( 85, 0 );
+	dspModes[0].width = 800;
+	dspDisplay.frequency = 67 << 16;
+	CheckRefresh( "refresh-other-size", 67, 0 );
+
+	ResetFullscreen( "refresh-other-depth" );
+	AddMode( 85, 0 );
+	dspModes[0].depthMask = kDSpDepthMask_16;
+	dspDisplay.frequency = 67 << 16;
+	CheckRefresh( "refresh-other-depth", 67, 0 );
+
+	/* without a list, what DSpFindBestContext found still works, and still asks */
+	ResetFullscreen( "refresh-no-list" );
+	AddMode( 85, 0 );
+	dspNoDisplayID = 1;
+	dspDisplay.mustConfirm = 1;
+	dspDisplay.frequency = 120 << 16;
+	CheckRefresh( "refresh-no-list", 120, 2 );
 }
 
 /* #28: both fast paths are on where the driver has them, and each can be
@@ -1362,6 +1678,7 @@ int main( void ) {
 	TestRestartCycles();
 	TestBadMode();
 	TestConfirmSwitch();
+	TestRefresh();
 	TestFastPaths();
 	TestFaults();
 	TestFullscreenConfig();

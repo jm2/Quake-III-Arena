@@ -143,10 +143,18 @@ The same, without the `r_fullscreen` line. This is DrawSprocket. It should
 return to the desktop with the right colors, after a quit and after a fatal
 error.
 
-Modes can be changed in the menus. If DrawSprocket cannot confirm a mode is safe
-for the display, `q3boot.log` says the mode is unconfirmed. A Radeon 9200 did
-this at 1024x768. If the screen then stays blank, add `safe` as the first line of
-`MacQuake3Parms.txt`, which ignores the saved mode.
+Modes can be changed in the menus. `q3boot.log` lists the refresh rates the
+display offers for a mode and the one used, before the display changes. The game
+takes the fastest rate up to 85 Hz that DrawSprocket trusts. If it trusts none,
+the game takes the slowest, as the likeliest to be in range of the monitor. To
+ask for one, put `+set r_displayRefresh 85` in `MacQuake3Parms.txt`.
+
+If DrawSprocket doesn't trust the mode, the game asks whether you can read a
+prompt. Press Y to keep the mode, and it is not asked again. N, Escape or
+15 seconds without a Y put the display back and fall back to 640x480x16, so if
+the monitor loses sync, wait, and don't press Y blind. A Radeon 9200 with a CRT
+did this at 1024x768, and before this prompt the game could stay out of range.
+`+set r_displayConfirm 1` asks about every mode, which is how to test the prompt.
 
 ### 3. Mouse and keyboard
 
