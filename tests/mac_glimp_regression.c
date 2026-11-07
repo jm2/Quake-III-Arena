@@ -546,6 +546,7 @@ static struct OpaqueDSpContextReference	dspDisplay;
 static struct OpaqueDSpContextReference	dspModes[8];
 static int								dspModeCount;
 static DSpContextReference				dspHeld;	/* the reserved context */
+static unsigned long					dspHeldFrequency;	/* as asked of DSpContext_Reserve */
 static int								dspStarted;
 static int								dspConfirmSwitch;
 static int								dspNoDisplayID;
@@ -621,6 +622,7 @@ OSStatus DSpContext_Reserve( DSpContextReference inContext, DSpContextAttributes
 	Check( inDesiredAttributes->frequency == inContext->frequency, "the refresh is the context's" );
 	dspDisplay.reserved = 1;
 	dspHeld = inContext;
+	dspHeldFrequency = inDesiredAttributes->frequency;
 	dspDepth = inDesiredAttributes->displayDepthMask;
 	return noErr;
 }
@@ -1253,6 +1255,24 @@ static void TestConfirmSwitch( void ) {
 	GLimp_Shutdown();
 	CheckReleased();
 
+	/* the lookup after DSpContext_Reserve fails: found first, then each mode
+	 * listed, so failing the picker's lookups is not this */
+	for ( i = 0 ; i < 2 ; i++ ) {
+		ResetFullscreen( i ? "attributes-after-reserve-listed" : "attributes-after-reserve" );
+		if ( i ) {
+			AddMode( 75, 0 );
+			AddMode( 85, 0 );
+		}
+		failName = "DSpContext_GetAttributes";
+		failNth = 2 + dspModeCount;
+		Check( Init(), "GLimp_Init survives" );
+		CheckLive();
+		Check( failed == 1 && r_mode->integer == 3, "the reserved context is released and the mode falls back" );
+		failName = NULL;
+		GLimp_Shutdown();
+		CheckReleased();
+	}
+
 	ResetFullscreen( "confirm-none-needed" );
 	CheckKept();
 	Check( promptLines == 0 && ticks == 0, "a trusted mode is not asked about" );
@@ -1266,8 +1286,8 @@ static void CheckRefresh( const char *name, int hz, int prompts ) {
 	keysTyped = "y";
 	CheckKept();
 	Check( glConfig.displayFrequency == hz, "the refresh is chosen and reported" );
-	Check( dspHeld == &dspDisplay || ( (int)( dspHeld->frequency >> 16 ) == hz || dspHeld->frequency == (unsigned long)hz ),
-		"that refresh is the context reserved" );
+	Check( (int)( dspHeldFrequency < 0x10000 ? dspHeldFrequency : dspHeldFrequency >> 16 ) == hz,
+		"that refresh is the one reserved" );
 	Check( promptLines == prompts, "only an untrusted refresh is asked about" );
 	GLimp_Shutdown();
 	CheckReleased();
