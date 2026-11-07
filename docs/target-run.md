@@ -145,16 +145,25 @@ error.
 
 Modes can be changed in the menus. `q3boot.log` lists the refresh rates the
 display offers for a mode and the one used, before the display changes. The game
-takes the fastest rate up to 85 Hz that DrawSprocket trusts. If it trusts none,
-the game takes the slowest, as the likeliest to be in range of the monitor. To
-ask for one, put `+set r_displayRefresh 85` in `MacQuake3Parms.txt`.
+takes the fastest rate up to 85 Hz that DrawSprocket trusts, or else the slowest
+trusted rate above that, without asking. If it trusts none, the game takes the
+slowest rate of at least 60 Hz, as the likeliest to be in range of the monitor,
+or the fastest below 60 Hz if that is all there is. To ask for one, put
+`+set r_displayRefresh 85` in `MacQuake3Parms.txt`.
 
 If DrawSprocket doesn't trust the mode, the game asks whether you can read a
 prompt. Press Y to keep the mode, and it is not asked again. N, Escape or
 15 seconds without a Y put the display back and fall back to 640x480x16, so if
 the monitor loses sync, wait, and don't press Y blind. A Radeon 9200 with a CRT
 did this at 1024x768, and before this prompt the game could stay out of range.
+
+The fallback isn't asked about, as nothing is left to go back to, and it ignores
+`r_displayRefresh`. If it is out of range as well, the prompt can't help: restart
+the Mac and set a mode from `MacQuake3Parms.txt`.
+
 `+set r_displayConfirm 1` asks about every mode, which is how to test the prompt.
+The mode in `r_displayConfirmed` is still not asked about, so clear that cvar or
+start with `safe` to see the prompt for a mode already confirmed.
 
 ### 3. Mouse and keyboard
 

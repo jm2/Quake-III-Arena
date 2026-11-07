@@ -108,9 +108,10 @@ static int GLimp_ContextHz( const DSpContextAttributes *attributes ) {
 =====================
 GLimp_RankContext
 
-Higher is better, and always above zero. r_displayRefresh wins if it is offered.
-Otherwise take the fastest refresh DrawSprocket trusts. Of those it doesn't,
-the slowest is the likeliest to be in range of the monitor
+Higher is better, and always above zero. r_displayRefresh wins if it is offered,
+except in the fallback, which is never asked about, so a bad value can't strand
+the player. Otherwise take the fastest refresh DrawSprocket trusts. Of those it
+doesn't, the slowest is the likeliest to be in range of the monitor
 =====================
 */
 static int GLimp_RankContext( const DSpContextAttributes *attributes ) {
@@ -126,7 +127,7 @@ static int GLimp_RankContext( const DSpContextAttributes *attributes ) {
 	} else {
 		rank = 3000;
 	}
-	if ( r_displayRefresh->integer && hz == r_displayRefresh->integer ) {
+	if ( !glimp_lastResort && r_displayRefresh->integer && hz == r_displayRefresh->integer ) {
 		rank += 10000;
 	}
 	return rank;
@@ -179,7 +180,8 @@ static DSpContextReference GLimp_PickContext( DSpContextReference found, unsigne
 		}
 	}
 
-	if ( r_displayRefresh->integer && GLimp_ContextHz( picked ) != r_displayRefresh->integer ) {
+	if ( !glimp_lastResort && r_displayRefresh->integer
+		&& GLimp_ContextHz( picked ) != r_displayRefresh->integer ) {
 		ri.Printf( PRINT_ALL, "...r_displayRefresh %i is not offered for this mode\n",
 			r_displayRefresh->integer );
 	}

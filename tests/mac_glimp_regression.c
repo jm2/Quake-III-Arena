@@ -1329,6 +1329,23 @@ static void TestRefresh( void ) {
 	CvarSet( "r_displayRefresh", "85" );
 	CheckRefresh( "refresh-asked-for", 85, 2 );
 
+	/* a refresh the monitor can't show is refused, and the fallback, which
+	 * can't ask, must not use it too */
+	ResetFullscreen( "refresh-asked-for-refused" );
+	AddMode( 120, 1 ); AddMode( 60, 1 );
+	dspModes[0].width = dspModes[1].width = 640;
+	dspModes[0].height = dspModes[1].height = 480;
+	AddMode( 120, 1 ); AddMode( 60, 1 );
+	CvarSet( "r_displayRefresh", "120" );
+	dspDisplay.frequency = 120 << 16;
+	dspDisplay.mustConfirm = 1;
+	Check( Init(), "GLimp_Init survives a refused refresh" );
+	CheckLive();
+	Check( r_mode->integer == 3 && promptLines == 2, "only the refresh asked for was asked about" );
+	Check( glConfig.displayFrequency == 60, "the fallback ignores r_displayRefresh" );
+	GLimp_Shutdown();
+	CheckReleased();
+
 	ResetFullscreen( "refresh-not-offered" );
 	AddMode( 60, 0 ); AddMode( 75, 0 );
 	CvarSet( "r_displayRefresh", "85" );
