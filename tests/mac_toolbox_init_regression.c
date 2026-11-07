@@ -351,11 +351,12 @@ void QDECL Com_Printf( const char *fmt, ... ) {
 static qboolean	consoleDisplayed;	/* mac_console.c's */
 
 /* The boot log (mac_bootlog.c has its own regression). */
-static void Sys_StartBootLog( const char *commandLine ) { Event( "Sys_StartBootLog" ); }
+static void Sys_StartBootLog( void ) { Event( "Sys_StartBootLog" ); }
 static void Sys_Heartbeat( void ) { }
 void Sys_BootLogFlush( void ) { Event( "Sys_BootLogFlush" ); }
 void Sys_BootLogClose( void ) { Event( "Sys_BootLogClose" ); }
 void Sys_InstallCrashHandler( void ) { Event( "Sys_InstallCrashHandler" ); }
+void Sys_RemoveCrashHandler( void ) { Event( "Sys_RemoveCrashHandler" ); }
 
 /* mac_glimp.c's, which tests/mac_glimp_regression.c covers */
 void GLimp_ReleaseDisplay( void ) {
@@ -509,6 +510,11 @@ static void CheckGetKeysAfterToolbox( void ) {
 		"the boot log is running before Com_Init can freeze" );
 	Check( EventIndex( "Sys_InstallCrashHandler" ) >= 0 && EventIndex( "Sys_InstallCrashHandler" ) < EventIndex( "Com_Init" ),
 		"crashes are caught from before Com_Init" );
+	/* a real G4 froze here and left no log: GetKeys starts the parameters */
+	Check( EventIndex( "Sys_StartBootLog" ) < EventIndex( "GetKeys" ),
+		"the boot log is running before the parameters are read" );
+	Check( EventIndex( "Sys_InstallCrashHandler" ) < EventIndex( "GetKeys" ),
+		"crashes are caught from before the parameters are read" );
 }
 
 int main( int argc, char **argv ) {
@@ -544,6 +550,19 @@ int main( int argc, char **argv ) {
 	Check( !windowOpen, "no console window with a parameters file" );
 	Check( !strcmp( comInitCommandLine, "+set fs_game mymod\nsafe\n" ), "the file reaches Com_Init" );
 	Check( strstr( ring, "main: startup parameters read from" ) != NULL, "the crash ring has the file's path" );
+
+	/* the log and crash handler start before the file, which can turn them off */
+	Check( EventIndex( "Sys_BootLogClose" ) < 0 && EventIndex( "Sys_RemoveCrashHandler" ) < 0,
+		"the log and crash handler stay on by default" );
+	result = RunMain( "log and crash handler off", 0, NULL,
+		"+set sys_bootlog 0\r+set sys_crashhandler 0\r", 0 );
+	Check( result == -1, "Com_Init is reached" );
+	CheckGetKeysAfterToolbox();
+	Check( EventIndex( "Sys_BootLogClose" ) >= 0 && EventIndex( "Sys_BootLogClose" ) < EventIndex( "Com_Init" ),
+		"sys_bootlog 0 closes the log before Com_Init" );
+	Check( EventIndex( "Sys_RemoveCrashHandler" ) >= 0
+		&& EventIndex( "Sys_RemoveCrashHandler" ) < EventIndex( "Com_Init" ),
+		"sys_crashhandler 0 removes the handler before Com_Init" );
 
 	/* viewlog 1 opens the window when Com_Init shows the console */
 	result = RunMain( "viewlog 1", 0, NULL, NULL, 1 );

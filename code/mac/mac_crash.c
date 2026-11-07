@@ -258,3 +258,15 @@ void Sys_InstallCrashHandler( void ) {
 	stackLow = (UInt32)(uintptr_t)GetApplLimit();
 	InstallExceptionHandler( Sys_CrashHandler );
 }
+
+/*
+=================
+Sys_RemoveCrashHandler
+
+For "+set sys_crashhandler 0", once the parameters are read: back to the
+system's handling, so a fault stops in MacsBug.
+=================
+*/
+void Sys_RemoveCrashHandler( void ) {
+	InstallExceptionHandler( NULL );
+}

@@ -239,8 +239,15 @@ static void NoMemoryRecord( void ) {
 	Check( !strstr( logText, "fault address" ), "nor a missing one, or a previous fault's" );
 }
 
+static void Removes( void ) {
+	Sys_RemoveCrashHandler();
+	Check( installed == NULL, "sys_crashhandler 0 leaves no handler" );
+	Install();
+}
+
 int main( void ) {
 	Install();
+	Removes();
 	Passes();
 	Resumes();
 	Reports();
