@@ -921,7 +921,7 @@ so another fallback can be tried
 qboolean GLimp_SetMode( void ) {
 	GLint     	value;
 	GLint		attrib[64];
-	int			i;
+	int			i, stencilAttrib;
 
 	Sys_LogPrintf("DEBUG: GLimp_SetMode: Starting\n");
 
@@ -972,6 +972,7 @@ qboolean GLimp_SetMode( void ) {
 	}
 	
 	attrib[i++] = AGL_STENCIL_SIZE;
+	stencilAttrib = i;
 	if ( r_stencilbits->integer ) {
 		attrib[i++] = r_stencilbits->integer;		
 	} else {
@@ -994,6 +995,15 @@ qboolean GLimp_SetMode( void ) {
 		ri.Cvar_Set( "r_device", "0" );
 	}
 	sys_gl.fmt = aglChoosePixelFormat( &sys_gl.devices[ r_device->integer ], 1, attrib);
+	if ( !sys_gl.fmt && attrib[stencilAttrib] ) {
+		// r_stencilbits defaults to 8, which ATI's drivers can refuse. Only
+		// cg_shadows 2 uses it, so don't lose the mode over it; glConfig
+		// says what was got, as on win32
+		ri.Printf( PRINT_ALL, "...no pixel format with stencil, trying without\n" );
+		aglGetError();
+		attrib[stencilAttrib] = 0;
+		sys_gl.fmt = aglChoosePixelFormat( &sys_gl.devices[ r_device->integer ], 1, attrib);
+	}
 	if(!sys_gl.fmt) {
 		Sys_LogPrintf("DEBUG: GLimp_SetMode: aglChoosePixelFormat FAILED\n");
 		ri.Printf( PRINT_ALL, "GLimp_Init: Pixel format could not be achieved\n");

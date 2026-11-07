@@ -743,7 +743,7 @@ static GLint		pfRGBA, pfRed, pfGreen, pfBlue, pfDepth, pfStencil;
 static int			pfChosen;
 /* an accelerator that has only 16-bit (5/5/5) formats, and one that
  * can't draw into a window on the desktop (an 8-bit one, say) */
-static int			only16Bit, noWindowedGL;
+static int			only16Bit, noWindowedGL, noStencil;
 
 void aglGetVersion( GLint *major, GLint *minor ) {
 	*major = 2;
@@ -775,7 +775,8 @@ AGLPixelFormat aglChoosePixelFormat( const AGLDevice *gdevs, GLint ndev, const G
 	}
 	pfChosen++;
 	if ( Fail( "aglChoosePixelFormat" )
-		|| ( only16Bit && pfRed > 5 ) || ( noWindowedGL && !dspDisplay.active ) ) {
+		|| ( only16Bit && pfRed > 5 ) || ( noWindowedGL && !dspDisplay.active )
+		|| ( noStencil && pfStencil > 0 ) ) {
 		aglError = AGL_BAD_ALLOC;
 		return NULL;
 	}
@@ -947,6 +948,7 @@ static void ResetAll( void ) {
 	fatalErrors = 0;
 	aglError = AGL_NO_ERROR;
 	only16Bit = 0;
+	noStencil = 0;
 	noWindowedGL = 0;
 	pfChosen = 0;
 	glExtensions = "GL_ARB_multitexture GL_EXT_texture_env_add";
@@ -1267,6 +1269,37 @@ static void CheckRefresh( const char *name, int hz, int prompts ) {
 	Check( dspHeld == &dspDisplay || ( (int)( dspHeld->frequency >> 16 ) == hz || dspHeld->frequency == (unsigned long)hz ),
 		"that refresh is the context reserved" );
 	Check( promptLines == prompts, "only an untrusted refresh is asked about" );
+	GLimp_Shutdown();
+	CheckReleased();
+}
+
+/* r_stencilbits defaults to 8 and a Radeon refuses it: the mode the player
+ * just confirmed must not go to the fallback over that */
+static void TestStencil( void ) {
+	ResetFullscreen( "stencil-refused" );
+	noStencil = 1;
+	CvarSet( "r_stencilbits", "8" );
+	CheckKept();
+	Check( pfChosen == 2 && pfStencil == 0, "the format is asked for again without stencil" );
+	Check( r_stencilbits->integer == 8, "the cvar is left alone" );
+	GLimp_Shutdown();
+	CheckReleased();
+
+	ResetFullscreen( "stencil-offered" );
+	CvarSet( "r_stencilbits", "8" );
+	CheckKept();
+	Check( pfChosen == 1 && pfStencil == 8, "stencil is used where it is offered" );
+	GLimp_Shutdown();
+	CheckReleased();
+
+	/* with nothing to drop, a failure still reaches the fallback */
+	ResetFullscreen( "stencil-none-to-drop" );
+	noStencil = 1;
+	only16Bit = 1;
+	CvarSet( "r_stencilbits", "0" );
+	Check( Init(), "GLimp_Init survives" );
+	CheckLive();
+	Check( pfChosen == 2 && r_mode->integer == 3, "the mode falls back as before" );
 	GLimp_Shutdown();
 	CheckReleased();
 }
@@ -1679,6 +1712,7 @@ int main( void ) {
 	TestBadMode();
 	TestConfirmSwitch();
 	TestRefresh();
+	TestStencil();
 	TestFastPaths();
 	TestFaults();
 	TestFullscreenConfig();
