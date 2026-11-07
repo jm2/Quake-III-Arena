@@ -74,7 +74,9 @@ which run a log is from.
 
 Every line is a disk write, which slows startup and map loads a little, and a
 warning printed every frame would slow the game. `+set sys_bootlog 0` turns the
-log off, if it is ever in doubt.
+log off, if it is ever in doubt. It takes effect once the parameters are read, as
+the log starts before them, so the last launch's log still moves to
+`q3boot.prev.log`.
 
 ## Stages
 

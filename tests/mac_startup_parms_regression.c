@@ -42,6 +42,20 @@ static char	*cmd_argv[MAX_STRING_TOKENS];
 static char	cmd_tokenized[BIG_INFO_STRING + MAX_STRING_TOKENS];
 static char	cmd_cmd[BIG_INFO_STRING];
 
+/* each step says what it is about to do, so a launch that stops here shows where */
+static char	progress[256];
+
+#undef Sys_LogPrintf	/* the Mac build has a real one (macintosh) */
+void Sys_LogPrintf( const char *fmt, ... );
+void Sys_LogPrintf( const char *fmt, ... ) {
+	size_t	length = strlen( progress );
+	va_list	args;
+
+	va_start( args, fmt );
+	vsnprintf( progress + length, sizeof( progress ) - length, fmt, args );
+	va_end( args );
+}
+
 #include "mac_startup_extracted.c"
 #include "com_command_line_extracted.c"
 #include "cmd_tokenize_extracted.c"
@@ -145,9 +159,21 @@ static void TestMissingAndEmpty( void ) {
 		&commandLength ) == 0, "a missing file is reported as absent" );
 	CheckCommandLine( "", 0 );
 
+	Check( strstr( progress, "parameters: opening" ) && strstr( progress, "parameters: no file" ),
+		"the log says a missing file was looked for" );
+
 	Reset( "empty file" );
+	progress[0] = 0;
 	Check( ReadFile( "empty.txt", "", 0 ) == 1, "an empty file is read" );
 	CheckCommandLine( "", 0 );
+	{
+		const char	*opening = strstr( progress, "parameters: opening" );
+		const char	*reading = strstr( progress, "parameters: reading" );
+		const char	*closing = strstr( progress, "parameters: read 0 bytes, closing" );
+
+		Check( opening && reading && closing && opening < reading && reading < closing,
+			"the log has each step of reading the file, in order" );
+	}
 	Check( !strcmp( ConsoleLines( NULL ), "" ), "an empty file gives no console lines" );
 
 	Reset( "blank lines" );
