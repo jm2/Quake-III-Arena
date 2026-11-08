@@ -192,18 +192,30 @@ static void Setup( void ) {
 }
 /** Retail download completion: one gamestate, the client enters the world; repeats stay single copies. */
 static void LegitimateFlow( qboolean mapChange ) {
-	client_t *cl = Connect( 1, 11 ); int before, gamestate;
+	client_t *cl = Connect( 1, 11 ); int before, gamestate, block, ack;
+	allowDownload.integer = 1; referencedPaks = DOWNLOAD_PAK;
 	InitialGamestate( cl ); Drain( cl );
-	before = cl->netchan.outgoingSequence;
-	Packet( cl, SERVER_ID, before - 1, "download maps.pk3", 1, qfalse );
-	Check( !strcmp( cl->downloadName, "maps.pk3" ), "download started" );
+	ack = cl->netchan.outgoingSequence - 1;
+	Packet( cl, SERVER_ID, ack, "download " DOWNLOAD_PAK ".pk3", 1, qfalse );
+	Check( !strcmp( cl->downloadName, DOWNLOAD_PAK ".pk3" ), "download started" );
 	if ( mapChange ) {
 		// SV_SpawnServer: the downloading client keeps its old serverId
 		sv.serverId = sv.restartedServerId = SERVER_ID + 1; cl->state = CS_CONNECTED;
 	}
-	Packet( cl, SERVER_ID, before - 1, "nextdl 0", 1, qfalse );
-	Check( !cl->downloadName[0] && cl->state != CS_ZOMBIE, "empty block acknowledged, download complete" );
-	Packet( cl, SERVER_ID, before - 1, "donedl", 1, qfalse );
+	// a block can only be acknowledged once the server has read it
+	Packet( cl, SERVER_ID, ack, "nextdl 0", 1, qfalse );
+	Check( cl->downloadClientBlock == 0 && cl->downloadName[0] && cl->state != CS_ZOMBIE,
+	       "an acknowledge ahead of the blocks read is ignored" );
+	// as CL_ParseDownload does: acknowledge each block, through the empty end-of-file block
+	for ( block = 0; cl->downloadName[0]; block++ ) {
+		Check( block <= DOWNLOAD_BYTES / MAX_DOWNLOAD_BLKSIZE, "download ends with its end-of-file block" );
+		SV_SendClientSnapshot( cl ); Drain( cl );
+		Packet( cl, SERVER_ID, ack, va( "nextdl %i", block ), 1, qfalse );
+		Check( cl->state != CS_ZOMBIE, "each block acknowledged in turn" );
+	}
+	Check( block == DOWNLOAD_BYTES / MAX_DOWNLOAD_BLKSIZE + 1 && !openFiles, "every block and the end of file acknowledged" );
+	before = cl->netchan.outgoingSequence;
+	Packet( cl, SERVER_ID, ack, "donedl", 1, qfalse );
 	Check( cl->state == CS_PRIMED && cl->gamestateMessageNum == before && cl->netchan.unsentFragments && !Queued( cl ),
 	       "donedl sends exactly one fragmented gamestate" );
 	Drain( cl ); gamestate = cl->netchan.outgoingSequence - 1;
@@ -290,6 +302,28 @@ static void MapRestartDuringDownload( void ) {
 	Packet( cl, sv.serverId, gamestate, NULL, 0, qtrue );
 	Check( cl->state == CS_ACTIVE && begins == 2 && !queueAllocs, "client enters the restarted map" );
 	puts( "download across a map_restart sends one gamestate" );
+}
+/** Acknowledges for blocks the server has not read are ignored, so a packet of chained nextdl cannot move the
+    window ahead and make SV_WriteDownloadToClient read the rest of the file in one frame. */
+static void ChainedNextdl( void ) {
+	client_t *cl = Connect( 1, 11 ); int block, ack, f;
+	allowDownload.integer = 1; referencedPaks = DOWNLOAD_PAK;
+	InitialGamestate( cl ); Drain( cl ); ack = cl->netchan.outgoingSequence - 1;
+	Packet( cl, SERVER_ID, ack, "download " DOWNLOAD_PAK ".pk3", 1, qfalse );
+	SV_SendClientSnapshot( cl ); Drain( cl );
+	Check( cl->downloadCurrentBlock == MAX_DOWNLOAD_WINDOW, "the first snapshot reads one window" );
+	for ( block = 0; block < DOWNLOAD_BYTES / MAX_DOWNLOAD_BLKSIZE; block++ ) {
+		Packet( cl, SERVER_ID, ack, va( "nextdl %i", block ), 1, qfalse );
+	}
+	Check( cl->downloadClientBlock == MAX_DOWNLOAD_WINDOW && cl->state != CS_ZOMBIE,
+	       "acknowledges stop at the last block read" );
+	for ( f = 1; f < MAX_FILE_HANDLES && !fileOpen[f]; f++ ) {}
+	SV_SendClientSnapshot( cl );
+	Check( f < MAX_FILE_HANDLES && filePos[f] <= 2 * MAX_DOWNLOAD_WINDOW * MAX_DOWNLOAD_BLKSIZE,
+	       "the next snapshot reads one more window, not the rest of the file" );
+	Packet( cl, SERVER_ID, ack, "nextdl 0", 1, qfalse );
+	Check( cl->state == CS_ZOMBIE, "an acknowledge for a block already acknowledged still drops the client" );
+	puts( "acknowledges past the blocks read are ignored" );
 }
 /** Every slot filled up to the per-client cap cannot queue more than the server-wide budget. */
 static void ManyClients( void ) {
@@ -464,7 +498,8 @@ int main( int argc, char **argv ) {
 	case 10: PinnedBudgetMapChange(); break;
 	case 11: PinnedBudgetDonedl(); break;
 	case 12: BudgetPlusFirstMessages(); break;
-	default: Check( 0, "usage: server-donedl-tests <0-12>" );
+	case 13: ChainedNextdl(); break;
+	default: Check( 0, "usage: server-donedl-tests <0-13>" );
 	}
 	return 0;
 }

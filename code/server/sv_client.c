@@ -945,6 +945,16 @@ void SV_NextDownload_f( client_t *cl )
 {
 	int block = atoi( Cmd_Argv(1) );
 
+	// Only a block the server has read can have been received. Acknowledging
+	// further ahead, which a packet of chained nextdl commands could, pushed
+	// downloadClientBlock past downloadCurrentBlock: the stale block sizes
+	// accepted every ack, and SV_WriteDownloadToClient then read every block
+	// up to the new window, megabytes in one frame. Such an ack is ignored,
+	// as is any nextdl with no download.
+	if ( !*cl->downloadName || block >= cl->downloadCurrentBlock ) {
+		return;
+	}
+
 	if (block == cl->downloadClientBlock) {
 		Com_DPrintf( "clientDownload: %d : client acknowledge of block %d\n", (int)(cl - svs.clients), block );
 
