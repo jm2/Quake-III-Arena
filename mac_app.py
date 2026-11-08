@@ -5,7 +5,6 @@ Retro68's Rez combines the MakePEF output (the data fork) with the compiled
 resources and writes the application in three host-independent containers:
 
   Name.bin              MacBinary: both forks and Finder info in one file
-  Name.dsk              HFS disk image holding the application
   Name.ad + %Name.ad    AppleDouble pair (data fork, then resource fork and
                         Finder info), the layout genisoimage -hfs -double reads
 

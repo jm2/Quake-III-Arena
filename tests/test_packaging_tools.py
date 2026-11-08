@@ -18,6 +18,7 @@ import create_appledouble
 import generate_icon_r
 import mac_app
 import macbinary_encode
+import ndif_image
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -697,6 +698,151 @@ class ClassicApplicationTests(unittest.TestCase):
                 status, _, stderr = run_mac_app(*argv)
                 self.assertEqual(status, 1)
                 self.assertIn("No such file", stderr)
+
+
+# The 'bcem' resource Disk Copy 6.3.3 wrote for its own 2.5 MB read/write
+# image named "Untitled", read back from the file it made under ClassicMac.
+DISK_COPY_BCEM_2_5_MB = bytes.fromhex(
+    "000a000008556e7469746c6564" + "00" * 55 + "00001400" + "00" * 52
+    + "00000002" "00000002" "00000000" "00280000" "001400ff" "00280000"
+    "00000000")
+
+
+class NdifImageTests(unittest.TestCase):
+    """Images Disk Copy 6.3.3 mounts without Toast."""
+
+    def write_volume(self, sectors):
+        temp_path = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        volume = temp_path / "Quake3_Install.img"
+        volume.write_bytes(bytes(range(256)) * (2 * sectors))
+        return volume, temp_path / "Quake3_Install.img.bin"
+
+    def test_one_chunk_matches_disk_copys_own_image(self):
+        self.assertEqual(len(DISK_COPY_BCEM_2_5_MB), 152)
+        self.assertEqual(ndif_image.bcem("Untitled", 5120, None),
+                         DISK_COPY_BCEM_2_5_MB)
+
+    def test_chunks_cover_the_volume_in_order(self):
+        sectors = 2 * ndif_image.CHUNK_SECTORS + 5
+        resource = ndif_image.bcem("Quake 3 Arena", sectors)
+
+        self.assertEqual(struct.unpack_from(">I", resource, 0x44)[0], sectors)
+        count = struct.unpack_from(">I", resource, 0x7C)[0]
+        self.assertEqual(count, 4)
+        self.assertEqual(len(resource), 0x80 + 12 * count)
+        expected_first = 0
+        for index in range(count):
+            entry = resource[0x80 + 12 * index:0x80 + 12 * (index + 1)]
+            first = int.from_bytes(entry[:3], "big")
+            kind = entry[3]
+            offset, length = struct.unpack(">II", entry[4:])
+            self.assertEqual(first, expected_first)
+            self.assertEqual(offset, first * 512)
+            if index == count - 1:
+                self.assertEqual((kind, length), (0xFF, 0))
+                self.assertEqual(first, sectors)
+            else:
+                self.assertEqual(kind, 2)
+                expected_first += length // 512
+        self.assertEqual(expected_first, sectors)
+
+    def test_image_keeps_the_volume_and_is_typed_for_disk_copy(self):
+        volume, output = self.write_volume(ndif_image.CHUNK_SECTORS + 1)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(ndif_image.main(
+                [str(volume), str(output), "Quake 3 Arena"]), 0)
+
+        image = mac_app.read_macbinary(str(output))
+        self.assertEqual(image.name, "Quake3_Install.img")
+        self.assertEqual((image.file_type, image.creator), (b"dimg", b"ddsk"))
+        self.assertEqual(image.data, volume.read_bytes())
+        resources = mac_app.parse_resource_fork(image.resource_fork)
+        self.assertEqual(sorted(resources), ["STR ", "bcem"])
+        name, body = resources["bcem"][128]
+        self.assertEqual(name, "Quake 3 Arena")
+        self.assertEqual(body, ndif_image.bcem(
+            "Quake 3 Arena", ndif_image.CHUNK_SECTORS + 1))
+        self.assertEqual(resources["STR "][-16396], (None, b"\x09Disk Copy"))
+
+    def test_refuses_what_disk_copy_could_not_describe(self):
+        volume, output = self.write_volume(1)
+        cases = {
+            "not whole sectors": (lambda: volume.write_bytes(b"x" * 513),
+                                  "Quake 3 Arena", "whole number"),
+            "empty": (lambda: volume.write_bytes(b""), "Quake 3 Arena",
+                      "whole number"),
+            "long name": (lambda: volume.write_bytes(bytes(512)), "x" * 28,
+                          "1 to 27 bytes"),
+            "colon": (lambda: volume.write_bytes(bytes(512)), "a:b", "':'"),
+        }
+        for label, (prepare, name, message) in cases.items():
+            with self.subTest(label):
+                prepare()
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    status = ndif_image.main([str(volume), str(output), name])
+                self.assertEqual(status, 1)
+                self.assertIn(message, stderr.getvalue())
+                self.assertFalse(output.exists())
+        # the end marker's offset, sectors * 512, must fit in 32 bits
+        ndif_image.bcem("Quake 3 Arena", (1 << 23) - 1)
+        with self.assertRaisesRegex(ValueError, "4 GiB"):
+            ndif_image.bcem("Quake 3 Arena", 1 << 23)
+
+    def test_failed_encode_leaves_no_image(self):
+        volume, output = self.write_volume(4)
+        output.write_bytes(b"previous image")
+
+        def half_written(source, destination, *args):
+            Path(destination).write_bytes(b"truncated")
+            raise OSError(28, "No space left on device")
+
+        with mock.patch.object(macbinary_encode, "encode_macbinary", half_written):
+            with self.assertRaises(OSError):
+                ndif_image.write_image(str(volume), str(output), "Quake 3 Arena")
+
+        self.assertEqual(output.read_bytes(), b"previous image")
+        self.assertEqual(sorted(p.name for p in output.parent.iterdir()),
+                         sorted([output.name, volume.name]))
+
+    def test_resource_fork_layout_is_exact(self):
+        fork = ndif_image.ndif_resource_fork("Quake 3 Arena", 2960)
+        data_offset, map_offset, data_length, map_length = struct.unpack_from(
+            ">IIII", fork, 0)
+        self.assertEqual(data_offset, 256)
+        self.assertEqual(map_offset, data_offset + data_length)
+        self.assertEqual(len(fork), map_offset + map_length)
+        # the map starts with a copy of the header
+        self.assertEqual(fork[map_offset:map_offset + 16], fork[:16])
+        type_list, name_list = struct.unpack_from(">HH", fork, map_offset + 24)
+        self.assertEqual(type_list, 28)
+        names = fork[map_offset + name_list:]
+        self.assertEqual(names, bytes([13]) + b"Quake 3 Arena")
+
+    def test_package_mode_writes_the_ndif_image(self):
+        root = Path(__file__).resolve().parent.parent
+        shell = (root / "build_mac.sh").read_text()
+        powershell = (root / "build_mac.ps1").read_text()
+        self.assertIn('python3 ndif_image.py "$IMAGE_NAME" "$BIN_NAME" "Quake 3 Arena"',
+                      shell)
+        self.assertIn('python ndif_image.py $ImageName $BinName "Quake 3 Arena"',
+                      powershell)
+        for label, script in (("build_mac.sh", shell), ("build_mac.ps1", powershell)):
+            with self.subTest(label):
+                self.assertNotIn('"iso " "dCpy"', script)
+                self.assertNotIn(".dsk", script)
+        # an earlier run's outputs go before anything can fail: ahead of the
+        # data search, which is the first step that can stop the run
+        shell_cleanup = shell.index('"$RELEASE_ROOT/Quake3_Install.img.bin"')
+        self.assertLess(shell_cleanup, shell.index("PAK0_PATH=$(find"))
+        self.assertLess(
+            shell.index('rm -f "$RELEASE_ROOT/$app.bin" "$RELEASE_ROOT/$app.manifest.txt"'),
+            shell.index("PAK0_PATH=$(find"))
+        powershell_cleanup = powershell.index('foreach ($Stale in "Quake3_Install.img.bin"')
+        self.assertLess(powershell_cleanup, powershell.index("Checking for assets"))
+        self.assertIn('"Quake3_TeamArena.bin", "Quake3_TeamArena.manifest.txt"',
+                      powershell[powershell_cleanup:powershell_cleanup + 400])
 
 
 if __name__ == "__main__":

@@ -697,7 +697,7 @@ apps=Quake3
 grep -q '^BUILD_TEAM_ARENA:BOOL=ON$' CMakeCache.txt && apps="Quake3 Quake3_TeamArena"
 for app in $apps; do
     { printf 'Joy!peffpwpc'; head -c 1048576 /dev/zero; } > "$app.pef"
-    for container in "$app.bin" "$app.dsk" "$app.ad" "%$app.ad"; do echo stub > "$container"; done
+    for container in "$app.bin" "$app.ad" "%$app.ad"; do echo stub > "$container"; done
     if command -v sha256sum > /dev/null 2>&1; then sha=$(sha256sum < "$app.pef")
     else sha=$(shasum -a 256 < "$app.pef"); fi
     sha="${sha%% *}"
@@ -722,7 +722,7 @@ run_build "$ROOT"
 expect "build_mac.sh completes a build whose manifest hashes the PEF" 0 \
     "PEF validation OK: Quake3.pef" "Build complete."
 check "build_mac.sh verified the application with mac_app.py" \
-    grep -q "mac_app.py verify --pef Quake3.pef Quake3.bin Quake3.dsk %Quake3.ad" "$ROOT/python.called"
+    grep -q "mac_app.py verify --pef Quake3.pef Quake3.bin %Quake3.ad" "$ROOT/python.called"
 
 # Issue #406: the manifest must record this PEF's SHA-256.
 for Q3_MODE in wrong none; do

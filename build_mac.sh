@@ -6,11 +6,12 @@ usage() {
 Usage: $(basename "$0") [package|--package] [--base-only|--team-arena] [--bringup] [-h|--help]
 
   (no args)            Configure, build, and validate the launchable Quake3
-                       application: build_mac/Quake3.bin (MacBinary),
-                       Quake3.dsk (HFS image) and Quake3.ad + %Quake3.ad
-                       (AppleDouble). No game data is needed.
-  package, --package   Build, then add retail game data and assemble a
-                       Mac OS 9 install image (.img.bin) under release_mac/.
+                       application: build_mac/Quake3.bin (MacBinary) and
+                       Quake3.ad + %Quake3.ad (AppleDouble). No game data is
+                       needed.
+  package, --package   Build, then add retail game data and write a Disk Copy
+                       install image (Quake3_Install.img.bin) and the bare
+                       application(s) under release_mac/.
   --base-only          Build only Quake3 (the default).
   --team-arena         Build Quake3 and Quake3_TeamArena.
   --bringup            Build at -O0 instead of the optimized default.
@@ -296,7 +297,7 @@ fi
 for app in $APPLICATIONS; do
     validate_pef "$app.pef" || exit 1
     python3 ../mac_app.py verify --pef "$app.pef" \
-        "$app.bin" "$app.dsk" "%$app.ad" || exit 1
+        "$app.bin" "%$app.ad" || exit 1
     # The PEF's SHA-256 and the toolchain that built it (issue #227). A
     # manifest that does not hash this PEF describes another build (#406).
     if [ ! -s "$app.manifest.txt" ]; then
@@ -314,8 +315,7 @@ done
 
 echo "Build complete. Launchable Classic application(s) in build_mac/:"
 for app in $APPLICATIONS; do
-    echo "  $app.bin (MacBinary), $app.dsk (HFS disk image),"
-    echo "  $app.ad + %$app.ad (AppleDouble)"
+    echo "  $app.bin (MacBinary), $app.ad + %$app.ad (AppleDouble)"
     echo "  $app.manifest.txt (PEF SHA-256 and Retro68 toolchain):"
     sed -n -E 's/^(pef_sha256|gcc_version|retro68_commit|retro68_pinned)=/    &/p' "$app.manifest.txt"
 done
@@ -336,11 +336,19 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
     RELEASE_ROOT="release_mac"
     CONTENT_DIR="$RELEASE_ROOT/content"
     TEMP_DIR="$RELEASE_ROOT/temp"
-    BIN_CONTENT_DIR="$RELEASE_ROOT/bin_content"
     
     # These are generated staging trees. Reusing them can silently package
-    # binaries or assets left by a different CMake configuration.
-    rm -rf "$CONTENT_DIR" "$TEMP_DIR" "$BIN_CONTENT_DIR"
+    # binaries or assets left by a different CMake configuration. The
+    # binaries-only image and its staging tree are gone; remove what an older
+    # package run left so release_mac/ holds only this run's outputs.
+    rm -rf "$CONTENT_DIR" "$TEMP_DIR" "$RELEASE_ROOT/bin_content"
+    rm -f "$RELEASE_ROOT/Quake3_Bin.img" "$RELEASE_ROOT/Quake3_Bin.img.bin" \
+        "$RELEASE_ROOT/Quake3_Install.img.bin"
+    # A Team Arena package followed by a base-only one must not leave the old
+    # Team Arena application beside the new Quake3.
+    for app in Quake3 Quake3_TeamArena; do
+        rm -f "$RELEASE_ROOT/$app.bin" "$RELEASE_ROOT/$app.manifest.txt"
+    done
     mkdir -p "$CONTENT_DIR/Quake 3 Arena/baseq3"
     mkdir -p "$TEMP_DIR"
     chmod -R u+w "$RELEASE_ROOT" 2>/dev/null || true # Ensure we can overwrite
@@ -519,46 +527,22 @@ EOF
     verify_image_applications "$IMAGE_NAME"
     echo "HFS Image created: $IMAGE_NAME"
     
-    # MacBinary Encode
-    # Type: 'iso ' (ISO Image), Creator: dCpy (Disk Copy)
-    # This matches the hybrid format and should allow generic mounting.
-    echo "Encoding as MacBinary II..."
+    # Disk Copy 6.3.3, which Mac OS 9 ships, mounts only its own formats: it
+    # refuses this volume bare, whatever the file's type ('iso ' is not even
+    # listed). ndif_image.py adds the 'bcem' resource that makes the unchanged
+    # volume a read/write NDIF image, typed dimg/ddsk, so a double-click mounts
+    # it without Toast.
+    echo "Encoding as a Disk Copy image in MacBinary II..."
     BIN_NAME="$RELEASE_ROOT/Quake3_Install.img.bin"
-    python3 macbinary_encode.py "$IMAGE_NAME" "$BIN_NAME" "iso " "dCpy"
-    
-    # ---------------------------------------------------------
-    # Create Binary-Only Image (for faster deployment/testing)
-    # ---------------------------------------------------------
-    echo "Creating Binaries-Only Image..."
-    BIN_IMG_NAME="$RELEASE_ROOT/Quake3_Bin.img"
-    mkdir -p "$BIN_CONTENT_DIR"
-    
+    python3 ndif_image.py "$IMAGE_NAME" "$BIN_NAME" "Quake 3 Arena"
+
+    # The bare applications, for redeploying after a rebuild: one file each,
+    # and the folder's baseq3, config and logs stay as they are.
     for app in $APPLICATIONS; do
-        stage_application "$app" "$BIN_CONTENT_DIR"
+        cp "build_mac/$app.bin" "build_mac/$app.manifest.txt" "$RELEASE_ROOT/"
+        echo "Application copied: $RELEASE_ROOT/$app.bin"
     done
 
-    
-    if [[ "$MKISOFS" != "hdiutil" ]]; then
-         $MKISOFS -hfs -double -map "$MAPPING_FILE" -o "$BIN_IMG_NAME" -V "Quake 3 Binaries" "$BIN_CONTENT_DIR"
-    else
-         # Same HFS-only hybrid as the install image; -joliet -iso would
-         # reintroduce the dual-volume mount.
-         hdiutil makehybrid -o "$BIN_IMG_NAME" -hfs -default-volume-name "Quake 3 Binaries" "$BIN_CONTENT_DIR"
-         if [ -f "${BIN_IMG_NAME}.iso" ]; then
-             mv "${BIN_IMG_NAME}.iso" "$BIN_IMG_NAME"
-         elif [ -f "${BIN_IMG_NAME}.dmg" ]; then
-             mv "${BIN_IMG_NAME}.dmg" "$BIN_IMG_NAME"
-         fi
-    fi
-    
-    if [ -f "$BIN_IMG_NAME" ]; then
-         verify_image_applications "$BIN_IMG_NAME"
-         echo "Encoding Binaries Image..."
-         python3 macbinary_encode.py "$BIN_IMG_NAME" "${BIN_IMG_NAME}.bin" "iso " "dCpy"
-         echo "Package created: ${BIN_IMG_NAME}.bin"
-         rm -f "$BIN_IMG_NAME"
-    fi
-    
     if [ -f "$BIN_NAME" ]; then
         echo "Package created: $BIN_NAME"
         rm -f "$IMAGE_NAME"
