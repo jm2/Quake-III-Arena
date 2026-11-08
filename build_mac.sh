@@ -111,7 +111,7 @@ function download_file() {
 
     if command -v curl &> /dev/null; then
         echo "Downloading $url using curl..."
-        curl -L --progress-bar -o "$output" "$url"
+        curl -fL --progress-bar -o "$output" "$url"
     elif command -v wget &> /dev/null; then
         echo "Downloading $url using wget..."
         wget -q --show-progress -O "$output" "$url"

@@ -283,11 +283,12 @@ Territory's 279 MB image, built the same way as this one. Copying the folder
 off it gave identical files, and the game ran from the copy. The old images
 needed Toast.
 
-Asset discovery is still provisional: it selects the first matching retail
-tree and remote update inputs are not pinned by digest. Do not publish an
-artifact until [#22](https://github.com/jm2/Quake-III-Arena/issues/22) and
+Packaging refuses more than one candidate retail tree and pins the point
+release download by SHA-256, but the retail paks it finds locally are not yet
+checked against known digests. Do not publish an artifact until
+[#22](https://github.com/jm2/Quake-III-Arena/issues/22) and
 [#23](https://github.com/jm2/Quake-III-Arena/issues/23) are resolved and the
-mounted image boots on Mac OS 9.
+mounted image boots on Mac OS 9 hardware.
 
 ## Startup parameters
 

@@ -370,6 +370,7 @@ if ($PackageMode) {
     function Find-RetailPak0([string]$GameDir) {
         $Found = @(Get-ChildItem -Path . -Filter "pak0.pk3" -Recurse -File -ErrorAction SilentlyContinue |
             Where-Object { $_.Directory.Name -eq $GameDir -and
+                           $_.LinkType -ne "SymbolicLink" -and
                            ($_.FullName -split '[\\/]') -notcontains "release_mac" })
         if ($Found.Count -gt 1) {
             throw ("More than one $GameDir\pak0.pk3 was found; leave only the one to package:`n    " +
@@ -383,6 +384,7 @@ if ($PackageMode) {
     if ($LocalPak) {
         Write-Host "Found Base Game Data at $($LocalPak.FullName)"
         Get-ChildItem -Path $LocalPak.Directory.FullName -Filter "pak*.pk3" -File |
+            Where-Object { $_.LinkType -ne "SymbolicLink" } |
             Copy-Item -Destination $BaseQ3Dir -Force
         
         if ($BuildTeamArena) {
@@ -392,6 +394,7 @@ if ($PackageMode) {
             Write-Host "Found Team Arena Data at $($MissionPak.FullName)"
             if (-not (Test-Path $MissionPackDir)) { New-Item -ItemType Directory -Path $MissionPackDir -Force | Out-Null }
             Get-ChildItem -Path $MissionPak.Directory.FullName -Filter "pak*.pk3" -File |
+                Where-Object { $_.LinkType -ne "SymbolicLink" } |
                 Copy-Item -Destination $MissionPackDir -Force
         }
 
