@@ -180,8 +180,11 @@ static int Active( int host ) {
 	Check( !cl->netchan.unsentFragments && !Queued( slot ), "snapshot went out whole" );
 	return slot;
 }
-/** A client acknowledging everything asks for gamestate copies (#271); behind a fragment train they queue. */
+/** A client acknowledging everything asks for gamestate copies (#271); behind a fragment train they queue.
+    An active client's donedl is ignored, so the client asks while still loading (CS_PRIMED), as the first
+    copy leaves it anyway. */
 static void Donedl( int slot, int count ) {
+	svs.clients[slot].state = CS_PRIMED;
 	Packet( &svs.clients[slot], sv.serverId, FORGED_ACK, "donedl", count, qfalse );
 }
 /** SV_SpawnServer with a latched sv_maxclients: resize the client array, then restart the level. */
