@@ -1549,48 +1549,52 @@ static void Sys_Heartbeat( void ) {
 ==================
 Sys_MaskStartupSecrets
 
-Overwrites, in the NUL-terminated line, the value after any word naming a
-password cvar (rconpassword, g_password, sv_privatePassword, ...) with '*'.
-The startup command line goes to q3boot.log and the crash report, which
-people attach to bug reports. A quoted value keeps its quotes.
+Overwrites, in the NUL-terminated line, what follows any word naming a
+password cvar (rconpassword, g_password, sv_privatePassword, ...) up to the
+end of its console line with '*': "set" takes every remaining word as the
+value. Console lines end where Com_ParseCommandLine splits them, at a line
+break or a '+' outside quotes. Quotes and spaces are kept. The startup
+command line goes to q3boot.log and the crash report, which people attach
+to bug reports.
 ==================
 */
 static void Sys_MaskStartupSecrets( char *line ) {
 	char		*p;
 	char		*word;
-	qboolean	maskNext;
-	qboolean	quoted;
+	qboolean	inQuote;
+	qboolean	masking;
 
-	maskNext = qfalse;
+	inQuote = qfalse;
+	masking = qfalse;
 	p = line;
 	while ( *p ) {
-		while ( *p && ( (unsigned char)*p <= ' ' || *p == '+' ) ) {
+		if ( *p == '\n' || *p == '\r' || ( *p == '+' && !inQuote ) ) {
+			masking = qfalse;
 			p++;
+			continue;
 		}
-		if ( !*p ) {
-			break;
-		}
-		quoted = ( *p == '"' );
-		if ( quoted ) {
+		if ( *p == '"' ) {
+			inQuote = !inQuote;
 			p++;
+			continue;
+		}
+		if ( (unsigned char)*p <= ' ' ) {
+			p++;
+			continue;
+		}
+		if ( masking ) {
+			*p++ = '*';
+			continue;
 		}
 		word = p;
-		while ( *p && ( quoted ? *p != '"' : (unsigned char)*p > ' ' ) ) {
+		while ( (unsigned char)*p > ' ' && *p != '"' && !( *p == '+' && !inQuote ) ) {
 			p++;
 		}
-		if ( maskNext ) {
-			memset( word, '*', p - word );
-			maskNext = qfalse;
-		} else {
-			for ( ; word + 8 <= p ; word++ ) {
-				if ( !Q_stricmpn( word, "password", 8 ) ) {
-					maskNext = qtrue;
-					break;
-				}
+		for ( ; word + 8 <= p ; word++ ) {
+			if ( !Q_stricmpn( word, "password", 8 ) ) {
+				masking = qtrue;
+				break;
 			}
-		}
-		if ( quoted && *p ) {
-			p++;
 		}
 	}
 }

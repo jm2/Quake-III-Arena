@@ -365,7 +365,15 @@ static void TestMaskSecrets( void ) {
 	static const char *cases[][2] = {
 		{ "+set rconpassword hunter2 +map q3dm1", "+set rconpassword ******* +map q3dm1" },
 		{ "+set g_password \"two words\"\n+set sv_hostname Mine",
-		  "+set g_password \"*********\"\n+set sv_hostname Mine" },
+		  "+set g_password \"*** *****\"\n+set sv_hostname Mine" },
+		/* "set" takes every remaining word as the value */
+		{ "+set g_password my secret phrase +map q3dm1", "+set g_password ** ****** ****** +map q3dm1" },
+		{ "set rconpassword a b\r\nmap q3dm1", "set rconpassword * *\r\nmap q3dm1" },
+		/* a line break ends the console line even inside an open quote, as in Com_ParseCommandLine */
+		{ "+set rconpassword \"abc\n+map q3dm1\n+set sv_hostname Foo",
+		  "+set rconpassword \"***\n+map q3dm1\n+set sv_hostname Foo" },
+		/* a quoted '+' does not end the value */
+		{ "+set g_password \"a+b\" +map q3dm1", "+set g_password \"***\" +map q3dm1" },
 		{ "+sv_privatePassword x +RCONPASSWORD s3cret", "+sv_privatePassword * +RCONPASSWORD ******" },
 		{ "safe\n+seta cl_password abc", "safe\n+seta cl_password ***" },
 		{ "+set rconpassword", "+set rconpassword" },
