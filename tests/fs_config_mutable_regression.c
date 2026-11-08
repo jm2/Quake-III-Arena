@@ -254,6 +254,51 @@ static void Renames(void) {
           "trusted download finalisation still produces the pk3");
 }
 
+/* The CD key: after start-up nothing reads it by name, in any letter case
+ * (the runner also leaves a "Q3KEY" file, standing in for the q3key a
+ * case-insensitive Mac volume would open), and only Com_WriteCDKey's FS_SV_*
+ * path writes it. */
+static void CDKey(void) {
+    static const char *names[] = {"q3key", "Q3KEY", "q3Key", "/Q3KEY", "../baseq3/Q3KEY"};
+    static const fsMode_t modes[] = {FS_WRITE, FS_APPEND, FS_APPEND_SYNC};
+    fileHandle_t f;
+    int i, m;
+
+    Cvar_Set("fs_game", "");
+    FS_Restart(0);
+    com_fullyInitialized = qfalse;
+    Expect("q3key", "0123456789abcdef", "start-up still reads the key");
+    com_fullyInitialized = qtrue;
+    for (i = 0; i < (int)(sizeof(names) / sizeof(names[0])); i++) {
+        Expect(names[i], NULL, "the key is not read by name after start-up, in any case");
+        Probe(names[i], 0, "the key's existence is not probed after start-up");
+    }
+    for (i = 0; i < 3; i++) {
+        for (m = 0; m < 3; m++) {
+            f = -1;
+            Check(FS_FOpenFileByMode(names[i], &f, modes[m]) == -1 && f == 0,
+                  "VM write/append to the key is refused");
+        }
+        Check(!FS_FOpenFileWrite(names[i]) && !FS_FOpenFileAppend(names[i]),
+              "command write/append to the key is refused");
+    }
+    Check(Size("home/baseq3/q3key") == 16 && Size("home/baseq3/Q3KEY") == 16,
+          "refused writes leave the key intact");
+    f = FS_FOpenFileWrite("notes.txt");
+    Check(f > 0, "ordinary write beside the key");
+    FS_FCloseFile(f);
+    FS_Rename("notes.txt", "Q3Key");
+    Check(Exists("home/baseq3/notes.txt") && Size("home/baseq3/Q3KEY") == 16,
+          "rename onto the key is refused");
+    FS_Rename("q3key", "stolen.txt");
+    Check(Size("home/baseq3/q3key") == 16 && !Exists("home/baseq3/stolen.txt"),
+          "rename of the key away is refused");
+    f = FS_SV_FOpenFileWrite("baseq3/q3key");
+    Check(f > 0 && FS_Write("fedcba9876543210", 16, f) == 16, "Com_WriteCDKey's path still writes");
+    FS_FCloseFile(f);
+    com_fullyInitialized = qfalse;
+}
+
 int main(int argc, char **argv) {
     Check(argc == 2 && strlen(argv[1]) < sizeof(root), "fixture root");
     strcpy(root, argv[1]);
@@ -280,6 +325,7 @@ int main(int argc, char **argv) {
 
     Writes();
     Renames();
+    CDKey();
     FS_Shutdown(qtrue);
     Check(!zoneLive && !temporaryLive && !fs_loadStack, "filesystem owners release physically");
     puts("Actual FS local-config precedence and mutable-extension guards pass");

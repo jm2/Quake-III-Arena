@@ -18,6 +18,8 @@ for Q3_TEST_MODE in normal fast; do
     mkdir -p "$Q3_FIXTURE/base/baseq3" "$Q3_FIXTURE/home/baseq3/vm" "$Q3_FIXTURE/home/evilmod/vm"
     printf '// local q3config\n' > "$Q3_FIXTURE/home/baseq3/q3config.cfg"
     printf '// local autoexec\n' > "$Q3_FIXTURE/home/baseq3/autoexec.cfg"
+    printf '0123456789abcdef' > "$Q3_FIXTURE/home/baseq3/q3key"
+    printf '0123456789abcdef' > "$Q3_FIXTURE/home/baseq3/Q3KEY"
     python3 - "$Q3_FIXTURE" <<'PY_ZIP'
 import sys, zipfile
 root = sys.argv[1]
