@@ -364,13 +364,27 @@ if ($PackageMode) {
     # applications themselves come from the build step above.
     Write-Host "Checking for assets..."
     
-    # Search recursively for pak0.pk3 in current directory, excluding release_mac
-    $LocalPak = Get-ChildItem -Path . -Filter "pak0.pk3" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "baseq3" -and $_.FullName -notmatch "release_mac" } | Select-Object -First 1
-    $MissionPak = Get-ChildItem -Path . -Filter "pak0.pk3" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "missionpack" -and $_.FullName -notmatch "release_mac" } | Select-Object -First 1
+    # Find pak0.pk3 inside a folder named exactly baseq3 (or missionpack),
+    # outside release_mac. Every pak beside it ships in the image, so more
+    # than one candidate is refused rather than taking whichever comes first.
+    function Find-RetailPak0([string]$GameDir) {
+        $Found = @(Get-ChildItem -Path . -Filter "pak0.pk3" -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Directory.Name -eq $GameDir -and
+                           $_.LinkType -ne "SymbolicLink" -and
+                           ($_.FullName -split '[\\/]') -notcontains "release_mac" })
+        if ($Found.Count -gt 1) {
+            throw ("More than one $GameDir\pak0.pk3 was found; leave only the one to package:`n    " +
+                   (($Found | ForEach-Object { $_.FullName }) -join "`n    "))
+        }
+        return $Found | Select-Object -First 1
+    }
+    $LocalPak = Find-RetailPak0 "baseq3"
+    $MissionPak = Find-RetailPak0 "missionpack"
 
     if ($LocalPak) {
         Write-Host "Found Base Game Data at $($LocalPak.FullName)"
         Get-ChildItem -Path $LocalPak.Directory.FullName -Filter "pak*.pk3" -File |
+            Where-Object { $_.LinkType -ne "SymbolicLink" } |
             Copy-Item -Destination $BaseQ3Dir -Force
         
         if ($BuildTeamArena) {
@@ -380,6 +394,7 @@ if ($PackageMode) {
             Write-Host "Found Team Arena Data at $($MissionPak.FullName)"
             if (-not (Test-Path $MissionPackDir)) { New-Item -ItemType Directory -Path $MissionPackDir -Force | Out-Null }
             Get-ChildItem -Path $MissionPak.Directory.FullName -Filter "pak*.pk3" -File |
+                Where-Object { $_.LinkType -ne "SymbolicLink" } |
                 Copy-Item -Destination $MissionPackDir -Force
         }
 
@@ -394,24 +409,40 @@ if ($PackageMode) {
 
         if ($NeedUpdate) {
             Write-Host "Downloading Updates (BaseQ3 / MissionPack)..." -ForegroundColor Yellow
+            # The 1.32 point release paks, as ioquake3 hosts them. They go
+            # into the image people install from, so the zip must be the one
+            # pinned here (its paks are dated 2002; the zip was made in 2019).
             $PrUrl = "https://files.ioquake3.org/quake3-latest-pk3s.zip"
             $PrFile = Join-Path $TempDir "quake3-latest-pk3s.zip"
+            $PrSha256 = "95a811825a43260b2c52af97ef6f2c26fcc16d0032b3a132d6c4b20457a10ced"
+            $PrExtract = Join-Path $TempDir "pr_extract"
+            foreach ($Old in @($PrFile, $PrExtract)) {
+                if (Test-Path $Old) { Remove-Item -Recurse -Force $Old }
+            }
             
-            Invoke-WebRequest -Uri $PrUrl -OutFile $PrFile
+            try { Invoke-WebRequest -Uri $PrUrl -OutFile $PrFile }
+            catch {
+                Write-Host "Warning: $($_.Exception.Message)" -ForegroundColor Yellow
+                if (Test-Path $PrFile) { Remove-Item -Force $PrFile }
+            }
             
             if (Test-Path $PrFile) {
+                $PrActual = (Get-FileHash -Algorithm SHA256 $PrFile).Hash.ToLowerInvariant()
+                if ($PrActual -ne $PrSha256) {
+                    Remove-Item -Force $PrFile
+                    throw "$PrUrl has SHA-256 $PrActual, not the pinned $PrSha256. Refusing to package it."
+                }
                 Write-Host "Extracting Updates..."
-                $PrExtract = Join-Path $TempDir "pr_extract"
                 Expand-Archive -Path $PrFile -DestinationPath $PrExtract -Force
                 
                 Write-Host "Copying BaseQ3 Updates..."
-                Get-ChildItem -Path $PrExtract -Recurse -Filter "pak*.pk3" | Where-Object { $_.FullName -match "baseq3" } | ForEach-Object {
+                Get-ChildItem -Path $PrExtract -Recurse -File -Filter "pak*.pk3" | Where-Object { $_.Directory.Name -eq "baseq3" } | ForEach-Object {
                     Copy-Item $_.FullName "$BaseQ3Dir" -Force
                 }
                 
                 if ($BuildTeamArena -and $MissionPak) {
                     Write-Host "Copying MissionPack Updates..."
-                    Get-ChildItem -Path $PrExtract -Recurse -Filter "pak*.pk3" | Where-Object { $_.FullName -match "missionpack" } | ForEach-Object {
+                    Get-ChildItem -Path $PrExtract -Recurse -File -Filter "pak*.pk3" | Where-Object { $_.Directory.Name -eq "missionpack" } | ForEach-Object {
                         Copy-Item $_.FullName "$MissionPackDir" -Force
                     }
                 }

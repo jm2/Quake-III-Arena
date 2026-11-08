@@ -232,6 +232,13 @@ also requires `missionpack\pak0.pk3`. The old demo fallback was removed because
 it placed `demoq3` data under `baseq3` and produced an application that could
 not load `default.cfg`.
 
+Every `pak*.pk3` beside the `pak0.pk3` goes into the image, so keep exactly one
+`baseq3` (and `missionpack`) folder with a `pak0.pk3` under the repository
+tree: packaging stops and lists them if it finds more than one. When `pak1.pk3`
+is missing, the point release paks are downloaded from ioquake3's
+`quake3-latest-pk3s.zip`, and packaging stops if the zip's SHA-256 is not the
+one pinned in both scripts.
+
 With data present under the repository tree, package with:
 
 ```sh
@@ -276,11 +283,12 @@ Territory's 279 MB image, built the same way as this one. Copying the folder
 off it gave identical files, and the game ran from the copy. The old images
 needed Toast.
 
-Asset discovery is still provisional: it selects the first matching retail
-tree and remote update inputs are not pinned by digest. Do not publish an
-artifact until [#22](https://github.com/jm2/Quake-III-Arena/issues/22) and
+Packaging refuses more than one candidate retail tree and pins the point
+release download by SHA-256, but the retail paks it finds locally are not yet
+checked against known digests. Do not publish an artifact until
+[#22](https://github.com/jm2/Quake-III-Arena/issues/22) and
 [#23](https://github.com/jm2/Quake-III-Arena/issues/23) are resolved and the
-mounted image boots on Mac OS 9.
+mounted image boots on Mac OS 9 hardware.
 
 ## Startup parameters
 
