@@ -832,12 +832,17 @@ class NdifImageTests(unittest.TestCase):
             with self.subTest(label):
                 self.assertNotIn('"iso " "dCpy"', script)
                 self.assertNotIn(".dsk", script)
-                # stale bare applications from an earlier package run go
-                self.assertIn("Quake3_TeamArena", script)
-        self.assertIn('rm -f "$RELEASE_ROOT/$app.bin" "$RELEASE_ROOT/$app.manifest.txt"',
-                      shell)
+        # an earlier run's outputs go before anything can fail: ahead of the
+        # data search, which is the first step that can stop the run
+        shell_cleanup = shell.index('"$RELEASE_ROOT/Quake3_Install.img.bin"')
+        self.assertLess(shell_cleanup, shell.index("PAK0_PATH=$(find"))
+        self.assertLess(
+            shell.index('rm -f "$RELEASE_ROOT/$app.bin" "$RELEASE_ROOT/$app.manifest.txt"'),
+            shell.index("PAK0_PATH=$(find"))
+        powershell_cleanup = powershell.index('foreach ($Stale in "Quake3_Install.img.bin"')
+        self.assertLess(powershell_cleanup, powershell.index("Checking for assets"))
         self.assertIn('"Quake3_TeamArena.bin", "Quake3_TeamArena.manifest.txt"',
-                      powershell)
+                      powershell[powershell_cleanup:powershell_cleanup + 400])
 
 
 if __name__ == "__main__":

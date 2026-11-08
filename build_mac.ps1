@@ -346,6 +346,17 @@ if ($PackageMode) {
     # binaries or assets left by a different CMake configuration.
     if (Test-Path $ContentDir) { Remove-Item -Recurse -Force $ContentDir }
     if (Test-Path $TempDir) { Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue }
+    # Remove every output an earlier package run left before anything can
+    # fail, so a failed run never leaves them looking current: the install
+    # image, the old binaries-only image, and each bare application and
+    # manifest (a Team Arena package followed by a base-only one must not
+    # leave the old Team Arena application behind).
+    foreach ($Stale in "Quake3_Install.img.bin", "Quake3_Bin.img", "Quake3_Bin.img.bin",
+            "bin_content", "Quake3.bin", "Quake3.manifest.txt",
+            "Quake3_TeamArena.bin", "Quake3_TeamArena.manifest.txt") {
+        $StalePath = Join-Path $ReleaseRoot $Stale
+        if (Test-Path $StalePath) { Remove-Item -Recurse -Force $StalePath }
+    }
     if (-not (Test-Path $BaseQ3Dir)) { New-Item -ItemType Directory -Path $BaseQ3Dir -Force | Out-Null }
     if (-not (Test-Path $TempDir)) { New-Item -ItemType Directory -Path $TempDir -Force | Out-Null }
     
@@ -499,16 +510,7 @@ if ($PackageMode) {
         throw "HFS image output is missing or empty: $ImageName"
     }
     
-    # The bare applications, for redeploying after a rebuild. The old
-    # binaries-only image is gone; remove what an older package run left.
-    # Also each bare application and manifest, so a Team Arena package followed
-    # by a base-only one does not leave the old Team Arena application behind.
-    foreach ($Stale in "Quake3_Bin.img", "Quake3_Bin.img.bin", "bin_content",
-            "Quake3.bin", "Quake3.manifest.txt",
-            "Quake3_TeamArena.bin", "Quake3_TeamArena.manifest.txt") {
-        $StalePath = Join-Path $ReleaseRoot $Stale
-        if (Test-Path $StalePath) { Remove-Item -Recurse -Force $StalePath }
-    }
+    # The bare applications, for redeploying after a rebuild.
     foreach ($App in $Applications) {
         Copy-Item -Force (Join-Path $BuildDir "$App.bin") $ReleaseRoot
         Copy-Item -Force (Join-Path $BuildDir "$App.manifest.txt") $ReleaseRoot
