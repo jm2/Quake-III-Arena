@@ -845,5 +845,54 @@ class NdifImageTests(unittest.TestCase):
                       powershell[powershell_cleanup:powershell_cleanup + 400])
 
 
+    def test_update_paks_are_pinned_and_copied_as_plain_files(self):
+        # The point release zip goes into the image people install from, so a
+        # changed download must stop the run, and a symlink inside it must not
+        # carry a builder's own file into the image.
+        root = Path(__file__).resolve().parent.parent
+        shell = (root / "build_mac.sh").read_text()
+        powershell = (root / "build_mac.ps1").read_text()
+        pin = "95a811825a43260b2c52af97ef6f2c26fcc16d0032b3a132d6c4b20457a10ced"
+        self.assertIn(f'PR_SHA256="{pin}"', shell)
+        self.assertIn(f'$PrSha256 = "{pin}"', powershell)
+        self.assertLess(shell.index('"$PR_ACTUAL" != "$PR_SHA256"'),
+                        shell.index('unzip -q -o "$TEMP_DIR/$PR_FILE"'))
+        self.assertLess(powershell.index("$PrActual -ne $PrSha256"),
+                        powershell.index("Expand-Archive -Path $PrFile"))
+        for game in ("baseq3", "missionpack"):
+            self.assertIn(f'find "$TEMP_DIR/pr_extract" -type f -path "*/{game}/pak*.pk3"',
+                          shell)
+            self.assertIn(f'-Recurse -File -Filter "pak*.pk3" | Where-Object '
+                          f'{{ $_.Directory.Name -eq "{game}" }}', powershell)
+        self.assertNotIn("-print -quit", shell)
+        self.assertNotIn('$_.FullName -match "baseq3"', powershell)
+
+    def test_package_refuses_more_than_one_retail_pak0(self):
+        shell = (REPO / "build_mac.sh").read_text(encoding="utf-8")
+        start = shell.index("    find_retail_pak0() {")
+        function = shell[start:shell.index("\n    }\n", start) + 7]
+        with tempfile.TemporaryDirectory() as scratch:
+            tree = Path(scratch)
+            for path in ("data/baseq3/pak0.pk3", "release_mac/x/baseq3/pak0.pk3"):
+                (tree / path).parent.mkdir(parents=True)
+                (tree / path).write_bytes(b"")
+            (tree / "link/missionpack").mkdir(parents=True)
+            os.symlink(tree / "data/baseq3/pak0.pk3", tree / "link/missionpack/pak0.pk3")
+            probe = function + 'P=$(find_retail_pak0 baseq3) || exit 1; echo "[$P]"\n' \
+                'M=$(find_retail_pak0 missionpack) || exit 1; echo "[$M]"\n'
+            run = lambda: subprocess.run(["bash", "-c", "set -euo pipefail\n" + probe],
+                                         cwd=tree, capture_output=True, text=True)
+            result = run()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, "[./data/baseq3/pak0.pk3]\n[]\n")
+            (tree / "other dir/baseq3").mkdir(parents=True)
+            (tree / "other dir/baseq3/pak0.pk3").write_bytes(b"")
+            result = run()
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stdout, "")
+            self.assertIn("more than one baseq3/pak0.pk3", result.stderr)
+            self.assertIn("./other dir/baseq3/pak0.pk3", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
