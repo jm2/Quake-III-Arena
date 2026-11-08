@@ -111,7 +111,7 @@ function download_file() {
 
     if command -v curl &> /dev/null; then
         echo "Downloading $url using curl..."
-        curl -L --progress-bar -o "$output" "$url"
+        curl -fL --progress-bar -o "$output" "$url"
     elif command -v wget &> /dev/null; then
         echo "Downloading $url using wget..."
         wget -q --show-progress -O "$output" "$url"
@@ -357,11 +357,22 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
     # applications themselves come from the build step above.
     echo "Checking for Game Assets..."
     
-    # Check for baseq3/pak0.pk3 (look specifically for 'pak0.pk3' inside a 'baseq3' folder)
-    # Check for baseq3/pak0.pk3 (look specifically for 'pak0.pk3' inside a 'baseq3' folder)
-    PAK0_PATH=$(find . -path "*/baseq3/pak0.pk3" -not -path "*/release_mac/*" -print -quit)
-    # Check for missionpack/pak0.pk3 (look specifically for 'pak0.pk3' inside a 'missionpack' folder)
-    MP_PAK0_PATH=$(find . -path "*/missionpack/pak0.pk3" -not -path "*/release_mac/*" -print -quit)
+    # Find pak0.pk3 inside a baseq3 (and missionpack) folder. Every pak beside
+    # it ships in the image, so more than one candidate is refused rather than
+    # taking whichever the filesystem lists first.
+    find_retail_pak0() {
+        local matches
+        matches=$(find . -path "*/release_mac" -prune -o \
+            -type f -path "*/$1/pak0.pk3" -print)
+        if [ "$(printf '%s\n' "$matches" | wc -l)" -gt 1 ]; then
+            echo "Error: more than one $1/pak0.pk3 was found; leave only the one to package:" >&2
+            printf '%s\n' "$matches" | sed 's/^/    /' >&2
+            exit 1
+        fi
+        printf '%s' "$matches"
+    }
+    PAK0_PATH=$(find_retail_pak0 baseq3) || exit 1
+    MP_PAK0_PATH=$(find_retail_pak0 missionpack) || exit 1
     
     if [ -n "$PAK0_PATH" ]; then
         echo "Found Base Game Data: $PAK0_PATH"
@@ -395,13 +406,24 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
         if [ "$NEED_UPDATE" -eq 1 ]; then
             echo "Downloading Updates (BaseQ3 / MissionPack)..."
             
-            # User provided URL for latest pk3s
+            # The 1.32 point release paks, as ioquake3 hosts them. They go
+            # into the image people install from, so the zip must be the one
+            # pinned here (its paks are dated 2002; the zip was made in 2019).
             PR_URL="https://files.ioquake3.org/quake3-latest-pk3s.zip"
             PR_FILE="quake3-latest-pk3s.zip"
+            PR_SHA256="95a811825a43260b2c52af97ef6f2c26fcc16d0032b3a132d6c4b20457a10ced"
             
-            download_file "$PR_URL" "$TEMP_DIR/$PR_FILE"
+            rm -rf "$TEMP_DIR/$PR_FILE" "$TEMP_DIR/pr_extract"
+            download_file "$PR_URL" "$TEMP_DIR/$PR_FILE" || rm -f "$TEMP_DIR/$PR_FILE"
             
             if [ -f "$TEMP_DIR/$PR_FILE" ]; then
+                PR_ACTUAL=$(sha256_of "$TEMP_DIR/$PR_FILE")
+                if [ "$PR_ACTUAL" != "$PR_SHA256" ]; then
+                    echo "Error: $PR_URL has SHA-256 $PR_ACTUAL," >&2
+                    echo "       not the pinned $PR_SHA256. Refusing to package it." >&2
+                    rm -f "$TEMP_DIR/$PR_FILE"
+                    exit 1
+                fi
                 echo "Extracting Updates..."
                 if ! command -v unzip &> /dev/null; then
                     echo "Error: unzip is required to extract $PR_FILE." >&2
@@ -411,11 +433,11 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
                 unzip -q -o "$TEMP_DIR/$PR_FILE" -d "$TEMP_DIR/pr_extract"
                 
                 echo "Copying BaseQ3 Updates..."
-                find "$TEMP_DIR/pr_extract" -path "*/baseq3/pak*.pk3" -exec cp {} "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/" \;
+                find "$TEMP_DIR/pr_extract" -type f -path "*/baseq3/pak*.pk3" -exec cp {} "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/" \;
                 
                 if [ "$BUILD_TEAM_ARENA_ENABLED" -eq 1 ] && [ -n "$MP_PAK0_PATH" ]; then
                     echo "Copying MissionPack Updates..."
-                    find "$TEMP_DIR/pr_extract" -path "*/missionpack/pak*.pk3" -exec cp {} "$RELEASE_ROOT/content/Quake 3 Arena/missionpack/" \;
+                    find "$TEMP_DIR/pr_extract" -type f -path "*/missionpack/pak*.pk3" -exec cp {} "$RELEASE_ROOT/content/Quake 3 Arena/missionpack/" \;
                 fi
             else
                 echo "Warning: Failed to download Updates."
