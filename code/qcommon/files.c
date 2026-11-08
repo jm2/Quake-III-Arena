@@ -645,6 +645,41 @@ static qboolean FS_CopyFile( char *fromOSPath, char *toOSPath ) {
 
 /*
 ===================
+FS_IsCDKeyName
+
+qtrue if filename names the CD key file in any letter case. HFS, HFS+ and
+FAT match names without regard to case, so "Q3KEY" opens q3key there.
+===================
+*/
+static qboolean FS_IsCDKeyName( const char *filename ) {
+	const char *s;
+
+	for ( s = filename ; *s ; s++ ) {
+		if ( !Q_stricmpn( s, "q3key", 5 ) ) {
+			return qtrue;
+		}
+	}
+	return qfalse;
+}
+
+/*
+===================
+FS_CheckWriteIsNotCDKey
+
+Modules and console commands write through FS_FOpenFileWrite/Append and
+FS_Rename; only Com_WriteCDKey may write the key, and it uses FS_SV_*.
+===================
+*/
+static qboolean FS_CheckWriteIsNotCDKey( const char *filename, const char *function ) {
+	if ( FS_IsCDKeyName( filename ) ) {
+		Com_Printf( "WARNING: %s: Not allowed to manipulate %s, the CD key file\n", function, filename );
+		return qfalse;
+	}
+	return qtrue;
+}
+
+/*
+===================
 FS_CheckFilenameIsMutable
 
 Return qtrue unless the name ends in a native library/executable, .qvm
@@ -993,7 +1028,9 @@ void FS_Rename( const char *from, const char *to ) {
 	// don't let sound stutter
 	S_ClearSoundBuffer();
 
-	if ( !FS_BuildWriteOSPath( from_ospath, fs_homepath->string, fs_gamedir, from, "FS_Rename" ) ||
+	if ( !FS_CheckWriteIsNotCDKey( from, "FS_Rename" ) ||
+		!FS_CheckWriteIsNotCDKey( to, "FS_Rename" ) ||
+		!FS_BuildWriteOSPath( from_ospath, fs_homepath->string, fs_gamedir, from, "FS_Rename" ) ||
 		!FS_BuildWriteOSPath( to_ospath, fs_homepath->string, fs_gamedir, to, "FS_Rename" ) ||
 		!FS_CheckOSPathIsMutable( from_ospath, "FS_Rename" ) ||
 		!FS_CheckOSPathIsMutable( to_ospath, "FS_Rename" ) ) {
@@ -1069,7 +1106,8 @@ fileHandle_t FS_FOpenFileWrite( const char *filename ) {
 		return 0;
 	}
 
-	if ( !FS_BuildWriteOSPath( ospath, fs_homepath->string, fs_gamedir, filename, "FS_FOpenFileWrite" ) ||
+	if ( !FS_CheckWriteIsNotCDKey( filename, "FS_FOpenFileWrite" ) ||
+		!FS_BuildWriteOSPath( ospath, fs_homepath->string, fs_gamedir, filename, "FS_FOpenFileWrite" ) ||
 		!FS_CheckOSPathIsMutable( ospath, "FS_FOpenFileWrite" ) ) {
 		return 0;
 	}
@@ -1121,7 +1159,8 @@ fileHandle_t FS_FOpenFileAppend( const char *filename ) {
 	// don't let sound stutter
 	S_ClearSoundBuffer();
 
-	if ( !FS_BuildWriteOSPath( ospath, fs_homepath->string, fs_gamedir, filename, "FS_FOpenFileAppend" ) ||
+	if ( !FS_CheckWriteIsNotCDKey( filename, "FS_FOpenFileAppend" ) ||
+		!FS_BuildWriteOSPath( ospath, fs_homepath->string, fs_gamedir, filename, "FS_FOpenFileAppend" ) ||
 		!FS_CheckOSPathIsMutable( ospath, "FS_FOpenFileAppend" ) ) {
 		return 0;
 	}
@@ -1326,6 +1365,9 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 		if ( !FS_CheckQPath( filename ) ) {
 			return qfalse;
 		}
+		if ( com_fullyInitialized && FS_IsCDKeyName( filename ) ) {
+			return qfalse;
+		}
 		for ( search = fs_searchpaths ; search ; search = search->next ) {
 			// autoexec.cfg and q3config.cfg can only be loaded outside of pk3 files
 			if ( isLocalConfig && search->pack ) {
@@ -1378,7 +1420,8 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 
 	// make sure the q3key file is only readable by the quake3.exe at initialization
 	// any other time the key should only be accessed in memory using the provided functions
-	if( com_fullyInitialized && strstr( filename, "q3key" ) ) {
+	// (in any letter case: the Mac's volumes would open "Q3KEY" as q3key)
+	if( com_fullyInitialized && FS_IsCDKeyName( filename ) ) {
 		*file = 0;
 		return -1;
 	}
