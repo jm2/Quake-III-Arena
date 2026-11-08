@@ -132,6 +132,8 @@ typedef struct client_s {
 	int				messageAcknowledge;
 
 	int				gamestateMessageNum;	// netchan->outgoingSequence of gamestate
+	byte			csUpdated[MAX_CONFIGSTRINGS];	// changed since the gamestate, while CS_PRIMED;
+													// sent by SV_UpdateConfigstrings on entering the world
 	int				challenge;
 
 	usercmd_t		lastUsercmd;
@@ -283,6 +285,7 @@ void SV_MasterShutdown (void);
 // sv_init.c
 //
 void SV_SetConfigstring( int index, const char *val );
+void SV_UpdateConfigstrings( client_t *client );
 void SV_GetConfigstring( int index, char *buffer, int bufferSize );
 
 void SV_SetUserinfo( int index, const char *val );
