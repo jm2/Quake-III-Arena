@@ -1301,6 +1301,9 @@ static const char	*userinfos[] = {
 	"\\name\\Bob // x\\model\\sarge/*red\\headmodel\\//\\team_model\\a/*b\\team_headmodel\\*/"
 		"\\color1\\/*4*/\\color2\\//5\\g_redteam\\//red\\g_blueteam\\/*blue",
 	"\\name\\Tab\tName\\model\\visor\\color1\\  4  \\g_redteam\\Red  Team",
+	"\\name\\Two\nLines\r^3Admin^7\x7f\\model\\visor",
+	// a color escape must not carry a control character past the filter
+	"\\name\\Evil^\nLine^\r^\x7f^\x01X\\model\\visor",
 	// a userinfo with a '"', which ClientUserinfoChanged replaces
 	"\\name\\Bob\"x\\model\\sarge\"/*\\color1\\\"//",
 	longColorInfo,
@@ -1308,13 +1311,40 @@ static const char	*userinfos[] = {
 };
 #define NUM_USERINFOS	( sizeof( userinfos ) / sizeof( userinfos[0] ) )
 
+/* What a client's userinfo may put in its CS_PLAYERS string: a name without
+ * control characters, colors of a few digits, team names of MAX_TEAMNAME, so
+ * one player can never take 1000 characters of the gamestate. */
+static void CheckPlayerBounds( const char *configstring ) {
+	const char	*v;
+	int			i;
+
+	if ( strlen( configstring ) >= 1000 ) {
+		Fail( "a player's userinfo made a CS_PLAYERS string of 1000 characters or more" );
+	}
+	v = RetailInfo_ValueForKey( configstring, "n" );
+	for ( i = 0 ; v[i] ; i++ ) {
+		if ( (unsigned char)v[i] < ' ' || v[i] == 127 ) {
+			Fail( "a player name holds a control character" );
+		}
+	}
+	if ( strlen( RetailInfo_ValueForKey( configstring, "c1" ) ) > 7 ||
+		 strlen( RetailInfo_ValueForKey( configstring, "c2" ) ) > 7 ) {
+		Fail( "a player color is longer than the cgame reads" );
+	}
+	if ( strlen( RetailInfo_ValueForKey( configstring, "g_redteam" ) ) >= MAX_TEAMNAME ||
+		 strlen( RetailInfo_ValueForKey( configstring, "g_blueteam" ) ) >= MAX_TEAMNAME ) {
+		Fail( "a player team name is longer than MAX_TEAMNAME" );
+	}
+}
+
 static void TestUserinfo( int gametype ) {
 	static char	name[128];
 	char		text[1100];
 	size_t		u;
 	int			clientNum;
 
-	// a CS_PLAYERS string of 1000 characters or more goes in "bcs" chunks
+	// long colors and team names: before they were cut to what the cgame
+	// reads, these made CS_PLAYERS strings of 1000 characters or more ("bcs")
 	Com_sprintf( longColorInfo, sizeof( longColorInfo ), "\\name\\Long\\model\\sarge\\color1\\%s\\color2\\%s",
 		MakeWord( text, 600, "1/*" ), "//" );
 	Com_sprintf( longTeamInfo, sizeof( longTeamInfo ), "\\name\\Long\\g_redteam\\%s", MakeText( text, 990, "red // " ) );
@@ -1334,6 +1364,7 @@ static void TestUserinfo( int gametype ) {
 			if ( strchr( userinfos[u], '"' ) && strncmp( ServerConfigstring( CS_PLAYERS + clientNum ), "n\\badinfo\\", 10 ) ) {
 				Fail( "a userinfo with a quote was not replaced" );
 			}
+			CheckPlayerBounds( ServerConfigstring( CS_PLAYERS + clientNum ) );
 		}
 	}
 }

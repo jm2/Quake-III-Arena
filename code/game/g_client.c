@@ -649,6 +649,12 @@ static void ClientCleanName( const char *in, char *out, int outSize ) {
 			break;
 		}
 
+		// no control characters: a line break in a name forges lines in
+		// chat, the console, games.log and status replies
+		if( (unsigned char)ch < ' ' || ch == 127 ) {
+			continue;
+		}
+
 		// don't allow leading spaces
 		if( !*p && ch == ' ' ) {
 			continue;
@@ -659,6 +665,11 @@ static void ClientCleanName( const char *in, char *out, int outSize ) {
 			// solo trailing carat is not a color prefix
 			if( !*in ) {
 				break;
+			}
+
+			// nor one before a control character, which the next pass drops
+			if( (unsigned char)*in < ' ' || *in == 127 ) {
+				continue;
 			}
 
 			// don't allow black in a name, period
@@ -725,10 +736,13 @@ void ClientUserinfoChanged( int clientNum ) {
 	char	headModel[MAX_QPATH];
 	char	oldname[MAX_STRING_CHARS];
 	gclient_t	*client;
-	char	c1[MAX_INFO_STRING];
-	char	c2[MAX_INFO_STRING];
-	char	redTeam[MAX_INFO_STRING];
-	char	blueTeam[MAX_INFO_STRING];
+	// what the cgame reads of these: a color number, and team names of
+	// MAX_TEAMNAME. Longer values only swelled the player configstring
+	// toward MAX_GAMESTATE_CHARS, past which nobody can join.
+	char	c1[8];
+	char	c2[8];
+	char	redTeam[MAX_TEAMNAME];
+	char	blueTeam[MAX_TEAMNAME];
 	char	userinfo[MAX_INFO_STRING];
 
 	ent = g_entities + clientNum;
@@ -875,11 +889,11 @@ void ClientUserinfoChanged( int clientNum ) {
 	teamLeader = client->sess.teamLeader;
 
 	// colors
-	strcpy(c1, Info_ValueForKey( userinfo, "color1" ));
-	strcpy(c2, Info_ValueForKey( userinfo, "color2" ));
+	Q_strncpyz(c1, Info_ValueForKey( userinfo, "color1" ), sizeof(c1));
+	Q_strncpyz(c2, Info_ValueForKey( userinfo, "color2" ), sizeof(c2));
 
-	strcpy(redTeam, Info_ValueForKey( userinfo, "g_redteam" ));
-	strcpy(blueTeam, Info_ValueForKey( userinfo, "g_blueteam" ));
+	Q_strncpyz(redTeam, Info_ValueForKey( userinfo, "g_redteam" ), sizeof(redTeam));
+	Q_strncpyz(blueTeam, Info_ValueForKey( userinfo, "g_blueteam" ), sizeof(blueTeam));
 
 	// send over a subset of the userinfo keys so other clients can
 	// print scoreboards, display models, and play custom sounds
