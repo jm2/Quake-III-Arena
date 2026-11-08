@@ -758,6 +758,7 @@ void SV_SendClientGameState( client_t *client ) {
 	// notice that it is from a different serverid and that the
 	// gamestate message was not just sent, forcing a retransmit
 	client->gamestateMessageNum = client->netchan.outgoingSequence;
+	client->gamestateOwed = qfalse;
 
 	MSG_Init( &msg, msgBuffer, sizeof( msgBuffer ) );
 
@@ -920,10 +921,16 @@ Downloads are finished
 ==================
 */
 void SV_DoneDownload_f( client_t *cl ) {
+	// An active client is in the world already. A new gamestate would make
+	// the game run ClientBegin for it again: a respawn at full health with
+	// no death, which also loses a carried flag for good. ioquake3 ignores
+	// it too. The exception is a client SV_MapRestart_f made active while
+	// it was still downloading, which waits for this gamestate.
+	if ( cl->state == CS_ACTIVE && !cl->gamestateOwed ) {
+		return;
+	}
 	// a client that has not acknowledged the last gamestate has one in
 	// flight already, so a repeated donedl must not queue another copy.
-	// CS_ACTIVE is no reason to ignore it: SV_MapRestart_f makes a client
-	// that is still downloading active, and it waits for this gamestate.
 	if ( cl->messageAcknowledge < cl->gamestateMessageNum ) {
 		return;
 	}
@@ -1961,8 +1968,11 @@ void SV_ExecuteClientMessage( client_t *cl, msg_t *msg ) {
 			return;
 		}
 		// if we can tell that the client has dropped the last
-		// gamestate we sent them, resend it
-		if ( cl->messageAcknowledge > cl->gamestateMessageNum ) {
+		// gamestate we sent them, resend it. Not to a client in the world,
+		// for the reason SV_DoneDownload_f gives: a forged old serverId
+		// would otherwise respawn it (ioquake3 checks CS_ACTIVE here too).
+		if ( ( cl->state != CS_ACTIVE || cl->gamestateOwed ) &&
+			cl->messageAcknowledge > cl->gamestateMessageNum ) {
 			Com_DPrintf( "%s : dropped gamestate, resending\n", cl->name );
 			SV_SendClientGameState( cl );
 		}

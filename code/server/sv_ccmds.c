@@ -308,6 +308,10 @@ static void SV_MapRestart_f( void ) {
 			continue;
 		}
 
+		// a client still downloading or loading has not entered the world
+		// on a gamestate yet: its donedl, or a dropped gamestate, must still
+		// get it the new one (SV_DoneDownload_f)
+		client->gamestateOwed = ( client->state != CS_ACTIVE );
 		client->state = CS_ACTIVE;
 
 		SV_ClientEnterWorld( client, &client->lastUsercmd );

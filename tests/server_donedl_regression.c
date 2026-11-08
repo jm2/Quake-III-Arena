@@ -210,12 +210,18 @@ static void LegitimateFlow( qboolean mapChange ) {
 	Check( gamestate == before, "one message on the wire" );
 	Packet( cl, sv.serverId, gamestate, NULL, 0, qtrue );
 	Check( cl->state == CS_ACTIVE && begins == 1, "client enters the world after the new gamestate" );
-	// as on master an in-game donedl reloads the gamestate, but once per acknowledged gamestate
+	// an in-game donedl would run ClientBegin again (a free respawn that
+	// also loses a carried flag), so it is ignored, as in ioquake3
 	Packet( cl, sv.serverId, gamestate, "donedl", 3, qfalse );
-	Check( cl->state == CS_PRIMED && cl->gamestateMessageNum == gamestate + 1 && !Queued( cl ) && !queueAllocs,
-	       "repeated in-game donedl sends one gamestate" );
-	Drain( cl ); Packet( cl, sv.serverId, gamestate + 1, NULL, 0, qtrue );
-	Check( cl->state == CS_ACTIVE && begins == 2, "client enters the world again" );
+	Check( cl->state == CS_ACTIVE && cl->gamestateMessageNum == gamestate &&
+	       cl->netchan.outgoingSequence == gamestate + 1 && !cl->netchan.unsentFragments && !queueAllocs,
+	       "in-game donedl sends no gamestate" );
+	// nor does a forged older serverId get one through the dropped-gamestate resend
+	Packet( cl, SERVER_ID - 5, gamestate + 2, NULL, 0, qtrue );
+	Check( cl->state == CS_ACTIVE && cl->gamestateMessageNum == gamestate && !cl->netchan.unsentFragments,
+	       "forged old serverId resends no gamestate to an active client" );
+	Packet( cl, sv.serverId, gamestate, NULL, 0, qtrue );
+	Check( cl->state == CS_ACTIVE && begins == 1, "client stays in the world without a second ClientBegin" );
 	puts( mapChange ? "download across a map change sends one gamestate" : "download completion sends one gamestate" );
 }
 /** A packet full of donedl with an honest acknowledge yields one gamestate; the rest are ignored. */
@@ -281,7 +287,9 @@ static void MapRestartDuringDownload( void ) {
 	before = cl->netchan.outgoingSequence;
 	Packet( cl, SERVER_ID, before - 1, "download maps.pk3", 1, qfalse );
 	sv.serverId = SERVER_ID + 1;				// map_restart leaves restartedServerId unchanged
-	SV_ClientEnterWorld( cl, &cl->lastUsercmd );	// as SV_MapRestart_f does to every client >= CS_CONNECTED
+	// as SV_MapRestart_f does to every client >= CS_CONNECTED
+	cl->gamestateOwed = ( cl->state != CS_ACTIVE ); cl->state = CS_ACTIVE;
+	SV_ClientEnterWorld( cl, &cl->lastUsercmd );
 	Packet( cl, SERVER_ID, before - 1, "nextdl 0", 1, qfalse );
 	Packet( cl, SERVER_ID, before - 1, "donedl", 1, qfalse );
 	Check( cl->state == CS_PRIMED && cl->gamestateMessageNum == before && cl->netchan.unsentFragments,
@@ -289,6 +297,9 @@ static void MapRestartDuringDownload( void ) {
 	Drain( cl ); gamestate = cl->netchan.outgoingSequence - 1;
 	Packet( cl, sv.serverId, gamestate, NULL, 0, qtrue );
 	Check( cl->state == CS_ACTIVE && begins == 2 && !queueAllocs, "client enters the restarted map" );
+	Packet( cl, sv.serverId, gamestate, "donedl", 1, qfalse );
+	Check( cl->state == CS_ACTIVE && !cl->gamestateOwed && cl->gamestateMessageNum == gamestate &&
+	       !cl->netchan.unsentFragments, "once in the restarted map, donedl is ignored" );
 	puts( "download across a map_restart sends one gamestate" );
 }
 /** Every slot filled up to the per-client cap cannot queue more than the server-wide budget. */
@@ -414,7 +425,8 @@ static void Shutdown( void ) {
 	Packet( cl, SERVER_ID, gamestate, NULL, 0, qtrue );
 	Check( cl->state == CS_ACTIVE, "active" );
 	SV_SendClientSnapshot( cl );
-	sv.serverId = sv.restartedServerId = SERVER_ID + 1;
+	// SV_SpawnServer: a new serverId, and every remote client back to CS_CONNECTED
+	sv.serverId = sv.restartedServerId = SERVER_ID + 1; cl->state = CS_CONNECTED;
 	Packet( cl, SERVER_ID, gamestate + 1, NULL, 0, qtrue );
 	Check( cl->state == CS_PRIMED && cl->netchan.unsentFragments, "map change resends the gamestate" );
 	SV_Shutdown( "test" );
