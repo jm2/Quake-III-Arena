@@ -70,6 +70,7 @@ void SV_SetUserinfo( int index, const char *val ) {
 }
 /** The game's replies to the commands are not checked. */
 void QDECL SV_SendServerCommand( client_t *cl, const char *fmt, ... ) { (void)cl; (void)fmt; }
+void SV_UpdateConfigstrings( client_t *client ) { (void)client; }	/* sv_init.c */
 /** The paths below are linked but must not run here. */
 int FS_FileIsInPAK( const char *filename, int *pChecksum ) { (void)filename; (void)pChecksum; Check( 0, "FS_FileIsInPAK" ); return -1; }
 const char *FS_LoadedPakPureChecksums( void ) { Check( 0, "FS_LoadedPakPureChecksums" ); return ""; }
