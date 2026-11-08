@@ -310,6 +310,7 @@ void SV_UserinfoChanged( client_t *cl );
 void SV_ApplyPendingUserinfo( void );
 
 void SV_ClientEnterWorld( client_t *client, usercmd_t *cmd );
+void SV_ClientMapRestarted( client_t *client );
 void SV_DropClient( client_t *drop, const char *reason );
 void SV_FreeClient( client_t *cl );
 int SV_RemainingGameState( const char *systemInfo );

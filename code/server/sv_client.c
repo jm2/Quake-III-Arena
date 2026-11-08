@@ -852,6 +852,24 @@ void SV_ClientEnterWorld( client_t *client, usercmd_t *cmd ) {
 }
 
 /*
+==================
+SV_ClientMapRestarted
+
+How SV_MapRestart_f puts every client at CS_CONNECTED or above into the
+restarted world. A client still downloading or loading has not entered the
+world on a gamestate yet: its donedl, or a dropped gamestate, must still get
+it the new one (SV_DoneDownload_f). A second map_restart before it catches
+up must not take that back.
+==================
+*/
+void SV_ClientMapRestarted( client_t *client ) {
+	if ( client->state != CS_ACTIVE ) {
+		client->gamestateOwed = qtrue;
+	}
+	SV_ClientEnterWorld( client, &client->lastUsercmd );
+}
+
+/*
 ============================================================
 
 CLIENT COMMAND EXECUTION
@@ -1824,6 +1842,13 @@ static void SV_UserMove( client_t *cl, msg_t *msg, qboolean delta ) {
 		return;
 	}
 
+	// only a client that has loaded a gamestate makes usercmds (one that is
+	// downloading or lost its gamestate makes none), so one in the world
+	// sending them is owed nothing, whatever serverId it claims
+	if ( cl->state == CS_ACTIVE ) {
+		cl->gamestateOwed = qfalse;
+	}
+
 	if ( cmdCount > MAX_PACKET_USERCMDS ) {
 		Com_Printf( "cmdCount > MAX_PACKET_USERCMDS\n" );
 		return;
@@ -1851,17 +1876,13 @@ static void SV_UserMove( client_t *cl, msg_t *msg, qboolean delta ) {
 	// catch the no-cp-yet situation before SV_ClientEnterWorld
 	// if CS_ACTIVE, then it's time to trigger a new gamestate emission
 	// if not, then we are getting remaining parasite usermove commands, which we should ignore
+	// Retail resent the gamestate here to a client in the world without a
+	// cp, but "vdr" (sent before the cp of every vid_restart) leaves one so
+	// too, and a new gamestate would run ClientBegin for it again
+	// (SV_DoneDownload_f). Its usercmds wait for the cp instead. A client
+	// map_restart made active before its cp sends the cp ahead of its first
+	// usercmd on the new serverId, which the netchan keeps resending.
 	if (sv_pure->integer != 0 && cl->pureAuthentic == 0 && !cl->gotCP) {
-		// Not to a client already in the world, which "vdr" (sent before
-		// the cp of every vid_restart) also leaves without a cp: a new
-		// gamestate would run ClientBegin for it again (SV_DoneDownload_f).
-		// Its usercmds wait for the cp instead.
-		if (cl->state == CS_ACTIVE && cl->gamestateOwed)
-		{
-			// we didn't get a cp yet, don't assume anything and just send the gamestate all over again
-			Com_DPrintf( "%s: didn't get cp command, resending gamestate\n", cl->name );
-			SV_SendClientGameState( cl );
-		}
 		return;
 	}			
 	

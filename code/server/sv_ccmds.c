@@ -308,16 +308,7 @@ static void SV_MapRestart_f( void ) {
 			continue;
 		}
 
-		// a client still downloading or loading has not entered the world
-		// on a gamestate yet: its donedl, or a dropped gamestate, must still
-		// get it the new one (SV_DoneDownload_f). A second map_restart
-		// before it catches up must not take that back.
-		if ( client->state != CS_ACTIVE ) {
-			client->gamestateOwed = qtrue;
-		}
-		client->state = CS_ACTIVE;
-
-		SV_ClientEnterWorld( client, &client->lastUsercmd );
+		SV_ClientMapRestarted( client );
 	}	
 
 	// run another frame to allow things to look at all the players

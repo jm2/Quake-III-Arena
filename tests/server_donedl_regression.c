@@ -281,16 +281,14 @@ static void ReconnectDuringDownload( void ) {
 	puts( "reconnect during a download releases its file handle and blocks" );
 }
 /** SV_MapRestart_f forces a downloading client active; its donedl must still bring the new gamestate. */
-/** What SV_MapRestart_f does to every client >= CS_CONNECTED; map_restart leaves restartedServerId unchanged. */
+/** SV_MapRestart_f's new serverId and its SV_ClientMapRestarted for every client >= CS_CONNECTED;
+    map_restart leaves restartedServerId unchanged. */
 static void MapRestart( int serverId ) {
 	int i;
 	client_t *cl;
 	sv.serverId = serverId;
 	for ( i = 0, cl = svs.clients; i < MAX_CLIENTS; i++, cl++ ) {
-		if ( cl->state < CS_CONNECTED ) continue;
-		if ( cl->state != CS_ACTIVE ) cl->gamestateOwed = qtrue;
-		cl->state = CS_ACTIVE;
-		SV_ClientEnterWorld( cl, &cl->lastUsercmd );
+		if ( cl->state >= CS_CONNECTED ) SV_ClientMapRestarted( cl );
 	}
 }
 static void MapRestartDuringDownload( void ) {
@@ -327,6 +325,21 @@ static void MapRestartWhileLoading( void ) {
 	Check( cl->state == CS_ACTIVE && cl->gamestateMessageNum == gamestate && !cl->netchan.unsentFragments && begins == 1,
 	       "once caught up, neither donedl nor a forged serverId resends the gamestate" );
 	puts( "a client loading at a map_restart is owed a gamestate only until it catches up" );
+}
+/** A modified client that keeps its old serverId (a "nextdl" lets its packets past the stale-serverId check)
+    and plays in the restarted world is owed nothing once it sends usercmds: a later donedl gets no gamestate. */
+static void MapRestartStaleServerId( void ) {
+	client_t *cl = Connect( 1, 11 ); int gamestate;
+	InitialGamestate( cl ); Drain( cl ); gamestate = cl->netchan.outgoingSequence - 1;
+	Packet( cl, SERVER_ID, gamestate, "nextdl 0", 1, qfalse );	/* while loading: nothing to acknowledge */
+	MapRestart( SERVER_ID + 1 );
+	Check( cl->gamestateOwed && begins == 1, "a loading client is made active and owed" );
+	Packet( cl, SERVER_ID, gamestate, NULL, 0, qtrue );	/* plays on, old serverId */
+	Check( !cl->gamestateOwed, "a usercmd in the world clears the debt" );
+	Packet( cl, SERVER_ID, gamestate, "donedl", 1, qfalse );
+	Check( cl->state == CS_ACTIVE && cl->gamestateMessageNum == gamestate && !cl->netchan.unsentFragments && begins == 1,
+	       "donedl after playing with an old serverId resends no gamestate" );
+	puts( "a client playing on an old serverId after a map_restart is owed nothing" );
 }
 /** On a pure server, vdr clears the client's cp; an active client's usercmds then wait for the cp instead of
     drawing a new gamestate, which would run ClientBegin again. */
@@ -521,7 +534,8 @@ int main( int argc, char **argv ) {
 	case 12: BudgetPlusFirstMessages(); break;
 	case 13: MapRestartWhileLoading(); break;
 	case 14: PureVidRestart(); break;
-	default: Check( 0, "usage: server-donedl-tests <0-14>" );
+	case 15: MapRestartStaleServerId(); break;
+	default: Check( 0, "usage: server-donedl-tests <0-15>" );
 	}
 	return 0;
 }
