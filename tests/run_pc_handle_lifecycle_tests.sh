@@ -21,7 +21,7 @@ for Q3_TEST_FIXTURE in CGAME UI GAME; do
         Q3_TEST_EXTRA=("$Q3_TEST_ROOT/code/game/q_math.c")
     fi
     "${CC:-cc}" "${Q3_TEST_FLAGS[@]}" "-DQ3_PC_FIXTURE_$Q3_TEST_FIXTURE" \
-        "$Q3_TEST_ROOT/tests/pc_handle_lifecycle_regression.c" \
+        "$Q3_TEST_ROOT/tests/pc_handle_lifecycle_regression.c" "$Q3_TEST_ROOT/tests/botlib_try_memory_stub.c" \
         "$Q3_TEST_ROOT/code/game/q_shared.c" "${Q3_TEST_EXTRA[@]}" "${Q3_TEST_OBJECTS[@]}" \
         -Wl,--gc-sections -lm -o "$Q3_TEST_DIR/$Q3_TEST_FIXTURE"
 

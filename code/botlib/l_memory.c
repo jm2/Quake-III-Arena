@@ -156,6 +156,26 @@ void *GetClearedMemory(unsigned long size)
 	return ptr;
 } //end of the function GetClearedMemory
 //===========================================================================
+// see l_memory.h; this debugging manager keeps its fatal allocator
+//===========================================================================
+void *TryGetMemory(unsigned long size)
+{
+#ifdef MEMDEBUG
+	return GetMemoryDebug(size, "TryGetMemory", __FILE__, __LINE__);
+#else
+	return GetMemory(size);
+#endif //MEMDEBUG
+} //end of the function TryGetMemory
+
+void *TryGetClearedMemory(unsigned long size)
+{
+#ifdef MEMDEBUG
+	return GetClearedMemoryDebug(size, "TryGetClearedMemory", __FILE__, __LINE__);
+#else
+	return GetClearedMemory(size);
+#endif //MEMDEBUG
+} //end of the function TryGetClearedMemory
+//===========================================================================
 //
 // Parameter:			-
 // Returns:				-
@@ -399,6 +419,32 @@ void *GetClearedMemory(unsigned long size)
 	if (ptr) Com_Memset(ptr, 0, size);
 	return ptr;
 } //end of the function GetClearedMemory
+//===========================================================================
+// see l_memory.h: allocations a script or source file drives, which fail
+// instead of ending the game when the zone has no block that fits
+//===========================================================================
+void *TryGetMemory(unsigned long size)
+{
+	void *ptr;
+	unsigned long int *memid;
+	int request;
+
+	if (!MemoryAllocationSize(size, sizeof(unsigned long int), &request)) return NULL;
+	ptr = botimport.TryGetMemory ? botimport.TryGetMemory(request) : botimport.GetMemory(request);
+	if (!ptr) return NULL;
+	memid = (unsigned long int *) ptr;
+	*memid = MEM_ID;
+	return (unsigned long int *) ((char *) ptr + sizeof(unsigned long int));
+} //end of the function TryGetMemory
+
+void *TryGetClearedMemory(unsigned long size)
+{
+	void *ptr;
+
+	ptr = TryGetMemory(size);
+	if (ptr) Com_Memset(ptr, 0, size);
+	return ptr;
+} //end of the function TryGetClearedMemory
 //===========================================================================
 //
 // Parameter:			-

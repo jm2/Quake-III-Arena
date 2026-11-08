@@ -205,6 +205,8 @@ typedef struct botlib_import_s
 	//
 	int			(*DebugPolygonCreate)(int color, int numPoints, vec3_t *points);
 	void		(*DebugPolygonDelete)(int id);
+	//memory allocation that fails instead of ending the game
+	void		*(*TryGetMemory)(int size);		// allocate from Zone, or NULL when no block fits
 } botlib_import_t;
 
 typedef struct aas_export_s

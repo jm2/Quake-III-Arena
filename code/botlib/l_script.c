@@ -1461,7 +1461,7 @@ script_t *LoadScriptFile(const char *filename)
 #endif
 		return NULL;
 	}
-	buffer = GetClearedMemory(size);
+	buffer = TryGetClearedMemory(size);
 	if (!buffer)
 	{
 #ifdef BOTLIB
@@ -1546,7 +1546,7 @@ script_t *LoadScriptMemory(char *ptr, int length, char *name)
 	unsigned long size;
 	if ((!ptr && length) || !PS_ScriptMemoryCost(length, name, &size)) return NULL;
 
-	buffer = GetClearedMemory(size);
+	buffer = TryGetClearedMemory(size);
 	if (!buffer) return NULL;
 	script = (script_t *) buffer;
 	Com_Memset(script, 0, sizeof(script_t));
