@@ -137,8 +137,10 @@ void CL_AddReliableCommand( const char *cmd ) {
 	int		index;
 
 	// if we would be losing an old command that hasn't been acknowledged,
-	// we must drop the connection
-	if ( clc.reliableSequence - clc.reliableAcknowledge > MAX_RELIABLE_COMMANDS ) {
+	// we must drop the connection. The unacknowledged commands already fill
+	// every slot when there are MAX_RELIABLE_COMMANDS of them, and one more
+	// would overwrite the oldest, which packets then send under its number.
+	if ( clc.reliableSequence - clc.reliableAcknowledge >= MAX_RELIABLE_COMMANDS ) {
 		Com_Error( ERR_DROP, "Client command overflow" );
 	}
 	clc.reliableSequence++;
@@ -768,9 +770,9 @@ void CL_Disconnect( qboolean showMainMenu ) {
 	// send it a few times in case one is dropped
 	if ( cls.state >= CA_CONNECTED ) {
 		// no room after a command overflow, which is how an ERR_DROP gets
-		// here: a second overflow would be fatal, and the queue has wrapped
-		// over its oldest command, so send nothing and let the server time out
-		if ( clc.reliableSequence - clc.reliableAcknowledge <= MAX_RELIABLE_COMMANDS ) {
+		// here: a second overflow would be fatal, so send nothing and let the
+		// server time out
+		if ( clc.reliableSequence - clc.reliableAcknowledge < MAX_RELIABLE_COMMANDS ) {
 			CL_AddReliableCommand( "disconnect" );
 			CL_WritePacket();
 			CL_WritePacket();
