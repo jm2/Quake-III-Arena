@@ -134,7 +134,7 @@ typedef struct client_s {
 	int				gamestateMessageNum;	// netchan->outgoingSequence of gamestate
 	qboolean		gamestateOwed;			// made active by map_restart before entering the world on
 											// a gamestate (still downloading or loading); cleared by
-											// the next gamestate sent
+											// the next gamestate sent, or a packet on the current serverId
 	int				challenge;
 
 	usercmd_t		lastUsercmd;

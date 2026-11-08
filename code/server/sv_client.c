@@ -1852,7 +1852,11 @@ static void SV_UserMove( client_t *cl, msg_t *msg, qboolean delta ) {
 	// if CS_ACTIVE, then it's time to trigger a new gamestate emission
 	// if not, then we are getting remaining parasite usermove commands, which we should ignore
 	if (sv_pure->integer != 0 && cl->pureAuthentic == 0 && !cl->gotCP) {
-		if (cl->state == CS_ACTIVE)
+		// Not to a client already in the world, which "vdr" (sent before
+		// the cp of every vid_restart) also leaves without a cp: a new
+		// gamestate would run ClientBegin for it again (SV_DoneDownload_f).
+		// Its usercmds wait for the cp instead.
+		if (cl->state == CS_ACTIVE && cl->gamestateOwed)
 		{
 			// we didn't get a cp yet, don't assume anything and just send the gamestate all over again
 			Com_DPrintf( "%s: didn't get cp command, resending gamestate\n", cl->name );
@@ -1949,6 +1953,13 @@ void SV_ExecuteClientMessage( client_t *cl, msg_t *msg ) {
 		cl->reliableAcknowledge = cl->reliableSequence;
 		return;
 	}
+	// a packet on the current serverId comes from a client that has caught
+	// up with the map_restart, so it is owed no gamestate any more (a
+	// downloading client keeps its old serverId until it gets one)
+	if ( serverId == sv.serverId ) {
+		cl->gamestateOwed = qfalse;
+	}
+
 	// if this is a usercmd from a previous gamestate,
 	// ignore it or retransmit the current gamestate
 	// 

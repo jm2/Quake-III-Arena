@@ -181,10 +181,10 @@ static int Active( int host ) {
 	return slot;
 }
 /** A client acknowledging everything asks for gamestate copies (#271); behind a fragment train they queue.
-    An active client's donedl is ignored unless SV_MapRestart_f made it active mid-download, as here;
-    the first copy makes it CS_PRIMED, so the rest of the packet's donedl get through too. */
+    An active client's donedl is ignored, so the client asks while still loading (CS_PRIMED), as the first
+    copy leaves it anyway. */
 static void Donedl( int slot, int count ) {
-	if ( svs.clients[slot].state == CS_ACTIVE ) svs.clients[slot].gamestateOwed = qtrue;
+	svs.clients[slot].state = CS_PRIMED;
 	Packet( &svs.clients[slot], sv.serverId, FORGED_ACK, "donedl", count, qfalse );
 }
 /** SV_SpawnServer with a latched sv_maxclients: resize the client array, then restart the level. */
