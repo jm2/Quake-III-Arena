@@ -61,7 +61,9 @@ void SV_BotFreeClient( int clientNum ) { (void)clientNum; Check( 0, "SV_BotFreeC
 void SV_SendClientSnapshot( client_t *client ) { (void)client; Check( 0, "SV_SendClientSnapshot" ); }
 void SV_UpdateServerCommandsToClient( client_t *client, msg_t *msg ) { (void)client; (void)msg; Check( 0, "gamestate resent" ); }
 void SV_SendMessageToClient( msg_t *msg, client_t *client ) { (void)msg; (void)client; Check( 0, "gamestate resent" ); }
-sharedEntity_t *SV_GentityNum( int num ) { (void)num; Check( 0, "client entered the world" ); return NULL; }
+static int enterAllowed;	/* only LoadingClient lets a client enter the world */
+static sharedEntity_t enteredEntity;
+sharedEntity_t *SV_GentityNum( int num ) { (void)num; Check( enterAllowed, "client entered the world" ); return &enteredEntity; }
 playerState_t *SV_GameClientNum( int num ) { (void)num; Check( 0, "SV_GameClientNum" ); return NULL; }
 void Cvar_Set( const char *name, const char *value ) { (void)name; (void)value; Check( 0, "Cvar_Set" ); }
 char *Cvar_InfoString( int bit ) { (void)bit; Check( 0, "Cvar_InfoString" ); return ""; }
@@ -96,6 +98,7 @@ int VM_CallArgs( vm_t *vm, int callNum, const int *args, int argCount ) {
 	if ( callNum == GAME_CLIENT_USERINFO_CHANGED ) GameUserinfoChanged( n );
 	else if ( callNum == GAME_CLIENT_THINK ) thinks[n]++;
 	else if ( callNum == GAME_CLIENT_COMMAND ) gameCommands[n]++;
+	else if ( callNum == GAME_CLIENT_BEGIN && enterAllowed ) {}
 	else if ( callNum == GAME_CLIENT_DISCONNECT ) {	/* baseq3 ClientDisconnect clears the player's configstring */
 		gameNames[n][0] = 0;
 		SV_SetConfigstring( CS_PLAYERS + n, "" );
@@ -167,7 +170,8 @@ static void Frame( int sender, int move ) {
 	SV_Frame( FRAME_MSEC );
 	CheckOthers( sender );
 }
-/** Require `n`'s current CS_PLAYERS configstring, and every other client's newest server command, to carry `name`. */
+/** Require `n`'s current CS_PLAYERS configstring, and every other client's newest server command, to carry `name`;
+    a client still loading (CS_PRIMED) has the change marked instead, for SV_UpdateConfigstrings. */
 static void CheckPropagated( int n, const char *name ) {
 	char prefix[64];
 	int i;
@@ -178,6 +182,10 @@ static void CheckPropagated( int n, const char *name ) {
 	Com_sprintf( prefix, sizeof( prefix ), "cs %i \"n\\%s\\", CS_PLAYERS + n, name );
 	for ( i = 0, cl = svs.clients; i < CLIENTS; i++, cl++ ) {
 		if ( i == n ) continue;
+		if ( cl->state == CS_PRIMED ) {
+			Check( cl->csUpdated[CS_PLAYERS + n], "configstring update not marked for a loading client" );
+			continue;
+		}
 		Check( !strncmp( cl->reliableCommands[cl->reliableSequence & ( MAX_RELIABLE_COMMANDS - 1 )], prefix, strlen( prefix ) ),
 			"configstring update did not reach another client" );
 	}
@@ -352,6 +360,39 @@ static void HeldKey( int listen ) {
 }
 /** Dedicated and listen-server configurations, the listen server with sv_floodProtect off and on
     (it also throttles a listen server's remote clients since #320); it must not matter. */
+/** A client loading the map acknowledges nothing, so configstring changes sent to it would pile up until 65 drop it
+    with "Server command overflow". They are marked instead, and on entering the world it gets each changed
+    configstring once, at its newest value (ioquake3's csUpdated). */
+static void LoadingClient( int listen ) {
+	client_t *cl, *loading = &svs.clients[PRIMED];
+	usercmd_t cmd;
+	int i, k, last = 2 * MAX_RELIABLE_COMMANDS;
+	char expected[64];
+	Reset( listen );
+	for ( k = 0; k <= last; k++ ) {
+		SV_SetConfigstring( CS_LOCATIONS + k % 3, va( "location %i", k ) );
+		for ( i = 0, cl = svs.clients; i < CLIENTS; i++, cl++ ) {
+			if ( cl->state == CS_ACTIVE ) cl->reliableAcknowledge = cl->reliableSequence;	/* players in the game ack */
+		}
+	}
+	Check( loading->state == CS_PRIMED && loading->reliableSequence == 0, "changes were sent to a loading client" );
+	Check( loading->csUpdated[CS_LOCATIONS] && loading->csUpdated[CS_LOCATIONS + 1] && loading->csUpdated[CS_LOCATIONS + 2] &&
+	       !loading->csUpdated[CS_LOCATIONS + 3], "changes not marked for a loading client" );
+	Check( svs.clients[NORMAL].reliableSequence == last + 1, "players in the game get every change" );
+	memset( &cmd, 0, sizeof( cmd ) );
+	enterAllowed = 1;
+	SV_ClientEnterWorld( loading, &cmd );
+	enterAllowed = 0;
+	Check( loading->state == CS_ACTIVE && loading->reliableSequence == 3, "entering the world sends each change once" );
+	for ( i = 0; i < 3; i++ ) {
+		/* in index order, each at its newest value */
+		Com_sprintf( expected, sizeof( expected ), "cs %i \"location %i\"\n", CS_LOCATIONS + i, last - ( last - i ) % 3 );
+		Check( !strcmp( loading->reliableCommands[( i + 1 ) & ( MAX_RELIABLE_COMMANDS - 1 )], expected ),
+		       "a changed configstring arrives at its newest value" );
+	}
+	for ( i = 0; i < MAX_CONFIGSTRINGS; i++ ) Check( !loading->csUpdated[i], "marks cleared once sent" );
+}
+
 int main( void ) {
 	int listen;
 	sv_maxclients = &maxclients; com_dedicated = &dedicated; com_cl_running = &clRunning;
@@ -370,6 +411,7 @@ int main( void ) {
 		OversizedHeld( listen );
 		MalformedHeld( listen );
 		HeldKey( listen );
+		LoadingClient( listen );
 	}
 	puts( "Server userinfo rate regressions passed (issue #272)" );
 	return 0;
