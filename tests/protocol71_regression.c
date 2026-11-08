@@ -10,6 +10,7 @@
 #include "../code/client/cl_main.c"
 #undef SV_Frame
 #undef SV_Shutdown
+#include <setjmp.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,7 +44,15 @@ int cvar_modifiedFlags;
 char cl_cdkey[34];
 int cl_connectedToPureServer;
 vm_t *uivm;
-void QDECL Com_Error( int level, const char *format, ... ) { (void)level; (void)format; Check( 0, "engine error" ); }
+/* set by a check that expects one Com_Error; it returns to errorReturn */
+static int errorExpected;
+static jmp_buf errorReturn;
+void QDECL Com_Error( int level, const char *format, ... ) {
+	(void)level; (void)format;
+	Check( errorExpected, "engine error" );
+	errorExpected = 0;
+	longjmp( errorReturn, 1 );
+}
 void QDECL Com_Printf( const char *format, ... ) { (void)format; }
 void QDECL Com_DPrintf( const char *format, ... ) { (void)format; }
 void Com_Memcpy( void *out, const void *in, size_t size ) { memcpy( out, in, size ); }
@@ -1074,14 +1083,27 @@ static void FullReliableQueue( void ) {
 	/* the last count CL_AddReliableCommand takes */
 	lastReliable[0] = 0;
 	cls.state = CA_ACTIVE;
-	clc.reliableSequence = MAX_RELIABLE_COMMANDS;
+	clc.reliableSequence = MAX_RELIABLE_COMMANDS - 1;
 	CL_Disconnect( qfalse );
 	Check( !strcmp( lastReliable, "disconnect" ), "the server is told while the queue still takes it" );
 
+	/* a full queue keeps its oldest unacknowledged command: one more is an overflow */
+	cls.state = CA_ACTIVE;
+	clc.reliableAcknowledge = 0;
+	for ( clc.reliableSequence = 0; clc.reliableSequence < MAX_RELIABLE_COMMANDS; ) {
+		CL_AddReliableCommand( va( "cmd %i", clc.reliableSequence + 1 ) );
+	}
+	Check( !strcmp( clc.reliableCommands[1], "cmd 1" ), "the oldest command fills its own slot" );
+	errorExpected = 1;
+	if ( !setjmp( errorReturn ) ) {
+		CL_AddReliableCommand( "one too many" );
+		Check( 0, "a full queue takes no more commands" );
+	}
+	Check( clc.reliableSequence == MAX_RELIABLE_COMMANDS, "the overflow adds nothing" );
+	Check( !strcmp( clc.reliableCommands[1], "cmd 1" ), "the oldest command survives the overflow" );
+
 	lastReliable[0] = 0;
 	packetsWritten = 0;
-	cls.state = CA_ACTIVE;
-	clc.reliableSequence = MAX_RELIABLE_COMMANDS + 1;
 	CL_Disconnect( qfalse );
 	Check( !lastReliable[0], "no command with a full queue" );
 	Check( !packetsWritten, "no packet with a wrapped queue" );
