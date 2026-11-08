@@ -26,7 +26,7 @@ for Q3_TEST_SOURCE in tests/ui_menu_parser_module code/ui/ui_shared; do
     Q3_TEST_OBJECTS+=("$Q3_TEST_DIR/$(basename "$Q3_TEST_SOURCE").o")
 done
 "${CC:-cc}" "${Q3_TEST_FLAGS[@]}" \
-    "$Q3_TEST_ROOT/tests/ui_menu_parser_regression.c" \
+    "$Q3_TEST_ROOT/tests/ui_menu_parser_regression.c" "$Q3_TEST_ROOT/tests/botlib_try_memory_stub.c" \
     "$Q3_TEST_ROOT/code/game/q_shared.c" "$Q3_TEST_ROOT/code/game/q_math.c" \
     "$Q3_TEST_ROOT/code/qcommon/vm.c" "${Q3_TEST_OBJECTS[@]}" \
     -Wl,--gc-sections -lm -o "$Q3_TEST_DIR/ui_menu_parser"

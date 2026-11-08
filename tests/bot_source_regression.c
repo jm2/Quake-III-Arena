@@ -66,7 +66,7 @@ static void Globals(int memory,int onlyPosition) {
         AttemptReset();failAt=position;
         source=memory?LoadSourceMemory((char *)fileText,(int)strlen(fileText),"global-memory"):LoadSourceFile("scripts/native.c");
         Check(!source&&requests==position&&liveOwners==baselineOwners&&numtokens==baselineTokens&&globaldefines==globals,"all base/global-copy allocation failures roll back source and preserve original globals");
-        Check(fatalErrors==((position>=6&&position<=10)||position==12),"only returned null token copies retain native fatal diagnostic");
+        Check(!fatalErrors,"a null token copy fails the parse, not the game");
         Check(memory?(!opens&&!closes&&!fileReads):(opens==1&&closes==1&&fileReads==(position>2)),"global copy failure retains native file closure/read lifecycle");
         AttemptReset();source=memory?LoadSourceMemory((char *)fileText,(int)strlen(fileText),"global-memory"):LoadSourceFile("scripts/native.c");
         Check(source&&liveOwners==baselineOwners+12&&numtokens==baselineTokens+6,"all source/global copies complete on retry");ReadGolden(source,"nativeSuffix",TT_NAME);ReadGolden(source,"42",TT_NUMBER);

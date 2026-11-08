@@ -303,6 +303,20 @@ void *BotImport_GetMemory(int size) {
 
 /*
 ==================
+BotImport_TryGetMemory
+
+For allocations a script or source file drives: NULL when the zone has no
+block that fits, which a file can cause by filling or fragmenting it, so the
+parse fails instead of the game.
+==================
+*/
+void *BotImport_TryGetMemory(int size) {
+	if ( Z_AllocationSize( size ) < 0 ) return NULL;
+	return Z_TryTagMalloc( size, TAG_BOTLIB );
+}
+
+/*
+==================
 BotImport_FreeMemory
 ==================
 */
@@ -565,6 +579,7 @@ void SV_BotInitBotLib(void) {
 
 	//memory management
 	botlib_import.GetMemory = BotImport_GetMemory;
+	botlib_import.TryGetMemory = BotImport_TryGetMemory;
 	botlib_import.FreeMemory = BotImport_FreeMemory;
 	botlib_import.AvailableMemory = Z_AvailableMemory;
 	botlib_import.HunkAlloc = BotImport_HunkAlloc;

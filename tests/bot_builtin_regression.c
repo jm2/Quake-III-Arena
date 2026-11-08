@@ -79,7 +79,7 @@ static void Empty(int builtin) {
 static void Nullable(void) {
     int builtin;for(builtin=BUILTIN_LINE;builtin<=BUILTIN_STDC;builtin++) {
         token_t *first,*last;Reset();failAllocation=1;Check(Expand(builtin,&first,&last)==qfalse,"returned nullable copy rejects expansion");
-        Check(!first&&!last&&!owner&&!numtokens&&allocations==1&&!releases&&!errors&&fatalErrors==1,"nullable copy retains native fatal diagnostic and no result");
+        Check(!first&&!last&&!owner&&!numtokens&&allocations==1&&!releases&&!errors&&!fatalErrors,"a nullable copy fails without a fatal error and publishes no result");
     }
 }
 static void FileBoundary(void) {

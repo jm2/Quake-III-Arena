@@ -208,7 +208,7 @@ int PC_PushIndent(source_t *source, int type, int skip)
 		SourceError(source, "more than %d nested conditionals", MAX_SOURCE_INDENTS);
 		return qfalse;
 	} //end if
-	indent = (indent_t *) GetMemory(sizeof(indent_t));
+	indent = (indent_t *) TryGetMemory(sizeof(indent_t));
 	if (!indent)
 	{
 		SourceError(source, "could not allocate conditional indent");
@@ -311,15 +311,15 @@ token_t *PC_CopyToken(token_t *token)
 	token_t *t;
 
 //	t = (token_t *) malloc(sizeof(token_t));
-	t = (token_t *) GetMemory(sizeof(token_t));
+	t = (token_t *) TryGetMemory(sizeof(token_t));
 //	t = freetokens;
 	if (!t)
 	{
 #ifdef BSPC
 		Error("out of token space\n");
-#else
-		Com_Error(ERR_FATAL, "out of token space\n");
 #endif
+		//the zone has no block that fits, which a file can cause: every
+		//caller fails its parse instead of the game ending
 		return NULL;
 	} //end if
 //	freetokens = freetokens->next;
@@ -1444,7 +1444,7 @@ int PC_Directive_define(source_t *source)
 		SourceWarning(source, "redefinition of %s", token.string);
 	} //end if
 	//allocate define
-	define = (define_t *) GetMemory(sizeof(define_t) + strlen(token.string) + 1);
+	define = (define_t *) TryGetMemory(sizeof(define_t) + strlen(token.string) + 1);
 	if (!define)
 	{
 		SourceError(source, "could not allocate definition");
@@ -1608,7 +1608,7 @@ define_t *PC_DefineFromString(char *string)
 	strcpy(src.filename, "*extern");
 	src.scriptstack = script;
 #if DEFINEHASHING
-	src.definehash = GetClearedMemory(DEFINEHASHSIZE * sizeof(define_t *));
+	src.definehash = TryGetClearedMemory(DEFINEHASHSIZE * sizeof(define_t *));
 	if (!src.definehash)
 	{
 		FreeScript(script);
@@ -1725,7 +1725,7 @@ define_t *PC_CopyDefine(source_t *source, define_t *define)
 	size_t length = strlen(define->name);
 
 	if (length > (size_t)INT_MAX - sizeof(define_t) - 1) return NULL;
-	newdefine = (define_t *) GetMemory(sizeof(define_t) + length + 1);
+	newdefine = (define_t *) TryGetMemory(sizeof(define_t) + length + 1);
 	if (!newdefine) return NULL;
 	Com_Memset(newdefine, 0, sizeof(define_t));
 	//copy the define name
@@ -3526,7 +3526,7 @@ static source_t *PC_CreateSource(script_t *script, const char *name)
 
 	script->next = NULL;
 
-	source = (source_t *) GetMemory(sizeof(source_t));
+	source = (source_t *) TryGetMemory(sizeof(source_t));
 	if (!source)
 	{
 		FreeScript(script);
@@ -3542,7 +3542,7 @@ static source_t *PC_CreateSource(script_t *script, const char *name)
 	source->skip = 0;
 
 #if DEFINEHASHING
-	source->definehash = GetClearedMemory(DEFINEHASHSIZE * sizeof(define_t *));
+	source->definehash = TryGetClearedMemory(DEFINEHASHSIZE * sizeof(define_t *));
 	if (!source->definehash)
 	{
 		FreeScript(script);

@@ -49,3 +49,7 @@ int MemorySize(void *ptr);
 void PrintMemorySize(unsigned long size);
 int TotalAllocatedMemory(void);
 
+//the botlib parser's allocations that fail instead of ending the game
+//(see botlib/l_memory.h) use bspc's own allocator
+#define TryGetMemory(size)			GetMemory(size)
+#define TryGetClearedMemory(size)	GetClearedMemory(size)

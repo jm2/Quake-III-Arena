@@ -8,7 +8,7 @@ trap 'rm -rf -- "$Q3_TEST_DIR"' EXIT
 for Q3_TEST_FIXTURE in ui_cdkey_regression ui_parser_output_regression; do
     Q3_TEST_EXTRA=()
     if [[ "$Q3_TEST_FIXTURE" == ui_parser_output_regression ]]; then
-        Q3_TEST_EXTRA=(-DBOTLIB "$Q3_TEST_ROOT/code/botlib/l_script.c")
+        Q3_TEST_EXTRA=(-DBOTLIB "$Q3_TEST_ROOT/code/botlib/l_script.c" "$Q3_TEST_ROOT/tests/botlib_try_memory_stub.c")
     fi
     "${CC:-cc}" \
         -std=gnu99 -fno-omit-frame-pointer -ffunction-sections -fdata-sections \

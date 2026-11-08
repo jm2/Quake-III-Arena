@@ -61,7 +61,7 @@ static void PasteSetup(int tooLong) {
 static void PasteOutput(token_t *first,token_t *last) {Check(first&&first->next==last&&last&&!last->next&&!strcmp(first->string,"nativeSuffix")&&!strcmp(last->string,"tail")&&liveOwners==2&&numtokens==2,"actual parameter substitution/paste publishes two native tokens");ReleaseChain(first);Check(!liveOwners&&!numtokens,"successful pasted output physically releases");}
 static void PasteFailure(int failure) {
     token_t *first,*last;PasteSetup(0);failAt=failure;first=last=&invocation;
-    Check(!PC_ExpandDefine(&source,&invocation,&define,&first,&last)&&!first&&!last&&!liveOwners&&!numtokens&&fatalErrors==1&&requests==failure,"every returned nullable parameter/output copy rolls back all private owners");
+    Check(!PC_ExpandDefine(&source,&invocation,&define,&first,&last)&&!first&&!last&&!liveOwners&&!numtokens&&!fatalErrors&&requests==failure,"every returned nullable parameter/output copy rolls back all private owners");
     failAt=0;inputPosition=0;Check(PC_ExpandDefine(&source,&invocation,&define,&first,&last),"failed expansion can retry");PasteOutput(first,last);Finish();
 }
 static void PasteOverflow(void) {token_t *first,*last;PasteSetup(1);Check(!PC_ExpandDefine(&source,&invocation,&define,&first,&last)&&!first&&!last&&!liveOwners&&!numtokens&&errors==1&&!fatalErrors,"oversized parameter paste releases parameter and partial output chains");Finish();}
