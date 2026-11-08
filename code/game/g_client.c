@@ -667,6 +667,11 @@ static void ClientCleanName( const char *in, char *out, int outSize ) {
 				break;
 			}
 
+			// nor one before a control character, which the next pass drops
+			if( (unsigned char)*in < ' ' || *in == 127 ) {
+				continue;
+			}
+
 			// don't allow black in a name, period
 			if( ColorIndex(*in) == 0 ) {
 				in++;

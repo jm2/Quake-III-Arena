@@ -1302,6 +1302,8 @@ static const char	*userinfos[] = {
 		"\\color1\\/*4*/\\color2\\//5\\g_redteam\\//red\\g_blueteam\\/*blue",
 	"\\name\\Tab\tName\\model\\visor\\color1\\  4  \\g_redteam\\Red  Team",
 	"\\name\\Two\nLines\r^3Admin^7\x7f\\model\\visor",
+	// a color escape must not carry a control character past the filter
+	"\\name\\Evil^\nLine^\r^\x7f^\x01X\\model\\visor",
 	// a userinfo with a '"', which ClientUserinfoChanged replaces
 	"\\name\\Bob\"x\\model\\sarge\"/*\\color1\\\"//",
 	longColorInfo,
