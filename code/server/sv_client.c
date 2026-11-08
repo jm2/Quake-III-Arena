@@ -759,6 +759,8 @@ void SV_SendClientGameState( client_t *client ) {
 	// gamestate message was not just sent, forcing a retransmit
 	client->gamestateMessageNum = client->netchan.outgoingSequence;
 	client->gamestateOwed = qfalse;
+	// the gamestate holds every configstring as it is now
+	Com_Memset( client->csUpdated, 0, sizeof( client->csUpdated ) );
 
 	MSG_Init( &msg, msgBuffer, sizeof( msgBuffer ) );
 
@@ -846,6 +848,9 @@ void SV_ClientEnterWorld( client_t *client, usercmd_t *cmd ) {
 	client->deltaMessage = -1;
 	client->nextSnapshotTime = svs.time;	// generate a snapshot immediately
 	client->lastUsercmd = *cmd;
+
+	// what changed while it was loading
+	SV_UpdateConfigstrings( client );
 
 	// call the game begin function
 	VM_Call( gvm, GAME_CLIENT_BEGIN, client - svs.clients );

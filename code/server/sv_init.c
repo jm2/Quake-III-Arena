@@ -24,13 +24,80 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 /*
 ===============
+SV_SendConfigstring
+
+Send configstring index to one client: as one cs command, or in bcs chunks
+when it is too long for one.
+===============
+*/
+static void SV_SendConfigstring( client_t *client, int index ) {
+	int		len;
+	int		maxChunkSize = MAX_STRING_CHARS - 24;
+	const char	*val;
+
+	val = sv.configstrings[index];
+	len = strlen( val );
+	if( len >= maxChunkSize ) {
+		int		sent = 0;
+		int		remaining = len;
+		char	*cmd;
+		char	buf[MAX_STRING_CHARS];
+
+		while (remaining > 0 ) {
+			if ( sent == 0 ) {
+				cmd = "bcs0";
+			}
+			else if( remaining < maxChunkSize ) {
+				cmd = "bcs2";
+			}
+			else {
+				cmd = "bcs1";
+			}
+			Q_strncpyz( buf, &val[sent], maxChunkSize );
+
+			SV_SendServerCommand( client, "%s %i \"%s\"\n", cmd, index, buf );
+
+			sent += (maxChunkSize - 1);
+			remaining -= (maxChunkSize - 1);
+		}
+	} else {
+		// standard cs, just send it
+		SV_SendServerCommand( client, "cs %i \"%s\"\n", index, val );
+	}
+}
+
+/*
+===============
+SV_UpdateConfigstrings
+
+Send a client entering the world the configstrings that changed while it
+was loading (CS_PRIMED), each once, at its current value. ioquake3's form.
+===============
+*/
+void SV_UpdateConfigstrings( client_t *client ) {
+	int		index;
+
+	for ( index = 0 ; index < MAX_CONFIGSTRINGS ; index++ ) {
+		if ( !client->csUpdated[index] ) {
+			continue;
+		}
+		client->csUpdated[index] = 0;
+		// do not always send server info to all clients
+		if ( index == CS_SERVERINFO && client->gentity && (client->gentity->r.svFlags & SVF_NOSERVERINFO) ) {
+			continue;
+		}
+		SV_SendConfigstring( client, index );
+	}
+}
+
+/*
+===============
 SV_SetConfigstring
 
 ===============
 */
 void SV_SetConfigstring (int index, const char *val) {
-	int		len, i;
-	int		maxChunkSize = MAX_STRING_CHARS - 24;
+	int		i;
 	client_t	*client;
 
 	if ( index < 0 || index >= MAX_CONFIGSTRINGS ) {
@@ -56,7 +123,16 @@ void SV_SetConfigstring (int index, const char *val) {
 
 		// send the data to all relevent clients
 		for (i = 0, client = svs.clients; i < sv_maxclients->integer ; i++, client++) {
-			if ( client->state < CS_PRIMED ) {
+			// A client loading the map acknowledges nothing until it is in
+			// the world, so every command sent meanwhile stays queued, and
+			// 65 drop it with "Server command overflow". Other players
+			// changing userinfo, teams or votes could do that to anyone who
+			// loads slowly. Mark the change instead, and send the latest
+			// value once when the client enters the world (ioquake3).
+			if ( client->state < CS_ACTIVE ) {
+				if ( client->state == CS_PRIMED ) {
+					client->csUpdated[index] = 1;
+				}
 				continue;
 			}
 			// do not always send server info to all clients
@@ -64,34 +140,7 @@ void SV_SetConfigstring (int index, const char *val) {
 				continue;
 			}
 
-			len = strlen( val );
-			if( len >= maxChunkSize ) {
-				int		sent = 0;
-				int		remaining = len;
-				char	*cmd;
-				char	buf[MAX_STRING_CHARS];
-
-				while (remaining > 0 ) {
-					if ( sent == 0 ) {
-						cmd = "bcs0";
-					}
-					else if( remaining < maxChunkSize ) {
-						cmd = "bcs2";
-					}
-					else {
-						cmd = "bcs1";
-					}
-					Q_strncpyz( buf, &val[sent], maxChunkSize );
-
-					SV_SendServerCommand( client, "%s %i \"%s\"\n", cmd, index, buf );
-
-					sent += (maxChunkSize - 1);
-					remaining -= (maxChunkSize - 1);
-				}
-			} else {
-				// standard cs, just send it
-				SV_SendServerCommand( client, "cs %i \"%s\"\n", index, val );
-			}
+			SV_SendConfigstring( client, index );
 		}
 	}
 }

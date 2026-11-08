@@ -99,6 +99,7 @@ int Com_HashKey( char *string, int maxlen ) {
 int VM_CallArgs( vm_t *vm, int callNum, const int *args, int argCount ) { (void)vm; (void)callNum; (void)args; (void)argCount; return 0; }
 char *VM_CheckedExplicitString( vm_t *vm, int value, qboolean nullable ) { (void)vm; (void)nullable; Check( !value, "denied" ); return NULL; }
 void QDECL SV_SendServerCommand( client_t *cl, const char *fmt, ... ) { (void)cl; (void)fmt; }
+void SV_UpdateConfigstrings( client_t *client ) { (void)client; }	/* sv_init.c */
 sharedEntity_t *SV_GentityNum( int num ) { return &entities[num]; }
 playerState_t *SV_GameClientNum( int num ) { return &players[num]; }
 svEntity_t *SV_SvEntityForGentity( sharedEntity_t *gEnt ) { return &sv.svEntities[gEnt - entities]; }

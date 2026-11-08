@@ -135,6 +135,8 @@ typedef struct client_s {
 	qboolean		gamestateOwed;			// made active by map_restart before entering the world on
 											// a gamestate (still downloading or loading); cleared by
 											// the next gamestate sent, or a packet on the current serverId
+	byte			csUpdated[MAX_CONFIGSTRINGS];	// changed since the gamestate, while CS_PRIMED;
+													// sent by SV_UpdateConfigstrings on entering the world
 	int				challenge;
 
 	usercmd_t		lastUsercmd;
@@ -286,6 +288,7 @@ void SV_MasterShutdown (void);
 // sv_init.c
 //
 void SV_SetConfigstring( int index, const char *val );
+void SV_UpdateConfigstrings( client_t *client );
 void SV_GetConfigstring( int index, char *buffer, int bufferSize );
 
 void SV_SetUserinfo( int index, const char *val );
