@@ -295,6 +295,11 @@ static void SV_MapRestart_f( void ) {
 			isBot = qfalse;
 		}
 
+		// a client still loading has the restart's configstring changes
+		// (warmup ending, say) only marked: send them ahead of map_restart,
+		// as everyone in the world got them, so CG_MapRestart sees them
+		SV_UpdateConfigstrings( client );
+
 		// add the map_restart command
 		SV_AddServerCommand( client, "map_restart\n" );
 
