@@ -132,6 +132,9 @@ typedef struct client_s {
 	int				messageAcknowledge;
 
 	int				gamestateMessageNum;	// netchan->outgoingSequence of gamestate
+	qboolean		gamestateOwed;			// made active by map_restart before entering the world on
+											// a gamestate (still downloading or loading); cleared by
+											// the next gamestate sent, or a packet on the current serverId
 	byte			csUpdated[MAX_CONFIGSTRINGS];	// changed since the gamestate, while CS_PRIMED;
 													// sent by SV_UpdateConfigstrings on entering the world
 	int				challenge;
@@ -310,6 +313,7 @@ void SV_UserinfoChanged( client_t *cl );
 void SV_ApplyPendingUserinfo( void );
 
 void SV_ClientEnterWorld( client_t *client, usercmd_t *cmd );
+void SV_ClientMapRestarted( client_t *client );
 void SV_DropClient( client_t *drop, const char *reason );
 void SV_FreeClient( client_t *cl );
 int SV_RemainingGameState( const char *systemInfo );
