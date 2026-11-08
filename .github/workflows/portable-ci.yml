@@ -58,7 +58,8 @@ jobs:
           python -m py_compile \
             create_appledouble.py \
             generate_icon_r.py \
-            macbinary_encode.py
+            macbinary_encode.py \
+            ndif_image.py
 
       - name: Check prioritized issue ledger
         run: python -m unittest tests.test_review_ledger tests.test_renderer_build_manifests -v

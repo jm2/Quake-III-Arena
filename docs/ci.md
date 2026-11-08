@@ -259,7 +259,7 @@ checks real registration pass counts and cache reuse.
 export TMPDIR="${TMPDIR:-/var/tmp}"
 bash tests/check_shell_syntax.sh
 ./build_mac.sh --help
-python3 -m py_compile create_appledouble.py generate_icon_r.py macbinary_encode.py mac_app.py
+python3 -m py_compile create_appledouble.py generate_icon_r.py macbinary_encode.py mac_app.py ndif_image.py
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 bash tests/run_host_regressions.sh            # every runner, $CC (default cc)
 CC=clang bash tests/run_host_regressions.sh   # the same runners with Clang

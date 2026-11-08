@@ -342,7 +342,13 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
     # binaries-only image and its staging tree are gone; remove what an older
     # package run left so release_mac/ holds only this run's outputs.
     rm -rf "$CONTENT_DIR" "$TEMP_DIR" "$RELEASE_ROOT/bin_content"
-    rm -f "$RELEASE_ROOT/Quake3_Bin.img" "$RELEASE_ROOT/Quake3_Bin.img.bin"
+    rm -f "$RELEASE_ROOT/Quake3_Bin.img" "$RELEASE_ROOT/Quake3_Bin.img.bin" \
+        "$RELEASE_ROOT/Quake3_Install.img.bin"
+    # A Team Arena package followed by a base-only one must not leave the old
+    # Team Arena application beside the new Quake3.
+    for app in Quake3 Quake3_TeamArena; do
+        rm -f "$RELEASE_ROOT/$app.bin" "$RELEASE_ROOT/$app.manifest.txt"
+    done
     mkdir -p "$CONTENT_DIR/Quake 3 Arena/baseq3"
     mkdir -p "$TEMP_DIR"
     chmod -R u+w "$RELEASE_ROOT" 2>/dev/null || true # Ensure we can overwrite

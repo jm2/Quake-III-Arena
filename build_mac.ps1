@@ -501,7 +501,11 @@ if ($PackageMode) {
     
     # The bare applications, for redeploying after a rebuild. The old
     # binaries-only image is gone; remove what an older package run left.
-    foreach ($Stale in "Quake3_Bin.img", "Quake3_Bin.img.bin", "bin_content") {
+    # Also each bare application and manifest, so a Team Arena package followed
+    # by a base-only one does not leave the old Team Arena application behind.
+    foreach ($Stale in "Quake3_Bin.img", "Quake3_Bin.img.bin", "bin_content",
+            "Quake3.bin", "Quake3.manifest.txt",
+            "Quake3_TeamArena.bin", "Quake3_TeamArena.manifest.txt") {
         $StalePath = Join-Path $ReleaseRoot $Stale
         if (Test-Path $StalePath) { Remove-Item -Recurse -Force $StalePath }
     }

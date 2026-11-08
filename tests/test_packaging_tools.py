@@ -785,15 +785,59 @@ class NdifImageTests(unittest.TestCase):
                 self.assertEqual(status, 1)
                 self.assertIn(message, stderr.getvalue())
                 self.assertFalse(output.exists())
-        with self.assertRaisesRegex(ValueError, "24-bit"):
-            ndif_image.bcem("Quake 3 Arena", 1 << 24)
+        # the end marker's offset, sectors * 512, must fit in 32 bits
+        ndif_image.bcem("Quake 3 Arena", (1 << 23) - 1)
+        with self.assertRaisesRegex(ValueError, "4 GiB"):
+            ndif_image.bcem("Quake 3 Arena", 1 << 23)
+
+    def test_failed_encode_leaves_no_image(self):
+        volume, output = self.write_volume(4)
+        output.write_bytes(b"previous image")
+
+        def half_written(source, destination, *args):
+            Path(destination).write_bytes(b"truncated")
+            raise OSError(28, "No space left on device")
+
+        with mock.patch.object(macbinary_encode, "encode_macbinary", half_written):
+            with self.assertRaises(OSError):
+                ndif_image.write_image(str(volume), str(output), "Quake 3 Arena")
+
+        self.assertEqual(output.read_bytes(), b"previous image")
+        self.assertEqual(sorted(p.name for p in output.parent.iterdir()),
+                         sorted([output.name, volume.name]))
+
+    def test_resource_fork_layout_is_exact(self):
+        fork = ndif_image.ndif_resource_fork("Quake 3 Arena", 2960)
+        data_offset, map_offset, data_length, map_length = struct.unpack_from(
+            ">IIII", fork, 0)
+        self.assertEqual(data_offset, 256)
+        self.assertEqual(map_offset, data_offset + data_length)
+        self.assertEqual(len(fork), map_offset + map_length)
+        # the map starts with a copy of the header
+        self.assertEqual(fork[map_offset:map_offset + 16], fork[:16])
+        type_list, name_list = struct.unpack_from(">HH", fork, map_offset + 24)
+        self.assertEqual(type_list, 28)
+        names = fork[map_offset + name_list:]
+        self.assertEqual(names, bytes([13]) + b"Quake 3 Arena")
 
     def test_package_mode_writes_the_ndif_image(self):
-        script = (Path(__file__).resolve().parent.parent / "build_mac.sh").read_text()
+        root = Path(__file__).resolve().parent.parent
+        shell = (root / "build_mac.sh").read_text()
+        powershell = (root / "build_mac.ps1").read_text()
         self.assertIn('python3 ndif_image.py "$IMAGE_NAME" "$BIN_NAME" "Quake 3 Arena"',
-                      script)
-        self.assertNotIn('"iso " "dCpy"', script)
-        self.assertNotIn(".dsk", script)
+                      shell)
+        self.assertIn('python ndif_image.py $ImageName $BinName "Quake 3 Arena"',
+                      powershell)
+        for label, script in (("build_mac.sh", shell), ("build_mac.ps1", powershell)):
+            with self.subTest(label):
+                self.assertNotIn('"iso " "dCpy"', script)
+                self.assertNotIn(".dsk", script)
+                # stale bare applications from an earlier package run go
+                self.assertIn("Quake3_TeamArena", script)
+        self.assertIn('rm -f "$RELEASE_ROOT/$app.bin" "$RELEASE_ROOT/$app.manifest.txt"',
+                      shell)
+        self.assertIn('"Quake3_TeamArena.bin", "Quake3_TeamArena.manifest.txt"',
+                      powershell)
 
 
 if __name__ == "__main__":
