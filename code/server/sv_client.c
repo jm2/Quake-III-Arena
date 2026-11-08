@@ -1456,9 +1456,17 @@ void SV_UserinfoChanged( client_t *cl ) {
 	char	*val;
 	const char	*ip;
 	int		i;
+	int		j;
 
-	// name for C code
-	Q_strncpyz( cl->name, Info_ValueForKey (cl->userinfo, "name"), sizeof(cl->name) );
+	// name for C code, without control characters: it goes into status
+	// replies and console lines, where a line break would forge a new line
+	val = Info_ValueForKey( cl->userinfo, "name" );
+	for ( i = j = 0 ; val[i] && j < (int)sizeof( cl->name ) - 1 ; i++ ) {
+		if ( (unsigned char)val[i] >= ' ' && val[i] != 127 ) {
+			cl->name[j++] = val[i];
+		}
+	}
+	cl->name[j] = '\0';
 
 	// rate command
 
