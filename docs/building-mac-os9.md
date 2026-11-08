@@ -28,12 +28,14 @@ rejects a PEF without the `Joy!peff` magic, `pwpc` architecture, and a
 plausible size. No game data is needed.
 
 Every build writes the same launchable application in host-independent
-containers:
+containers. There is no `Quake3.dsk`: Retro68's Rez sizes that image as the
+forks plus 20 KB, rounded up to 800 KB, and ignores `hfs_write` errors
+(`ResourceFiles/ResourceFile.cc`), so a larger application could come out
+truncated, and nothing used it.
 
 | Output | Contents |
 | --- | --- |
 | `build_mac/Quake3.bin` | MacBinary; decode on the Mac or copy into an emulator |
-| `build_mac/Quake3.dsk` | HFS disk image holding the application; mount it in an emulator |
 | `build_mac/Quake3.ad` + `build_mac/%Quake3.ad` | AppleDouble data fork + resource fork/Finder info pair, as `genisoimage -hfs -double` reads it |
 
 A Team Arena build adds the same set for `Quake3_TeamArena`. Rez cannot set
@@ -46,7 +48,7 @@ Re-check a build with:
 
 ```sh
 python3 mac_app.py verify --pef build_mac/Quake3.pef \
-    build_mac/Quake3.bin build_mac/Quake3.dsk build_mac/%Quake3.ad
+    build_mac/Quake3.bin build_mac/%Quake3.ad
 ```
 
 Next to the PEF, `build_mac/Quake3.manifest.txt` records its SHA-256 and the
@@ -253,6 +255,26 @@ that path has not yet been run on a Mac host since this change. Packaging
 requires an HFS-capable `genisoimage`, `mkisofs`, or `hdiutil`. Missing image
 tools are fatal: an ordinary ZIP does not preserve a usable Classic Mac
 resource fork.
+
+Package mode writes to `release_mac/`:
+
+| Output | Contents |
+| --- | --- |
+| `Quake3_Install.img.bin` | The install image, a Disk Copy read/write image in MacBinary |
+| `Quake3.bin` (and `Quake3_TeamArena.bin`) | The bare application, for redeploying after a rebuild |
+| `Quake3.manifest.txt` (and Team Arena's) | The PEF's SHA-256 and toolchain, as in `build_mac/` |
+
+Disk Copy 6.3.3, which Mac OS 9 includes, mounts only its own formats. It
+refuses a bare HFS or HFS/ISO hybrid volume whatever the file's type: `rohd`
+gives -39, `dImg` gives -8819, and type `iso ` is not even offered. Its
+creator is `ddsk`, not `dCpy`. `ndif_image.py` leaves the volume unchanged as
+the data fork and adds the `bcem` resource that describes it as a read/write
+NDIF image, typed `dimg`/`ddsk`. Its layout was read back from images Disk
+Copy 6.3.3 made, and the docstring lists it. Under ClassicMac, double-clicking
+the wrapped image mounted it with the stock Disk Copy. That test used Enemy
+Territory's 279 MB image, built the same way as this one. Copying the folder
+off it gave identical files, and the game ran from the copy. The old images
+needed Toast.
 
 Asset discovery is still provisional: it selects the first matching retail
 tree and remote update inputs are not pinned by digest. Do not publish an

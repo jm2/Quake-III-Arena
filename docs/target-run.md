@@ -16,9 +16,17 @@ This is an optimized build. `--bringup` builds at `-O0` instead, which keeps eve
 variable in memory and is easier to read in MacsBug. If something fails only in
 the optimized build, that points at the compiler or at undefined behavior.
 
-Do not use the old contents of `release_mac/`: they are the failed April run,
-with demo data. Do not run from `Quake3.dsk` or a locked image: there is no
-`baseq3` beside the application there, and a locked disk cannot hold the logs.
+For a first install on a Mac without the game, `./build_mac.sh package` writes
+`release_mac/Quake3_Install.img.bin`, holding the application and your retail
+`baseq3`. Decode it with StuffIt Expander and double-click the result: the
+Disk Copy that comes with Mac OS 9 mounts it, and Toast is not needed. The
+volume is locked, so drag the `Quake 3 Arena` folder to a writable disk and run
+it from there: a locked disk cannot hold the config or the logs. This has been
+tested under ClassicMac, not yet on real hardware. Package mode also puts the
+bare `Quake3.bin` in `release_mac/`.
+
+Do not use `release_mac/` contents older than this: before Disk Copy images,
+the image needed Toast, and the April run's held demo data.
 
 ## Install
 

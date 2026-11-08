@@ -22,11 +22,12 @@ function Show-Usage {
     Write-Host "Usage: .\build_mac.ps1 [package|--package] [--base-only|--team-arena] [--bringup] [-h|--help]"
     Write-Host ""
     Write-Host "  (no args)            Configure, build, and validate the launchable Quake3"
-    Write-Host "                       application: build_mac\Quake3.bin (MacBinary),"
-    Write-Host "                       Quake3.dsk (HFS image) and Quake3.ad + %Quake3.ad"
-    Write-Host "                       (AppleDouble). No game data is needed."
-    Write-Host "  package, --package   Build, then add retail game data and assemble a"
-    Write-Host "                       Mac OS 9 install image."
+    Write-Host "                       application: build_mac\Quake3.bin (MacBinary) and"
+    Write-Host "                       Quake3.ad + %Quake3.ad (AppleDouble). No game data is"
+    Write-Host "                       needed."
+    Write-Host "  package, --package   Build, then add retail game data and write a Disk Copy"
+    Write-Host "                       install image (Quake3_Install.img.bin) and the bare"
+    Write-Host "                       application(s) under release_mac."
     Write-Host "  --base-only          Build only Quake3 (the default)."
     Write-Host "  --team-arena         Build Quake3 and Quake3_TeamArena."
     Write-Host "  --bringup            Build at -O0 instead of the optimized default."
@@ -289,7 +290,7 @@ if ($LASTEXITCODE -eq 0) {
             throw "PEF validation failed for $Pef (need Joy!peff/pwpc and at least 1 MiB)."
         }
         Write-Host "PEF validation OK: $Pef"
-        python ..\mac_app.py verify --pef $Pef "$App.bin" "$App.dsk" "%$App.ad"
+        python ..\mac_app.py verify --pef $Pef "$App.bin" "%$App.ad"
         if ($LASTEXITCODE -ne 0) {
             throw "$App is not a complete Classic application."
         }
@@ -311,8 +312,7 @@ if ($LASTEXITCODE -eq 0) {
 
     Write-Host "Build complete. Launchable Classic application(s) in build_mac:" -ForegroundColor Green
     foreach ($App in $Applications) {
-        Write-Host "  $App.bin (MacBinary), $App.dsk (HFS disk image),"
-        Write-Host "  $App.ad + %$App.ad (AppleDouble)"
+        Write-Host "  $App.bin (MacBinary), $App.ad + %$App.ad (AppleDouble)"
         Write-Host "  $App.manifest.txt (PEF SHA-256 and Retro68 toolchain):"
         Get-Content "$App.manifest.txt" |
             Where-Object { $_ -match "^(pef_sha256|gcc_version|retro68_commit|retro68_pinned)=" } |
@@ -465,7 +465,6 @@ if ($PackageMode) {
     )
     
     # Run mkisofs (Hybrid HFS)
-    # Using 'iso ' type code later to identify it as ISO9660
     $ImageName = Join-Path $ReleaseRoot "Quake3_Install.img"
     if (Test-Path $ImageName) { Remove-Item $ImageName -Force }
     & $MkIsoFs -hfs -double -map $MappingFile -o $ImageName -V "Quake 3 Arena" $ContentDir | Out-Null
@@ -477,12 +476,13 @@ if ($PackageMode) {
         Test-ImageApplications $ImageName
         Write-Host "Image created: $ImageName" -ForegroundColor Green
         
-        # MacBinary Encode
-        # Type: 'iso ' (ISO Image), Creator: dCpy (Disk Copy)
-        Write-Host "Encoding as MacBinary II..."
+        # Disk Copy 6.3.3, which Mac OS 9 ships, mounts only its own formats.
+        # ndif_image.py adds the 'bcem' resource that makes the unchanged
+        # volume a read/write NDIF image, typed dimg/ddsk (see build_mac.sh).
+        Write-Host "Encoding as a Disk Copy image in MacBinary II..."
         $BinName = Join-Path $ReleaseRoot "Quake3_Install.img.bin"
         if (Test-Path $BinName) { Remove-Item $BinName -Force }
-        python macbinary_encode.py $ImageName $BinName "iso " "dCpy"
+        python ndif_image.py $ImageName $BinName "Quake 3 Arena"
         if ($LASTEXITCODE -ne 0) {
             throw "MacBinary encoding failed for $ImageName."
         }
@@ -499,44 +499,16 @@ if ($PackageMode) {
         throw "HFS image output is missing or empty: $ImageName"
     }
     
-    # ---------------------------------------------------------
-    # Create Binary-Only Image
-    # ---------------------------------------------------------
-    Write-Host "Creating Binaries-Only Image..."
-    $BinImgName = Join-Path $ReleaseRoot "Quake3_Bin.img"
-    if (Test-Path $BinImgName) { Remove-Item $BinImgName -Force }
-    $BinContentDir = Join-Path $ReleaseRoot "bin_content"
-    if (Test-Path $BinContentDir) { Remove-Item -Recurse -Force $BinContentDir }
-    New-Item -ItemType Directory -Path $BinContentDir | Out-Null
-    
+    # The bare applications, for redeploying after a rebuild. The old
+    # binaries-only image is gone; remove what an older package run left.
+    foreach ($Stale in "Quake3_Bin.img", "Quake3_Bin.img.bin", "bin_content") {
+        $StalePath = Join-Path $ReleaseRoot $Stale
+        if (Test-Path $StalePath) { Remove-Item -Recurse -Force $StalePath }
+    }
     foreach ($App in $Applications) {
-        Copy-ClassicApplication $App $BinContentDir
-    }
-    
-    & $MkIsoFs -hfs -double -map $MappingFile -o $BinImgName -V "Quake 3 Binaries" $BinContentDir | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "HFS image creation failed for $BinImgName."
-    }
-    
-    if ((Test-Path $BinImgName) -and (Get-Item $BinImgName).Length -gt 0) {
-        Test-ImageApplications $BinImgName
-        Write-Host "Encoding Binaries Image..."
-        $BinBinName = Join-Path $ReleaseRoot "Quake3_Bin.img.bin"
-        if (Test-Path $BinBinName) { Remove-Item $BinBinName -Force }
-        python macbinary_encode.py $BinImgName $BinBinName "iso " "dCpy"
-        if ($LASTEXITCODE -ne 0) {
-            throw "MacBinary encoding failed for $BinImgName."
-        }
-        if ((Test-Path $BinBinName) -and (Get-Item $BinBinName).Length -gt 128) {
-            Write-Host "Package created: $BinBinName" -ForegroundColor Green
-            Remove-Item $BinImgName -Force
-        }
-        else {
-            throw "MacBinary output is missing or empty: $BinBinName"
-        }
-    }
-    else {
-        throw "HFS image output is missing or empty: $BinImgName"
+        Copy-Item -Force (Join-Path $BuildDir "$App.bin") $ReleaseRoot
+        Copy-Item -Force (Join-Path $BuildDir "$App.manifest.txt") $ReleaseRoot
+        Write-Host "Application copied: $(Join-Path $ReleaseRoot "$App.bin")" -ForegroundColor Green
     }
     
     # Cleanup

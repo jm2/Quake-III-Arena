@@ -367,8 +367,10 @@ endif()
 # application. Rez writes host-independent containers, so neither retail data
 # nor host resource-fork support is needed:
 #   <name>.bin              MacBinary
-#   <name>.dsk              HFS disk image
 #   <name>.ad + %<name>.ad  AppleDouble pair (what package mode stages)
+# There is no <name>.dsk: Rez sizes that image as the forks plus 20 KB, rounded
+# up to 800 KB, and ignores hfs_write's errors, so an application just under a
+# multiple came out truncated. Nothing used it.
 # mac_app.py then sets the kHasBundle Finder flag Rez cannot express and checks
 # type/creator, the data fork and the cfrg/SIZE/BNDL/FREF/icon resources.
 # <name>.manifest.txt records the PEF's SHA-256 and the Retro68 toolchain that
@@ -430,23 +432,23 @@ function(quake3_add_classic_application target)
     # The SIZE minimum must hold the engine's fixed demand and this image
     # with headroom (issue #230).
     add_custom_command(
-        OUTPUT "${target}.bin" "${target}.dsk" "${target}.ad" "%${target}.ad"
+        OUTPUT "${target}.bin" "${target}.ad" "%${target}.ad"
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/cmake/mac_partition.py" map
                 --root "${CMAKE_SOURCE_DIR}" --map "${target}.map"
         COMMAND "${RETRO68_REZ}" "${CMAKE_SOURCE_DIR}/code/mac/mac_resources.r"
                 -I "${QUAKE3_REZ_INCLUDE_DIR}" -I "${CMAKE_SOURCE_DIR}/code/mac"
                 -t APPL -c IDQ3 --data "${target}.pef"
-                -o "${target}.bin" --cc "${target}.dsk" --cc "%${target}.ad"
+                -o "${target}.bin" --cc "%${target}.ad"
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/mac_app.py" finalize
                 --pef "${target}.pef"
-                "${target}.bin" "${target}.dsk" "%${target}.ad"
+                "${target}.bin" "%${target}.ad"
         DEPENDS "${target}.pef" ${QUAKE3_RESOURCE_SOURCES}
                 "${CMAKE_SOURCE_DIR}/mac_app.py" "${CMAKE_SOURCE_DIR}/cmake/mac_partition.py"
         COMMENT "Building Classic application ${target} (APPL/IDQ3)"
         VERBATIM)
     quake3_add_build_manifest(${target})
     add_custom_target(${target}_APPL ALL
-        DEPENDS "${target}.bin" "${target}.dsk" "${target}.ad" "%${target}.ad"
+        DEPENDS "${target}.bin" "${target}.ad" "%${target}.ad"
                 "${target}.manifest.txt")
 endfunction()
 
