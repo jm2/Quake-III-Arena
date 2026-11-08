@@ -232,6 +232,13 @@ also requires `missionpack\pak0.pk3`. The old demo fallback was removed because
 it placed `demoq3` data under `baseq3` and produced an application that could
 not load `default.cfg`.
 
+Every `pak*.pk3` beside the `pak0.pk3` goes into the image, so keep exactly one
+`baseq3` (and `missionpack`) folder with a `pak0.pk3` under the repository
+tree: packaging stops and lists them if it finds more than one. When `pak1.pk3`
+is missing, the point release paks are downloaded from ioquake3's
+`quake3-latest-pk3s.zip`, and packaging stops if the zip's SHA-256 is not the
+one pinned in both scripts.
+
 With data present under the repository tree, package with:
 
 ```sh
