@@ -344,6 +344,7 @@ static void Connect( int n ) {
 	for ( block = 0; block <= BLOCKS; block++ ) {
 		/* SV_WriteDownloadToClient sent this block; an empty one ends the file */
 		cl->downloadBlockSize[block % MAX_DOWNLOAD_WINDOW] = block < BLOCKS ? MAX_DOWNLOAD_BLKSIZE : 0;
+		cl->downloadCurrentBlock = block + 1;	/* read before it was sent */
 		svs.time += FRAME;
 		Queue( n, va( "nextdl %i", block ) );
 		if ( block == typed ) Queue( n, "say downloading" );
@@ -384,6 +385,7 @@ static void Reload( int n ) {
 	cl->state = CS_CONNECTED;
 	for ( block = 0; block <= BLOCKS; block++ ) {
 		cl->downloadBlockSize[block % MAX_DOWNLOAD_WINDOW] = block < BLOCKS ? MAX_DOWNLOAD_BLKSIZE : 0;
+		cl->downloadCurrentBlock = block + 1;	/* read before it was sent */
 		svs.time += FRAME;
 		Queue( n, va( "nextdl %i", block ) );
 		if ( block == 2 ) Queue( n, "say downloading" );
