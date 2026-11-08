@@ -182,7 +182,7 @@ void PS_CreatePunctuationTable(script_t *script, punctuation_t *punctuations)
 
 	//get memory for the table
 	if (!script->punctuationtable) script->punctuationtable = (punctuation_t **)
-												GetMemory(256 * sizeof(punctuation_t *));
+												TryGetMemory(256 * sizeof(punctuation_t *));
 	if (!script->punctuationtable) return;
 	Com_Memset(script->punctuationtable, 0, 256 * sizeof(punctuation_t *));
 	//add the punctuations in the list to the punctuation table

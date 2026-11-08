@@ -184,7 +184,7 @@ fuzzyseperator_t *ReadFuzzySeperators_r(source_t *source)
 		def = !strcmp(token.string, "default");
 		if (def || !strcmp(token.string, "case"))
 		{
-			fs = (fuzzyseperator_t *) GetClearedMemory(sizeof(fuzzyseperator_t));
+			fs = (fuzzyseperator_t *) TryGetClearedMemory(sizeof(fuzzyseperator_t));
 			if (!fs)
 			{
 				SourceError(source, "could not allocate fuzzy separator\n");
@@ -278,7 +278,7 @@ fuzzyseperator_t *ReadFuzzySeperators_r(source_t *source)
 	if (!founddefault)
 	{
 		SourceWarning(source, "switch without default\n");
-		fs = (fuzzyseperator_t *) GetClearedMemory(sizeof(fuzzyseperator_t));
+		fs = (fuzzyseperator_t *) TryGetClearedMemory(sizeof(fuzzyseperator_t));
 		if (!fs)
 		{
 			SourceError(source, "could not allocate default fuzzy separator\n");
@@ -415,7 +415,7 @@ weightconfig_t *ReadWeightConfig(char *filename)
 			} //end if
 			else if (!strcmp(token.string, "return"))
 			{
-				fs = (fuzzyseperator_t *) GetClearedMemory(sizeof(fuzzyseperator_t));
+				fs = (fuzzyseperator_t *) TryGetClearedMemory(sizeof(fuzzyseperator_t));
 				if (!fs)
 				{
 					SourceError(source, "could not allocate return fuzzy separator\n");

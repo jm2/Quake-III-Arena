@@ -87,6 +87,19 @@ int main( void ) {
 	Check( Parse( text, NULL ) == -1, "a source that fills the zone fails its parse" );
 	Check( liveBytes == 0, "the failed parse frees everything" );
 
+	/* the script buffer fits but its punctuation table does not: a file can
+	   steer the zone's free space into that window (an #include loads a new
+	   script), and the load must fail, not the game */
+	{
+		static char small[] = "a b c\n";
+		long reserve = ZONE_BUDGET - (long)( sizeof( script_t ) + strlen( small ) + 1 + sizeof( unsigned long ) ) - 16;
+		script_t *script;
+		liveBytes += reserve;
+		script = LoadScriptMemory( small, (int)strlen( small ), "window" );
+		liveBytes -= reserve;
+		Check( !script && liveBytes == 0, "a punctuation table that does not fit fails the load" );
+	}
+
 	/* and the zone is usable again */
 	Check( Parse( "#define VALUE 7\nVALUE\n", "7" ) == 1 && liveBytes == 0, "parsing works after the failure" );
 	puts( "bot parse zone regression passed" );

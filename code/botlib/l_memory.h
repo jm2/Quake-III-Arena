@@ -32,7 +32,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //#define MEMDEBUG
 
 //allocations a script or source file drives (preprocessor definitions,
-//token copies, conditionals, script buffers) come from botimport.TryGetMemory,
+//token copies, conditionals, script buffers and punctuation tables, and the
+//weight files' fuzzy separators) come from botimport.TryGetMemory,
 //so a file that fills or fragments the zone fails its parse instead of ending
 //the game; their callers check for NULL. They are freed with FreeMemory.
 void *TryGetMemory(unsigned long size);
