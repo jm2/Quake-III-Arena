@@ -1545,6 +1545,56 @@ static void Sys_Heartbeat( void ) {
 	frames = 0;
 }
 
+/*
+==================
+Sys_MaskStartupSecrets
+
+Overwrites, in the NUL-terminated line, the value after any word naming a
+password cvar (rconpassword, g_password, sv_privatePassword, ...) with '*'.
+The startup command line goes to q3boot.log and the crash report, which
+people attach to bug reports. A quoted value keeps its quotes.
+==================
+*/
+static void Sys_MaskStartupSecrets( char *line ) {
+	char		*p;
+	char		*word;
+	qboolean	maskNext;
+	qboolean	quoted;
+
+	maskNext = qfalse;
+	p = line;
+	while ( *p ) {
+		while ( *p && ( (unsigned char)*p <= ' ' || *p == '+' ) ) {
+			p++;
+		}
+		if ( !*p ) {
+			break;
+		}
+		quoted = ( *p == '"' );
+		if ( quoted ) {
+			p++;
+		}
+		word = p;
+		while ( *p && ( quoted ? *p != '"' : (unsigned char)*p > ' ' ) ) {
+			p++;
+		}
+		if ( maskNext ) {
+			memset( word, '*', p - word );
+			maskNext = qfalse;
+		} else {
+			for ( ; word + 8 <= p ; word++ ) {
+				if ( !Q_stricmpn( word, "password", 8 ) ) {
+					maskNext = qtrue;
+					break;
+				}
+			}
+		}
+		if ( quoted && *p ) {
+			p++;
+		}
+	}
+}
+
 int main( int argc, char **argv ) {
     int i;
     static char commandLine[MAC_COMMAND_LINE_SIZE];
@@ -1631,7 +1681,13 @@ int main( int argc, char **argv ) {
             Sys_LogPrintf( "main: startup parameters read from %s\n", path );
         }
     }
-    Sys_LogPrintf( "main: command line: %s\n", commandLine );
+    {
+        static char logged[MAC_COMMAND_LINE_SIZE];
+
+        Q_strncpyz( logged, commandLine, sizeof( logged ) );
+        Sys_MaskStartupSecrets( logged );
+        Sys_LogPrintf( "main: command line: %s\n", logged );
+    }
     if ( strstr( commandLine, "sys_bootlog 0" ) ) {
         Sys_BootLogClose();
     }
