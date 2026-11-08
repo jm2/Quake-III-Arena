@@ -222,12 +222,18 @@ static void LegitimateFlow( qboolean mapChange ) {
 	Check( gamestate == before, "one message on the wire" );
 	Packet( cl, sv.serverId, gamestate, NULL, 0, qtrue );
 	Check( cl->state == CS_ACTIVE && begins == 1, "client enters the world after the new gamestate" );
-	// as on master an in-game donedl reloads the gamestate, but once per acknowledged gamestate
+	// an in-game donedl would run ClientBegin again (a free respawn that
+	// also loses a carried flag), so it is ignored, as in ioquake3
 	Packet( cl, sv.serverId, gamestate, "donedl", 3, qfalse );
-	Check( cl->state == CS_PRIMED && cl->gamestateMessageNum == gamestate + 1 && !Queued( cl ) && !queueAllocs,
-	       "repeated in-game donedl sends one gamestate" );
-	Drain( cl ); Packet( cl, sv.serverId, gamestate + 1, NULL, 0, qtrue );
-	Check( cl->state == CS_ACTIVE && begins == 2, "client enters the world again" );
+	Check( cl->state == CS_ACTIVE && cl->gamestateMessageNum == gamestate &&
+	       cl->netchan.outgoingSequence == gamestate + 1 && !cl->netchan.unsentFragments && !queueAllocs,
+	       "in-game donedl sends no gamestate" );
+	// nor does a forged older serverId get one through the dropped-gamestate resend
+	Packet( cl, SERVER_ID - 5, gamestate + 2, NULL, 0, qtrue );
+	Check( cl->state == CS_ACTIVE && cl->gamestateMessageNum == gamestate && !cl->netchan.unsentFragments,
+	       "forged old serverId resends no gamestate to an active client" );
+	Packet( cl, sv.serverId, gamestate, NULL, 0, qtrue );
+	Check( cl->state == CS_ACTIVE && begins == 1, "client stays in the world without a second ClientBegin" );
 	puts( mapChange ? "download across a map change sends one gamestate" : "download completion sends one gamestate" );
 }
 /** A packet full of donedl with an honest acknowledge yields one gamestate; the rest are ignored. */
@@ -287,21 +293,82 @@ static void ReconnectDuringDownload( void ) {
 	puts( "reconnect during a download releases its file handle and blocks" );
 }
 /** SV_MapRestart_f forces a downloading client active; its donedl must still bring the new gamestate. */
+/** SV_MapRestart_f's new serverId and its SV_ClientMapRestarted for every client >= CS_CONNECTED;
+    map_restart leaves restartedServerId unchanged. */
+static void MapRestart( int serverId ) {
+	int i;
+	client_t *cl;
+	sv.serverId = serverId;
+	for ( i = 0, cl = svs.clients; i < MAX_CLIENTS; i++, cl++ ) {
+		if ( cl->state >= CS_CONNECTED ) SV_ClientMapRestarted( cl );
+	}
+}
 static void MapRestartDuringDownload( void ) {
 	client_t *cl = Connect( 1, 11 ); int before, gamestate;
 	InitialGamestate( cl ); Drain( cl );
 	before = cl->netchan.outgoingSequence;
 	Packet( cl, SERVER_ID, before - 1, "download maps.pk3", 1, qfalse );
-	sv.serverId = SERVER_ID + 1;				// map_restart leaves restartedServerId unchanged
-	SV_ClientEnterWorld( cl, &cl->lastUsercmd );	// as SV_MapRestart_f does to every client >= CS_CONNECTED
+	// two map_restarts before the download ends (warmup ending, then a vote)
+	MapRestart( SERVER_ID + 1 );
+	MapRestart( SERVER_ID + 2 );
 	Packet( cl, SERVER_ID, before - 1, "nextdl 0", 1, qfalse );
 	Packet( cl, SERVER_ID, before - 1, "donedl", 1, qfalse );
 	Check( cl->state == CS_PRIMED && cl->gamestateMessageNum == before && cl->netchan.unsentFragments,
 	       "donedl after a map_restart during the download sends the gamestate" );
 	Drain( cl ); gamestate = cl->netchan.outgoingSequence - 1;
 	Packet( cl, sv.serverId, gamestate, NULL, 0, qtrue );
-	Check( cl->state == CS_ACTIVE && begins == 2 && !queueAllocs, "client enters the restarted map" );
+	Check( cl->state == CS_ACTIVE && begins == 3 && !queueAllocs, "client enters the restarted map" );	/* two restarts, then the gamestate */
+	Packet( cl, sv.serverId, gamestate, "donedl", 1, qfalse );
+	Check( cl->state == CS_ACTIVE && !cl->gamestateOwed && cl->gamestateMessageNum == gamestate &&
+	       !cl->netchan.unsentFragments, "once in the restarted map, donedl is ignored" );
 	puts( "download across a map_restart sends one gamestate" );
+}
+/** A client loading at a map_restart is owed a gamestate only until it catches up: once it sends the current
+    serverId, an in-game donedl or a forged old serverId gets nothing. */
+static void MapRestartWhileLoading( void ) {
+	client_t *cl = Connect( 1, 11 ); int gamestate;
+	InitialGamestate( cl ); Drain( cl ); gamestate = cl->netchan.outgoingSequence - 1;
+	MapRestart( SERVER_ID + 1 );
+	Check( cl->state == CS_ACTIVE && cl->gamestateOwed && begins == 1, "a loading client is made active and owed" );
+	Packet( cl, sv.serverId, gamestate, NULL, 0, qtrue );
+	Check( !cl->gamestateOwed, "the current serverId clears the debt" );
+	Packet( cl, sv.serverId, gamestate, "donedl", 1, qfalse );
+	Packet( cl, SERVER_ID - 5, gamestate + 2, NULL, 0, qtrue );
+	Check( cl->state == CS_ACTIVE && cl->gamestateMessageNum == gamestate && !cl->netchan.unsentFragments && begins == 1,
+	       "once caught up, neither donedl nor a forged serverId resends the gamestate" );
+	puts( "a client loading at a map_restart is owed a gamestate only until it catches up" );
+}
+/** A modified client that keeps its old serverId (a "nextdl" lets its packets past the stale-serverId check)
+    and plays in the restarted world is owed nothing once it sends usercmds: a later donedl gets no gamestate. */
+static void MapRestartStaleServerId( void ) {
+	client_t *cl = Connect( 1, 11 ); int gamestate;
+	InitialGamestate( cl ); Drain( cl ); gamestate = cl->netchan.outgoingSequence - 1;
+	Packet( cl, SERVER_ID, gamestate, "nextdl 0", 1, qfalse );	/* while loading: nothing to acknowledge */
+	MapRestart( SERVER_ID + 1 );
+	Check( cl->gamestateOwed && begins == 1, "a loading client is made active and owed" );
+	Packet( cl, SERVER_ID, gamestate, NULL, 0, qtrue );	/* plays on, old serverId */
+	Check( !cl->gamestateOwed, "a usercmd in the world clears the debt" );
+	Packet( cl, SERVER_ID, gamestate, "donedl", 1, qfalse );
+	Check( cl->state == CS_ACTIVE && cl->gamestateMessageNum == gamestate && !cl->netchan.unsentFragments && begins == 1,
+	       "donedl after playing with an old serverId resends no gamestate" );
+	puts( "a client playing on an old serverId after a map_restart is owed nothing" );
+}
+/** On a pure server, vdr clears the client's cp; an active client's usercmds then wait for the cp instead of
+    drawing a new gamestate, which would run ClientBegin again. */
+static void PureVidRestart( void ) {
+	static cvar_t pure = { .string = "1", .integer = 1 };
+	client_t *cl = Connect( 1, 11 ); int gamestate;
+	sv_pure = &pure;
+	InitialGamestate( cl ); Drain( cl ); gamestate = cl->netchan.outgoingSequence - 1;
+	cl->gotCP = qtrue; cl->pureAuthentic = 1;	/* as SV_VerifyPaks_f leaves an honest client */
+	Packet( cl, sv.serverId, gamestate, NULL, 0, qtrue );
+	Check( cl->state == CS_ACTIVE && begins == 1, "pure client enters the world" );
+	Packet( cl, sv.serverId, gamestate, "vdr", 1, qtrue );
+	Check( !cl->gotCP && cl->state == CS_ACTIVE && cl->gamestateMessageNum == gamestate && !cl->netchan.unsentFragments,
+	       "vdr without a cp resends no gamestate to an active client" );
+	Check( begins == 1, "no second ClientBegin" );
+	sv_pure = &zero;
+	puts( "vdr does not get an active client a new gamestate" );
 }
 /** Acknowledges for blocks the server has not read are ignored, so a packet of chained nextdl cannot move the
     window ahead and make SV_WriteDownloadToClient read the rest of the file in one frame. */
@@ -448,7 +515,8 @@ static void Shutdown( void ) {
 	Packet( cl, SERVER_ID, gamestate, NULL, 0, qtrue );
 	Check( cl->state == CS_ACTIVE, "active" );
 	SV_SendClientSnapshot( cl );
-	sv.serverId = sv.restartedServerId = SERVER_ID + 1;
+	// SV_SpawnServer: a new serverId, and every remote client back to CS_CONNECTED
+	sv.serverId = sv.restartedServerId = SERVER_ID + 1; cl->state = CS_CONNECTED;
 	Packet( cl, SERVER_ID, gamestate + 1, NULL, 0, qtrue );
 	Check( cl->state == CS_PRIMED && cl->netchan.unsentFragments, "map change resends the gamestate" );
 	SV_Shutdown( "test" );
@@ -498,8 +566,11 @@ int main( int argc, char **argv ) {
 	case 10: PinnedBudgetMapChange(); break;
 	case 11: PinnedBudgetDonedl(); break;
 	case 12: BudgetPlusFirstMessages(); break;
-	case 13: ChainedNextdl(); break;
-	default: Check( 0, "usage: server-donedl-tests <0-13>" );
+	case 13: MapRestartWhileLoading(); break;
+	case 14: PureVidRestart(); break;
+	case 15: MapRestartStaleServerId(); break;
+	case 16: ChainedNextdl(); break;
+	default: Check( 0, "usage: server-donedl-tests <0-16>" );
 	}
 	return 0;
 }
