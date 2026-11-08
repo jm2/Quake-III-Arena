@@ -249,6 +249,10 @@ int main( void ) {
 	Check( clients[0].state == CS_CONNECTED && !strcmp( StoredIP(), "localhost" ), "local connect" );
 	Update( "\\ip\\192.0.2.99:27960\\name\\Player" );
 	Check( !strcmp( StoredIP(), "localhost" ), "local client ip replaced by client value" );
+	/* The engine's copy of the name, which status replies and console lines
+	   print, keeps no control characters that could forge a line. */
+	Update( "\\name\\Two\nLines\r^3Admin\x7f\tX" );
+	Check( !strcmp( clients[0].name, "TwoLines^3AdminX" ), "control characters kept in the engine's name" );
 
 	/* A game that leaves no room for "ip" in ClientConnect must not leave a connected client without one. */
 	gameFillsUserinfo = 1;
