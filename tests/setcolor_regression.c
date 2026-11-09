@@ -37,6 +37,9 @@ int main( void ) {
 	Check( 254.84f, 216 );		/* ET: Legacy's health bar: 64984 kept to its low byte */
 	Check( -0.5f, 129 );		/* -127 kept to its low byte */
 	Check( 8421504.0f, 128 );	/* 2147483520, still an int */
+	Check( 8421505.0f, 255 );	/* exactly 2^31: fctiwz saturates to 0x7fffffff */
+	Check( -8421505.0f, 0 );	/* exactly -2^31: 0x80000000 */
+	Check( -0.002f, 0 );		/* -0.51 truncates to 0 */
 	Check( 1e30f, 255 );
 	Check( -1e30f, 0 );
 	Check( INFINITY, 255 );
