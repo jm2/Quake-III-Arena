@@ -378,6 +378,11 @@ static void TestMaskSecrets( void ) {
 		{ "+set rconpassword", "+set rconpassword" },
 		{ "+set rconpassword \"unterminated", "+set rconpassword \"************" },
 		{ "+set s_initsound 1 +set com_hunkMegs 64", "+set s_initsound 1 +set com_hunkMegs 64" },
+		/* Cmd_TokenizeString ends a word at a comment and, with signed chars,
+		 * at Option-Space (0xCA), so the value can be glued to the name */
+		{ "+set g_password/*x*/secret +map q3dm1", "+set g_password*********** +map q3dm1" },
+		{ "+set rconpassword\xCAhunter2 +map q3dm1", "+set rconpassword******** +map q3dm1" },
+		{ "seta g_password\"quoted\"", "seta g_password\"******\"" },
 		{ "", "" },
 	};
 	char	line[COMMAND_SIZE];
@@ -396,8 +401,9 @@ static void TestMaskSecrets( void ) {
 
 	/* Com_ParseCommandLine stops splitting at MAX_CONSOLE_LINES: the last
 	 * line keeps the rest, so "set" takes an unquoted '+' there as part of
-	 * the value, and it must be masked with the rest. One line earlier the
-	 * '+' still starts a new console line. */
+	 * the value, and it must be masked with the rest. A line break there
+	 * still ends the command in Cbuf_Execute; masking past it is only
+	 * caution. One line earlier the '+' still starts a new console line. */
 	for ( i = 0 ; i < 2 ; i++ ) {
 		static const char	*tail[2][2] = {
 			{ " +set g_password abc +def\n+map q3dm1", " +set g_password *** ****\n**** *****" },

@@ -1549,12 +1549,16 @@ static void Sys_Heartbeat( void ) {
 ==================
 Sys_MaskStartupSecrets
 
-Overwrites, in the NUL-terminated line, what follows any word naming a
-password cvar (rconpassword, g_password, sv_privatePassword, ...) up to the
-end of its console line with '*': "set" takes every remaining word as the
-value. Console lines end where Com_ParseCommandLine splits them, at a line
-break or a '+' outside quotes, until MAX_CONSOLE_LINES: the last line keeps
-the rest, separators and all. Quotes and spaces are kept. The startup
+Overwrites, in the NUL-terminated line, what follows "password" in any word
+naming a password cvar (rconpassword, g_password, sv_privatePassword, ...)
+up to the end of its console line with '*': "set" takes every remaining word
+as the value. Masking starts right after "password", not at the end of the
+word, because Cmd_TokenizeString also ends a word at a "/*" comment and, with
+signed chars, at Mac Roman bytes such as Option-Space (0xCA).
+Console lines end where Com_ParseCommandLine splits them, at a line break or
+a '+' outside quotes, until MAX_CONSOLE_LINES: it puts the rest of the
+command line in the last line, which is masked to its end (that can also
+mask commands after a line break there). Quotes and spaces are kept. The startup
 command line goes to q3boot.log and the crash report, which people attach
 to bug reports.
 ==================
@@ -1599,6 +1603,7 @@ static void Sys_MaskStartupSecrets( char *line ) {
 		for ( ; word + 8 <= p ; word++ ) {
 			if ( !Q_stricmpn( word, "password", 8 ) ) {
 				masking = qtrue;
+				p = word + 8;
 				break;
 			}
 		}
