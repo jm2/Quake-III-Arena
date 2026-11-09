@@ -814,15 +814,31 @@ RB_SetColor
 
 =============
 */
+/*
+A module's color past 0 to 1 went straight to a byte, which is undefined
+(ET: Legacy's health bar sends 254.8, and a mod's cgame can send anything).
+Retro68's gcc converted through a saturating int (fctiwz) and kept its low
+byte, so that is kept for every value an int holds; beyond that, and for
+NaN, the result is 255 or 0, as fctiwz gave. Colors on the Mac are unchanged.
+*/
+static byte RB_ColorByte( float c ) {
+	float	v = c * 255;
+
+	if ( !( v > -2147483648.0f && v < 2147483648.0f ) ) {
+		return v > 0 ? 255 : 0;
+	}
+	return (byte)(int)v;
+}
+
 const void	*RB_SetColor( const void *data ) {
 	const setColorCommand_t	*cmd;
 
 	cmd = (const setColorCommand_t *)data;
 
-	backEnd.color2D[0] = cmd->color[0] * 255;
-	backEnd.color2D[1] = cmd->color[1] * 255;
-	backEnd.color2D[2] = cmd->color[2] * 255;
-	backEnd.color2D[3] = cmd->color[3] * 255;
+	backEnd.color2D[0] = RB_ColorByte( cmd->color[0] );
+	backEnd.color2D[1] = RB_ColorByte( cmd->color[1] );
+	backEnd.color2D[2] = RB_ColorByte( cmd->color[2] );
+	backEnd.color2D[3] = RB_ColorByte( cmd->color[3] );
 
 	return (const void *)(cmd + 1);
 }
