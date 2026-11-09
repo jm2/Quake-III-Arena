@@ -1553,7 +1553,8 @@ Overwrites, in the NUL-terminated line, what follows any word naming a
 password cvar (rconpassword, g_password, sv_privatePassword, ...) up to the
 end of its console line with '*': "set" takes every remaining word as the
 value. Console lines end where Com_ParseCommandLine splits them, at a line
-break or a '+' outside quotes. Quotes and spaces are kept. The startup
+break or a '+' outside quotes, until MAX_CONSOLE_LINES: the last line keeps
+the rest, separators and all. Quotes and spaces are kept. The startup
 command line goes to q3boot.log and the crash report, which people attach
 to bug reports.
 ==================
@@ -1563,12 +1564,16 @@ static void Sys_MaskStartupSecrets( char *line ) {
 	char		*word;
 	qboolean	inQuote;
 	qboolean	masking;
+	int			lines;
 
 	inQuote = qfalse;
 	masking = qfalse;
+	lines = 1;
 	p = line;
 	while ( *p ) {
-		if ( *p == '\n' || *p == '\r' || ( *p == '+' && !inQuote ) ) {
+		if ( lines < MAX_CONSOLE_LINES
+			&& ( *p == '\n' || *p == '\r' || ( *p == '+' && !inQuote ) ) ) {
+			lines++;
 			masking = qfalse;
 			p++;
 			continue;
@@ -1587,7 +1592,8 @@ static void Sys_MaskStartupSecrets( char *line ) {
 			continue;
 		}
 		word = p;
-		while ( (unsigned char)*p > ' ' && *p != '"' && !( *p == '+' && !inQuote ) ) {
+		while ( (unsigned char)*p > ' ' && *p != '"'
+			&& !( *p == '+' && !inQuote && lines < MAX_CONSOLE_LINES ) ) {
 			p++;
 		}
 		for ( ; word + 8 <= p ; word++ ) {
