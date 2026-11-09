@@ -7,7 +7,12 @@
  * when the zone left a small fragment unsplit). The read must stay in
  * bounds (AddressSanitizer reports it here otherwise) and give that zero LOD
  * error; every read inside the array keeps its retail value, so stitching on
- * valid maps is unchanged. Upstream id, ioquake3 and Quake3e have the read. */
+ * valid maps is unchanged. Upstream id, ioquake3 and Quake3e have the read.
+ *
+ * R_MovePatchSurfacesToHunk copied each patch's height LOD errors onto
+ * themselves, in the grid it was about to free, so the hunk copy kept fresh
+ * hunk memory, all zero: curves never dropped detail along their height. The
+ * copy must carry the errors over, as ioquake3 and Quake3e now do. */
 #define __QGL_H__
 typedef unsigned int GLuint;
 #define GL_CLAMP 0x2900
@@ -25,6 +30,20 @@ static vec3_t insertedPoint;
 static void Check( int condition, const char *message ) {
 	if ( !condition ) { fprintf( stderr, "BSP stitch regression failed: %s\n", message ); exit( 1 ); }
 }
+void Com_Memcpy( void *dest, const void *src, const size_t count ) { memcpy( dest, src, count ); }
+
+static int frees;
+void R_FreeSurfaceGridMesh( srfGridMesh_t *grid ) {
+	frees++;
+	free( grid->widthLodError ); free( grid->heightLodError ); free( grid );
+}
+static void *TestHunkAlloc( int size, ha_pref pref ) {
+	void *block = calloc( 1, size );
+	(void)pref;
+	Check( block != NULL, "hunk allocation" );
+	return block;
+}
+
 srfGridMesh_t *R_GridInsertColumn( srfGridMesh_t *grid, int column, int row, vec3_t point, float loderror ) {
 	(void)column; (void)row;
 	inserts++; insertedError = loderror; VectorCopy( point, insertedPoint );
@@ -36,7 +55,7 @@ srfGridMesh_t *R_GridInsertRow( srfGridMesh_t *grid, int row, int column, vec3_t
 
 /* A width x 2 grid whose first row runs along x at y = rowY, and whose second row is far away. */
 static srfGridMesh_t *Grid( int width, const float *xs, float rowY, float farY ) {
-	srfGridMesh_t *grid = calloc( 1, offsetof( srfGridMesh_t, verts ) + 2 * width * sizeof( drawVert_t ) );
+	srfGridMesh_t *grid = calloc( 1, ( 2 * width - 1 ) * sizeof( drawVert_t ) + sizeof( *grid ) ); /* the engine's grid size */
 	int i;
 	Check( grid != NULL, "grid allocation" );
 	grid->surfaceType = SF_GRID; grid->width = width; grid->height = 2;
@@ -67,6 +86,17 @@ int main( void ) {
 	Check( R_StitchPatches( 0, 1 ) && inserts == 1, "the reversed edge is stitched once" );
 	Check( insertedPoint[0] == 1 && insertedPoint[1] == 0, "grid1's middle point is inserted" );
 	Check( insertedError == 0.0f, "the last point's error past the array is retail's zero" );
+
+	grid1->heightLodError[0] = 21.0f; grid1->heightLodError[1] = 22.0f;
+	ri.Hunk_Alloc = TestHunkAlloc;
+	R_MovePatchSurfacesToHunk();
+	Check( frees == 2, "both zone grids are freed" );
+	grid1 = (srfGridMesh_t *)surfaces[0].data; grid2 = (srfGridMesh_t *)surfaces[1].data;
+	Check( grid1->width == 3 && grid1->verts[1].xyz[0] == 1, "the hunk grid keeps its vertices" );
+	Check( grid1->widthLodError[2] == 12.0f, "the hunk grid keeps its width LOD errors" );
+	Check( grid1->heightLodError[0] == 21.0f && grid1->heightLodError[1] == 22.0f,
+		"the hunk grid keeps its height LOD errors" );
+	Check( grid2->heightLodError[0] == 20.0f, "every hunk grid keeps its height LOD errors" );
 
 	free( grid1->widthLodError ); free( grid1->heightLodError ); free( grid1 );
 	free( grid2->widthLodError ); free( grid2->heightLodError ); free( grid2 );
