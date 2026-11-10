@@ -62,10 +62,11 @@ void CL_DeltaEntity (msg_t *msg, clSnapshot_t *frame, int newnum, entityState_t 
 					 qboolean unchanged) {
 	entityState_t	*state;
 
-	// CVE-2018-12100 family: a malicious server can stuff so many entities
-	// into a single snapshot that the parseEntities ring wraps mid-frame
-	// and corrupts later delta lookups. MAX_PARSE_ENTITIES is the absolute
-	// ring size; a single frame has no legitimate reason to exceed it.
+	// Local bounds check, with no upstream fix or CVE behind it: a malicious
+	// server can stuff so many entities into a single snapshot that the
+	// parseEntities ring wraps mid-frame and corrupts later delta lookups.
+	// MAX_PARSE_ENTITIES is the absolute ring size; a single frame has no
+	// legitimate reason to exceed it.
 	if ( frame->numEntities >= MAX_PARSE_ENTITIES ) {
 		Com_Error( ERR_DROP, "CL_DeltaEntity: too many entities in snapshot" );
 	}
@@ -388,8 +389,11 @@ void CL_SystemInfoChanged( void ) {
 		if ( !key[0] ) {
 			break;
 		}
-		// CVE-2011-1412: Shell/Path injection via fs_game. Reject (don't
-		// truncate) any server-supplied value with path/shell metachars.
+		// fs_game names a folder in the install, so reject (don't truncate)
+		// any server-supplied value with a dot or a path separator,
+		// including HFS ':' (issue #262). ';' and '&' are refused too.
+		// CVE-2011-1412 was shell injection through fs_game in ioquake3's
+		// Unix sys_unix.c, and this tree has no such shell path.
 		// An earlier draft of this check truncated value[] in place before
 		// this one ran, which neutered the reject branch.
 		if ( !Q_stricmp( key, "fs_game" ) ) {

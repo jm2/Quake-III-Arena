@@ -371,18 +371,20 @@ sensible to revisit:
 
 ### 8.1 CVE backport audit
 The "1.32c with all modern CVEs fixed" goal needs a tracked checklist.
-Required minimum set:
-- CVE-2017-11721 (cl_guid info-string truncation)
-- CVE-2017-11722 (server info-string handling)
-- CVE-2018-12100 (out-of-bounds read in client)
+That checklist is `docs/security-provenance.md`. It lists every CVE id the
+tree cites, with the upstream fix, the local PR or commit, and the
+regression runner. An earlier version of this section cited two ids
+that belong to other products and gave CVE-2017-11721 the wrong bug
+(#276). The areas it called for are:
+- message and Huffman read bounds (CVE-2017-11721, ioquake3 `d2b1d124`)
 - `getstatus` / `getinfo` reflection amplification mitigation
+  (CVE-2010-5077)
 - Zone allocator hardening (heap overflows in `Z_Malloc` callers)
-- Filesystem path traversal (`..` checks, currently only at
-  `code/qcommon/files.c:506-507`)
+- Filesystem and download path traversal (CVE-2006-2082, CVE-2006-3324,
+  #262)
 
 For each: a commit referencing the upstream ioquake3/Quake3e commit
-hash, with the patch applied to this tree's matching file. Track in
-`SECURITY.md` (separate from this plan).
+hash, with the patch applied to this tree's matching file.
 
 ### 8.2 Rebase decision
 Re-evaluate Quake3e rebase only after the current platform layer is

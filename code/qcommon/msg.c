@@ -1033,9 +1033,10 @@ void MSG_ReadDeltaEntity( msg_t *msg, entityState_t *from, entityState_t *to,
 	numFields = sizeof(entityStateFields)/sizeof(entityStateFields[0]);
 	lc = MSG_ReadByte(msg);
 
-	// CVE-2018-12100 family: lc comes straight off the wire; if it exceeds
-	// numFields the loop below walks past entityStateFields and reads /
-	// writes garbage memory. Treat it as a fatal protocol error.
+	// ioquake3 3ff26663 (its bug 4669; no CVE): lc comes straight off the
+	// wire; if it exceeds numFields the loop below walks past
+	// entityStateFields and reads / writes garbage memory. Treat it as a
+	// fatal protocol error.
 	if ( lc > numFields || lc < 0 ) {
 		Com_Error( ERR_DROP, "invalid entityState field count" );
 	}
@@ -1373,7 +1374,7 @@ void MSG_ReadDeltaPlayerstate (msg_t *msg, playerState_t *from, playerState_t *t
 	numFields = sizeof( playerStateFields ) / sizeof( playerStateFields[0] );
 	lc = MSG_ReadByte(msg);
 
-	// CVE-2018-12100 family: see MSG_ReadDeltaEntity for context.
+	// ioquake3 3ff26663: see MSG_ReadDeltaEntity for context.
 	if ( lc > numFields || lc < 0 ) {
 		Com_Error( ERR_DROP, "invalid playerState field count" );
 	}
