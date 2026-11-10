@@ -447,29 +447,80 @@ def _set_hfs_dates(path, mac_time):
         _set_iso9660_dates(stream, mac_time)
 
 
+def _iso9660_record_dates(stream, root_record, image_size):
+    """The offsets of the recording dates of every directory record reachable
+    from root_record (the root directory record's offset in a volume
+    descriptor), the root record included."""
+    offsets = [root_record + 18]
+    stream.seek(root_record)
+    record = stream.read(34)
+    pending = [(struct.unpack_from("<I", record, 2)[0], struct.unpack_from("<I", record, 10)[0])]
+    seen = set()
+    while pending:
+        extent, size = pending.pop()
+        if extent in seen:
+            continue
+        seen.add(extent)
+        start = extent * ISO9660_SECTOR
+        if start + size > image_size:
+            raise FormatError("ISO 9660 directory extent past the end of the image")
+        stream.seek(start)
+        data = stream.read(size)
+        position = 0
+        while position < size:
+            length = data[position]
+            if length == 0:  # records do not cross sectors: skip to the next
+                position = (position // ISO9660_SECTOR + 1) * ISO9660_SECTOR
+                continue
+            if length < 34 or position + length > size:
+                raise FormatError("malformed ISO 9660 directory record")
+            offsets.append(start + position + 18)
+            name_length = data[position + 32]
+            name = data[position + 33:position + 33 + name_length]
+            if data[position + 25] & 2 and name not in (b"\0", b"\1"):
+                pending.append((struct.unpack_from("<I", data, position + 2)[0],
+                                struct.unpack_from("<I", data, position + 10)[0]))
+            position += length
+    return offsets
+
+
 def _set_iso9660_dates(stream, mac_time):
-    """Write mac_time over the volume descriptor dates of an HFS/ISO hybrid.
+    """Write mac_time over the dates of the ISO 9660 side of an HFS/ISO hybrid.
 
     genisoimage stamps the creation, modification and effective dates of each
-    volume descriptor with the time it runs; directory records carry the
-    files' modification times. An unset date (all "0" digits) stays unset.
+    volume descriptor with the time it runs. Directory records mostly carry
+    the files' modification times, which set-dates on the staged folder fixes,
+    but not all: on CI's Ubuntu runner a ".." record carried the time
+    genisoimage ran. So every directory record's recording date is written
+    too, found by walking each descriptor's tree. An unset descriptor date
+    (all "0" digits) stays unset.
     """
     unix_time = mac_time - MAC_EPOCH_OFFSET
-    stamp = (datetime.datetime.fromtimestamp(unix_time, datetime.timezone.utc)
-             .strftime("%Y%m%d%H%M%S00").encode("ascii") + b"\0")
+    moment = datetime.datetime.fromtimestamp(unix_time, datetime.timezone.utc)
+    stamp = moment.strftime("%Y%m%d%H%M%S00").encode("ascii") + b"\0"
+    record_date = bytes([moment.year - 1900, moment.month, moment.day,
+                         moment.hour, moment.minute, moment.second, 0])
+    stream.seek(0, os.SEEK_END)
+    image_size = stream.tell()
+    writes = []
     for sector in range(16, 16 + 64):
         stream.seek(sector * ISO9660_SECTOR)
         descriptor = stream.read(ISO9660_SECTOR)
         if len(descriptor) < ISO9660_SECTOR or descriptor[1:6] != b"CD001":
-            return
+            break
         if descriptor[0] == 255:
-            return
+            break
         if descriptor[0] not in (1, 2):
             continue
         for offset in ISO9660_DESCRIPTOR_DATES:
             if descriptor[offset:offset + 16] != b"0" * 16:
-                stream.seek(sector * ISO9660_SECTOR + offset)
-                stream.write(stamp)
+                writes.append((sector * ISO9660_SECTOR + offset, stamp))
+        for offset in _iso9660_record_dates(stream, sector * ISO9660_SECTOR + 156, image_size):
+            writes.append((offset, record_date))
+    # Found first, written after, so a malformed tree changes nothing.
+    for offset, value in writes:
+        stream.seek(offset)
+        stream.write(value)
 
 
 # Containers -----------------------------------------------------------------

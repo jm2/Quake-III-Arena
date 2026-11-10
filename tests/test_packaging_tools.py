@@ -1298,6 +1298,41 @@ class InstallImageReproducibilityTests(unittest.TestCase):
             self.assertEqual(status, 0, stderr)
         return image
 
+    def test_every_iso9660_directory_record_gets_the_date(self):
+        # Staged without set-dates, so the files' and folders' own times reach
+        # the ISO side; set-dates on the image must replace every one.
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        folder = root / "content" / "Quake 3 Arena"
+        for sub in ("baseq3", "baseq3/deeper", "missionpack"):
+            (folder / sub).mkdir(parents=True)
+        for index in range(40):
+            (folder / "baseq3" / f"file{index}.cfg").write_bytes(b"x" * index)
+        (folder / "baseq3" / "deeper" / "one.txt").write_bytes(b"one")
+        (folder / "Quake3").write_bytes(PEF)
+        (folder / "%Quake3").write_bytes(rez_appledouble(launchable_resources()))
+        os.utime(folder / "baseq3", (1000000000, 1000000000))
+        mapping = root / "hfs_mapping.txt"
+        mapping.write_text("\n".join(shell_mapping_lines()) + "\n")
+        image = root / "small.img"
+        subprocess.run(
+            [GENISOIMAGE, "-quiet", "-hfs", "-double", "-map", str(mapping),
+             "-o", str(image), "-V", "Quake 3 Arena", str(root / "content")],
+            env=dict(os.environ, TZ="UTC"), check=True, capture_output=True)
+        with with_source_date_epoch(str(self.SOURCE_DATE_EPOCH)):
+            status, _, stderr = run_mac_app("set-dates", image)
+        self.assertEqual(status, 0, stderr)
+        moment = datetime.fromtimestamp(self.SOURCE_DATE_EPOCH, timezone.utc)
+        want = bytes([moment.year - 1900, moment.month, moment.day,
+                      moment.hour, moment.minute, moment.second, 0])
+        with open(image, "rb") as stream:
+            stream.seek(0, os.SEEK_END)
+            offsets = mac_app._iso9660_record_dates(stream, 16 * 2048 + 156, stream.tell())
+            self.assertGreater(len(offsets), 50)
+            for offset in offsets:
+                stream.seek(offset)
+                self.assertEqual(stream.read(7), want, f"ISO record date at {offset:#x}")
+        self.assertEqual(mac_app.load(str(image), "Quake3").data, PEF)
+
     def test_large_images_made_at_different_times_are_identical(self):
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         first = self.make_image(root / "one")
