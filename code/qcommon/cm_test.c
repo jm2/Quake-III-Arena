@@ -139,7 +139,7 @@ Fills in a list of all the leafs touched
 */
 /* Walk the validated decision-node parents instead of consuming C stack.
  * Box bounds are constant throughout the native leaf/brush callbacks. */
-void CM_BoxLeafnums_r( leafList_t *ll, int nodenum ) {
+static void CM_BoxLeafnumsParents( leafList_t *ll, int nodenum ) {
 	cNode_t *node;
 	int root = nodenum, side = 0, child, completed, s;
 	qboolean entering = qtrue;
@@ -175,6 +175,37 @@ void CM_BoxLeafnums_r( leafList_t *ll, int nodenum ) {
 			ll->storeLeafs( ll, child );
 			entering = qfalse;
 		}
+	}
+}
+
+/* The stock recursion's front-first order without recursion: a node the box
+ * crosses keeps its back child on a fixed stack while the front subtree is
+ * visited, so each plane side is computed once and nothing is walked twice.
+ * When the stack is full, that front subtree is walked through the validated
+ * parents instead, in constant space, so there is still no depth limit. */
+void CM_BoxLeafnums_r( leafList_t *ll, int nodenum ) {
+	int pending[CM_BOX_PENDING], count = 0, s;
+	cNode_t *node;
+
+	for ( ;; ) {
+		while ( nodenum >= 0 ) {
+			node = &cm.nodes[nodenum];
+			s = BoxOnPlaneSide( ll->bounds[0], ll->bounds[1], node->plane );
+			if ( s == 1 ) {
+				nodenum = node->children[0];
+			} else if ( s == 2 ) {
+				nodenum = node->children[1];
+			} else if ( count < CM_BOX_PENDING ) {
+				pending[count++] = node->children[1];
+				nodenum = node->children[0];
+			} else {
+				CM_BoxLeafnumsParents( ll, node->children[0] );
+				nodenum = node->children[1];
+			}
+		}
+		ll->storeLeafs( ll, nodenum );
+		if ( !count ) return;
+		nodenum = pending[--count];
 	}
 }
 

@@ -184,6 +184,8 @@ int CM_BoxBrushes( const vec3_t mins, const vec3_t maxs, cbrush_t **list, int li
 void CM_StoreLeafs( leafList_t *ll, int nodenum );
 void CM_StoreBrushes( leafList_t *ll, int nodenum );
 
+// Back subtrees CM_BoxLeafnums_r holds on its fixed stack; beyond that a front subtree is walked through parents.
+#define CM_BOX_PENDING		128
 void CM_BoxLeafnums_r( leafList_t *ll, int nodenum );
 
 cmodel_t	*CM_ClipHandleToModel( clipHandle_t handle );
