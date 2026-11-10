@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest import mock
+import zipfile
 import zlib
 
 import create_appledouble
@@ -19,6 +20,7 @@ import generate_icon_r
 import mac_app
 import macbinary_encode
 import ndif_image
+import pak_identity
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -880,8 +882,10 @@ class NdifImageTests(unittest.TestCase):
             os.symlink(tree / "data/baseq3/pak0.pk3", tree / "link/missionpack/pak0.pk3")
             probe = function + 'P=$(find_retail_pak0 baseq3) || exit 1; echo "[$P]"\n' \
                 'M=$(find_retail_pak0 missionpack) || exit 1; echo "[$M]"\n'
-            run = lambda: subprocess.run(["bash", "-c", "set -euo pipefail\n" + probe],
-                                         cwd=tree, capture_output=True, text=True)
+            # DATA_ROOT is build_mac.sh's --data, "." by default
+            run = lambda root=".": subprocess.run(
+                ["bash", "-c", f"set -euo pipefail\nDATA_ROOT={root}\n" + probe],
+                cwd=tree, capture_output=True, text=True)
             result = run()
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, "[./data/baseq3/pak0.pk3]\n[]\n")
@@ -892,6 +896,137 @@ class NdifImageTests(unittest.TestCase):
             self.assertEqual(result.stdout, "")
             self.assertIn("more than one baseq3/pak0.pk3", result.stderr)
             self.assertIn("./other dir/baseq3/pak0.pk3", result.stderr)
+            # --data narrows the search to one of them
+            result = run("data")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, "[data/baseq3/pak0.pk3]\n[]\n")
+
+
+class PakIdentityTests(unittest.TestCase):
+    """pak_identity.py: the engine's pk3 checksum and id's retail table (#22)."""
+
+    ROOT = Path(__file__).resolve().parent.parent
+
+    def make_pak(self, path, entries):
+        with zipfile.ZipFile(path, "w") as archive:
+            for name, data in entries:
+                archive.writestr(name, data)
+        return path
+
+    def test_md4_matches_rfc_1320(self):
+        for message, digest in ((b"", "31d6cfe0d16ae931b73c59d7e0c089c0"),
+                                (b"a", "bde52cb31de33e46245e05fbdbd6fb24"),
+                                (b"abc", "a448017aaf21d8525fc10ae87aa6729d"),
+                                (b"message digest", "d9130a8164549fe818874806e1c7014b"),
+                                (b"1234567890" * 8, "e33b4ddc9c38f2199c3e7b164fcc0536")):
+            self.assertEqual(pak_identity._md4(message).hex(), digest)
+
+    def test_block_checksum_matches_the_engine(self):
+        compiler = shutil.which(os.environ.get("CC", "cc"))
+        if not compiler:
+            self.skipTest("no C compiler")
+        inputs = [b"", struct.pack("<3I", 0x12345678, 0xDEADBEEF, 7),
+                  bytes(range(256)) * 3, struct.pack("<20I", *range(20))]
+        with tempfile.TemporaryDirectory() as scratch:
+            harness = Path(scratch, "checksum.c")
+            harness.write_text(
+                "#include <stdio.h>\n#include <string.h>\n"
+                "unsigned Com_BlockChecksum( void *buffer, int length );\n"
+                "void Com_Memcpy( void *d, const void *s, const size_t n ) { memcpy( d, s, n ); }\n"
+                "void Com_Memset( void *d, const int c, const size_t n ) { memset( d, c, n ); }\n"
+                "int main( void ) { static unsigned char b[4096]; size_t n;\n"
+                "  while ( ( n = fread( b, 1, 4, stdin ) ) == 4 ) { unsigned len = b[0] | b[1] << 8 | b[2] << 16 | (unsigned)b[3] << 24;\n"
+                "    if ( fread( b, 1, len, stdin ) != len ) return 1; printf( \"%u\\n\", Com_BlockChecksum( b, (int)len ) ); }\n"
+                "  return 0; }\n")
+            binary = Path(scratch, "checksum")
+            subprocess.run([compiler, "-std=gnu99", str(harness),
+                            str(self.ROOT / "code/qcommon/md4.c"), "-o", str(binary)],
+                           check=True, env=dict(os.environ, TMPDIR=scratch))
+            stream = b"".join(struct.pack("<I", len(data)) + data for data in inputs)
+            output = subprocess.run([str(binary)], input=stream, check=True,
+                                    capture_output=True).stdout.decode().split()
+        self.assertEqual([int(value) for value in output],
+                         [pak_identity.block_checksum(data) for data in inputs])
+
+    def test_stock_table_is_the_engines(self):
+        source = (self.ROOT / "code/qcommon/files.c").read_text(encoding="latin-1")
+        body = source[source.index("const char *FS_IdPakGame("):]
+        base = re.search(r"basePaks\[\] = \{(.*?)\};", body, re.S).group(1)
+        mission = re.search(r"missionPaks\[\] = \{(.*?)\};", body, re.S).group(1)
+        self.assertEqual(pak_identity.STOCK_PAKS["baseq3"],
+                         tuple(int(v) for v in re.findall(r"(\d+)u", base)))
+        self.assertEqual(pak_identity.STOCK_PAKS["missionpack"],
+                         tuple(int(v) for v in re.findall(r"(\d+)u", mission)))
+
+    def test_pak_checksum_is_over_non_empty_entry_crcs_in_order(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            pak = self.make_pak(Path(scratch, "pak0.pk3"), [
+                ("maps/", b""), ("b.txt", b"second"), ("empty.cfg", b""), ("a.txt", b"first")])
+            crcs = [zlib.crc32(b"second"), zlib.crc32(b"first")]
+            self.assertEqual(pak_identity.pak_checksum(pak),
+                             pak_identity.block_checksum(struct.pack("<2I", *crcs)))
+
+    def check_verify(self, files, stock, want_problems):
+        with tempfile.TemporaryDirectory() as scratch:
+            for name, entries in files:
+                if entries is None:
+                    Path(scratch, name).write_bytes(b"not a zip")
+                else:
+                    self.make_pak(Path(scratch, name), entries)
+            with mock.patch.dict(pak_identity.STOCK_PAKS, {"baseq3": stock}):
+                problems = pak_identity.verify("baseq3", scratch)
+        self.assertEqual(len(problems), len(want_problems), problems)
+        for problem, want in zip(problems, want_problems):
+            self.assertIn(want, problem)
+
+    def stock_for(self, *contents):
+        with tempfile.TemporaryDirectory() as scratch:
+            return tuple(pak_identity.pak_checksum(self.make_pak(Path(scratch, f"p{i}.pk3"), [("f", data)]))
+                         for i, data in enumerate(contents))
+
+    def test_verify_accepts_exactly_the_stock_paks(self):
+        stock = self.stock_for(b"zero", b"one")
+        self.check_verify([("pak0.pk3", [("f", b"zero")]), ("PAK1.PK3", [("f", b"one")])], stock, [])
+
+    def test_verify_refuses_a_wrong_missing_extra_or_broken_pak(self):
+        stock = self.stock_for(b"zero", b"one", b"two")
+        self.check_verify([("pak0.pk3", [("f", b"zero")]),
+                           ("pak1.pk3", [("f", b"edited")]),
+                           ("pak9.pk3", [("f", b"mod")]),
+                           ("pak2.pk3", None)],
+                          stock, ["pak1.pk3: checksum", "pak2.pk3: not a readable pk3",
+                                  "pak9.pk3: not one of id's baseq3 paks"])
+        self.check_verify([("pak0.pk3", [("f", b"zero")])], stock,
+                          ["pak1.pk3: missing", "pak2.pk3: missing"])
+
+    def test_verify_refuses_paks_whose_names_differ_only_in_case(self):
+        stock = self.stock_for(b"zero", b"one")
+        # PAK1.PK3 sorts first, so it is the one checked (and refused for its
+        # checksum); pak1.pk3 is refused for the clash
+        self.check_verify([("pak0.pk3", [("f", b"zero")]), ("pak1.pk3", [("f", b"one")]),
+                           ("PAK1.PK3", [("f", b"edited")])],
+                          stock, ["pak1.pk3: another pak has the same name in a different case",
+                                  "PAK1.PK3: checksum"])
+        # the clash alone is refused too, even when both copies are good
+        self.check_verify([("pak0.pk3", [("f", b"zero")]), ("pak1.pk3", [("f", b"one")]),
+                           ("PAK1.PK3", [("f", b"one")])],
+                          stock, ["pak1.pk3: another pak has the same name in a different case"])
+
+    def test_verify_ignores_files_that_are_not_paks(self):
+        stock = self.stock_for(b"zero")
+        self.check_verify([("pak0.pk3", [("f", b"zero")]), ("q3config.cfg", [("x", b"y")]),
+                           ("zz-mod.pk3", [("x", b"y")])], stock, [])
+
+    def test_command_line(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            self.make_pak(Path(scratch, "pak0.pk3"), [("f", b"zero")])
+            with contextlib.redirect_stderr(io.StringIO()) as errors:
+                self.assertEqual(pak_identity.main(["verify", "baseq3", scratch]), 1)
+            self.assertIn("checksum", errors.getvalue())
+            self.assertIn("pak8.pk3: missing", errors.getvalue())
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(pak_identity.main(["verify", "demoq3", scratch]), 1)
+                self.assertEqual(pak_identity.main([]), 2)
 
 
 if __name__ == "__main__":
