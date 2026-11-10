@@ -62,19 +62,26 @@ static aas_routingcache_t *Reset(int incoming) {
     cache->reachabilities=cacheBytes+sizeof(aas_routingcache_t)+(incoming+1)*sizeof(unsigned short);
     return cache;
 }
+/* Leave nonzero bytes where the update's frame will be, so start times kept
+ * on the stack must be cleared to give the literal costs below. */
+static __attribute__((noinline)) void DirtyStack(void) {
+    volatile unsigned char bytes[8192];size_t i;
+    for(i=0;i<sizeof(bytes);i++)bytes[i]=0xa5;
+}
 static void Successes(void) {
     const int degrees[]={0,1,2,32,127,128,129,255,256,512,1024};size_t i;int blocked,source;
     for(i=0;i<sizeof(degrees)/sizeof(degrees[0]);i++)for(blocked=0;blocked<2;blocked++) {
         aas_routingcache_t *cache=Reset(degrees[i]);
         if(blocked)settings[1].areaflags|=AREA_DISABLED;
-        AAS_UpdateAreaRoutingCache(cache);
+        DirtyStack();AAS_UpdateAreaRoutingCache(cache);
         Check(cache->traveltimes[0]==1,"literal native destination travel cost");
         for(source=1;source<=degrees[i];source++) {
             Check(cache->traveltimes[source]==(blocked?0:11),"literal source travel costs and disabled-area filtering");
             Check(cache->reachabilities[source]==0,"one outgoing reachability per source retains cache byte index");
         }
-        Check(requests==(degrees[i]>0)&&releases==requests&&!workspace,"workspace lifetime matches incoming count");
-        Check(lastRequest==(unsigned long)degrees[i]*sizeof(unsigned short),"exact incoming-degree workspace length");
+        /* Up to the original 128-entry array the start times stay on the stack (#251). */
+        Check(requests==(degrees[i]>128)&&releases==requests&&!workspace,"workspace lifetime matches incoming count");
+        Check(lastRequest==(degrees[i]>128?(unsigned long)degrees[i]*sizeof(unsigned short):0),"exact incoming-degree workspace length");
         Check(updates[0].areatraveltimes==NULL,"start entry retains no released temporary pointer");
         Check(aasworld.frameroutingupdates==1,"one native routing attempt");
     }
