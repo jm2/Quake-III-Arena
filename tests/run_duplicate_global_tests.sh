@@ -132,7 +132,7 @@ for link_file in CMakeFiles/*.dir/link.txt; do
     [ -f "$link_file" ] || continue
     target="${link_file#CMakeFiles/}"
     target="${target%.dir/link.txt}"
-    if ! head -n 1 "$link_file" | tr -d '"' | tr ' ' '\n' | grep -qxF "lib$target.a"; then
+    if ! head -n 1 "$link_file" | tr -d '"' | tr ' ' '\n' | grep -xF "lib$target.a" > /dev/null; then
         Q3_LINKS+=("$target")
     fi
 done

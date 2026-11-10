@@ -278,7 +278,7 @@ expect_targets() {
                 problems="$problems; Team Arena files were staged:$(grep -e TeamArena -e missionpack \
                     "$logs/staged.log" | sed 's/^/ [/; s/$/]/' | tr -d '\n')"
             fi
-            if ls "$root/release_mac" | grep -q TeamArena; then
+            if ls "$root/release_mac" | grep TeamArena > /dev/null; then
                 problems="$problems; release_mac holds Team Arena files: $(ls "$root/release_mac" | grep TeamArena | tr '\n' ' ')"
             fi
         fi
