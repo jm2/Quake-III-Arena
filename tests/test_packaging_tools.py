@@ -1239,7 +1239,6 @@ class ReproducibleDateTests(unittest.TestCase):
 GENISOIMAGE = shutil.which("genisoimage") or shutil.which("mkisofs")
 
 
-@unittest.skipUnless(GENISOIMAGE, "genisoimage and mkisofs are not installed")
 def describe_differences(first, second, limit=12):
     """The first few runs of differing bytes between two files, with 2048-byte
     sector numbers and the bytes around each, for a failure message."""
@@ -1261,6 +1260,7 @@ def describe_differences(first, second, limit=12):
     return "\n".join(lines)
 
 
+@unittest.skipUnless(GENISOIMAGE, "genisoimage and mkisofs are not installed")
 class InstallImageReproducibilityTests(unittest.TestCase):
     """Issue #405: two install images made as build_mac.sh package makes them,
     from the same files at different times, are byte-identical.
