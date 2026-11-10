@@ -839,6 +839,11 @@ static void TypedChars( void ) {
 	CheckTyped( 0x09, 'V', cmdKey | shiftKey, 'v', "\x16", "Cmd-Shift-V too" );
 	CheckTyped( 0x09, 'v', 0, 'v', "v", "V alone types v" );
 	CheckTyped( 0x08, 'c', cmdKey, 'c', "c", "other Cmd keys type as before" );
+	CheckTyped( 0x34, 0x03, 0, K_KP_ENTER, "", "a PowerBook's Enter is keypad Enter and types nothing (not Ctrl-C)" );
+	CheckTyped( 0x6A, 0x10, 0, 0, "", "an unmapped key's control character types nothing" );
+	CheckTyped( 0x73, 0x01, 0, K_HOME, "", "Home types nothing (not Ctrl-A)" );
+	CheckTyped( 0x08, 0x03, controlKey, 'c', "\x03", "Ctrl-C still types its character" );
+	CheckTyped( 0x35, 0x1B, 0, K_ESCAPE, "\x1b", "Escape keeps its character" );
 }
 
 /* #291: keys held across Cmd-Tab */

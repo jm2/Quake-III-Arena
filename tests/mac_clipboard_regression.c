@@ -89,11 +89,12 @@ int main( void ) {
 		if ( got ) {
 			Z_Free( got );
 		}
+		Check( handles == 0 && zoneBlocks == 0, "frees what it allocates" );
 	}
 	currentCase = "error";
 	scrapError = -108;	/* memFullErr: too big for the heap */
 	scrap = big;
-	Check( Sys_GetClipboardData() == NULL && handles == 0, "an error pastes nothing" );
+	Check( Sys_GetClipboardData() == NULL && handles == 0 && zoneBlocks == 0, "an error pastes nothing" );
 	if ( failures ) {
 		return 1;
 	}
