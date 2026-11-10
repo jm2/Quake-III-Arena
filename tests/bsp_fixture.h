@@ -79,6 +79,7 @@ const char *CM_ValidatePatchCollideWorkspace(cPatchWorkspace_t *workspace,int wi
 }
 struct patchCollide_s *CM_PublishPatchCollide(cPatchCollideResult_t *result) { (void)result;Check(0,"fixture keeps no patch builds");return NULL; }
 void CM_FreePatchCollideResult(cPatchCollideResult_t *result) { Check(!result,"fixture keeps no patch builds"); }
+int CM_PatchCollideResultSize(const cPatchCollideResult_t *result) { Check(!result,"fixture keeps no patch builds"); return 0; }
 struct patchCollide_s *CM_GeneratePatchCollide(int width,int height,vec3_t *points) {
 	Check(expectedPatch && width==3 && height==3 && points[0][0]==-1 && points[8][0]==1,"validated patch callback");patchCalls++;return (struct patchCollide_s *)&patchToken;
 }

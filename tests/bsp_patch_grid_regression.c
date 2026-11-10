@@ -174,6 +174,7 @@ static void RejectNumeric(void) {
 static const int mixedPatches[][4]={{127,3,1,32},{3,3,0,0},{9,9,3,32},{3,127,2,32},{5,5,4,16},{3,3,1,8},{31,5,3,24}};
 #define MIXED_PATCHES ((int)(sizeof(mixedPatches)/sizeof(mixedPatches[0])))
 static int mixedBadLast; /* the last patch overflows its subdivision, after the others are kept */
+static int mixedDegenerate; /* every vertex at one point: builds with no facets or planes */
 static float MixedHeight(int patch,int i,int j) {
 	int axis=mixedPatches[patch][2],amplitude=mixedBadLast && patch==MIXED_PATCHES-1?4096:mixedPatches[patch][3];
 	return ((axis==1?i:axis==2?j:axis>=3?i+j:0)%2?amplitude:0)+(axis==4?i*j*7:0);
@@ -189,7 +190,8 @@ static void MixedMap(void) {
 		int width=mixedPatches[p][0],height=mixedPatches[p][1];unsigned int surface=surfaces+p*sizeof(dsurface_t);
 		for(j=0;j<height;j++)for(i=0;i<width;i++) {
 			unsigned int vertex=verts+(first+j*width+i)*sizeof(drawVert_t);
-			Float(vertex,i*32+p*8);Float(vertex+4,j*32);Float(vertex+8,MixedHeight(p,i,j));
+			if(mixedDegenerate) { Float(vertex,0);Float(vertex+4,0);Float(vertex+8,0); }
+			else { Float(vertex,i*32+p*8);Float(vertex+4,j*32);Float(vertex+8,MixedHeight(p,i,j)); }
 		}
 		Word(surface+offsetof(dsurface_t,fogNum),0xffffffffu);Word(surface+offsetof(dsurface_t,lightmapNum),0xffffffffu);
 		Word(surface+offsetof(dsurface_t,surfaceType),MST_PATCH);Word(surface+offsetof(dsurface_t,firstVert),first);
@@ -335,6 +337,21 @@ static void KeptBuilds(void) {
 	for(i=0;i<MIXED_PATCHES;i++)Check(Fingerprint(cm.surfaces[i]->pc)==prints[i],"patches past the budget are bit-identical");
 	Check(allocations==count && hunkUsed==used && !memcmp(sizes,hunkSizes,count*sizeof(int)),"patches past the budget make the native hunk allocations");
 	Check(c_totalPatchBlocks-before==blocks,"patches past the budget count the native blocks");
+	/* Degenerate builds have no facets or planes, but each is still an
+	 * allocation, so they count against the budget too. */
+	mixedDegenerate=1;
+	FreeHunks();hunkLimit=4000000;alignment=0;MixedMap();keptAllocations=0;
+	readable=advertised=sourceSize;missing=0;CM_LoadMap("kept.bsp",qfalse,&checksum);
+	Check(keptAllocations==MIXED_PATCHES && !keptLive,"every degenerate build is kept under the default budget");
+	for(i=0;i<MIXED_PATCHES;i++)prints[i]=Fingerprint(cm.surfaces[i]->pc);
+	count=allocations;used=hunkUsed;memcpy(sizes,hunkSizes,count*sizeof(int));
+	cm_keptPatchBudget=1;
+	FreeHunks();hunkLimit=4000000;alignment=0;MixedMap();keptAllocations=0;
+	readable=advertised=sourceSize;missing=0;CM_LoadMap("kept.bsp",qfalse,&checksum);
+	cm_keptPatchBudget=CM_MAX_KEPT_PATCH_BYTES;mixedDegenerate=0;
+	Check(keptAllocations==1 && !keptLive,"degenerate builds count against the budget");
+	for(i=0;i<MIXED_PATCHES;i++)Check(Fingerprint(cm.surfaces[i]->pc)==prints[i],"degenerate patches past the budget are bit-identical");
+	Check(allocations==count && hunkUsed==used && !memcmp(sizes,hunkSizes,count*sizeof(int)),"degenerate patches past the budget make the same hunk allocations");
 	/* A map rejected by its last patch releases the builds kept before it. */
 	mixedBadLast=1;MixedMap();
 	for(i=0;i<4;i++) { alignment=i;RejectCM();Check(!keptLive && !gridTemporary,"rejected map releases kept builds and workspace"); }

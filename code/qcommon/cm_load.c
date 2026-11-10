@@ -657,7 +657,7 @@ static const char *CM_ValidateBSPPatchGridsWith( cPatchWorkspace_t **workspace, 
 			cm_keptPatches && cm_keptPatchBytes < cm_keptPatchBudget ? &cm_keptPatches[i] : NULL );
 		if ( error ) return error;
 		if ( cm_keptPatches && cm_keptPatches[i] ) {
-			cm_keptPatchBytes += sizes[1] + sizes[2];
+			cm_keptPatchBytes += CM_PatchCollideResultSize( cm_keptPatches[i] );
 		}
 		if ( !CM_BSPBudgetAllocation(sizeof(cPatch_t),remaining) ) return "collision BSP exceeds remaining hunk memory";
 		for ( j = 0 ; j < 3 ; j++ ) {

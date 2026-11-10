@@ -1336,6 +1336,13 @@ const char *CM_ValidatePatchCollideWorkspace( cPatchWorkspace_t *workspace, int 
 	return error;
 }
 
+/* The bytes a kept build holds: its one allocation, header included, so a
+ * degenerate patch with no facets or planes still counts. */
+int CM_PatchCollideResultSize( const cPatchCollideResult_t *result ) {
+	return (int)( sizeof( *result ) + result->numPlanes * sizeof( patchPlane_t )
+		+ result->numFacets * sizeof( facet_t ) );
+}
+
 void CM_FreePatchCollideResult( cPatchCollideResult_t *result ) {
 	free( result );
 }

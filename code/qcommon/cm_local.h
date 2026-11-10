@@ -204,6 +204,7 @@ void CM_FreePatchCollideWorkspace( cPatchWorkspace_t *workspace );
 const char *CM_ValidatePatchCollideWorkspace( cPatchWorkspace_t *workspace, int width, int height, vec3_t *points, int sizes[3], cPatchCollideResult_t **keep );
 struct patchCollide_s	*CM_PublishPatchCollide( cPatchCollideResult_t *result );
 void CM_FreePatchCollideResult( cPatchCollideResult_t *result );
+int CM_PatchCollideResultSize( const cPatchCollideResult_t *result );
 struct patchCollide_s	*CM_GeneratePatchCollide( int width, int height, vec3_t *points );
 void CM_TraceThroughPatchCollide( traceWork_t *tw, const struct patchCollide_s *pc );
 qboolean CM_PositionTestInPatchCollide( traceWork_t *tw, const struct patchCollide_s *pc );
