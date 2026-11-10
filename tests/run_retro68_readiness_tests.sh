@@ -1940,8 +1940,8 @@ classic_applications_record_manifests() {
     local body
     body="$(sed -n '/^function(quake3_add_classic_application /,/^endfunction()/p' "$Q3_TEST_ROOT/CMakeLists.txt")"
     grep -q -x -F 'include("${CMAKE_SOURCE_DIR}/cmake/Quake3BuildManifest.cmake")' "$Q3_TEST_ROOT/CMakeLists.txt" &&
-        printf '%s\n' "$body" | grep -q -x -F '    quake3_add_build_manifest(${target})' &&
-        printf '%s\n' "$body" | grep -q -F '"${target}.manifest.txt")'
+        printf '%s\n' "$body" | grep -x -F '    quake3_add_build_manifest(${target})' > /dev/null &&
+        printf '%s\n' "$body" | grep -F '"${target}.manifest.txt")' > /dev/null
 }
 check "CMakeLists.txt writes a build manifest for every Classic application" \
     classic_applications_record_manifests
@@ -1962,7 +1962,7 @@ cmake_variables_used() {
     for name in $(printf '%s\n' "$code" |
             sed -n -E 's/^[[:space:]]*(set|file\(GLOB)[[:space:](]+([A-Za-z0-9_]+).*/\2/p' | sort -u); do
         case "$name" in CMAKE_*) continue ;; esac
-        printf '%s\n' "$code" | grep -q -F "\${$name}" || { echo "  $name is set but never read"; status=1; }
+        printf '%s\n' "$code" | grep -F "\${$name}" > /dev/null || { echo "  $name is set but never read"; status=1; }
     done
     return "$status"
 }
@@ -2020,16 +2020,18 @@ if command -v cmake > /dev/null 2>&1 && [ -n "$Q3_HOST_CC" ] && [ -n "$Q3_HOST_C
         bash -c '! grep -B 1 -A 2 "System is unknown to cmake" "$1"' _ "$Q3_OUT"
 
     # base_build_links_every_library BUILD: every archive the base build
-    # compiles is one Quake3 links.
+    # compiles is one Quake3 links. Under pipefail, grep -q can exit on its
+    # first match while tr is still writing, and tr's SIGPIPE then fails the
+    # pipeline; grep > /dev/null reads it all (a ppc32 CI flake on #573).
     base_build_links_every_library() {
         local build="$1" link_file target status=0
         for link_file in "$build"/CMakeFiles/*.dir/link.txt; do
             target="${link_file%.dir/link.txt}"
             target="${target##*/}"
             [ "$target" = Quake3 ] && continue
-            head -n 1 "$link_file" | tr -d '"' | tr ' ' '\n' | grep -q -x -F "lib$target.a" || continue
+            head -n 1 "$link_file" | tr -d '"' | tr ' ' '\n' | grep -x -F "lib$target.a" > /dev/null || continue
             head -n 1 "$build/CMakeFiles/Quake3.dir/link.txt" | tr -d '"' | tr ' ' '\n' |
-                grep -q -x -F "lib$target.a" || { echo "  $target is built but Quake3 does not link it"; status=1; }
+                grep -x -F "lib$target.a" > /dev/null || { echo "  $target is built but Quake3 does not link it"; status=1; }
         done
         return "$status"
     }
