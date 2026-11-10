@@ -1066,6 +1066,7 @@ Q3CGOBJ = \
 	$(B)/baseq3/cgame/cg_localents.o \
 	$(B)/baseq3/cgame/cg_main.o \
 	$(B)/baseq3/cgame/cg_marks.o \
+	$(B)/baseq3/cgame/cg_particles.o \
 	$(B)/baseq3/cgame/cg_players.o \
 	$(B)/baseq3/cgame/cg_playerstate.o \
 	$(B)/baseq3/cgame/cg_predict.o \
@@ -1094,6 +1095,7 @@ $(B)/baseq3/cgame/cg_info.o : $(CGDIR)/cg_info.c; $(DO_SHLIB_CC)
 $(B)/baseq3/cgame/cg_localents.o : $(CGDIR)/cg_localents.c; $(DO_SHLIB_CC)           
 $(B)/baseq3/cgame/cg_main.o : $(CGDIR)/cg_main.c; $(DO_SHLIB_CC)                   
 $(B)/baseq3/cgame/cg_marks.o : $(CGDIR)/cg_marks.c; $(DO_SHLIB_CC)                 
+$(B)/baseq3/cgame/cg_particles.o : $(CGDIR)/cg_particles.c; $(DO_SHLIB_CC)
 $(B)/baseq3/cgame/cg_players.o : $(CGDIR)/cg_players.c; $(DO_SHLIB_CC)             
 $(B)/baseq3/cgame/cg_playerstate.o : $(CGDIR)/cg_playerstate.c; $(DO_SHLIB_CC)        
 $(B)/baseq3/cgame/cg_predict.o : $(CGDIR)/cg_predict.c; $(DO_SHLIB_CC)        
@@ -1125,6 +1127,7 @@ MPCGOBJ = \
 	$(B)/missionpack/cgame/cg_localents.o \
 	$(B)/missionpack/cgame/cg_main.o \
 	$(B)/missionpack/cgame/cg_marks.o \
+	$(B)/missionpack/cgame/cg_particles.o \
 	$(B)/missionpack/cgame/cg_players.o \
 	$(B)/missionpack/cgame/cg_playerstate.o \
 	$(B)/missionpack/cgame/cg_predict.o \
@@ -1155,6 +1158,7 @@ $(B)/missionpack/cgame/cg_info.o : $(CGDIR)/cg_info.c; $(DO_SHLIB_CC)           
 $(B)/missionpack/cgame/cg_localents.o : $(CGDIR)/cg_localents.c; $(DO_SHLIB_CC)   -DMISSIONPACK 
 $(B)/missionpack/cgame/cg_main.o : $(CGDIR)/cg_main.c; $(DO_SHLIB_CC)             -DMISSIONPACK 
 $(B)/missionpack/cgame/cg_marks.o : $(CGDIR)/cg_marks.c; $(DO_SHLIB_CC)          -DMISSIONPACK  
+$(B)/missionpack/cgame/cg_particles.o : $(CGDIR)/cg_particles.c; $(DO_SHLIB_CC)  -DMISSIONPACK
 $(B)/missionpack/cgame/cg_players.o : $(CGDIR)/cg_players.c; $(DO_SHLIB_CC)       -DMISSIONPACK 
 $(B)/missionpack/cgame/cg_playerstate.o : $(CGDIR)/cg_playerstate.c; $(DO_SHLIB_CC)  -DMISSIONPACK 
 $(B)/missionpack/cgame/cg_predict.o : $(CGDIR)/cg_predict.c; $(DO_SHLIB_CC)  -DMISSIONPACK 
@@ -1845,6 +1849,7 @@ Q3SOBJ += \
 	$(B)/q3static/cg_localents.o \
 	$(B)/q3static/cg_main.o \
 	$(B)/q3static/cg_marks.o \
+	$(B)/q3static/cg_particles.o \
 	$(B)/q3static/cg_players.o \
 	$(B)/q3static/cg_playerstate.o \
 	$(B)/q3static/cg_predict.o \
@@ -1865,6 +1870,7 @@ $(B)/q3static/cg_info.o : $(CGDIR)/cg_info.c; $(DO_CC) -DQ3_STATIC
 $(B)/q3static/cg_localents.o : $(CGDIR)/cg_localents.c; $(DO_CC) -DQ3_STATIC           
 $(B)/q3static/cg_main.o : $(CGDIR)/cg_main.c; $(DO_CC) -DQ3_STATIC                   
 $(B)/q3static/cg_marks.o : $(CGDIR)/cg_marks.c; $(DO_CC) -DQ3_STATIC                 
+$(B)/q3static/cg_particles.o : $(CGDIR)/cg_particles.c; $(DO_CC) -DQ3_STATIC
 $(B)/q3static/cg_players.o : $(CGDIR)/cg_players.c; $(DO_CC) -DQ3_STATIC             
 $(B)/q3static/cg_playerstate.o : $(CGDIR)/cg_playerstate.c; $(DO_CC) -DQ3_STATIC        
 $(B)/q3static/cg_predict.o : $(CGDIR)/cg_predict.c; $(DO_CC) -DQ3_STATIC        
