@@ -12,7 +12,9 @@ this tree and against each git ref in Q3_PERF_REFERENCES, and run on each map
 in Q3_PERF_MAPS (default q3dm1 q3dm7) at each level in Q3_PERF_OPT (default
 -O2). Each mode prints a best and median time, and a hash of its outputs that
 holds no pointers. A reference's hash must match this tree's, unless the ref
-is written ref:timing, for a tree whose outputs may differ.
+is written ref:timing, for a tree whose outputs may differ. Each mode runs
+Q3_PERF_ROUNDS times (default 3), each round starting from a different tree,
+and keeps each tree's best; the run orders are printed.
 
     Q3_RETAIL_BASEQ3=... Q3_PERF_REFERENCES='origin/master 204fe36:timing' \\
         Q3_PERF_OPT='-O2 -O0' python3 tests/map_load_perf.py
@@ -141,6 +143,7 @@ def main():
     wanted = os.environ.get('Q3_PERF_MAPS', 'q3dm1 q3dm7').split()
     references = os.environ.get('Q3_PERF_REFERENCES', '').split()
     opts = os.environ.get('Q3_PERF_OPT', '-O2').split()
+    rounds = max(1, int(os.environ.get('Q3_PERF_ROUNDS', '3')))
     work = tempfile.mkdtemp(prefix='q3-map-load-perf.', dir=os.environ.get('TMPDIR', '/var/tmp'))
     try:
         data, maps = extract_maps(work, wanted)
@@ -158,8 +161,27 @@ def main():
             for name in maps:
                 print('== %s %s (ms, best/median)' % (name, opt))
                 print('%-28s' % 'measure' + ''.join('%22s' % label[:21] for label, _, _ in trees))
-                for mode, args in MODES:
-                    results = [run(binary, data, name, mode, args) for binary in binaries]
+                for mode_index, (mode, args) in enumerate(MODES):
+                    # Several rounds, each starting from a different tree, so
+                    # cache, clock or thermal state cannot favour one tree in
+                    # every measure; each tree keeps its best over the rounds.
+                    results = [None] * len(binaries)
+                    orders = []
+                    for round_index in range(rounds):
+                        start = (round_index + mode_index) % len(binaries)
+                        order = [(start + k) % len(binaries) for k in range(len(binaries))]
+                        orders.append(order)
+                        for index in order:
+                            outcome = run(binaries[index], data, name, mode, args)
+                            if results[index] is None:
+                                results[index] = outcome
+                            else:
+                                times = results[index][0]
+                                for measure, (best, median) in outcome[0].items():
+                                    old_best, old_median = times.get(measure, (best, median))
+                                    times[measure] = (min(best, old_best), min(median, old_median))
+                    print('  %s: run order %s' % (mode, ' | '.join(
+                        ', '.join(trees[index][0] for index in order) for order in orders)))
                     for measure in results[0][0]:
                         cells = []
                         for times, _, _ in results:
