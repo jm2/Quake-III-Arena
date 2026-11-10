@@ -25,10 +25,17 @@ static void Check( int ok, const char *what, float value ) {
 	}
 }
 
-static float FromBits( uint32_t bits ) {
+/* Not inlined, so the compiler cannot see where the float came from: under
+ * fast math it may assume any float it computes is finite. */
+__attribute__(( noinline )) static float FromBits( uint32_t bits ) {
 	float f;
 	memcpy( &f, &bits, sizeof( f ) );
 	return f;
+}
+
+/* The reference from the raw bits: isfinite folds under fast math. */
+static int BitsFinite( uint32_t bits ) {
+	return ( bits & 0x7f800000u ) != 0x7f800000u;
 }
 
 int main( int argc, char **argv ) {
@@ -39,22 +46,35 @@ int main( int argc, char **argv ) {
 	for ( i = 0 ; i < (int)( sizeof( finite ) / sizeof( finite[0] ) ) ; i++ ) {
 		Check( R_FiniteFloat( finite[i] ), "a finite value is finite", finite[i] );
 	}
-	Check( !R_FiniteFloat( INFINITY ) && !R_FiniteFloat( -INFINITY ), "infinities are not finite", INFINITY );
-	Check( !R_FiniteFloat( NAN ) && !R_FiniteFloat( FromBits( 0xffc00001u ) ), "NaNs are not finite", NAN );
+	Check( !R_FiniteFloat( FromBits( 0x7f800000u ) ) && !R_FiniteFloat( FromBits( 0xff800000u ) ),
+		"infinities are not finite", 0 );
+	Check( !R_FiniteFloat( FromBits( 0x7fc00000u ) ) && !R_FiniteFloat( FromBits( 0xffc00001u ) ),
+		"NaNs are not finite", 0 );
 
-	/* the exponent test, for every bit pattern */
+	/* the exponent test, for a sweep of bit patterns and the edges */
 	for ( bits = 0 ; bits <= 0xffffffffu ; bits += 0x7f ) {
-		float	f = FromBits( (uint32_t)bits );
-		Check( R_FiniteFloat( f ) == ( isfinite( f ) != 0 ), "R_FiniteFloat is isfinite", f );
+		Check( R_FiniteFloat( FromBits( (uint32_t)bits ) ) == BitsFinite( (uint32_t)bits ),
+			"R_FiniteFloat tests the exponent", FromBits( (uint32_t)bits ) );
 	}
+	Check( R_FiniteFloat( FromBits( 0x7f7fffffu ) ) && !R_FiniteFloat( FromBits( 0x7f800001u ) ),
+		"the largest finite and the smallest NaN", 0 );
+#ifdef FLOAT_GUARD_FAST_MATH
+	/* fast math: only the bit test is promised; the range comparisons are
+	 * the compiler's to fold */
+	if ( failures ) {
+		return 1;
+	}
+	puts( "float guard regression passed (fast math)" );
+	return 0;
+#endif
 
 	Check( R_FloatToInt( 254.84f ) == 254 && R_FloatToInt( -1.5f ) == -1, "in range keeps the native conversion", 254.84f );
 	Check( R_FloatToInt( 2147483520.0f ) == 2147483520, "the largest float below 2^31 converts", 2147483520.0f );
 	Check( R_FloatToInt( 2147483648.0f ) == 0 && R_FloatToInt( -2147483904.0f ) == 0, "outside int is 0", 2147483648.0f );
 	Check( R_FloatToInt( -2147483648.0f ) == INT32_MIN, "-2^31 converts", -2147483648.0f );
-	Check( R_FloatToInt( NAN ) == 0 && R_FloatToInt( INFINITY ) == 0 && R_FloatToInt( -INFINITY ) == 0,
-		"NaN and infinities are 0", NAN );
-	Check( R_Ftol( 7.9f ) == 7 && R_Ftol( NAN ) == 0, "R_Ftol is the same with myftol", 7.9f );
+	Check( R_FloatToInt( FromBits( 0x7fc00000u ) ) == 0 && R_FloatToInt( FromBits( 0x7f800000u ) ) == 0
+		&& R_FloatToInt( FromBits( 0xff800000u ) ) == 0, "NaN and infinities are 0", NAN );
+	Check( R_Ftol( 7.9f ) == 7 && R_Ftol( FromBits( 0x7fc00000u ) ) == 0, "R_Ftol is the same with myftol", 7.9f );
 
 	if ( argc > 1 ) {
 		enum { VERTS = 12288, FRAMES = 2000 };

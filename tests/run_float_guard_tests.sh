@@ -16,10 +16,16 @@ awk -v file="$Q3_TEST_ROOT/code/renderer/tr_local.h" '
     END { exit done ? 0 : 1 }
 ' "$Q3_TEST_ROOT/code/renderer/tr_local.h" > "$Q3_TEST_DIR/float_guard_extracted.h" ||
     { echo "run_float_guard_tests: no float guards in tr_local.h" >&2; exit 1; }
-grep -Eq 'Com_Memcpy *[(]|^[[:space:]]*volatile' "$Q3_TEST_DIR/float_guard_extracted.h" &&
-    { echo "run_float_guard_tests: the guards call Com_Memcpy or use volatile again (#249)" >&2; exit 1; }
+grep -Eq 'Com_Memcpy *[(]' "$Q3_TEST_DIR/float_guard_extracted.h" &&
+    { echo "run_float_guard_tests: the guards call Com_Memcpy again (#249)" >&2; exit 1; }
 
 "${CC:-cc}" -std=gnu99 -O2 -fno-omit-frame-pointer -I"$Q3_TEST_DIR" \
     -fsanitize=address,undefined -fno-sanitize-recover=all \
     "$Q3_TEST_ROOT/tests/float_guard_regression.c" -lm -o "$Q3_TEST_DIR/float_guard"
 ASAN_OPTIONS=detect_leaks=0 "$Q3_TEST_DIR/float_guard"
+
+# The legacy code/unix release flags: fast math must not fold the guards away
+# (clang turns a plain bit test into an fpclass test it then assumes true).
+"${CC:-cc}" -std=gnu99 -O2 -ffast-math -DFLOAT_GUARD_FAST_MATH -I"$Q3_TEST_DIR" \
+    "$Q3_TEST_ROOT/tests/float_guard_regression.c" -lm -o "$Q3_TEST_DIR/float_guard_fast"
+"$Q3_TEST_DIR/float_guard_fast"
