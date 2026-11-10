@@ -146,7 +146,11 @@ SOURCE_DATE_EPOCH=1767225600 ./build_mac.sh
   over the dates genisoimage stamped with the time it ran: the HFS volume
   dates (both master directory blocks), folder and file dates, and the ISO
   9660 volume descriptor dates. It also zeroes the free space of the HFS
-  catalog's leaf nodes, where genisoimage leaves stale records.
+  catalog's leaf nodes, where genisoimage leaves stale records, and each
+  fork's slack (its logical end to the end of its last allocation block).
+  With the retail 457 MB `pak0.pk3` the allocation blocks are 8 KB, and
+  genisoimage leaves uninitialized memory there. No ISO 9660 extent lies in
+  that slack.
   `ndif_image.py` writes its MacBinary dates from `SOURCE_DATE_EPOCH` too.
   Images made with hdiutil (HFS+) are not normalized.
 
@@ -154,10 +158,11 @@ Without `SOURCE_DATE_EPOCH` (no git, or a source tree without `.git`), the
 dates are those of the build, and builds made on different days also differ
 in `__DATE__`.
 
-`tests/run_reproducible_build_tests.sh` checks the prefix map. When Rez is
-installed, it also compares two Rez and `finalize` runs made in different
-directories and time zones, and, with genisoimage or mkisofs, two install
-images made from them.
+`tests/run_reproducible_build_tests.sh` checks the prefix map. With
+genisoimage or mkisofs installed, it compares two install images made a second
+apart from a 200 MB sparse `pak0.pk3`, so the allocation blocks are larger
+than 2 KB, as with the retail data. When Rez is installed, it also compares
+two Rez and `finalize` runs made in different directories and time zones.
 
 ## Checking and rebuilding the toolchain
 

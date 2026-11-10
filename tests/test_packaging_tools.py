@@ -1,5 +1,6 @@
 import binascii
 import contextlib
+import filecmp
 from datetime import datetime, timedelta, timezone
 import io
 import json
@@ -10,6 +11,7 @@ import shutil
 import struct
 import subprocess
 import tempfile
+import time
 import unittest
 from unittest import mock
 import zipfile
@@ -1203,6 +1205,114 @@ class ReproducibleDateTests(unittest.TestCase):
         for path in paths:
             with self.subTest(path=path.name):
                 self.assertEqual(path.stat().st_mtime, self.SOURCE_DATE_EPOCH)
+
+    @unittest.skipUnless(hasattr(os, "symlink") and os.name == "posix",
+                         "needs symbolic links")
+    def test_set_dates_skips_links_where_their_own_time_cannot_be_set(self):
+        """Native Windows Python has no lutimes: os.utime raises
+        NotImplementedError for follow_symlinks=False there."""
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        target = root / "outside.pk3"
+        target.write_bytes(b"pak")
+        os.utime(target, (1000000000, 1000000000))
+        tree = root / "content"
+        tree.mkdir()
+        (tree / "pak0.pk3").write_bytes(b"pak")
+        (tree / "link.pk3").symlink_to(target)
+        real_utime = os.utime
+
+        def windows_utime(path, times=None, *, follow_symlinks=True):
+            if not follow_symlinks:
+                raise NotImplementedError("utime: follow_symlinks unavailable on this platform")
+            return real_utime(path, times)
+
+        with mock.patch.object(mac_app.os, "utime", windows_utime), \
+                mock.patch.object(mac_app.os, "supports_follow_symlinks", set()), \
+                with_source_date_epoch(str(self.SOURCE_DATE_EPOCH)):
+            status, _, stderr = run_mac_app("set-dates", tree)
+        self.assertEqual(status, 0, stderr)
+        self.assertEqual((tree / "pak0.pk3").stat().st_mtime, self.SOURCE_DATE_EPOCH)
+        self.assertEqual(tree.stat().st_mtime, self.SOURCE_DATE_EPOCH)
+        self.assertEqual(target.stat().st_mtime, 1000000000)
+
+
+GENISOIMAGE = shutil.which("genisoimage") or shutil.which("mkisofs")
+
+
+@unittest.skipUnless(GENISOIMAGE, "genisoimage and mkisofs are not installed")
+class InstallImageReproducibilityTests(unittest.TestCase):
+    """Issue #405: two install images made as build_mac.sh package makes them,
+    from the same files at different times, are byte-identical.
+
+    A 200 MB sparse pak0 makes HFS allocation blocks larger than 2 KB, as the
+    457 MB retail pak0 does. genisoimage then fills each fork's slack (its
+    logical end to the end of its last block) with uninitialized memory, and
+    puts the copy of the master directory block before its end padding, far
+    from the end of the allocation area.
+    """
+
+    SOURCE_DATE_EPOCH = 1767225600
+    EXPECTED = SOURCE_DATE_EPOCH + mac_app.MAC_EPOCH_OFFSET
+
+    def make_image(self, directory):
+        folder = directory / "content" / "Quake 3 Arena"
+        (folder / "baseq3").mkdir(parents=True)
+        with open(folder / "baseq3" / "pak0.pk3", "wb") as stream:
+            stream.truncate(200 * 1024 * 1024 + 4321)
+        for index in range(1, 9):
+            (folder / "baseq3" / f"pak{index}.pk3").write_bytes(
+                bytes([index]) * (1000 * index + 7))
+        (folder / "Quake3").write_bytes(PEF)
+        (folder / "%Quake3").write_bytes(rez_appledouble(launchable_resources()))
+        mapping = directory / "hfs_mapping.txt"
+        mapping.write_text("\n".join(shell_mapping_lines()) + "\n")
+        image = directory / "Quake3_Install.img"
+        with with_source_date_epoch(str(self.SOURCE_DATE_EPOCH)):
+            self.assertEqual(run_mac_app("set-dates", directory / "content")[0], 0)
+            subprocess.run(
+                [GENISOIMAGE, "-quiet", "-hfs", "-double", "-map", str(mapping),
+                 "-o", str(image), "-V", "Quake 3 Arena", str(directory / "content")],
+                env=dict(os.environ, TZ="UTC"), check=True, capture_output=True)
+            status, _, stderr = run_mac_app("set-dates", image)
+            self.assertEqual(status, 0, stderr)
+        return image
+
+    def test_large_images_made_at_different_times_are_identical(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        first = self.make_image(root / "one")
+        # genisoimage stamps whole seconds.
+        time.sleep(1.1)
+        second = self.make_image(root / "a" / "second" / "checkout")
+
+        with open(first, "rb") as stream:
+            volume = mac_app._HfsVolume(str(first), stream)
+            mdb = volume._read(1024, 0x44, "master directory block")
+            self.assertGreater(struct.unpack_from(">I", mdb, 0x14)[0], 2048)
+            copies = mac_app._find_alternate_mdbs(str(first), stream, mdb)
+            self.assertEqual(len(copies), 1)
+            stream.seek(copies[0])
+            self.assertEqual(struct.unpack_from(">II", stream.read(10), 2),
+                             (self.EXPECTED, self.EXPECTED))
+            slack = list(mac_app._fork_slack(volume))
+            self.assertGreater(sum(length for _, length in slack), 0)
+            for offset, length in slack:
+                stream.seek(offset)
+                self.assertEqual(stream.read(length), bytes(length))
+        self.assertEqual(mac_app.load(str(first), "Quake3").data, PEF)
+        self.assertTrue(filecmp.cmp(first, second, shallow=False),
+                        "two install images with the same SOURCE_DATE_EPOCH differ")
+
+        # The Disk Copy image takes its MacBinary dates from SOURCE_DATE_EPOCH.
+        wrapped = []
+        for image in (first, second):
+            output = image.with_name(image.name + ".bin")
+            with with_source_date_epoch(str(self.SOURCE_DATE_EPOCH)), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                ndif_image.write_image(str(image), str(output), "Quake 3 Arena")
+            image.unlink()
+            wrapped.append(output)
+        self.assertTrue(filecmp.cmp(*wrapped, shallow=False),
+                        "two Disk Copy images with the same SOURCE_DATE_EPOCH differ")
 
 
 if __name__ == "__main__":

@@ -11,13 +11,14 @@
 #  2. mac_app.py must write SOURCE_DATE_EPOCH over every date Rez stores
 #     (finalize) and over every date genisoimage stamps on package mode's
 #     install image (set-dates). tests/test_packaging_tools.py checks that on
-#     synthetic containers. When Retro68's Rez is installed (tools/Retro68-build
-#     or PATH), two Rez and finalize runs of code/mac/mac_resources.r, in
-#     different directories and time zones a second apart, must give identical
-#     .bin and AppleDouble files. When genisoimage (or mkisofs) is installed
-#     too, two install images made from them the way build_mac.sh package
-#     makes them (set-dates on the tree, genisoimage in UTC, set-dates on the
-#     image, ndif_image.py) must be identical.
+#     synthetic containers (ReproducibleDateTests) and, when genisoimage or
+#     mkisofs is installed, on two install images made the way build_mac.sh
+#     package makes them, a second apart, from a 200 MB sparse pak0 whose
+#     allocation blocks are larger than 2 KB (InstallImageReproducibilityTests).
+#  3. When Retro68's Rez is installed (tools/Retro68-build or PATH), two Rez
+#     and finalize runs of code/mac/mac_resources.r, in different directories
+#     and time zones a second apart, must give identical .bin and AppleDouble
+#     files.
 set -euo pipefail
 
 export TMPDIR="${TMPDIR:-/var/tmp}"
@@ -116,9 +117,15 @@ check_layout "build tree outside the source tree" \
     "$T/c/src" "$T/c/out" \
     "$T/d/another/src" "$T/d/elsewhere/out"
 
-# --- 2. finalize writes SOURCE_DATE_EPOCH over Rez's dates ------------------
+# --- 2. mac_app.py finalize and set-dates ----------------------------------
 
-(cd "$Q3_TEST_ROOT" && python3 -m unittest -q tests.test_packaging_tools.ReproducibleDateTests)
+command -v genisoimage > /dev/null 2>&1 || command -v mkisofs > /dev/null 2>&1 ||
+    echo "Install images: skipped (genisoimage and mkisofs are not installed)"
+(cd "$Q3_TEST_ROOT" && python3 -m unittest -q \
+    tests.test_packaging_tools.ReproducibleDateTests \
+    tests.test_packaging_tools.InstallImageReproducibilityTests)
+
+# --- 3. Rez and finalize ------------------------------------------------------
 
 REZ="$Q3_TEST_ROOT/tools/Retro68-build/bin/Rez"
 [ -x "$REZ" ] || REZ="$(command -v Rez || true)"
@@ -173,57 +180,3 @@ rez_app "$T/rez/unset" Pacific/Auckland
 cmp -s "$T/rez/one/Quake3.bin" "$T/rez/unset/Quake3.bin" &&
     fail "Rez's MacBinary dates were already reproducible; the check proves nothing"
 echo "Rez runs: identical .bin and AppleDouble files with SOURCE_DATE_EPOCH"
-
-# --- 3. Package mode's install image ----------------------------------------
-
-MKISOFS="$(command -v genisoimage || command -v mkisofs || true)"
-if [ -z "$MKISOFS" ]; then
-    echo "Install images: skipped (genisoimage and mkisofs are not installed)"
-    exit 0
-fi
-head -c 300000 /dev/urandom > "$T/pak0.pk3"
-cat > "$T/hfs_mapping.txt" <<'EOF'
-.pk3   Raw   'IDQ3' 'Stak' "Quake 3 Data"
-Quake3 Raw   'IDQ3' 'APPL' "Quake 3 App"
-EOF
-
-# install_image <dir> <caller TZ> <app dir> [SOURCE_DATE_EPOCH]: what
-# build_mac.sh package does with the applications and the game data.
-install_image() {
-    local dir="$1" zone="$2" app="$3"
-    local folder="$dir/content/Quake 3 Arena"
-    mkdir -p "$folder/baseq3"
-    cp "$T/pak0.pk3" "$folder/baseq3/pak0.pk3"
-    cp "$app/Quake3.ad" "$folder/Quake3"
-    cp "$app/%Quake3.ad" "$folder/%Quake3"
-    (
-        export TZ="$zone"
-        if [ "$#" -gt 3 ]; then export SOURCE_DATE_EPOCH="$4"; else unset SOURCE_DATE_EPOCH; fi
-        cd "$Q3_TEST_ROOT"
-        python3 mac_app.py set-dates "$dir/content"
-        TZ=UTC "$MKISOFS" -quiet -hfs -double -map "$T/hfs_mapping.txt" \
-            -o "$dir/Quake3_Install.img" -V "Quake 3 Arena" "$dir/content"
-        python3 mac_app.py set-dates "$dir/Quake3_Install.img"
-        python3 mac_app.py verify --hfs-name Quake3 --pef "$app/Quake3.pef" \
-            "$dir/Quake3_Install.img" > /dev/null
-        python3 ndif_image.py "$dir/Quake3_Install.img" \
-            "$dir/Quake3_Install.img.bin" "Quake 3 Arena" > /dev/null
-    ) || fail "the install image in $dir could not be made"
-}
-
-install_image "$T/image/one" UTC "$T/rez/one" 1767225600
-sleep 1
-install_image "$T/image/a/second/checkout" Pacific/Auckland \
-    "$T/rez/a/second/checkout" 1767225600
-for output in Quake3_Install.img Quake3_Install.img.bin; do
-    if ! cmp -s "$T/image/one/$output" "$T/image/a/second/checkout/$output"; then
-        cmp -l "$T/image/one/$output" "$T/image/a/second/checkout/$output" | head -n 8 >&2 || true
-        fail "two install images with the same SOURCE_DATE_EPOCH give different $output"
-    fi
-done
-
-# The control: without SOURCE_DATE_EPOCH the image carries the time it was made.
-install_image "$T/image/unset" UTC "$T/rez/one"
-cmp -s "$T/image/one/Quake3_Install.img" "$T/image/unset/Quake3_Install.img" &&
-    fail "genisoimage's images were already reproducible; the check proves nothing"
-echo "Install images: identical .img and NDIF .img.bin with SOURCE_DATE_EPOCH"

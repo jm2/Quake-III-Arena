@@ -21,7 +21,8 @@ Finder info for hosts that store real forks (macOS).
 directory, it sets the modification time of everything in it to
 SOURCE_DATE_EPOCH; given the HFS/ISO image genisoimage made from it, it writes
 SOURCE_DATE_EPOCH over the volume, folder, file and ISO volume descriptor
-dates genisoimage stamped with the time it ran.
+dates genisoimage stamped with the time it ran, and zeroes the stale catalog
+records and uninitialized fork slack it leaves.
 """
 
 import argparse
@@ -49,6 +50,10 @@ HFS_FILE_RECORD_SIZE = 102
 # directory block and in catalog folder and file records.
 HFS_MDB_DATES = (0x02, 0x06, 0x40)
 HFS_RECORD_DATES = {HFS_DIRECTORY_RECORD: (10, 14, 18), HFS_FILE_RECORD: (44, 48, 52)}
+# How far from the end of an image to look for the copy of the master
+# directory block: genisoimage's 300 KB of padding and an allocation block,
+# which is at most 32 KB on a 2 GB volume.
+HFS_ALTERNATE_MDB_TAIL = 1024 * 1024
 
 # Seconds from the Mac epoch (1904-01-01) to the Unix epoch, both UTC.
 MAC_EPOCH_OFFSET = 2082844800
@@ -348,11 +353,13 @@ def _find_alternate_mdbs(path, stream, mdb):
     """Image offsets of the copies of the master directory block mdb.
 
     The copy is the volume's second-to-last sector. Its offset is not
-    recorded: libhfs (Rez) puts it 1 KB before the end of the image, and
-    genisoimage's HFS/ISO hybrids a few allocation blocks before the end of
-    the allocation area. Look for a sector there that matches mdb's
-    allocation layout and volume name; genisoimage's copy is the one it
-    formatted the volume with, so its counts and IDs are stale.
+    recorded. libhfs (Rez) puts it 1 KB before the end of the image, near the
+    end of the allocation area. genisoimage puts it one allocation block
+    before the 300 KB of padding that ends its images, and its allocation
+    area can run megabytes past the end of the file. Look in both places for
+    a sector that matches mdb's allocation layout and volume name;
+    genisoimage's copy is the one it formatted the volume with, so its counts
+    and IDs are stale.
     """
     size = os.fstat(stream.fileno()).st_size
     block_count, block_size = struct.unpack_from(">HI", mdb, 0x12)
@@ -360,11 +367,10 @@ def _find_alternate_mdbs(path, stream, mdb):
     window = 8 * block_size + 1024
     first = max(HFS_MDB_OFFSET + 512, (allocation_end - window) // 512 * 512)
     last = min(size - 512, allocation_end + window)
-    candidates = sorted(set(range(first, last + 1, 512)) | {size - 1024})
+    tail = max(HFS_MDB_OFFSET + 512, (size - HFS_ALTERNATE_MDB_TAIL) // 512 * 512)
+    candidates = sorted(set(range(first, last + 1, 512)) | set(range(tail, size - 511, 512)))
     copies = []
     for offset in candidates:
-        if offset <= HFS_MDB_OFFSET:
-            continue
         stream.seek(offset)
         blob = stream.read(0x40)
         if (blob[:2] == b"BD" and blob[0x12:0x1E] == mdb[0x12:0x1E]
@@ -373,13 +379,35 @@ def _find_alternate_mdbs(path, stream, mdb):
     return copies
 
 
+def _fork_slack(volume):
+    """Yield (image offset, length) of each fork's bytes past its logical end.
+
+    A fork owns whole allocation blocks. With blocks larger than its 2 KB
+    ISO sectors, genisoimage leaves uninitialized memory between a fork's
+    logical end and the end of its last block. No ISO extent lies there: the
+    next file's starts at the next allocation block.
+    """
+    for _, _, name, record in volume.file_records():
+        for logical_at, physical_at, extents_at in ((26, 30, 74), (36, 40, 86)):
+            logical = struct.unpack_from(">I", record, logical_at)[0]
+            physical = struct.unpack_from(">I", record, physical_at)[0]
+            position = 0
+            for start, length in volume._chunks(
+                    record[extents_at:extents_at + 12], physical, f"{name!r} fork"):
+                low = max(position, logical)
+                if low < position + length:
+                    yield start + low - position, position + length - low
+                position += length
+
+
 def _set_hfs_dates(path, mac_time):
     """Write mac_time over every nonzero date of the volume and its catalog.
 
     The dates are in the master directory block and its copy, and in each
     folder and file record. A zero date (never backed up) stays zero. The
-    free space of each catalog leaf node is zeroed: genisoimage leaves stale
-    records there, dates included.
+    free space of each catalog leaf node is zeroed, where genisoimage leaves
+    stale records, dates included, and so is each fork's slack (see
+    _fork_slack).
     """
     def overwrite(stream, base, blob, offsets):
         for offset in offsets:
@@ -401,6 +429,7 @@ def _set_hfs_dates(path, mac_time):
                 if not 14 <= start <= table:
                     raise FormatError(f"{path}: malformed catalog leaf node")
                 free_space.append((node_offset + start, table - start))
+            free_space += list(_fork_slack(volume))
         except (IndexError, struct.error):
             raise FormatError(f"{path}: malformed catalog leaf node") from None
         for offset, record in records:
@@ -483,12 +512,17 @@ def set_dates(path, mac_time):
     For a directory, make it the modification time of everything in it.
     """
     if os.path.isdir(path):
-        unix_time = mac_time - MAC_EPOCH_OFFSET
+        times = (mac_time - MAC_EPOCH_OFFSET,) * 2
+        # Native Windows Python cannot set a link's own time: skip links there.
+        own_link_times = os.utime in os.supports_follow_symlinks
         for root, directories, files in os.walk(path):
             for name in directories + files:
-                os.utime(os.path.join(root, name), (unix_time, unix_time),
-                         follow_symlinks=False)
-        os.utime(path, (unix_time, unix_time))
+                entry = os.path.join(root, name)
+                if own_link_times:
+                    os.utime(entry, times, follow_symlinks=False)
+                elif not os.path.islink(entry):
+                    os.utime(entry, times)
+        os.utime(path, times)
         return
     kind = container_kind(path)
     if kind == "macbinary":

@@ -114,20 +114,36 @@ foreach ($Argument in $args) {
 # commit gives the same bytes. The environment is the caller's session, so
 # run again with the default set and remove it afterwards.
 if (-not $env:SOURCE_DATE_EPOCH -and (Get-Command "git" -ErrorAction SilentlyContinue)) {
-    $GitTop = git rev-parse --show-toplevel 2>$null
-    if ($LASTEXITCODE -eq 0 -and $GitTop -and
-        [System.IO.Path]::GetFullPath($GitTop).TrimEnd('\', '/') -eq
-        [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\', '/')) {
-        $CommitTime = git log -1 --format=%ct 2>$null
-        if ($LASTEXITCODE -eq 0 -and $CommitTime) {
-            $env:SOURCE_DATE_EPOCH = "$CommitTime".Trim()
-            try {
-                & $PSCommandPath @args
-                exit $LASTEXITCODE
-            }
-            finally {
-                Remove-Item Env:SOURCE_DATE_EPOCH -ErrorAction SilentlyContinue
-            }
+    # Outside a checkout, or in one git refuses (dubious ownership), git
+    # fails and writes to stderr. Windows PowerShell 5.1 turns that stderr
+    # into a terminating error under "Stop", so ask with "Continue".
+    $PreviousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $GitTop = git rev-parse --show-toplevel 2>$null
+        $GitTopStatus = $LASTEXITCODE
+        $CommitTime = $null
+        if ($GitTopStatus -eq 0 -and $GitTop -and
+            [System.IO.Path]::GetFullPath("$GitTop").TrimEnd('\', '/') -eq
+            [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\', '/')) {
+            $CommitTime = git log -1 --format=%ct 2>$null
+            if ($LASTEXITCODE -ne 0) { $CommitTime = $null }
+        }
+    }
+    catch {
+        $CommitTime = $null
+    }
+    finally {
+        $ErrorActionPreference = $PreviousPreference
+    }
+    if ($CommitTime) {
+        $env:SOURCE_DATE_EPOCH = "$CommitTime".Trim()
+        try {
+            & $PSCommandPath @args
+            exit $LASTEXITCODE
+        }
+        finally {
+            Remove-Item Env:SOURCE_DATE_EPOCH -ErrorAction SilentlyContinue
         }
     }
 }
