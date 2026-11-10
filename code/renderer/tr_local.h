@@ -41,13 +41,25 @@ long myftol( float f );
 #endif
 
 
-/* Preserve valid native conversion/rounding; unsafe derived values become zero. */
+/* Preserve valid native conversion/rounding; unsafe derived values become zero.
+ * The exponent test reads the bits through a union, which GCC defines and
+ * inlines; it used to copy them with Com_Memcpy, an out-of-line call even at
+ * -O2, so every per-vertex conversion made a call (#249).  The bits still go
+ * through a volatile: under -ffast-math (code/unix's release flags) clang
+ * turns a plain bit test into an fpclass test and then assumes NaN and
+ * infinity away, folding it to true (docs/shader-runtime-conversion-
+ * validation.md).  On PowerPC float-to-integer bits go through memory
+ * anyway, so the volatile costs one more store and load. */
 static ID_INLINE qboolean R_FiniteFloat( float value ) {
-	unsigned int bits;
-	volatile unsigned int representation;
-	Com_Memcpy( &bits, &value, sizeof(bits) );
-	representation = bits;
-	return (representation & 0x7f800000u) != 0x7f800000u;
+	union {
+		float			f;
+		unsigned int	i;
+	} bits;
+	volatile unsigned int	representation;
+
+	bits.f = value;
+	representation = bits.i;
+	return ( representation & 0x7f800000u ) != 0x7f800000u;
 }
 
 static ID_INLINE qboolean R_FloatToIntValid( float value ) {
