@@ -991,10 +991,12 @@ static void IspShuffled( void ) {
  * K_MWHEELDOWN, one per frame it moved; a second wheel is ignored. */
 static void CheckWheel( fakeElement_t *wheel, int turn, int key ) {
 	ClearCounts();
+	mouseX = mouseY = 0;
 	wheel->state = (UInt32)turn;
 	Frame();
 	Check( downEvents[key] == 1 && upEvents[key] == 1 && !keyDownState[key],
 		"a wheel turn presses and releases its wheel key" );
+	Check( mouseX == 0 && mouseY == 0, "the wheel is not movement" );
 	Check( downEvents[key == K_MWHEELUP ? K_MWHEELDOWN : K_MWHEELUP] == 0, "and not the other" );
 }
 
@@ -1018,7 +1020,7 @@ static void IspWheel( void ) {
 	mouseX = mouseY = 0;
 	Frame();
 	Check( !downEvents[K_MWHEELUP] && !downEvents[K_MWHEELDOWN], "a still wheel, or a second one, sends nothing" );
-	Check( mouseX == 0 && mouseY == 0, "the wheel is not movement" );
+	Check( mouseX == 0 && mouseY == 0, "a second wheel is not movement either" );
 	Check( !AnyKeyDown(), "nothing is left down" );
 }
 

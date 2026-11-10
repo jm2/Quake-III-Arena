@@ -2,7 +2,6 @@
 // typedef int sysEventType_t;	// FIXME...
 #include "../renderer/tr_local.h"
 #include "mac_local.h"
-#include <glm.h>
 #include "MacGamma.h"
 
 // MAX_DEVICES and macGlInfo moved to mac_local.h
@@ -583,12 +582,13 @@ once the frame buffer is out of VRAM, and got the Rage Pro approximations:
 no damage blend, Rage Pro smoke and particles and menu background, and
 cinematics capped at 256.  The renderer name settles it, as on win32 and
 Linux: a Rage Pro by name always, a small card named as a later family
-never; an unknown name keeps the memory guess.
+never; an unknown name keeps the memory guess.  The other names win32 sorts
+(Banshee and Voodoo3, Permedia2, Riva 128) get its types too.
 ===================
 */
 static glHardwareType_t GLimp_HardwareType( const char *renderer, glHardwareType_t byMemory ) {
 	static const char	*capable[] = {
-		"rage 128", "rage128", "radeon", "voodoo", "3dfx", "geforce", "nvidia"
+		"rage 128", "rage128", "mobility 128", "radeon", "voodoo", "3dfx", "geforce", "nvidia"
 	};
 	char	name[MAX_STRING_CHARS];
 	int		i;
@@ -597,6 +597,15 @@ static glHardwareType_t GLimp_HardwareType( const char *renderer, glHardwareType
 	Q_strlwr( name );
 	if ( strstr( name, "rage pro" ) || strstr( name, "ragepro" ) ) {
 		return GLHW_RAGEPRO;
+	}
+	if ( strstr( name, "banshee" ) || strstr( name, "voodoo3" ) ) {
+		return GLHW_3DFX_2D3D;
+	}
+	if ( strstr( name, "permedia2" ) ) {
+		return GLHW_PERMEDIA2;
+	}
+	if ( strstr( name, "riva 128" ) ) {
+		return GLHW_RIVA128;
 	}
 	if ( byMemory == GLHW_RAGEPRO ) {
 		for ( i = 0 ; i < (int)( sizeof( capable ) / sizeof( capable[0] ) ) ; i++ ) {

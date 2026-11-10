@@ -1470,9 +1470,10 @@ static void TestFastPaths( void ) {
  * CheckDevices measures memory only on the first fullscreen start, so the
  * memory guess is passed in, and one GLimp_Init checks glConfig gets it. */
 static void CheckHardwareType( const char *renderer, glHardwareType_t byMemory, glHardwareType_t want ) {
-	glHardwareType_t	got = GLimp_HardwareType( renderer, byMemory );
+	glHardwareType_t	got;
 
 	currentCase = renderer;
+	got = GLimp_HardwareType( renderer, byMemory );
 	if ( got != want ) {
 		fprintf( stderr, "%s, memory guess %i: hardware type %i, want %i\n",
 			renderer, (int)byMemory, (int)got, (int)want );
@@ -1485,7 +1486,12 @@ static void TestHardwareType( void ) {
 	CheckHardwareType( "ATI Rage 128 OpenGL Engine", GLHW_RAGEPRO, GLHW_GENERIC );
 	CheckHardwareType( "ATI Rage128 Pro", GLHW_RAGEPRO, GLHW_GENERIC );
 	CheckHardwareType( "ATI Radeon OpenGL Engine", GLHW_RAGEPRO, GLHW_GENERIC );
-	CheckHardwareType( "3Dfx Voodoo3", GLHW_RAGEPRO, GLHW_GENERIC );
+	CheckHardwareType( "ATI Rage Mobility 128", GLHW_RAGEPRO, GLHW_GENERIC );
+	CheckHardwareType( "3Dfx Voodoo4", GLHW_RAGEPRO, GLHW_GENERIC );
+	CheckHardwareType( "3Dfx Voodoo3", GLHW_RAGEPRO, GLHW_3DFX_2D3D );	/* win32's types */
+	CheckHardwareType( "3Dfx Banshee", GLHW_GENERIC, GLHW_3DFX_2D3D );
+	CheckHardwareType( "3Dlabs Permedia2", GLHW_RAGEPRO, GLHW_PERMEDIA2 );
+	CheckHardwareType( "NVIDIA Riva 128", GLHW_GENERIC, GLHW_RIVA128 );
 	CheckHardwareType( "ATI Rage Pro OpenGL Engine", GLHW_RAGEPRO, GLHW_RAGEPRO );
 	CheckHardwareType( "ATI RAGE PRO", GLHW_GENERIC, GLHW_RAGEPRO );	/* by name, whatever the memory */
 	CheckHardwareType( "Unknown Engine", GLHW_RAGEPRO, GLHW_RAGEPRO );	/* an unknown name keeps the guess */
