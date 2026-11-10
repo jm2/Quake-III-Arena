@@ -244,6 +244,7 @@
 				13380E4000ADFE58C697A10E,
 				13380E4100ADFE6BC697A10E,
 				13380E4200ADFE7AC697A10E,
+				C0DEC0000000000000002961,
 				13380E4300ADFE88C697A10E,
 				13380E4400ADFE97C697A10E,
 				13380E4500ADFEA7C697A10E,
@@ -1517,6 +1518,7 @@
 				012AD99700868211C697A10E,
 				012AD99800868211C697A10E,
 				012AD99900868211C697A10E,
+				C0DEC0000000000000002960,
 				012AD99A00868211C697A10E,
 				012AD99B00868211C697A10E,
 				012AD99C00868211C697A10E,
@@ -1627,6 +1629,14 @@
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.c.c;
 			path = cg_newdraw.c;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		C0DEC0000000000000002960 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
+			path = cg_particles.c;
 			refType = 4;
 			sourceTree = "<group>";
 		};
@@ -8748,6 +8758,12 @@
 		};
 		13380E4200ADFE7AC697A10E = {
 			fileRef = 012AD99800868211C697A10E;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		C0DEC0000000000000002961 = {
+			fileRef = C0DEC0000000000000002960;
 			isa = PBXBuildFile;
 			settings = {
 			};
