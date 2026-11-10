@@ -1199,9 +1199,10 @@ qboolean Info_Validate( const char *s ) {
 ==================
 Info_ValidateKeyValue
 
-CVE-2017-11721. Reject individual info-string keys or values that contain
-characters which would break the parser: '\\' is the field separator, ';' is
-a console command separator, and '"' confuses quoted-token parsing. Strict
+A local check, with no upstream fix or CVE behind it. Reject individual
+info-string keys or values that contain characters which would break the
+parser: '\\' is the field separator, ';' is a console command separator,
+and '"' confuses quoted-token parsing. Strict
 counterpart to Info_Validate (which inspects a fully assembled info string,
 where '\\' is *expected* between fields).
 ==================
