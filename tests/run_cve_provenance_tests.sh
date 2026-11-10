@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
-# Issue #276: every CVE id cited in code/, docs/, tests/ or a top-level
-# document must have a row in docs/security-provenance.md, and the ids its
-# "Ids wrongly cited" section lists (ids of other products that were once
-# cited here) must not appear anywhere else.
+# Issue #276: every CVE id cited in a tracked text file (code, docs, tests,
+# scripts, CI) must have a row in docs/security-provenance.md, and the ids
+# its "Ids wrongly cited" section lists (ids of other products that were once
+# cited here) must not be cited in code/ or tests/ again. Ids are matched in
+# any case; ids inside a URL are links, not citations, and are skipped.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 ledger=docs/security-provenance.md
 self=tests/run_cve_provenance_tests.sh
 pattern='CVE-[0-9]{4}-[0-9]{4,}'
+# Print the CVE ids in the files given, upper-cased, with URLs removed first.
+cve_ids() {
+    sed -E 's#[a-zA-Z][a-zA-Z0-9+.-]*://[^[:space:])>"]*##g' -- "$@" 2> /dev/null \
+        | grep -ioE "$pattern" | tr '[:lower:]' '[:upper:]' | LC_ALL=C sort -u || true
+}
 failed=0
 
 if [ ! -f "$ledger" ]; then
@@ -31,40 +37,49 @@ if [ -z "$wrong" ]; then
     exit 1
 fi
 
-mapfile -d '' files < <(git ls-files -z -- code docs tests ':(glob)*.md' ':(glob)*.txt')
+if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+    mapfile -d '' files < <(git ls-files -z)
+else
+    mapfile -d '' files < <(find . -path ./.git -prune -o -type f -print0 | sed -z 's#^\./##')
+fi
 sources=()
+code_sources=()
 for file in "${files[@]}"; do
-    if [ "$file" != "$ledger" ] && [ "$file" != "$self" ] && [ -f "$file" ]; then
+    if [ "$file" != "$ledger" ] && [ "$file" != "$self" ] && [ -f "$file" ] &&
+       grep -Iq . -- "$file" 2> /dev/null; then
         sources+=("$file")
+        case "$file" in code/*|tests/*) code_sources+=("$file") ;; esac
     fi
 done
 if [ "${#sources[@]}" -eq 0 ]; then
-    echo "CVE provenance check failed: no tracked files found" >&2
+    echo "CVE provenance check failed: no text files found" >&2
     exit 1
 fi
 
-cited="$(printf '%s\0' "${sources[@]}" | xargs -0 grep -IhoE "$pattern" -- \
-    | LC_ALL=C sort -u || true)"
+cited="$(cve_ids "${sources[@]}")"
+code_cited="$(cve_ids "${code_sources[@]}")"
 
-# A cited id must be in the ledger's rows.
+# A cited id must be in the ledger's rows (or its wrongly-cited list, which
+# the next loop keeps out of the code and tests).
 while IFS= read -r id; do
     [ -n "$id" ] || continue
-    if ! grep -qxF -- "$id" <<<"$listed"; then
+    if ! grep -qxF -- "$id" <<<"$listed" && ! grep -qxF -- "$id" <<<"$wrong"; then
         echo "CVE provenance check failed: $id is cited but has no row in $ledger:" >&2
-        printf '%s\0' "${sources[@]}" | xargs -0 grep -IlF -- "$id" | sed 's/^/    /' >&2 || true
+        printf '%s\0' "${sources[@]}" | xargs -0 grep -IliF -- "$id" | sed 's/^/    /' >&2 || true
         failed=1
     fi
 done <<<"$cited"
 
-# A wrongly cited id must not come back, in the tree or in the ledger's rows.
+# A wrongly cited id must not come back in the code or the tests, or in the
+# ledger's rows; docs may still mention it, e.g. in a history note.
 while IFS= read -r id; do
     if grep -qxF -- "$id" <<<"$listed"; then
         echo "CVE provenance check failed: $id is listed as wrongly cited and also has a row" >&2
         failed=1
     fi
-    if grep -qxF -- "$id" <<<"$cited"; then
+    if grep -qxF -- "$id" <<<"$code_cited"; then
         echo "CVE provenance check failed: $id belongs to another product but is cited in:" >&2
-        printf '%s\0' "${sources[@]}" | xargs -0 grep -IlF -- "$id" | sed 's/^/    /' >&2 || true
+        printf '%s\0' "${code_sources[@]}" | xargs -0 grep -IliF -- "$id" | sed 's/^/    /' >&2 || true
         failed=1
     fi
 done <<<"$wrong"

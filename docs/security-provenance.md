@@ -77,7 +77,7 @@ from any pk3, including one downloaded from a server.
 
 | CVE | What it is | Why it does not apply here |
 | --- | --- | --- |
-| CVE-2011-1412 | Shell metacharacters in a long `fs_game` reach a shell command in ioquake3's Unix `sys/sys_unix.c` (fixed in ioquake3 svn r2097; in git this appears to be [`22552c7b`](https://github.com/ioquake/ioq3/commit/22552c7bab5d16ce189d2f493720726885c87d14), "Replace usage of system with fork/exec", matched by date and content) | The Mac build has no `sys_unix.c`, and no engine or game source calls `system`, `popen`, `fork` or `exec*`. `CL_SystemInfoChanged` still refuses a server `fs_game` with a dot, `/`, `\`, `:`, `;` or `&` ([`2cef87c7`][c2cef87c], with `:` refused by [#322][pr322] for #262); `run_fs_qpath_tests.sh` covers it |
+| CVE-2011-1412 | Shell metacharacters in a long `fs_game` reach a shell command in ioquake3's Unix `sys/sys_unix.c` (fixed in ioquake3 svn r2097; in git this appears to be [`22552c7b`](https://github.com/ioquake/ioq3/commit/22552c7bab5d16ce189d2f493720726885c87d14), "Replace usage of system with fork/exec", matched by date and content) | The Mac build has no `sys_unix.c`, and no engine or game source calls `system`, `popen`, `fork` or `exec*`. `CL_SystemInfoChanged` still refuses a server `fs_game` with a dot, `/`, `\`, `:`, `;` or `&` (added in [`d5657120`][cd565712]; [`2cef87c7`][c2cef87c] removed a truncating duplicate that made it unreachable, and [#322][pr322] added `:` for #262); `run_fs_qpath_tests.sh` covers it |
 | CVE-2011-2764, CVE-2011-3012 | ioquake3's checks for dangerous file extensions let a crafted addon write a native library that is later loaded | Game modules are linked statically and no native library is loaded from the game directories. The write-side extension guard from CVE-2017-6903 still applies |
 | CVE-2012-3345 | ioquake3 wrote `/tmp/ioq3.pid`, which a local user could replace with a symlink | The tree writes no pid file |
 
@@ -95,11 +95,15 @@ fix or local code path has been tied to it yet.
 - CVE-2006-3400: a long server command overflows `CG_ServerCommand` in
   Soldier of Fortune 2's cgame. Q3A's cgame has not been compared.
 - CVE-2019-1010043: Quake3e's `Cmd_Args` overflows `cmd_args`
-  (`MAX_STRING_CHARS`) with `strcat` ([ec-/Quake3e#9](https://github.com/ec-/Quake3e/issues/9),
-  fixed in Quake3e `fea3c41`). This tree's `Cmd_Args` is the same code as
-  id's release and ioquake3. Network and command-buffer lines are cut at
-  1024 bytes before tokenizing, which seems to keep the joined arguments in
-  bounds, but the callers have not been audited.
+  (`MAX_STRING_CHARS`) with `strcat` ([ec-/Quake3e#9](https://github.com/ec-/Quake3e/issues/9)).
+  The MITRE record gives "Quake3e < 5ed740d", but `5ed740d` is an unrelated
+  Win32 window commit; the fix is `fea3c41`, which cites issue #9 and
+  enlarged the buffer to `BIG_INFO_STRING`. This tree had the same code.
+  [#573][pr573] bounds `Cmd_Args` and `Cmd_ArgsFrom` with `Q_strcat`
+  instead, since no caller needs more than `MAX_STRING_CHARS`, and bounds
+  `SV_ConSay_f`, which overran its stack buffer with a long `Cmd_Args`;
+  `run_cmd_forward_text_tests.sh` and `run_server_consay_tests.sh` cover
+  them.
 
 ## Other upstream fixes from #554-#566
 
@@ -191,6 +195,8 @@ PRs and runners are listed on each issue and in `docs/task.md`.
 [c4e75fdf]: https://github.com/jm2/Quake-III-Arena/commit/4e75fdfdc9c78023e923a36b4aea2996deee908e
 [c8f4d76a]: https://github.com/jm2/Quake-III-Arena/commit/8f4d76a5f2840a987e92088d6d36e2634c75b9e7
 [c2cef87c]: https://github.com/jm2/Quake-III-Arena/commit/2cef87c77fa9712c8855ea6e3c1b2f344e6f0ace
+[cd565712]: https://github.com/jm2/Quake-III-Arena/commit/d5657120282b93853362437981b98877b6b8e884
+[pr573]: https://github.com/jm2/Quake-III-Arena/pull/573
 [pr76]: https://github.com/jm2/Quake-III-Arena/pull/76
 [pr82]: https://github.com/jm2/Quake-III-Arena/pull/82
 [pr197]: https://github.com/jm2/Quake-III-Arena/pull/197

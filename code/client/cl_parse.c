@@ -64,8 +64,9 @@ void CL_DeltaEntity (msg_t *msg, clSnapshot_t *frame, int newnum, entityState_t 
 
 	// Local bounds check, with no upstream fix or CVE behind it: a malicious
 	// server can stuff so many entities into a single snapshot that the
-	// parseEntities ring wraps mid-frame and corrupts later delta lookups. MAX_PARSE_ENTITIES is the absolute
-	// ring size; a single frame has no legitimate reason to exceed it.
+	// parseEntities ring wraps mid-frame and corrupts later delta lookups.
+	// MAX_PARSE_ENTITIES is the absolute ring size; a single frame has no
+	// legitimate reason to exceed it.
 	if ( frame->numEntities >= MAX_PARSE_ENTITIES ) {
 		Com_Error( ERR_DROP, "CL_DeltaEntity: too many entities in snapshot" );
 	}
