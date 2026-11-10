@@ -484,6 +484,22 @@ def _iso9660_record_dates(stream, root_record, image_size):
     return offsets
 
 
+def _is_junction(entry):
+    """Whether entry is a Windows junction, to be neither stamped nor walked.
+
+    os.path.isjunction is Python 3.12's; before it, any reparse point (a
+    junction or a link) counts, from the attributes Windows' lstat reports.
+    Elsewhere there are no junctions."""
+    isjunction = getattr(os.path, "isjunction", None)
+    if isjunction is not None:
+        return isjunction(entry)
+    try:
+        attributes = getattr(os.lstat(entry), "st_file_attributes", 0)
+    except OSError:
+        return False
+    return bool(attributes & 0x400)  # FILE_ATTRIBUTE_REPARSE_POINT
+
+
 def _set_iso9660_dates(stream, mac_time):
     """Write mac_time over the dates of the ISO 9660 side of an HFS/ISO hybrid.
 
@@ -569,7 +585,7 @@ def set_dates(path, mac_time):
         # Python 3.12 descends into one: skip junctions and do not walk them,
         # so nothing outside the tree is touched.
         own_link_times = os.utime in os.supports_follow_symlinks
-        is_junction = getattr(os.path, "isjunction", lambda entry: False)
+        is_junction = _is_junction
         for root, directories, files in os.walk(path):
             directories[:] = [name for name in directories
                               if not is_junction(os.path.join(root, name))]

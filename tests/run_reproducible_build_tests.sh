@@ -179,13 +179,18 @@ done
 # ran, so the check above means something (a Rez that wrote a fixed date
 # would pass it without finalize doing anything).
 rez_app "$T/rez/unset" UTC
-python3 - "$T/rez/unset/Quake3.bin" <<'PY_CLOCK' || fail "without SOURCE_DATE_EPOCH, Rez's MacBinary dates are not the clock's"
+sleep 2
+rez_app "$T/rez/unset-later" UTC
+python3 - "$T/rez/unset/Quake3.bin" "$T/rez/unset-later/Quake3.bin" <<'PY_CLOCK' || fail "without SOURCE_DATE_EPOCH, Rez's MacBinary dates do not follow the clock"
 import struct, sys, time
-header = open(sys.argv[1], "rb").read(128)
+first, later = (open(path, "rb").read(128) for path in sys.argv[1:3])
 now = time.time() + 2082844800
 for offset in (91, 95):
-    stamp = struct.unpack_from(">I", header, offset)[0]
-    if abs(stamp - now) > 86400 + 14 * 3600:
-        sys.exit("MacBinary date at %d is %d, the clock is %d" % (offset, stamp, now))
+    early, late = (struct.unpack_from(">I", header, offset)[0] for header in (first, later))
+    if abs(late - now) > 86400 + 14 * 3600:
+        sys.exit("MacBinary date at %d is %d, the clock is %d" % (offset, late, now))
+    if late <= early:
+        sys.exit("MacBinary date at %d did not advance between runs 2 s apart: %d, %d"
+                 % (offset, early, late))
 PY_CLOCK
 echo "Rez runs: identical .bin and AppleDouble files with SOURCE_DATE_EPOCH"

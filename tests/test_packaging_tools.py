@@ -1257,6 +1257,45 @@ class ReproducibleDateTests(unittest.TestCase):
                       tree / "junction" / "inside" / "file.pk3"):
             self.assertEqual(entry.stat().st_mtime, 1000000000, entry)
 
+    def test_set_dates_finds_junctions_without_isjunction(self):
+        # Python 3.11 on Windows: no os.path.isjunction, so a junction is
+        # found by its reparse point attribute in lstat.
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        tree = root / "content"
+        (tree / "junction" / "inside").mkdir(parents=True)
+        (tree / "pak0.pk3").write_bytes(b"pak")
+        os.utime(tree / "junction", (1000000000, 1000000000))
+        os.utime(tree / "junction" / "inside", (1000000000, 1000000000))
+        junction = os.path.normpath(str(tree / "junction"))
+        real_lstat = os.lstat
+
+        class Attributes:
+            def __init__(self, result, attributes):
+                self._result, self.st_file_attributes = result, attributes
+
+            def __getattr__(self, name):
+                return getattr(self._result, name)
+
+        def windows_lstat(entry, *args, **kwargs):
+            result = real_lstat(entry, *args, **kwargs)
+            return Attributes(result, 0x400 if os.path.normpath(str(entry)) == junction else 0x10)
+
+        saved = getattr(os.path, "isjunction", None)
+        if saved is not None:
+            del os.path.isjunction
+        try:
+            self.assertFalse(hasattr(mac_app.os.path, "isjunction"))
+            with mock.patch.object(mac_app.os, "lstat", windows_lstat), \
+                    with_source_date_epoch(str(self.SOURCE_DATE_EPOCH)):
+                status, _, stderr = run_mac_app("set-dates", tree)
+        finally:
+            if saved is not None:
+                os.path.isjunction = saved
+        self.assertEqual(status, 0, stderr)
+        self.assertEqual((tree / "pak0.pk3").stat().st_mtime, self.SOURCE_DATE_EPOCH)
+        self.assertEqual((tree / "junction").stat().st_mtime, 1000000000)
+        self.assertEqual((tree / "junction" / "inside").stat().st_mtime, 1000000000)
+
 
 GENISOIMAGE = shutil.which("genisoimage") or shutil.which("mkisofs")
 
