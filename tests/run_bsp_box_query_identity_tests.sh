@@ -4,7 +4,7 @@ export TMPDIR="${TMPDIR:-/var/tmp}"
 Q3_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 Q3_TEST_BINARY="$(mktemp "${TMPDIR:-/var/tmp}/q3-bsp-box-identity.XXXXXX")"
 trap 'rm -f -- "$Q3_TEST_BINARY"' EXIT
-# Sanitized at -O0, then optimized, since the side cache is plain bit arithmetic.
+# Sanitized at -O0, then optimized, so the stack walks are checked as the build compiles them.
 for Q3_TEST_MODE in normal fast; do
     Q3_TEST_FLAGS=()
     if [[ "$Q3_TEST_MODE" == fast ]]; then Q3_TEST_FLAGS=(-O2); fi

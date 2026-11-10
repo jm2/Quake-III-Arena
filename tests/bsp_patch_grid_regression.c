@@ -325,6 +325,16 @@ static void KeptBuilds(void) {
 		Check(allocations==count && hunkUsed==used && !memcmp(sizes,hunkSizes,count*sizeof(int)),"kept patches make the native hunk allocations in order");
 		Check(c_totalPatchBlocks-before==blocks,"kept patches count the native blocks");
 	}
+	/* Past the kept-build budget, later patches are built again by the
+	 * loader, with the same results. */
+	cm_keptPatchBudget=1;
+	FreeHunks();hunkLimit=4000000;alignment=0;MixedMap();keptAllocations=0;
+	before=c_totalPatchBlocks;readable=advertised=sourceSize;missing=0;CM_LoadMap("kept.bsp",qfalse,&checksum);
+	cm_keptPatchBudget=CM_MAX_KEPT_PATCH_BYTES;
+	Check(keptAllocations==1 && !keptLive && !gridTemporary,"only the first build is kept past the budget");
+	for(i=0;i<MIXED_PATCHES;i++)Check(Fingerprint(cm.surfaces[i]->pc)==prints[i],"patches past the budget are bit-identical");
+	Check(allocations==count && hunkUsed==used && !memcmp(sizes,hunkSizes,count*sizeof(int)),"patches past the budget make the native hunk allocations");
+	Check(c_totalPatchBlocks-before==blocks,"patches past the budget count the native blocks");
 	/* A map rejected by its last patch releases the builds kept before it. */
 	mixedBadLast=1;MixedMap();
 	for(i=0;i<4;i++) { alignment=i;RejectCM();Check(!keptLive && !gridTemporary,"rejected map releases kept builds and workspace"); }

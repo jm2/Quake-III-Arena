@@ -63,6 +63,14 @@ byte		*cmod_base;
 /* Patch builds kept by the preflight, by surface number, for CMod_LoadPatches.
  * A surface without one, when memory ran short, is built again as before. */
 static cPatchCollideResult_t **cm_keptPatches;
+/* Kept builds come from the application heap (NewPtr on the Mac, beside the
+ * hunk), and a hostile map's are limited only by the hunk budget: past this
+ * total, further patches are built again by the loader instead (#576). */
+#ifndef CM_MAX_KEPT_PATCH_BYTES
+#define CM_MAX_KEPT_PATCH_BYTES	( 2 * 1024 * 1024 )
+#endif
+static int cm_keptPatchBudget = CM_MAX_KEPT_PATCH_BYTES;
+static int cm_keptPatchBytes;
 static int cm_numKeptPatches;
 
 #ifndef BSPC
@@ -609,6 +617,7 @@ static void CM_FreeKeptPatches( void ) {
 	}
 	free( cm_keptPatches );
 	cm_keptPatches = NULL;
+	cm_keptPatchBytes = 0;
 	cm_numKeptPatches = 0;
 }
 
@@ -645,8 +654,11 @@ static const char *CM_ValidateBSPPatchGridsWith( cPatchWorkspace_t **workspace, 
 			}
 		}
 		error = CM_ValidatePatchCollideWorkspace( *workspace, width, height, points, sizes,
-			cm_keptPatches ? &cm_keptPatches[i] : NULL );
+			cm_keptPatches && cm_keptPatchBytes < cm_keptPatchBudget ? &cm_keptPatches[i] : NULL );
 		if ( error ) return error;
+		if ( cm_keptPatches && cm_keptPatches[i] ) {
+			cm_keptPatchBytes += sizes[1] + sizes[2];
+		}
 		if ( !CM_BSPBudgetAllocation(sizeof(cPatch_t),remaining) ) return "collision BSP exceeds remaining hunk memory";
 		for ( j = 0 ; j < 3 ; j++ ) {
 			if ( !CM_BSPBudgetAllocation(sizes[j],remaining) ) return "collision BSP exceeds remaining hunk memory";
@@ -815,6 +827,7 @@ CM_ClearMap
 void CM_ClearMap( void ) {
 	Com_Memset( &cm, 0, sizeof( cm ) );
 	CM_ClearLevelPatches();
+	CM_FreeKeptPatches();	// an error between preflight and load leaves none behind
 }
 
 /*

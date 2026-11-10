@@ -8,6 +8,11 @@
  * counters. Deep chains fill the stack, so the parent walk takes over for
  * some front subtrees, at every depth from the first full stack onwards. */
 #include "../code/qcommon/cm_local.h"
+/* the renderer's GL header needs system GL headers CI lacks; tr_marks.c
+ * needs none of it */
+#define __QGL_H__
+typedef unsigned int GLuint;
+#define GL_CLAMP 0x2900
 #include "../code/renderer/tr_marks.c"
 #include <stdio.h>
 #include <stdlib.h>
