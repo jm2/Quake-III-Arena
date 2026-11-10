@@ -114,6 +114,12 @@ STUB
     } > "$root/stubs/genisoimage"
     # Take the genisoimage branch on any host (hdiutil is used on Darwin).
     printf '#!/bin/sh\necho Linux\n' > "$root/stubs/uname"
+    # The fixture data has the point release paks, so nothing may download:
+    # a download would reach the network, and only warn if it failed.
+    for downloader in curl wget; do
+        printf '#!/bin/sh\necho "%s $*" >> %q\nexit 7\n' "$downloader" "$root/logs/download.log" \
+            > "$root/stubs/$downloader"
+    done
     chmod +x "$root/stubs/"*
 }
 
@@ -170,9 +176,24 @@ run_build() {
         (cd "$root" && PATH="$root/stubs:$PATH" bash ./build_mac.sh "$@") \
             > "$Q3_OUT" 2>&1 || Q3_STATUS=$?
     else
-        (cd "$root" && PATH="$root/stubs:$PATH" \
+        # pwsh downloads with Invoke-WebRequest, which PATH cannot stub: send
+        # it to a closed port. Its cache and telemetry stay in the scratch.
+        mkdir -p "$root/pwsh-home"
+        (cd "$root" && PATH="$root/stubs:$PATH" HOME="$root/pwsh-home" \
+            XDG_CACHE_HOME="$root/pwsh-home/.cache" XDG_CONFIG_HOME="$root/pwsh-home/.config" \
+            XDG_DATA_HOME="$root/pwsh-home/.local/share" \
+            POWERSHELL_TELEMETRY_OPTOUT=1 POWERSHELL_UPDATECHECK=Off \
+            http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 \
+            HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 no_proxy= NO_PROXY= \
             pwsh -NoProfile -NonInteractive -File ./build_mac.ps1 "$@") \
             > "$Q3_OUT" 2>&1 || Q3_STATUS=$?
+    fi
+    # Both scripts announce a download first; curl and wget also log it.
+    if [ -s "$root/logs/download.log" ] || grep -q -F "Downloading Updates" "$Q3_OUT"; then
+        echo "download attempted: $(cat "$root/logs/download.log" 2> /dev/null)" >> "$Q3_OUT"
+        Q3_DOWNLOADED=1
+    else
+        Q3_DOWNLOADED=0
     fi
 }
 
@@ -184,6 +205,7 @@ expect_targets() {
     local configure
 
     [ "$Q3_STATUS" -eq 0 ] || problems="$problems; exit status $Q3_STATUS"
+    [ "$Q3_DOWNLOADED" -eq 0 ] || problems="$problems; a download was attempted"
     configure=$(grep -v -e ' --build ' "$logs/cmake.log" 2> /dev/null | tail -n 1)
     case " $configure " in
         *" -DBUILD_TEAM_ARENA=$ta "*) ;;
@@ -308,7 +330,7 @@ run_cases() {
         for flag in --team-arena --base-only ""; do
             case "$flag" in --team-arena) ta=ON ;; *) ta=OFF ;; esac
             make_build_root "$root"
-            run_build "$script" "$root" "${pkg_args[@]}" ${flag:+"$flag"}
+            run_build "$script" "$root" ${pkg_args[@]+"${pkg_args[@]}"} ${flag:+"$flag"}
             expect_targets "$label ${pkg_name}${flag:-(no flag)} in a clean build directory gives BUILD_TEAM_ARENA=$ta" \
                 "$root" "$ta" "$package"
         done
@@ -320,7 +342,7 @@ run_cases() {
             mkdir -p "$root/build_mac"
             echo "BUILD_TEAM_ARENA:BOOL=$([ "$ta" = ON ] && echo OFF || echo ON)" \
                 > "$root/build_mac/CMakeCache.txt"
-            run_build "$script" "$root" "${pkg_args[@]}" "$flag"
+            run_build "$script" "$root" ${pkg_args[@]+"${pkg_args[@]}"} "$flag"
             expect_targets "$label ${pkg_name}$flag overrides a cached BUILD_TEAM_ARENA=$([ "$ta" = ON ] && echo OFF || echo ON)" \
                 "$root" "$ta" "$package"
         done
@@ -330,7 +352,7 @@ run_cases() {
         for flag in --team-arena --base-only --team-arena "" --team-arena --base-only; do
             step=$((step + 1))
             case "$flag" in --team-arena) ta=ON ;; *) ta=OFF ;; esac
-            run_build "$script" "$root" ${flag:+"$flag"} "${pkg_args[@]}"
+            run_build "$script" "$root" ${flag:+"$flag"} ${pkg_args[@]+"${pkg_args[@]}"}
             expect_targets "$label ${pkg_name}reused build directory, run $step: ${flag:-(no flag)} gives BUILD_TEAM_ARENA=$ta" \
                 "$root" "$ta" "$package"
         done
