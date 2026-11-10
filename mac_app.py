@@ -565,8 +565,14 @@ def set_dates(path, mac_time):
     if os.path.isdir(path):
         times = (mac_time - MAC_EPOCH_OFFSET,) * 2
         # Native Windows Python cannot set a link's own time: skip links there.
+        # A Windows junction is no link to os.path.islink, and os.walk before
+        # Python 3.12 descends into one: skip junctions and do not walk them,
+        # so nothing outside the tree is touched.
         own_link_times = os.utime in os.supports_follow_symlinks
+        is_junction = getattr(os.path, "isjunction", lambda entry: False)
         for root, directories, files in os.walk(path):
+            directories[:] = [name for name in directories
+                              if not is_junction(os.path.join(root, name))]
             for name in directories + files:
                 entry = os.path.join(root, name)
                 if own_link_times:

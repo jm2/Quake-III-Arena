@@ -175,8 +175,17 @@ for output in Quake3.bin Quake3.ad %Quake3.ad; do
     fi
 done
 
-# The control: without SOURCE_DATE_EPOCH the dates are Rez's.
-rez_app "$T/rez/unset" Pacific/Auckland
-cmp -s "$T/rez/one/Quake3.bin" "$T/rez/unset/Quake3.bin" &&
-    fail "Rez's MacBinary dates were already reproducible; the check proves nothing"
+# The control: without SOURCE_DATE_EPOCH the dates are Rez's, the time it
+# ran, so the check above means something (a Rez that wrote a fixed date
+# would pass it without finalize doing anything).
+rez_app "$T/rez/unset" UTC
+python3 - "$T/rez/unset/Quake3.bin" <<'PY_CLOCK' || fail "without SOURCE_DATE_EPOCH, Rez's MacBinary dates are not the clock's"
+import struct, sys, time
+header = open(sys.argv[1], "rb").read(128)
+now = time.time() + 2082844800
+for offset in (91, 95):
+    stamp = struct.unpack_from(">I", header, offset)[0]
+    if abs(stamp - now) > 86400 + 14 * 3600:
+        sys.exit("MacBinary date at %d is %d, the clock is %d" % (offset, stamp, now))
+PY_CLOCK
 echo "Rez runs: identical .bin and AppleDouble files with SOURCE_DATE_EPOCH"

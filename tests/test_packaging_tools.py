@@ -1235,6 +1235,28 @@ class ReproducibleDateTests(unittest.TestCase):
         self.assertEqual(tree.stat().st_mtime, self.SOURCE_DATE_EPOCH)
         self.assertEqual(target.stat().st_mtime, 1000000000)
 
+    def test_set_dates_neither_stamps_nor_walks_a_junction(self):
+        # A Windows junction: os.path.isjunction says so, os.path.islink does
+        # not, and os.walk before 3.12 would descend into it.
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        tree = root / "content"
+        (tree / "junction" / "inside").mkdir(parents=True)
+        (tree / "junction" / "inside" / "file.pk3").write_bytes(b"pak")
+        (tree / "pak0.pk3").write_bytes(b"pak")
+        for entry in (tree / "junction", tree / "junction" / "inside",
+                      tree / "junction" / "inside" / "file.pk3"):
+            os.utime(entry, (1000000000, 1000000000))
+        junction = str(tree / "junction")
+        with mock.patch.object(mac_app.os.path, "isjunction",
+                               lambda entry: os.path.normpath(entry) == junction, create=True), \
+                with_source_date_epoch(str(self.SOURCE_DATE_EPOCH)):
+            status, _, stderr = run_mac_app("set-dates", tree)
+        self.assertEqual(status, 0, stderr)
+        self.assertEqual((tree / "pak0.pk3").stat().st_mtime, self.SOURCE_DATE_EPOCH)
+        for entry in (tree / "junction", tree / "junction" / "inside",
+                      tree / "junction" / "inside" / "file.pk3"):
+            self.assertEqual(entry.stat().st_mtime, 1000000000, entry)
+
 
 GENISOIMAGE = shutil.which("genisoimage") or shutil.which("mkisofs")
 
