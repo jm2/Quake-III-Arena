@@ -41,13 +41,21 @@ long myftol( float f );
 #endif
 
 
-/* Preserve valid native conversion/rounding; unsafe derived values become zero. */
+/* Preserve valid native conversion/rounding; unsafe derived values become zero.
+ * The exponent test reads the bits through a union, which GCC defines, so it
+ * inlines to a few integer instructions per call.  It used to copy them with
+ * Com_Memcpy, an out-of-line call even at -O2, into a volatile, which made
+ * every per-vertex conversion several calls (#249).  It stays a bit test, not
+ * a comparison, so a -ffast-math build (code/unix's release flags) cannot
+ * assume NaN and infinity away. */
 static ID_INLINE qboolean R_FiniteFloat( float value ) {
-	unsigned int bits;
-	volatile unsigned int representation;
-	Com_Memcpy( &bits, &value, sizeof(bits) );
-	representation = bits;
-	return (representation & 0x7f800000u) != 0x7f800000u;
+	union {
+		float			f;
+		unsigned int	i;
+	} bits;
+
+	bits.f = value;
+	return ( bits.i & 0x7f800000u ) != 0x7f800000u;
 }
 
 static ID_INLINE qboolean R_FloatToIntValid( float value ) {
