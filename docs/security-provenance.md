@@ -135,7 +135,8 @@ last console line, `run_mac_startup_parms_tests.sh`) and [#566][pr566]
 ## Ids wrongly cited before #276
 
 Earlier comments and `implementation_plan.md` cited these ids. They belong
-to other products, so they must not appear anywhere else in the tree.
+to other products, so they must not appear outside `docs/`
+(`run_cve_provenance_tests.sh` checks).
 
 - CVE-2017-11722: a GraphicsMagick `WriteOnePNGImage` out-of-bounds read.
   It was cited for the userinfo check in `SV_UpdateUserinfo_f`.

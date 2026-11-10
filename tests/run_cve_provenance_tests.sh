@@ -2,18 +2,25 @@
 # Issue #276: every CVE id cited in a tracked text file (code, docs, tests,
 # scripts, CI) must have a row in docs/security-provenance.md, and the ids
 # its "Ids wrongly cited" section lists (ids of other products that were once
-# cited here) must not be cited in code/ or tests/ again. Ids are matched in
-# any case; ids inside a URL are links, not citations, and are skipped.
+# cited here) must not appear outside docs/ at all, links included. Ids are
+# matched in any case. An id right after '/' or '=' is the end of a link
+# (.../detail/CVE-..., ?id=CVE-...), not a citation, so it needs no row.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 ledger=docs/security-provenance.md
 self=tests/run_cve_provenance_tests.sh
 pattern='CVE-[0-9]{4}-[0-9]{4,}'
-# Print the CVE ids in the files given, upper-cased, with URLs removed first.
+# Print the CVE ids cited in the files given, upper-cased: every id not
+# directly after '/' or '='. Files are read as text whatever bytes they hold.
 cve_ids() {
-    sed -E 's#[a-zA-Z][a-zA-Z0-9+.-]*://[^[:space:])>"]*##g' -- "$@" 2> /dev/null \
-        | grep -ioE "$pattern" | tr '[:lower:]' '[:upper:]' | LC_ALL=C sort -u || true
+    grep -ahoiE "(^|[^/=])$pattern" -- "$@" 2> /dev/null \
+        | grep -aoiE "$pattern" | tr '[:lower:]' '[:upper:]' | LC_ALL=C sort -u || true
+}
+# Print every CVE id in the files given, links included.
+all_cve_ids() {
+    grep -ahoiE "$pattern" -- "$@" 2> /dev/null \
+        | tr '[:lower:]' '[:upper:]' | LC_ALL=C sort -u || true
 }
 failed=0
 
@@ -46,9 +53,9 @@ sources=()
 code_sources=()
 for file in "${files[@]}"; do
     if [ "$file" != "$ledger" ] && [ "$file" != "$self" ] && [ -f "$file" ] &&
-       grep -Iq . -- "$file" 2> /dev/null; then
+       [ ! -L "$file" ] && grep -Iq . -- "$file" 2> /dev/null; then
         sources+=("$file")
-        case "$file" in code/*|tests/*) code_sources+=("$file") ;; esac
+        case "$file" in docs/*) ;; *) code_sources+=("$file") ;; esac
     fi
 done
 if [ "${#sources[@]}" -eq 0 ]; then
@@ -57,7 +64,7 @@ if [ "${#sources[@]}" -eq 0 ]; then
 fi
 
 cited="$(cve_ids "${sources[@]}")"
-code_cited="$(cve_ids "${code_sources[@]}")"
+code_cited="$(all_cve_ids "${code_sources[@]}")"
 
 # A cited id must be in the ledger's rows (or its wrongly-cited list, which
 # the next loop keeps out of the code and tests).
@@ -70,8 +77,8 @@ while IFS= read -r id; do
     fi
 done <<<"$cited"
 
-# A wrongly cited id must not come back in the code or the tests, or in the
-# ledger's rows; docs may still mention it, e.g. in a history note.
+# A wrongly cited id must not come back outside docs/, even in a link, or in
+# the ledger's rows; docs may still mention it, e.g. in a history note.
 while IFS= read -r id; do
     if grep -qxF -- "$id" <<<"$listed"; then
         echo "CVE provenance check failed: $id is listed as wrongly cited and also has a row" >&2
