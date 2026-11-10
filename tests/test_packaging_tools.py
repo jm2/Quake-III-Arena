@@ -882,8 +882,10 @@ class NdifImageTests(unittest.TestCase):
             os.symlink(tree / "data/baseq3/pak0.pk3", tree / "link/missionpack/pak0.pk3")
             probe = function + 'P=$(find_retail_pak0 baseq3) || exit 1; echo "[$P]"\n' \
                 'M=$(find_retail_pak0 missionpack) || exit 1; echo "[$M]"\n'
-            run = lambda: subprocess.run(["bash", "-c", "set -euo pipefail\n" + probe],
-                                         cwd=tree, capture_output=True, text=True)
+            # DATA_ROOT is build_mac.sh's --data, "." by default
+            run = lambda root=".": subprocess.run(
+                ["bash", "-c", f"set -euo pipefail\nDATA_ROOT={root}\n" + probe],
+                cwd=tree, capture_output=True, text=True)
             result = run()
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, "[./data/baseq3/pak0.pk3]\n[]\n")
@@ -894,6 +896,10 @@ class NdifImageTests(unittest.TestCase):
             self.assertEqual(result.stdout, "")
             self.assertIn("more than one baseq3/pak0.pk3", result.stderr)
             self.assertIn("./other dir/baseq3/pak0.pk3", result.stderr)
+            # --data narrows the search to one of them
+            result = run("data")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, "[data/baseq3/pak0.pk3]\n[]\n")
 
 
 class PakIdentityTests(unittest.TestCase):
