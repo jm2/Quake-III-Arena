@@ -233,16 +233,34 @@ it placed `demoq3` data under `baseq3` and produced an application that could
 not load `default.cfg`.
 
 Every `pak*.pk3` beside the `pak0.pk3` goes into the image, so keep exactly one
-`baseq3` (and `missionpack`) folder with a `pak0.pk3` under the repository
-tree: packaging stops and lists them if it finds more than one. When `pak1.pk3`
-is missing, the point release paks are downloaded from ioquake3's
+`baseq3` (and `missionpack`) folder with a `pak0.pk3` under the data root:
+packaging stops and lists them if it finds more than one. The data root is the
+repository tree, or the directory given with `--data=DIR`. When `pak1.pk3` is
+missing, the point release paks are downloaded from ioquake3's
 `quake3-latest-pk3s.zip`, and packaging stops if the zip's SHA-256 is not the
-one pinned in both scripts.
+one pinned in both scripts, or if the download fails. With `--offline` nothing
+is downloaded, and packaging stops instead if the point release paks are not
+already there.
+
+Before the image is made, `pak_identity.py` checks the staged paks: `baseq3`
+must hold exactly id's `pak0.pk3` to `pak8.pk3`, and `missionpack` exactly
+`pak0.pk3` to `pak3.pk3`, each with the header checksum the engine itself
+computes and recognises (`FS_IdPakGame` in `code/qcommon/files.c`). A demo
+pak, a pak from another release, an edited or renamed pak, a missing one and
+any extra `pak*.pk3` stop packaging. Retail copies from the CD, GOG or Steam
+carry the same paks. `python3 pak_identity.py checksum PAK...` prints a pak's
+checksum.
 
 With data present under the repository tree, package with:
 
 ```sh
 ./build_mac.sh package --base-only
+```
+
+or, for data elsewhere and no network:
+
+```sh
+./build_mac.sh package --base-only --data=/path/to/quake3 --offline
 ```
 
 or:
@@ -283,12 +301,9 @@ Territory's 279 MB image, built the same way as this one. Copying the folder
 off it gave identical files, and the game ran from the copy. The old images
 needed Toast.
 
-Packaging refuses more than one candidate retail tree and pins the point
-release download by SHA-256, but the retail paks it finds locally are not yet
-checked against known digests. Do not publish an artifact until
-[#22](https://github.com/jm2/Quake-III-Arena/issues/22) and
-[#23](https://github.com/jm2/Quake-III-Arena/issues/23) are resolved and the
-mounted image boots on Mac OS 9 hardware.
+Packaging refuses more than one candidate retail tree, pins the point release
+download by SHA-256 and checks every pak against id's retail checksums. Do not
+publish an artifact until the mounted image boots on Mac OS 9 hardware.
 
 ## Startup parameters
 

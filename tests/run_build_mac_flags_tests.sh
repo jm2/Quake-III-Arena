@@ -84,7 +84,10 @@ done
 STUB
     } > "$root/stubs/make"
     # mac_app.py verify passes; ndif_image.py IMAGE OUT NAME writes OUT (more
-    # than the 128-byte MacBinary header). Anything else fails.
+    # than the 128-byte MacBinary header); pak_identity.py verify GAME DIR
+    # passes unless a pak in DIR reads "bad" (the fixture paks are not id's,
+    # so the real check is tests/test_packaging_tools.py's). Anything else
+    # fails.
     {
         printf '#!/bin/bash\nroot=%q\n' "$root"
         cat <<'STUB'
@@ -92,6 +95,13 @@ echo "python $*" >> "$root/logs/python.log"
 case "$1" in
     *mac_app.py) [ "$2" = verify ] && exit 0 ;;
     *ndif_image.py) { head -c 128 /dev/zero; cat "$2"; } > "$3" && exit 0 ;;
+    *pak_identity.py)
+        [ "$2" = verify ] || exit 1
+        if grep -l -x -F bad "$4"/pak*.pk3 2> /dev/null | grep . > /dev/null; then
+            echo "pak_identity.py: $4: not id's retail $3 paks" >&2
+            exit 1
+        fi
+        exit 0 ;;
 esac
 echo "stub python: unexpected python $*" >&2
 exit 1
@@ -169,9 +179,10 @@ make_game_data() {
 run_build() {
     local script="$1" root="$2"
     shift 2
-    rm -rf "$root/logs"
+    rm -rf "$root/logs" "$root/release_mac/Quake3_Install.img.bin"
     mkdir -p "$root/logs"
     Q3_STATUS=0
+    Q3_LAST_ROOT="$root"
     if [ "$script" = sh ]; then
         (cd "$root" && PATH="$root/stubs:$PATH" bash ./build_mac.sh "$@") \
             > "$Q3_OUT" 2>&1 || Q3_STATUS=$?
@@ -239,6 +250,14 @@ expect_targets() {
             problems="$problems; no install image was written"
         [ -s "$root/release_mac/Quake3.bin" ] && [ -s "$root/release_mac/Quake3.manifest.txt" ] ||
             problems="$problems; the bare Quake3 application was not copied to release_mac"
+        grep -q -F "pak_identity.py verify baseq3 " "$logs/python.log" 2> /dev/null ||
+            problems="$problems; the baseq3 paks were not checked (#22)"
+        if [ "$ta" = ON ]; then
+            grep -q -F "pak_identity.py verify missionpack " "$logs/python.log" 2> /dev/null ||
+                problems="$problems; the missionpack paks were not checked (#22)"
+        elif grep -q -F "pak_identity.py verify missionpack" "$logs/python.log" 2> /dev/null; then
+            problems="$problems; missionpack paks were checked with Team Arena off"
+        fi
         if [ "$ta" = ON ]; then
             grep -q -x -F "Quake 3 Arena: Quake 3 Arena/Quake3_TeamArena" "$logs/staged.log" ||
                 problems="$problems; Quake3_TeamArena is not in the install image"
@@ -258,6 +277,21 @@ expect_targets() {
             fi
         fi
     fi
+    if [ -z "$problems" ]; then
+        pass "$name"
+    else
+        fail "$name" "${problems#; }"
+    fi
+}
+
+# expect_failure NAME TEXT: the last run failed, saying TEXT (any case),
+# and wrote no install image.
+expect_failure() {
+    local name="$1" text="$2" problems=""
+    [ "$Q3_STATUS" -ne 0 ] || problems="$problems; it succeeded"
+    grep -q -i -F -- "$text" "$Q3_OUT" || problems="$problems; it did not say '$text'"
+    [ ! -e "$Q3_LAST_ROOT/release_mac/Quake3_Install.img.bin" ] ||
+        problems="$problems; an install image was written"
     if [ -z "$problems" ]; then
         pass "$name"
     else
@@ -357,6 +391,52 @@ run_cases() {
                 "$root" "$ta" "$package"
         done
     done
+
+    # --- #22: the data root, offline mode and the pak check ---
+    # --data picks one install out of two that would otherwise be refused.
+    make_build_root "$root"
+    mkdir -p "$root/gamedata-demo/baseq3" "$Q3_TEST_WORK/alt-$script/baseq3"
+    echo "other pak0" > "$root/gamedata-demo/baseq3/pak0.pk3"
+    for pak in pak0 pak1; do
+        echo "alt base $pak" > "$Q3_TEST_WORK/alt-$script/baseq3/$pak.pk3"
+    done
+    run_build "$script" "$root" package
+    expect_failure "$label package refuses two candidate retail installs" "more than one"
+    run_build "$script" "$root" package "--data=../alt-$script"
+    expect_targets "$label package --data=DIR (relative) packages that install alone" "$root" OFF 1
+    if ! grep -q -x -F "alt base pak0" "$root/release_mac/content/Quake 3 Arena/baseq3/pak0.pk3" 2> /dev/null; then
+        fail "$label package --data=DIR staged the paks from DIR" "pak0 is not the --data install's"
+    else
+        pass "$label package --data=DIR staged the paks from DIR"
+    fi
+    run_build "$script" "$root" package "--data=$Q3_TEST_WORK/missing-$script"
+    if [ "$Q3_STATUS" -ne 0 ] && [ ! -e "$root/logs/cmake.log" ] &&
+       grep -q -F -- "--data directory" "$Q3_OUT"; then
+        pass "$label rejects a missing --data directory before CMake"
+    else
+        fail "$label rejects a missing --data directory before CMake" "exit status $Q3_STATUS"
+    fi
+
+    # Without the point release paks: --offline stops; online, the download
+    # is tried (the stubs refuse it) and its failure stops packaging too.
+    make_build_root "$root"
+    rm -f "$root/gamedata/baseq3/pak1.pk3"
+    run_build "$script" "$root" package --offline
+    expect_failure "$label package --offline stops when the point release paks are missing" "forbids downloading"
+    [ "$Q3_DOWNLOADED" -eq 0 ] || fail "$label package --offline downloads nothing" "a download was attempted"
+    run_build "$script" "$root" package
+    expect_failure "$label package stops when the point release download fails" "could not be downloaded"
+    [ "$Q3_DOWNLOADED" -eq 1 ] || fail "$label package tries to download the point release paks" "no download"
+
+    # A pak that is not id's stops packaging before the image is made.
+    make_build_root "$root"
+    echo bad > "$root/gamedata/baseq3/pak1.pk3"
+    run_build "$script" "$root" package
+    expect_failure "$label package refuses a baseq3 pak that is not id's" "not id's"
+    make_build_root "$root"
+    echo bad > "$root/gamedata/missionpack/pak1.pk3"
+    run_build "$script" "$root" package --team-arena
+    expect_failure "$label package --team-arena refuses a missionpack pak that is not id's" "not id's"
 
     # Contradictory flags stop before anything is configured.
     make_build_root "$root"
