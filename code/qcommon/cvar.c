@@ -599,11 +599,15 @@ void Cvar_Set_f( void ) {
 		return;
 	}
 
+	// Join the words, whole words only, while they fit.  The check was
+	// strlen( Cmd_Argv( i ) + 1 ), a word short, with no room for the joining
+	// space, so one-letter words counted nothing; a module's EXEC_NOW line
+	// can be far longer than this buffer (found by the ETL-OS9 review).
 	combined[0] = 0;
 	l = 0;
 	for ( i = 2 ; i < c ; i++ ) {
-		len = strlen ( Cmd_Argv( i ) + 1 );
-		if ( l + len >= MAX_STRING_TOKENS - 2 ) {
+		len = strlen( Cmd_Argv( i ) ) + ( i != c-1 );	// the word, and its space
+		if ( l + len >= (int)sizeof( combined ) ) {		// and the NUL after it
 			break;
 		}
 		strcat( combined, Cmd_Argv( i ) );
