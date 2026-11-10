@@ -93,7 +93,7 @@ STUB
         cat <<'STUB'
 echo "python $*" >> "$root/logs/python.log"
 case "$1" in
-    *mac_app.py) [ "$2" = verify ] && exit 0 ;;
+    *mac_app.py) case "$2" in verify|set-dates) exit 0 ;; esac ;;
     *ndif_image.py) { head -c 128 /dev/zero; cat "$2"; } > "$3" && exit 0 ;;
     *pak_identity.py)
         [ "$2" = verify ] || exit 1
@@ -248,6 +248,9 @@ expect_targets() {
             problems="$problems; Quake3 is not in the install image"
         grep -q -x -F "Quake 3 Arena: Quake 3 Arena/baseq3/pak0.pk3" "$logs/staged.log" 2> /dev/null ||
             problems="$problems; baseq3 data is not in the install image"
+        grep -q -x -F "python mac_app.py set-dates release_mac/content" "$logs/python.log" 2> /dev/null &&
+            grep -q -x -F "python mac_app.py set-dates release_mac/Quake3_Install.img" "$logs/python.log" 2> /dev/null ||
+            problems="$problems; the staged content and the image were not given SOURCE_DATE_EPOCH dates (#405)"
         grep -q -F "ndif_image.py release_mac/Quake3_Install.img release_mac/Quake3_Install.img.bin" \
             "$logs/python.log" 2> /dev/null || problems="$problems; ndif_image.py did not encode the install image"
         [ -s "$root/release_mac/Quake3_Install.img.bin" ] ||
