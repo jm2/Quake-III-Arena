@@ -1399,11 +1399,15 @@ void AAS_FreeRoutingCaches(void)
 // Returns:				-
 // Changes Globals:		-
 //===========================================================================
+//the original's fixed start array; only areas with more incoming links use the heap
+#define AAS_START_TRAVELTIMES		128
+
 qboolean AAS_UpdateAreaRoutingCache(aas_routingcache_t *areacache)
 {
 	int i, nextareanum, cluster, badtravelflags, clusterareanum, linknum;
 	int numreachabilityareas, startclusterareanum, numstartlinks;
 	unsigned short int t, *startareatraveltimes;
+	unsigned short int localtraveltimes[AAS_START_TRAVELTIMES];
 	aas_routingupdate_t *updateliststart, *updatelistend, *curupdate, *nextupdate;
 	aas_reachability_t *reach;
 	aas_reversedreachability_t *revreach;
@@ -1429,9 +1433,18 @@ qboolean AAS_UpdateAreaRoutingCache(aas_routingcache_t *areacache)
 	startclusterareanum = clusterareanum;
 	numstartlinks = aasworld.reversedreachability[areacache->areanum].numlinks;
 	if (numstartlinks < 0 || numstartlinks > INT_MAX / (int)sizeof(*startareatraveltimes)) return qfalse;
-	startareatraveltimes = numstartlinks ? (unsigned short *)GetClearedMemory(
-		(unsigned long)numstartlinks * sizeof(*startareatraveltimes)) : NULL;
-	if (numstartlinks && !startareatraveltimes) return qfalse;
+	if (numstartlinks <= AAS_START_TRAVELTIMES)
+	{
+		//no zone allocation in the common case, one cleared element per incoming link as before
+		startareatraveltimes = localtraveltimes;
+		Com_Memset(localtraveltimes, 0, numstartlinks * sizeof(*startareatraveltimes));
+	} //end if
+	else
+	{
+		startareatraveltimes = (unsigned short *)GetClearedMemory(
+			(unsigned long)numstartlinks * sizeof(*startareatraveltimes));
+		if (!startareatraveltimes) return qfalse;
+	} //end else
 	//
 	curupdate = &aasworld.areaupdate[clusterareanum];
 	curupdate->areanum = areacache->areanum;
@@ -1511,7 +1524,7 @@ qboolean AAS_UpdateAreaRoutingCache(aas_routingcache_t *areacache)
 	// The start entry previously retained a dead stack pointer after this call.
 	if (aasworld.areaupdate[startclusterareanum].areatraveltimes == startareatraveltimes)
 		aasworld.areaupdate[startclusterareanum].areatraveltimes = NULL;
-	FreeMemory(startareatraveltimes);
+	if (startareatraveltimes != localtraveltimes) FreeMemory(startareatraveltimes);
 	return qtrue;
 } //end of the function AAS_UpdateAreaRoutingCache
 //===========================================================================

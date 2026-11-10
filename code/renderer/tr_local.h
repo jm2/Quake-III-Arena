@@ -1435,6 +1435,11 @@ CURVE TESSELATION
 #define PATCH_STITCHING
 
 const char *R_ValidatePatchGrid( int width, int height, const drawVert_t *points );
+// The same check on a caller-owned workspace, so a map preflight allocates one for all its patches.
+typedef struct patchGridWorkspace_s patchGridWorkspace_t;
+patchGridWorkspace_t *R_AllocPatchGridWorkspace( void );
+void R_FreePatchGridWorkspace( patchGridWorkspace_t *workspace );
+const char *R_ValidatePatchGridWorkspace( patchGridWorkspace_t *workspace, int width, int height, const drawVert_t *points );
 srfGridMesh_t *R_SubdividePatchToGrid( int width, int height,
 								drawVert_t points[MAX_PATCH_SIZE*MAX_PATCH_SIZE] );
 srfGridMesh_t *R_GridInsertColumn( srfGridMesh_t *grid, int column, int row, vec3_t point, float loderror );

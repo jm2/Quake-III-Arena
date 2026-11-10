@@ -1884,7 +1884,8 @@ static qboolean R_BSPFiniteVector(const float *values,int count) {
 	return qtrue;
 }
 
-static const char *R_ValidateBSPGeometry(const void *buffer,const dheader_t *header) {
+/* One patch workspace, allocated at the first drawn patch, serves the whole map. */
+static const char *R_ValidateBSPGeometryWith(patchGridWorkspace_t **workspace,const void *buffer,const dheader_t *header) {
 	const byte *base=buffer,*record,*vertex,*shader;
 	unsigned int i,j,k,count,type,vertices,indexes,width,height,first;
 	drawVert_t points[MAX_PATCH_SIZE*MAX_PATCH_SIZE];
@@ -1912,7 +1913,8 @@ static const char *R_ValidateBSPGeometry(const void *buffer,const dheader_t *hea
 				for(k=0;k<2;k++) { points[j].st[k]=BSP_GeometryFloat(vertex+offsetof(drawVert_t,st)+k*4);points[j].lightmap[k]=BSP_GeometryFloat(vertex+offsetof(drawVert_t,lightmap)+k*4); }
 				memcpy(points[j].color,vertex+offsetof(drawVert_t,color),sizeof(points[j].color));
 			}
-			error=R_ValidatePatchGrid(width,height,points);if(error) return error;
+			if(!*workspace) { *workspace=R_AllocPatchGridWorkspace();if(!*workspace) return "renderer patch preflight workspace allocation failed"; }
+			error=R_ValidatePatchGridWorkspace(*workspace,width,height,points);if(error) return error;
 			for(j=0;j<2;j++)for(k=0;k<3;k++)bounds[j][k]=BSP_GeometryFloat(record+offsetof(dsurface_t,lightmapVecs)+(j*3+k)*4);
 			VectorAdd(bounds[0],bounds[1],origin);VectorScale(origin,0.5f,origin);VectorSubtract(bounds[0],origin,delta);radius=VectorLength(delta);
 			if(!R_BSPFiniteVector(origin,3) || !R_BSPFiniteVector(&radius,1)) return "nonfinite renderer patch LOD bounds";
@@ -1930,6 +1932,13 @@ static const char *R_ValidateBSPGeometry(const void *buffer,const dheader_t *hea
 		}
 	}
 	return NULL;
+}
+
+static const char *R_ValidateBSPGeometry(const void *buffer,const dheader_t *header) {
+	patchGridWorkspace_t *workspace=NULL;
+	const char *error=R_ValidateBSPGeometryWith(&workspace,buffer,header);
+	if(workspace) R_FreePatchGridWorkspace(workspace);
+	return error;
 }
 
 void RE_LoadWorldMap( const char *name ) {
