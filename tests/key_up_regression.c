@@ -75,6 +75,19 @@ int main( void ) {
 	CL_KeyEvent( 'f', qfalse, 1234 );
 	Check( !strcmp( added, "-attack 102 1234\n-speed 102 1234\n" ), "key release commands lost the event time" );
 
+	/* #266: Home scrolls a long line back to its start, as Ctrl-A does */
+	{
+		field_t	field;
+
+		memset( &field, 0, sizeof( field ) );
+		memset( field.buffer, 'x', 200 );
+		field.widthInChars = 40;
+		field.cursor = 200;
+		field.scroll = 160;
+		Field_KeyDownEvent( &field, K_HOME );
+		Check( field.cursor == 0 && field.scroll == 0, "Home scrolls back to the start of the line" );
+	}
+
 	puts( "Key release button commands carry the event time (issue #394)" );
 	return 0;
 }
