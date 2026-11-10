@@ -71,6 +71,7 @@ $vm_ta_env = new cons(%vm_ta_env_hash);
   cg_info.c
   cg_localents.c
   cg_marks.c
+  cg_particles.c
   cg_players.c
   cg_playerstate.c
   cg_predict.c

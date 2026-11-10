@@ -150,6 +150,7 @@ CGOBJ = \
 	$(SRCDIR)/cgame/cg_localents.o \
 	$(SRCDIR)/cgame/cg_main.o \
 	$(SRCDIR)/cgame/cg_marks.o \
+	$(SRCDIR)/cgame/cg_particles.o \
 	$(SRCDIR)/cgame/cg_players.o \
 	$(SRCDIR)/cgame/cg_playerstate.o \
 	$(SRCDIR)/cgame/cg_predict.o \
@@ -178,6 +179,7 @@ $(SRCDIR)/cgame/cg_info.o : $(CGDIR)/cg_info.c; $(DO_SHLIB_CC)
 $(SRCDIR)/cgame/cg_localents.o : $(CGDIR)/cg_localents.c; $(DO_SHLIB_CC) 
 $(SRCDIR)/cgame/cg_main.o : $(CGDIR)/cg_main.c; $(DO_SHLIB_CC) 
 $(SRCDIR)/cgame/cg_marks.o : $(CGDIR)/cg_marks.c; $(DO_SHLIB_CC) 
+$(SRCDIR)/cgame/cg_particles.o : $(CGDIR)/cg_particles.c; $(DO_SHLIB_CC)
 $(SRCDIR)/cgame/cg_players.o : $(CGDIR)/cg_players.c; $(DO_SHLIB_CC) 
 $(SRCDIR)/cgame/cg_playerstate.o : $(CGDIR)/cg_playerstate.c; $(DO_SHLIB_CC) 
 $(SRCDIR)/cgame/cg_predict.o : $(CGDIR)/cg_predict.c; $(DO_SHLIB_CC) 

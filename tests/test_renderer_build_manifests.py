@@ -66,5 +66,113 @@ class RendererBuildManifests(unittest.TestCase):
         self.assertEqual(cmake.count("bg_lib.c"), 1)        # not re-added anywhere
         self.assertEqual(cmake.count("code/game/*.c"), 1)   # no second glob of the dir
 
+    def test_native_legacy_recipes_list_every_cmake_cgame_source(self):
+        """Each native legacy cgame recipe compiles every code/cgame source CMake does (#296).
+
+        cg_particles.c left the legacy recipes out when the particle code moved
+        out of cg_marks.c, so none of them linked CG_AddParticles and the rest.
+        """
+        cmake = re.sub(r"#[^\n]*", "", (ROOT / "CMakeLists.txt").read_text())
+        self.assertIn("file(GLOB ALL_CGAME_SRCS code/cgame/*.c)", cmake)
+        self.assertRegex(cmake, r"set\(CGAME_MP_SRCS \$\{ALL_CGAME_SRCS\}\)")
+        match = re.search(r"set\(CGAME_SRCS \$\{ALL_CGAME_SRCS\}\)\s*"
+                          r"list\(REMOVE_ITEM CGAME_SRCS([^)]*)\)", cmake)
+        self.assertIsNotNone(match)
+        team_arena = {path.name for path in (ROOT / "code/cgame").glob("*.c")}
+        removed = {Path(item.strip('"')).name for item in match.group(1).split()}
+        self.assertEqual(removed, {"cg_newdraw.c"})
+        self.assertIn("cg_particles.c", team_arena)
+        base = team_arena - removed
+
+        def make_sources(path, header, prefix, source_dir):
+            """code/cgame sources of a make object list with a rule for each object."""
+            text = (ROOT / path).read_text()
+            block = re.search(re.escape(header) + r"\n((?:\t[^\n]*\n)+)", text)
+            self.assertIsNotNone(block, f"{path}: {header}")
+            objects = re.findall(re.escape(prefix) + r"(\w+)\.o", block.group(1))
+            self.assertTrue(objects, f"{path}: {header}")
+            sources = set()
+            for stem in objects:
+                rule = re.search(r"^" + re.escape(f"{prefix}{stem}.o") + r"\s*:\s*\$\((\w+)\)/"
+                                 + re.escape(f"{stem}.c") + ";", text, re.M)
+                self.assertIsNotNone(rule, f"{path}: no rule for {prefix}{stem}.o")
+                if rule.group(1) == source_dir:
+                    sources.add(f"{stem}.c")
+            return sources
+
+        conscript = (ROOT / "code/cgame/Conscript").read_text()
+
+        def cons_files(name):
+            files = re.search(r"@" + name + r" = qw\((.*?)\);", conscript, re.S)
+            self.assertIsNotNone(files, f"Conscript: @{name}")
+            return {item for item in files.group(1).split() if "/" not in item}
+
+        cons_native = cons_files("FILES") | cons_files("SO_FILES")
+
+        visual = ET.parse(ROOT / "code/cgame/cgame.vcproj").getroot()
+        configurations = [c.attrib["Name"] for c in visual.find("Configurations").iter("Configuration")]
+        self.assertEqual(len(configurations), 4)
+
+        def visual_sources(configuration):
+            """Sources the Visual Studio project builds in a configuration (lowercased)."""
+            built = set()
+            for element in visual.iter("File"):
+                name = element.attrib["RelativePath"]
+                if "\\" in name or not name.endswith(".c"):
+                    continue
+                if not any(c.attrib.get("Name") == configuration
+                           and c.attrib.get("ExcludedFromBuild") == "TRUE"
+                           for c in element.iter("FileConfiguration")):
+                    built.add(name.lower())
+            return built
+
+        xcode = (ROOT / "code/macosx/Quake3.pbproj/project.pbxproj").read_text()
+        objects = dict(re.findall(r"\t\t([A-F0-9]{24}) = \{(.*?)\n\t\t\};", xcode, re.S))
+        cgame_groups = [body for body in objects.values()
+                        if "isa = PBXGroup;" in body and "path = cgame;" in body]
+        self.assertEqual(len(cgame_groups), 1)
+        targets = [body for body in objects.values()
+                   if "isa = PBXBundleTarget;" in body and "name = cgame;" in body]
+        self.assertEqual(len(targets), 1)
+        xcode_sources = set()
+        for phase in re.findall(r"([A-F0-9]{24}),", re.search(r"buildPhases = \((.*?)\);", targets[0], re.S).group(1)):
+            if "isa = PBXSourcesBuildPhase;" not in objects[phase]:
+                continue
+            for build in re.findall(r"([A-F0-9]{24}),", objects[phase]):
+                ref = re.search(r"fileRef = ([A-F0-9]{24});", objects[build]).group(1)
+                if f"{ref}," in cgame_groups[0]:
+                    xcode_sources.add(re.search(r"path = ([^;]+);", objects[ref]).group(1))
+
+        lint = {line[len("cgame\\"):] for line in (ROOT / "code/cgame.lnt").read_text().split()
+                if line.startswith("cgame\\")}
+
+        recipes = {
+            "code/unix/Makefile baseq3 cgame": (
+                make_sources("code/unix/Makefile", "Q3CGOBJ = \\", "$(B)/baseq3/cgame/", "CGDIR"), base),
+            "code/unix/Makefile missionpack cgame": (
+                make_sources("code/unix/Makefile", "MPCGOBJ = \\", "$(B)/missionpack/cgame/", "CGDIR"), team_arena),
+            "code/unix/Makefile q3static": (
+                make_sources("code/unix/Makefile", "## add BASEQ3 CGAME\nQ3SOBJ += \\", "$(B)/q3static/", "CGDIR"), base),
+            "code/unix/Makefile.Game cgame": (
+                make_sources("code/unix/Makefile.Game", "CGOBJ = \\", "$(SRCDIR)/cgame/", "CGDIR"), base),
+            "code/cgame/Conscript Q3 .so": (cons_native, base),
+            "code/cgame/Conscript TA .so": (cons_native | cons_files("TA_FILES"), team_arena),
+            "code/macosx/Quake3.pbproj cgame target": (xcode_sources, team_arena),
+            "code/cgame.lnt": (lint, base),
+        }
+        for configuration in configurations:
+            recipes[f"code/cgame/cgame.vcproj {configuration}"] = (
+                visual_sources(configuration),
+                {name.lower() for name in (team_arena if " TA|" in configuration else base)})
+        # Missing since the GPL release, and left alone here: Makefile.Game
+        # builds only the QVMs by default, and its .so object list never had
+        # the native syscall stubs.
+        known_missing = {"code/unix/Makefile.Game cgame": {"cg_syscalls.c"}}
+
+        for recipe, (listed, required) in recipes.items():
+            with self.subTest(recipe=recipe):
+                missing = required - listed
+                self.assertEqual(missing, known_missing.get(recipe, set()))
+
 if __name__ == "__main__":
     unittest.main()
