@@ -14,6 +14,7 @@ cgame\cg_info.c
 cgame\cg_localents.c
 cgame\cg_main.c
 cgame\cg_marks.c
+cgame\cg_particles.c
 cgame\cg_players.c
 cgame\cg_playerstate.c
 cgame\cg_predict.c

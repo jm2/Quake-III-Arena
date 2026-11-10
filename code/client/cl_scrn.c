@@ -441,13 +441,6 @@ SCR_DrawScreenField
 This will be called twice if rendering in stereo mode
 ==================
 */
-/*
-==================
-SCR_DrawScreenField
-
-This will be called twice if rendering in stereo mode
-==================
-*/
 void SCR_DrawScreenField( stereoFrame_t stereoFrame ) {
 	re.BeginFrame( stereoFrame );
 
@@ -461,11 +454,62 @@ void SCR_DrawScreenField( stereoFrame_t stereoFrame ) {
 		}
 	}
 
-	if ( !uivm ) {
-		return;
+	// if the menu is going to cover the entire screen, we
+	// don't need to render anything under it.
+	// uivm can be NULL during startup / vid_restart, and VM_Call(NULL) is a
+	// fatal error. Unlike stock, which returned here without a UI, the
+	// console and debug graph below are still drawn.
+	if ( uivm && !VM_Call( uivm, UI_IS_FULLSCREEN )) {
+		switch( cls.state ) {
+		default:
+			Com_Error( ERR_FATAL, "SCR_DrawScreenField: bad cls.state" );
+			break;
+		case CA_CINEMATIC:
+			SCR_DrawCinematic();
+			break;
+		case CA_DISCONNECTED:
+			// force menu up
+			S_StopAllSounds();
+			VM_Call( uivm, UI_SET_ACTIVE_MENU, UIMENU_MAIN );
+			break;
+		case CA_CONNECTING:
+		case CA_CHALLENGING:
+		case CA_CONNECTED:
+			// connecting clients will only show the connection dialog
+			// refresh to update the time
+			VM_Call( uivm, UI_REFRESH, cls.realtime );
+			VM_Call( uivm, UI_DRAW_CONNECT_SCREEN, qfalse );
+			break;
+		case CA_LOADING:
+		case CA_PRIMED:
+			// draw the game information screen and loading progress
+			CL_CGameRendering( stereoFrame );
+
+			// also draw the connection information, so it doesn't
+			// flash away too briefly on local or lan games
+			// refresh to update the time
+			VM_Call( uivm, UI_REFRESH, cls.realtime );
+			VM_Call( uivm, UI_DRAW_CONNECT_SCREEN, qtrue );
+			break;
+		case CA_ACTIVE:
+			CL_CGameRendering( stereoFrame );
+			SCR_DrawDemoRecording();
+			break;
+		}
 	}
-    
-    // ...
+
+	// the menu draws next
+	if ( cls.keyCatchers & KEYCATCH_UI && uivm ) {
+		VM_Call( uivm, UI_REFRESH, cls.realtime );
+	}
+
+	// console draws next
+	Con_DrawConsole ();
+
+	// debug graph can be drawn on top of anything
+	if ( cl_debuggraph->integer || cl_timegraph->integer || cl_debugMove->integer ) {
+		SCR_DrawDebugGraph ();
+	}
 }
 
 /*
@@ -494,63 +538,6 @@ void SCR_UpdateScreen( void ) {
 		SCR_DrawScreenField( STEREO_RIGHT );
 	} else {
 		SCR_DrawScreenField( STEREO_CENTER );
-	}
-    
-	// if the menu is going to cover the entire screen, we
-	// don't need to render anything under it.
-	// uivm can be NULL during startup / vid_restart; stock code had this
-	// block behind SCR_DrawScreenField's !uivm early-return, which the
-	// restructure lost — VM_Call(NULL) is a fatal error.
-	if ( uivm && !VM_Call( uivm, UI_IS_FULLSCREEN )) {
-		switch( cls.state ) {
-		default:
-			Com_Error( ERR_FATAL, "SCR_DrawScreenField: bad cls.state" );
-			break;
-		case CA_CINEMATIC:
-			SCR_DrawCinematic();
-			break;
-		case CA_DISCONNECTED:
-			// force menu up
-			S_StopAllSounds();
-			VM_Call( uivm, UI_SET_ACTIVE_MENU, UIMENU_MAIN );
-			break;
-		case CA_CONNECTING:
-		case CA_CHALLENGING:
-		case CA_CONNECTED:
-			// connecting clients will only show the connection dialog
-			// refresh to update the time
-			VM_Call( uivm, UI_REFRESH, cls.realtime );
-			VM_Call( uivm, UI_DRAW_CONNECT_SCREEN, qfalse );
-			break;
-		case CA_LOADING:
-		case CA_PRIMED:
-			// draw the game information screen and loading progress
-			CL_CGameRendering( STEREO_CENTER ); // Fix: Use STEREO_CENTER instead of undefined stereoFrame
-
-			// also draw the connection information, so it doesn't
-			// flash away too briefly on local or lan games
-			// refresh to update the time
-			VM_Call( uivm, UI_REFRESH, cls.realtime );
-			VM_Call( uivm, UI_DRAW_CONNECT_SCREEN, qtrue );
-			break;
-		case CA_ACTIVE:
-			CL_CGameRendering( STEREO_CENTER ); // Fix: Use STEREO_CENTER
-			SCR_DrawDemoRecording();
-			break;
-		}
-	}
-
-	// the menu draws next
-	if ( cls.keyCatchers & KEYCATCH_UI && uivm ) {
-		VM_Call( uivm, UI_REFRESH, cls.realtime );
-	}
-
-	// console draws next
-	Con_DrawConsole ();
-
-	// debug graph can be drawn on top of anything
-	if ( cl_debuggraph->integer || cl_timegraph->integer || cl_debugMove->integer ) {
-		SCR_DrawDebugGraph ();
 	}
 
 	if ( com_speeds->integer ) {
