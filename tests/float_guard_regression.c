@@ -73,7 +73,7 @@ int main( int argc, char **argv ) {
 	Check( R_FloatToInt( 2147483648.0f ) == 0 && R_FloatToInt( -2147483904.0f ) == 0, "outside int is 0", 2147483648.0f );
 	Check( R_FloatToInt( -2147483648.0f ) == INT32_MIN, "-2^31 converts", -2147483648.0f );
 	Check( R_FloatToInt( FromBits( 0x7fc00000u ) ) == 0 && R_FloatToInt( FromBits( 0x7f800000u ) ) == 0
-		&& R_FloatToInt( FromBits( 0xff800000u ) ) == 0, "NaN and infinities are 0", NAN );
+		&& R_FloatToInt( FromBits( 0xff800000u ) ) == 0, "NaN and infinities are 0", 0 );
 	Check( R_Ftol( 7.9f ) == 7 && R_Ftol( FromBits( 0x7fc00000u ) ) == 0, "R_Ftol is the same with myftol", 7.9f );
 
 	if ( argc > 1 ) {
