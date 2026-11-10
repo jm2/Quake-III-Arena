@@ -13,9 +13,10 @@
 #                      static game modules (issue #457), generated from the
 #                      toolchain's default script.
 # The manifest holds no dates or paths, so it changes only with the PEF or the
-# toolchain. The PEF itself embeds the source directory (assert() messages
-# carry __FILE__), so the same source built in another directory has another
-# pef_sha256.
+# toolchain. cmake/Quake3PrefixMap.cmake keeps the checkout directory out of
+# the PEF (issue #405), so the same commit built in another directory on the
+# same day, or with the same SOURCE_DATE_EPOCH (GCC takes __DATE__ from it),
+# has the same pef_sha256.
 #
 # CMakeLists.txt includes this file and calls quake3_add_build_manifest(); the
 # build runs this file again in script mode (cmake -P) to write the manifest.

@@ -69,6 +69,9 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wformat=2 -Wno-format-nonliteral -Werror=fo
 set(CMAKE_C_FLAGS_RELEASE "")
 set(CMAKE_CXX_FLAGS_RELEASE "")
 
+# No checkout paths in the PEF (issue #405): -ffile-prefix-map.
+include("${CMAKE_SOURCE_DIR}/cmake/Quake3PrefixMap.cmake")
+
 # Global definitions
 add_definitions(-D__MACOS__ -D__POWERPC__ -DBOTLIB -DQ3_STATIC)
 

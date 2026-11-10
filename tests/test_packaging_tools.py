@@ -1029,5 +1029,181 @@ class PakIdentityTests(unittest.TestCase):
                 self.assertEqual(pak_identity.main([]), 2)
 
 
+def stamp_macbinary_dates(path, mac_time):
+    """Store mac_time where Rez stores the time it ran."""
+    header = bytearray(path.read_bytes())
+    struct.pack_into(">II", header, 91, mac_time, mac_time)
+    struct.pack_into(">H", header, 124, binascii.crc_hqx(bytes(header[:124]), 0))
+    path.write_bytes(header)
+
+
+def iso9660_descriptor(kind, date):
+    descriptor = bytearray(2048)
+    descriptor[0:7] = bytes([kind]) + b"CD001\x01"
+    if kind != 255:
+        for offset, value in ((813, date), (830, date), (847, b"0" * 16),
+                              (864, date)):
+            descriptor[offset:offset + 17] = value + b"\0"
+    return descriptor
+
+
+def stamped_hybrid_image(mac_time, garbage):
+    """An HFS image dated mac_time, the way genisoimage leaves its hybrids.
+
+    The master directory block, its copy 1 KB before the end, and the file
+    record carry mac_time; the catalog leaf node's free space holds garbage;
+    sector 16 holds an ISO 9660 volume descriptor dated mac_time.
+    """
+    image = bytearray(hfs_image("Quake3", PEF, launchable_resources()))
+    struct.pack_into(">II", image, 1024 + 2, mac_time, mac_time)
+    stream = io.BytesIO(bytes(image))
+    volume = mac_app._HfsVolume("image", stream)
+    record_offset, _ = volume.find("Quake3")
+    struct.pack_into(">II", image, record_offset + 44, mac_time, mac_time)
+    leaf_offset, leaf = next(volume.leaf_nodes())
+    free_start = struct.unpack_from(">H", leaf, len(leaf) - 4)[0]
+    image[leaf_offset + free_start:leaf_offset + len(leaf) - 4] = (
+        garbage * len(leaf))[:len(leaf) - 4 - free_start]
+
+    date = (datetime(1904, 1, 1, tzinfo=timezone.utc)
+            + timedelta(seconds=mac_time)).strftime("%Y%m%d%H%M%S00").encode()
+    image = image.ljust(16 * 2048, b"\0")
+    image += iso9660_descriptor(1, date) + iso9660_descriptor(255, date)
+    alternate = bytearray(1024)
+    alternate[:162] = image[1024:1024 + 162]
+    return bytes(image + alternate)
+
+
+@contextlib.contextmanager
+def with_source_date_epoch(value):
+    """Set SOURCE_DATE_EPOCH to value, or remove it for None."""
+    with mock.patch.dict(os.environ):
+        os.environ.pop("SOURCE_DATE_EPOCH", None)
+        if value is not None:
+            os.environ["SOURCE_DATE_EPOCH"] = value
+        yield
+
+
+class ReproducibleDateTests(unittest.TestCase):
+    """Issue #405: with SOURCE_DATE_EPOCH, the build's and package mode's
+    containers carry it instead of the time Rez or genisoimage ran."""
+
+    SOURCE_DATE_EPOCH = 1767225600
+    EXPECTED = SOURCE_DATE_EPOCH + mac_app.MAC_EPOCH_OFFSET
+
+    def write_outputs(self, directory, rez_time):
+        directory.mkdir(parents=True)
+        pef = directory / "Quake3.pef"
+        pef.write_bytes(PEF)
+        resource_fork = launchable_resources()
+        outputs = (directory / "Quake3.bin", directory / "%Quake3.ad")
+        outputs[0].write_bytes(rez_macbinary("Quake3", PEF, resource_fork))
+        outputs[1].write_bytes(rez_appledouble(resource_fork))
+        (directory / "Quake3.ad").write_bytes(PEF)
+        stamp_macbinary_dates(outputs[0], rez_time)
+        return pef, outputs
+
+    def finalize(self, pef, outputs, source_date_epoch):
+        with with_source_date_epoch(source_date_epoch):
+            return run_mac_app("finalize", "--pef", pef, *outputs)
+
+    def test_two_builds_in_different_directories_are_identical(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        runs = []
+        for directory, rez_time in ((root / "a", 0xD0000000),
+                                    (root / "checkout-b" / "build", 0xE0000001)):
+            pef, outputs = self.write_outputs(directory, rez_time)
+            status, _, stderr = self.finalize(pef, outputs, str(self.SOURCE_DATE_EPOCH))
+            self.assertEqual(status, 0, stderr)
+            runs.append(outputs)
+
+        for first, second in zip(*runs):
+            with self.subTest(container=first.name):
+                self.assertEqual(first.read_bytes(), second.read_bytes())
+        header = runs[0][0].read_bytes()[:128]
+        self.assertEqual(struct.unpack_from(">II", header, 91),
+                         (self.EXPECTED, self.EXPECTED))
+        self.assertEqual(mac_app.load(str(runs[0][0])).flags, mac_app.K_HAS_BUNDLE)
+
+    def test_dates_are_kept_without_source_date_epoch(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        for unset in (None, ""):
+            with self.subTest(source_date_epoch=unset):
+                pef, outputs = self.write_outputs(root / repr(unset), 0xD0000000)
+                status, _, stderr = self.finalize(pef, outputs, unset)
+                self.assertEqual(status, 0, stderr)
+                header = outputs[0].read_bytes()[:128]
+                self.assertEqual(struct.unpack_from(">II", header, 91),
+                                 (0xD0000000, 0xD0000000))
+
+                image = root / f"{unset!r}.img"
+                original = stamped_hybrid_image(0xD0000000, b"\xAA")
+                image.write_bytes(original)
+                with with_source_date_epoch(unset):
+                    self.assertEqual(run_mac_app("set-dates", image)[0], 0)
+                self.assertEqual(image.read_bytes(), original)
+
+    def test_invalid_source_date_epoch_fails_and_removes_outputs(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        for value, message in (("tomorrow", "is not an integer"),
+                               ("-2082844801", "outside the Mac date range"),
+                               ("2212122496", "outside the Mac date range")):
+            with self.subTest(value=value):
+                pef, outputs = self.write_outputs(root / value, 0xD0000000)
+                status, _, stderr = self.finalize(pef, outputs, value)
+                self.assertEqual(status, 1)
+                self.assertIn(message, stderr)
+                for output in outputs:
+                    self.assertFalse(output.exists(), output.name)
+                with with_source_date_epoch(value):
+                    status, _, stderr = run_mac_app("set-dates", root)
+                self.assertEqual(status, 1)
+                self.assertIn(message, stderr)
+
+    def test_set_dates_makes_install_images_identical(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        images = (root / "one.img", root / "two.img")
+        images[0].write_bytes(stamped_hybrid_image(0xD0000000, b"\xAA"))
+        images[1].write_bytes(stamped_hybrid_image(0xE0000001, b"\x55\x01"))
+        with with_source_date_epoch(str(self.SOURCE_DATE_EPOCH)):
+            status, _, stderr = run_mac_app("set-dates", *images)
+        self.assertEqual(status, 0, stderr)
+        self.assertEqual(images[0].read_bytes(), images[1].read_bytes())
+
+        image = images[0].read_bytes()
+        for mdb in (1024, len(image) - 1024):
+            self.assertEqual(struct.unpack_from(">II", image, mdb + 2),
+                             (self.EXPECTED, self.EXPECTED))
+            self.assertEqual(struct.unpack_from(">I", image, mdb + 0x40)[0], 0)
+        stream = io.BytesIO(image)
+        volume = mac_app._HfsVolume("image", stream)
+        _, record = volume.find("Quake3")
+        self.assertEqual(struct.unpack_from(">III", record, 44),
+                         (self.EXPECTED, self.EXPECTED, 0))
+        _, leaf = next(volume.leaf_nodes())
+        free_start = struct.unpack_from(">H", leaf, len(leaf) - 4)[0]
+        self.assertEqual(leaf[free_start:len(leaf) - 4], bytes(len(leaf) - 4 - free_start))
+        descriptor = image[16 * 2048:17 * 2048]
+        for offset in (813, 830, 864):
+            self.assertEqual(descriptor[offset:offset + 17], b"2026010100000000\0")
+        self.assertEqual(descriptor[847:864], b"0" * 16 + b"\0")
+        self.assertEqual(mac_app.load(str(images[0]), "Quake3").data, PEF)
+
+    def test_set_dates_on_a_directory_sets_every_modification_time(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        tree = root / "content"
+        (tree / "Quake 3 Arena" / "baseq3").mkdir(parents=True)
+        (tree / "Quake 3 Arena" / "baseq3" / "pak0.pk3").write_bytes(b"pak")
+        (tree / "Quake 3 Arena" / "%Quake3").write_bytes(b"ad")
+        with with_source_date_epoch(str(self.SOURCE_DATE_EPOCH)):
+            status, _, stderr = run_mac_app("set-dates", tree)
+        self.assertEqual(status, 0, stderr)
+        paths = [tree] + list(tree.rglob("*"))
+        self.assertEqual(len(paths), 5)
+        for path in paths:
+            with self.subTest(path=path.name):
+                self.assertEqual(path.stat().st_mtime, self.SOURCE_DATE_EPOCH)
+
+
 if __name__ == "__main__":
     unittest.main()
