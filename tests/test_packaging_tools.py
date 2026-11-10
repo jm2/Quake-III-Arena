@@ -1240,6 +1240,27 @@ GENISOIMAGE = shutil.which("genisoimage") or shutil.which("mkisofs")
 
 
 @unittest.skipUnless(GENISOIMAGE, "genisoimage and mkisofs are not installed")
+def describe_differences(first, second, limit=12):
+    """The first few runs of differing bytes between two files, with 2048-byte
+    sector numbers and the bytes around each, for a failure message."""
+    a, b = Path(first).read_bytes(), Path(second).read_bytes()
+    lines = [f"sizes {len(a)} and {len(b)}"]
+    runs = []
+    for offset in range(min(len(a), len(b))):
+        if a[offset] != b[offset]:
+            if runs and offset <= runs[-1][1] + 16:
+                runs[-1][1] = offset
+            else:
+                if len(runs) == limit:
+                    break
+                runs.append([offset, offset])
+    for start, end in runs:
+        low = start - start % 16
+        lines.append(f"  {start:#x}-{end:#x} ({end - start + 1} bytes), sector {start // 2048}"
+                     f" at {start % 2048}: {a[low:low + 48]!r} / {b[low:low + 48]!r}")
+    return "\n".join(lines)
+
+
 class InstallImageReproducibilityTests(unittest.TestCase):
     """Issue #405: two install images made as build_mac.sh package makes them,
     from the same files at different times, are byte-identical.
@@ -1299,8 +1320,9 @@ class InstallImageReproducibilityTests(unittest.TestCase):
                 stream.seek(offset)
                 self.assertEqual(stream.read(length), bytes(length))
         self.assertEqual(mac_app.load(str(first), "Quake3").data, PEF)
-        self.assertTrue(filecmp.cmp(first, second, shallow=False),
-                        "two install images with the same SOURCE_DATE_EPOCH differ")
+        if not filecmp.cmp(first, second, shallow=False):
+            self.fail("two install images with the same SOURCE_DATE_EPOCH differ:\n"
+                      + describe_differences(first, second))
 
         # The Disk Copy image takes its MacBinary dates from SOURCE_DATE_EPOCH.
         wrapped = []
