@@ -3,7 +3,8 @@ set -euo pipefail
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [package|--package] [--base-only|--team-arena] [--bringup] [-h|--help]
+Usage: $(basename "$0") [package|--package] [--base-only|--team-arena] [--bringup]
+       [--data=DIR] [--offline] [-h|--help]
 
   (no args)            Configure, build, and validate the launchable Quake3
                        application: build_mac/Quake3.bin (MacBinary) and
@@ -15,11 +16,19 @@ Usage: $(basename "$0") [package|--package] [--base-only|--team-arena] [--bringu
   --base-only          Build only Quake3 (the default).
   --team-arena         Build Quake3 and Quake3_TeamArena.
   --bringup            Build at -O0 instead of the optimized default.
+  --data=DIR           Package mode: look for the retail baseq3 (and
+                       missionpack) folders under DIR only. The default is
+                       the repository. Every pak must be one of id's retail
+                       paks (pak_identity.py), or packaging stops.
+  --offline            Package mode: never download the 1.32 point release;
+                       its paks must already be beside the retail pak0.pk3.
   -h, --help           Show this message.
 EOF
 }
 
 PACKAGE_MODE=0
+DATA_ROOT=.
+OFFLINE_MODE=0
 TEAM_ARENA_MODE=OFF
 BRINGUP_MODE=OFF
 PACKAGE_MODE_SET=0
@@ -52,6 +61,19 @@ for argument in "$@"; do
             ;;
         --bringup)
             BRINGUP_MODE=ON
+            ;;
+        --data=*)
+            # Resolved now, as the script changes directory below: physically
+            # (find does not descend into a starting point that is a
+            # symlink) and ignoring CDPATH.
+            if [ -z "${argument#--data=}" ] ||
+               ! DATA_ROOT=$(CDPATH= cd -P -- "${argument#--data=}" 2> /dev/null && pwd -P); then
+                echo "Error: --data directory '${argument#--data=}' does not exist." >&2
+                exit 2
+            fi
+            ;;
+        --offline)
+            OFFLINE_MODE=1
             ;;
         -h|--help)
             usage
@@ -357,12 +379,14 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
     # applications themselves come from the build step above.
     echo "Checking for Game Assets..."
     
-    # Find pak0.pk3 inside a baseq3 (and missionpack) folder. Every pak beside
-    # it ships in the image, so more than one candidate is refused rather than
-    # taking whichever the filesystem lists first.
+    # Find pak0.pk3 inside a baseq3 (and missionpack) folder under the data
+    # root (--data, else the repository). Every pak beside it ships in the
+    # image, so more than one candidate is refused rather than taking
+    # whichever the filesystem lists first, and pak_identity.py checks each
+    # pak against id's retail checksums below (#22).
     find_retail_pak0() {
         local matches
-        matches=$(find . -path "*/release_mac" -prune -o \
+        matches=$(find "$DATA_ROOT" -path "*/release_mac" -prune -o \
             -type f -path "*/$1/pak0.pk3" -print)
         if [ "$(printf '%s\n' "$matches" | wc -l)" -gt 1 ]; then
             echo "Error: more than one $1/pak0.pk3 was found; leave only the one to package:" >&2
@@ -392,17 +416,24 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
                  -exec cp {} "$RELEASE_ROOT/content/Quake 3 Arena/missionpack/" \;
         fi
         
-        # Check for Updates
-        # Download if pak1 is missing in baseq3 OR if we have missionpack but missing its updates
+        # The 1.32 point release is baseq3 pak1-pak8 and missionpack
+        # pak1-pak3: download it if any is missing, as an install updated
+        # only to an earlier point release has some of them.
         NEED_UPDATE=0
-        if [ ! -f "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/pak1.pk3" ]; then
-            NEED_UPDATE=1
-        fi
-        if [ "$BUILD_TEAM_ARENA_ENABLED" -eq 1 ] &&
-           [ ! -f "$RELEASE_ROOT/content/Quake 3 Arena/missionpack/pak1.pk3" ]; then
-             NEED_UPDATE=1
+        for pak in 1 2 3 4 5 6 7 8; do
+            [ -f "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/pak$pak.pk3" ] || NEED_UPDATE=1
+        done
+        if [ "$BUILD_TEAM_ARENA_ENABLED" -eq 1 ]; then
+            for pak in 1 2 3; do
+                [ -f "$RELEASE_ROOT/content/Quake 3 Arena/missionpack/pak$pak.pk3" ] || NEED_UPDATE=1
+            done
         fi
 
+        if [ "$NEED_UPDATE" -eq 1 ] && [ "$OFFLINE_MODE" -eq 1 ]; then
+            echo "Error: the 1.32 point release paks are not beside the retail pak0.pk3," >&2
+            echo "       and --offline forbids downloading them." >&2
+            exit 1
+        fi
         if [ "$NEED_UPDATE" -eq 1 ]; then
             echo "Downloading Updates (BaseQ3 / MissionPack)..."
             
@@ -440,8 +471,18 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
                     find "$TEMP_DIR/pr_extract" -type f -path "*/missionpack/pak*.pk3" -exec cp {} "$RELEASE_ROOT/content/Quake 3 Arena/missionpack/" \;
                 fi
             else
-                echo "Warning: Failed to download Updates."
+                echo "Error: the 1.32 point release could not be downloaded from $PR_URL." >&2
+                echo "       Put its paks beside the retail pak0.pk3, or retry when online." >&2
+                exit 1
             fi
+        fi
+
+        # Every pak in the image must be id's: a demo, a different release
+        # or an edited pak would fail on pure servers or not load (#22).
+        python3 pak_identity.py verify baseq3 "$RELEASE_ROOT/content/Quake 3 Arena/baseq3" || exit 1
+        if [ "$BUILD_TEAM_ARENA_ENABLED" -eq 1 ]; then
+            python3 pak_identity.py verify missionpack \
+                "$RELEASE_ROOT/content/Quake 3 Arena/missionpack" || exit 1
         fi
     else
         echo "Error: a retail baseq3/pak0.pk3 was not found." >&2
