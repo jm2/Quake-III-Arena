@@ -79,7 +79,8 @@ int main( int argc, char **argv ) {
 	if ( argc > 1 ) {
 		enum { VERTS = 12288, FRAMES = 2000 };
 		static float	light[VERTS];
-		static int		out[VERTS];
+		static int		plain[VERTS], guarded[VERTS];
+		long			plainSum = 0, guardedSum = 0;
 		struct timespec	t0, t1, t2;
 		int				f, v;
 
@@ -89,20 +90,23 @@ int main( int argc, char **argv ) {
 		clock_gettime( CLOCK_MONOTONIC, &t0 );
 		for ( f = 0 ; f < FRAMES ; f++ ) {
 			for ( v = 0 ; v < VERTS ; v++ ) {
-				out[v] = myftol( light[v] + f );
+				plain[v] = myftol( light[v] + f );
 			}
+			plainSum += plain[f % VERTS];
 		}
 		clock_gettime( CLOCK_MONOTONIC, &t1 );
 		for ( f = 0 ; f < FRAMES ; f++ ) {
 			for ( v = 0 ; v < VERTS ; v++ ) {
-				out[v] = R_Ftol( light[v] + f );
+				guarded[v] = R_Ftol( light[v] + f );
 			}
+			guardedSum += guarded[f % VERTS];
 		}
 		clock_gettime( CLOCK_MONOTONIC, &t2 );
-		printf( "unguarded %.2f ns/vertex, guarded %.2f ns/vertex (%d)\n",
+		/* both loops' results are printed, so neither can be dropped */
+		printf( "unguarded %.2f ns/vertex, guarded %.2f ns/vertex (%ld %ld)\n",
 			( ( t1.tv_sec - t0.tv_sec ) * 1e9 + ( t1.tv_nsec - t0.tv_nsec ) ) / ( (double)VERTS * FRAMES ),
 			( ( t2.tv_sec - t1.tv_sec ) * 1e9 + ( t2.tv_nsec - t1.tv_nsec ) ) / ( (double)VERTS * FRAMES ),
-			out[VERTS / 2] );
+			plainSum, guardedSum );
 	}
 	if ( failures ) {
 		return 1;
