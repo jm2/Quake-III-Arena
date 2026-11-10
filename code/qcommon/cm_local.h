@@ -195,6 +195,15 @@ cmodel_t	*CM_ClipHandleToModel( clipHandle_t handle );
 const char *CM_ValidatePatchCollide( int width, int height, vec3_t *points );
 // Native header/facet/plane allocation sizes; outputs publish only on success.
 const char *CM_ValidatePatchCollideAllocations( int width, int height, vec3_t *points, int sizes[3] );
+// The same query on a caller-owned grid, so a map preflight allocates one for all its patches,
+// optionally keeping each build for CM_PublishPatchCollide so the loader need not build it again.
+typedef struct cPatchWorkspace_s cPatchWorkspace_t;
+typedef struct cPatchCollideResult_s cPatchCollideResult_t;
+cPatchWorkspace_t *CM_AllocPatchCollideWorkspace( void );
+void CM_FreePatchCollideWorkspace( cPatchWorkspace_t *workspace );
+const char *CM_ValidatePatchCollideWorkspace( cPatchWorkspace_t *workspace, int width, int height, vec3_t *points, int sizes[3], cPatchCollideResult_t **keep );
+struct patchCollide_s	*CM_PublishPatchCollide( cPatchCollideResult_t *result );
+void CM_FreePatchCollideResult( cPatchCollideResult_t *result );
 struct patchCollide_s	*CM_GeneratePatchCollide( int width, int height, vec3_t *points );
 void CM_TraceThroughPatchCollide( traceWork_t *tw, const struct patchCollide_s *pc );
 qboolean CM_PositionTestInPatchCollide( traceWork_t *tw, const struct patchCollide_s *pc );

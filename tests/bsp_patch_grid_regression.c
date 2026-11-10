@@ -8,9 +8,19 @@
 
 static void *gridTemporary, *zones[64];
 static int failGrid, gridAllocations, gridFrees, zoneLive;
+/* #251: the preflight keeps each patch build, which is smaller than a grid. */
+static void *kept[64];
+static int keptLive, keptAllocations, failKeptMask;
 
 void *PatchGridMalloc(size_t size) {
-	Check(size==sizeof(cGrid_t) && !gridTemporary,"one exact native grid preflight workspace");
+	if(size!=sizeof(cGrid_t)) {
+		void *pointer;
+		Check(size<sizeof(cGrid_t) && keptLive<64,"bounded kept patch build");
+		if(failKeptMask>>(keptAllocations++%31)&1) return NULL;
+		pointer=malloc(size);Check(pointer!=NULL,"kept patch build");
+		kept[keptLive++]=pointer;return pointer;
+	}
+	Check(!gridTemporary,"one exact native grid preflight workspace");
 	if(failGrid) { failGrid=0;return NULL; }
 	gridTemporary=malloc(size);
 	Check(gridTemporary!=NULL,"grid preflight workspace");
@@ -18,6 +28,10 @@ void *PatchGridMalloc(size_t size) {
 	return gridTemporary;
 }
 void PatchGridFree(void *pointer) {
+	int i;
+	if(pointer && pointer!=gridTemporary) {
+		for(i=0;i<keptLive;i++)if(kept[i]==pointer) { free(pointer);kept[i]=kept[--keptLive];return; }
+	}
 	Check(pointer && pointer==gridTemporary,"owned grid workspace release");
 	free(pointer);gridTemporary=NULL;gridFrees++;
 }
@@ -156,8 +170,86 @@ static void RejectNumeric(void) {
 		alignment=0;
 	}
 }
+/* Distinct patches, large and small in turn, share one preflight grid (#251). */
+static const int mixedPatches[][4]={{127,3,1,32},{3,3,0,0},{9,9,3,32},{3,127,2,32},{5,5,4,16},{3,3,1,8},{31,5,3,24}};
+#define MIXED_PATCHES ((int)(sizeof(mixedPatches)/sizeof(mixedPatches[0])))
+static int mixedBadLast; /* the last patch overflows its subdivision, after the others are kept */
+static float MixedHeight(int patch,int i,int j) {
+	int axis=mixedPatches[patch][2],amplitude=mixedBadLast && patch==MIXED_PATCHES-1?4096:mixedPatches[patch][3];
+	return ((axis==1?i:axis==2?j:axis>=3?i+j:0)%2?amplitude:0)+(axis==4?i*j*7:0);
+}
+static void MixedMap(void) {
+	unsigned int verts,surfaces,leafSurfaces;int p,i,j,first=0,total=0;
+	BuildCM(2);
+	for(p=0;p<MIXED_PATCHES;p++)total+=mixedPatches[p][0]*mixedPatches[p][1];
+	verts=Append(LUMP_DRAWVERTS,total*sizeof(drawVert_t));
+	surfaces=Append(LUMP_SURFACES,MIXED_PATCHES*sizeof(dsurface_t));
+	leafSurfaces=Append(LUMP_LEAFSURFACES,MIXED_PATCHES*4);
+	for(p=0;p<MIXED_PATCHES;p++) {
+		int width=mixedPatches[p][0],height=mixedPatches[p][1];unsigned int surface=surfaces+p*sizeof(dsurface_t);
+		for(j=0;j<height;j++)for(i=0;i<width;i++) {
+			unsigned int vertex=verts+(first+j*width+i)*sizeof(drawVert_t);
+			Float(vertex,i*32+p*8);Float(vertex+4,j*32);Float(vertex+8,MixedHeight(p,i,j));
+		}
+		Word(surface+offsetof(dsurface_t,fogNum),0xffffffffu);Word(surface+offsetof(dsurface_t,lightmapNum),0xffffffffu);
+		Word(surface+offsetof(dsurface_t,surfaceType),MST_PATCH);Word(surface+offsetof(dsurface_t,firstVert),first);
+		Word(surface+offsetof(dsurface_t,numVerts),width*height);
+		Word(surface+offsetof(dsurface_t,patchWidth),width);Word(surface+offsetof(dsurface_t,patchHeight),height);
+		Word(leafSurfaces+p*4,p);first+=width*height;
+	}
+	Word(At(LUMP_LEAFS,offsetof(dleaf_t,numLeafSurfaces)),MIXED_PATCHES);
+	Word(At(LUMP_MODELS,offsetof(dmodel_t,numSurfaces)),MIXED_PATCHES);
+}
+/* A reused, dirty workspace answers exactly as a fresh one and as the generator,
+ * including straight after patches rejected part way through. */
+static int MixedPoints(vec3_t *points,int order,int step,int *height) {
+	int p,i,j,width;
+	if(step==MIXED_PATCHES) { /* rejected during facet generation */
+		width=*height=31;
+		for(j=0;j<31;j++)for(i=0;i<31;i++)VectorSet(points[j*31+i],i*32,j*32,((i+j)%2?32:0));
+		return width;
+	}
+	if(step==MIXED_PATCHES+1) { /* rejected part way through subdivision, with the grid filled */
+		width=129;*height=3;
+		for(j=0;j<3;j++)for(i=0;i<129;i++)VectorSet(points[j*129+i],i*32,j*32,(i%2?4096:0));
+		return width;
+	}
+	p=order==0?step:order==1?MIXED_PATCHES-1-step:(step*3)%MIXED_PATCHES;
+	width=mixedPatches[p][0];*height=mixedPatches[p][1];
+	for(j=0;j<*height;j++)for(i=0;i<width;i++)VectorSet(points[j*width+i],i*32+p*8,j*32,MixedHeight(p,i,j));
+	return width;
+}
+static void WorkspaceReuse(void) {
+	static vec3_t points[MAX_PATCH_VERTS];
+	const char *fresh[3][MIXED_PATCHES+2],*shared;
+	int freshSizes[3][MIXED_PATCHES+2][3],sizes[3],order,step,width,height,before;
+	cPatchWorkspace_t *workspace;patchCollide_t *pc;
+	for(order=0;order<3;order++)for(step=0;step<MIXED_PATCHES+2;step++) {
+		width=MixedPoints(points,order,step,&height);
+		fresh[order][step]=CM_ValidatePatchCollideAllocations(width,height,points,freshSizes[order][step]);
+		Check(step==MIXED_PATCHES ? fresh[order][step] && !strcmp(fresh[order][step],"MAX_FACETS") :
+			step>MIXED_PATCHES ? fresh[order][step] && strstr(fresh[order][step],"subdivision") : !fresh[order][step],"mixed patch fixtures");
+		if(!fresh[order][step]) {
+			FreeHunks();pc=CM_GeneratePatchCollide(width,height,points);
+			Check(freshSizes[order][step][1]==pc->numFacets*(int)sizeof(facet_t) && freshSizes[order][step][2]==pc->numPlanes*(int)sizeof(patchPlane_t),
+				"preflight sizes match the generated patch");
+			FreeHunks();
+		}
+	}
+	before=gridAllocations;workspace=CM_AllocPatchCollideWorkspace();
+	Check(workspace!=NULL && gridAllocations==before+1,"one map preflight workspace");
+	memset(workspace,0xa5,sizeof(cGrid_t));
+	for(order=0;order<3;order++)for(step=0;step<MIXED_PATCHES+2;step++) {
+		width=MixedPoints(points,order,step,&height);memset(sizes,0x5a,sizeof(sizes));
+		shared=CM_ValidatePatchCollideWorkspace(workspace,width,height,points,sizes,NULL);
+		Check(shared==fresh[order][step] && (shared || !memcmp(sizes,freshSizes[order][step],sizeof(sizes))),
+			"reused preflight workspace gives the fresh workspace's sizes and errors");
+	}
+	CM_FreePatchCollideWorkspace(workspace);Check(!gridTemporary,"map preflight workspace released");
+}
 static void BudgetMap(int mode) {
 	unsigned int offset,original;int i;
+	if(mode==9) { MixedMap();return; }
 	if(mode==4 || mode==5 || mode==8)Build(mode==8?129:3,3,0,0);else BuildCM(2);
 	if(mode==1)Word(At(LUMP_LEAFS,offsetof(dleaf_t,area)),MAX_MAP_AREA_BYTES*8-1);
 	if(mode==2)Word(At(LUMP_LEAFS,offsetof(dleaf_t,cluster)),65535);
@@ -185,8 +277,10 @@ static void BudgetLoad(void) {
 }
 static void BudgetCases(void) {
 	int mode,a,i,cost,sum,sizes[3],before[3];unsigned int used,hash=0;patchCollide_t *old=NULL;
-	for(mode=0;mode<9;mode++) {
+	for(mode=0;mode<10;mode++) {
+		int grids=gridAllocations;
 		FreeHunks();hunkLimit=4000000;alignment=0;BudgetMap(mode);BudgetLoad();cost=hunkUsed;sum=0;
+		Check(gridAllocations-grids==(cm.numSurfaces>0),"one preflight grid per map, none without patches");
 		for(i=0;i<allocations;i++)sum+=(int)(((int64_t)hunkSizes[i]+31)/32*32);
 		Check(cost==sum && cost>0,"budget baseline is the independent sum of actual native allocation calls");
 		if(mode==1)Check(cm.numAreas==MAX_MAP_AREA_BYTES*8,"highest ABI area includes native square portal matrix");
@@ -195,6 +289,7 @@ static void BudgetCases(void) {
 		if(mode==4 || mode==6)Check(cm.numSubModels==(mode==4?4:3) && cm.cmodels[1].leaf.numLeafBrushes==1 && cm.cmodels[1].leaf.numLeafSurfaces==(mode==4?1:0),"inline synthesized indexes include zero-size calls");
 		if(mode==5) { Check(cm.numSurfaces==7,"all repeated native patches are published");for(i=1;i<7;i++)Check(Fingerprint(cm.surfaces[i]->pc)==Fingerprint(cm.surfaces[0]->pc),"per-patch actual geometry stays unchanged"); }
 		if(mode==7)Check(!cm.numAreas && !cm.numClusters && !cm.clusterBytes,"opaque leaf keeps zero-size derived allocations");
+		if(mode==9)Check(cm.numSurfaces==MIXED_PATCHES,"every mixed patch is published");
 		for(a=0;a<4;a++) {
 			alignment=a;used=hunkUsed;old=cm.numSurfaces?cm.surfaces[0]->pc:NULL;if(old)hash=Fingerprint(old);
 			hunkLimit=hunkUsed+cost-1;RejectCM();
@@ -208,6 +303,32 @@ static void BudgetCases(void) {
 	alignment=0;hunkLimit=4000000;memset(sizes,0xa5,sizeof(sizes));memcpy(before,sizes,sizeof(before));
 	Check(CM_ValidatePatchCollideAllocations(2,3,NULL,sizes)!=NULL && !memcmp(sizes,before,sizeof(sizes)) && !gridTemporary && !zoneLive,"failed patch allocation query publishes no sizes or ownership");
 	FreeHunks();
+}
+/* #251: the loader publishes the preflight's kept builds. Each must equal a
+ * fresh build: the same hunk allocations in order, the same bytes and the same
+ * block count, whichever builds could not be kept; a rejected map keeps none. */
+extern int c_totalPatchBlocks;
+static void KeptBuilds(void) {
+	static const int masks[]={0,0x7fffffff,0x55555555,0x2a,0x40};
+	unsigned int prints[MIXED_PATCHES];int sizes[1024],count=0,used=0,blocks=0,m,i,checksum,before;
+	for(m=0;m<(int)(sizeof(masks)/sizeof(masks[0]));m++) {
+		FreeHunks();hunkLimit=4000000;alignment=0;MixedMap();failKeptMask=masks[m];keptAllocations=0;
+		before=c_totalPatchBlocks;readable=advertised=sourceSize;missing=0;CM_LoadMap("kept.bsp",qfalse,&checksum);failKeptMask=0;
+		Check(!keptLive && !gridTemporary && !fileAllocation && keptAllocations==MIXED_PATCHES && cm.numSurfaces==MIXED_PATCHES,
+			"every patch build is offered for keeping and all are released after loading");
+		if(m==0) {
+			for(i=0;i<MIXED_PATCHES;i++)prints[i]=Fingerprint(cm.surfaces[i]->pc);
+			count=allocations;used=hunkUsed;blocks=c_totalPatchBlocks-before;memcpy(sizes,hunkSizes,count*sizeof(int));
+			continue;
+		}
+		for(i=0;i<MIXED_PATCHES;i++)Check(Fingerprint(cm.surfaces[i]->pc)==prints[i],"kept and rebuilt patches are bit-identical");
+		Check(allocations==count && hunkUsed==used && !memcmp(sizes,hunkSizes,count*sizeof(int)),"kept patches make the native hunk allocations in order");
+		Check(c_totalPatchBlocks-before==blocks,"kept patches count the native blocks");
+	}
+	/* A map rejected by its last patch releases the builds kept before it. */
+	mixedBadLast=1;MixedMap();
+	for(i=0;i<4;i++) { alignment=i;RejectCM();Check(!keptLive && !gridTemporary,"rejected map releases kept builds and workspace"); }
+	mixedBadLast=0;alignment=0;FreeHunks();
 }
 int main(void) {
 	Build(3,3,0,0);Load(3,3,0xe6e8e7d6u);
@@ -231,6 +352,8 @@ int main(void) {
 		CM_ValidatePatchCollide(131,3,(vec3_t *)source)!=NULL,"private generator parameter checks before source reads");
 	Check(gridAllocations==gridFrees && !fileAllocation && !zoneLive,"every grid/winding ownership released");
 	BudgetCases();
+	WorkspaceReuse();
+	KeptBuilds();
 	Check(gridAllocations==gridFrees,"all budget preflight workspaces released");
 	FreeHunks();
 	puts("BSP native patch-grid bounds, refinement goldens, caller preflight and workspace ownership regressions passed (issue #45)");

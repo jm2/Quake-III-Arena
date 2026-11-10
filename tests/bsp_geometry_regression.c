@@ -212,6 +212,55 @@ static void NativeFlares(void) {
 	tr.worldMapLoaded=qfalse;RE_LoadWorldMap("flare-fog0-nofogs.bsp");
 	Check(tr.world==&s_worldData && s_worldData.numfogs==1 && s_worldData.numsurfaces==1 && *s_worldData.surfaces[0].data==SF_FLARE && !s_worldData.surfaces[0].fogIndex && !fileAllocation,"actual renderer load of a retail flare without fogs");
 }
+/* #251: one renderer workspace serves every patch of a map. Refining on a
+ * workspace full of NaN bytes left by other patches must give the same width,
+ * height, controls and LOD errors as on a fresh one, and the same verdicts. */
+static const int reusePatches[][4]={{3,3,0,0},{31,31,0,0},{65,15,0,0},{15,65,0,0},{3,3,1,32},{7,5,3,64},{5,7,3,64},{9,9,3,24},{3,3,1,32}};
+#define REUSE_PATCHES ((int)(sizeof(reusePatches)/sizeof(reusePatches[0])))
+static int ReusePoints(drawVert_t *points,int patch,int *height) {
+	int i,j,width=reusePatches[patch][0],axis=reusePatches[patch][2],amplitude=reusePatches[patch][3];
+	*height=reusePatches[patch][1];memset(points,0,width**height*sizeof(*points));
+	for(j=0;j<*height;j++)for(i=0;i<width;i++) {
+		drawVert_t *v=&points[j*width+i];
+		VectorSet(v->xyz,i*16-8,j*16-8,((axis==1?i:axis==2?j:i+j)%2)?amplitude:0);v->st[0]=i*0.25f;v->st[1]=j*0.25f;v->lightmap[0]=i*0.125f;v->normal[2]=1;
+		memset(v->color,255,4);
+	}
+	/* the last patch overflows its texture coordinates once subdivided, so it fails after writing the workspace */
+	if(patch==REUSE_PATCHES-1)for(i=0;i<width**height;i++)points[i].st[0]=FLT_MAX;
+	return width;
+}
+static void RendererWorkspaceReuse(void) {
+	static drawVert_t points[MAX_PATCH_SIZE*MAX_PATCH_SIZE];
+	static patchGridWorkspace_t fresh;
+	const char *verdicts[REUSE_PATCHES],*error;
+	int pass,step,p,width,height,freshWidth,freshHeight,before;
+	patchGridWorkspace_t *workspace;
+	for(p=0;p<REUSE_PATCHES;p++) {
+		width=ReusePoints(points,p,&height);verdicts[p]=R_ValidatePatchGrid(width,height,points);
+		Check(p==REUSE_PATCHES-1 ? verdicts[p] && strstr(verdicts[p],"nonfinite") : !verdicts[p],"reuse patch fixtures");
+	}
+	before=patchAllocations;workspace=R_AllocPatchGridWorkspace();
+	Check(workspace && patchAllocations==before+1,"one renderer map preflight workspace");
+	memset(workspace,0xff,sizeof(*workspace));
+	for(pass=0;pass<3;pass++)for(step=0;step<REUSE_PATCHES;step++) {
+		p=pass==0?step:pass==1?REUSE_PATCHES-1-step:(step*4)%REUSE_PATCHES;
+		width=ReusePoints(points,p,&height);
+		Check(R_ValidatePatchGridWorkspace(workspace,width,height,points)==verdicts[p],"reused renderer workspace keeps every verdict");
+		if(verdicts[p]) continue;
+		memset(&fresh,0,sizeof(fresh));freshWidth=width;freshHeight=height;
+		error=R_RefinePatchGrid(&freshWidth,&freshHeight,fresh.ctrl,fresh.errorTable,points);
+		Check(!error,"fresh refinement");
+		error=R_RefinePatchGrid(&width,&height,workspace->ctrl,workspace->errorTable,points);
+		Check(!error && width==freshWidth && height==freshHeight,"reused refinement dimensions");
+		{
+			int i;
+			for(i=0;i<height;i++)Check(!memcmp(workspace->ctrl[i],fresh.ctrl[i],width*sizeof(drawVert_t)),"reused refinement controls");
+			Check(!memcmp(workspace->errorTable[0],fresh.errorTable[0],width*sizeof(float)) &&
+				!memcmp(workspace->errorTable[1],fresh.errorTable[1],height*sizeof(float)),"reused refinement LOD errors");
+		}
+	}
+	R_FreePatchGridWorkspace(workspace);Check(!patchWorkspace,"renderer map preflight workspace released");
+}
 int main(void) {
 	unsigned int nonfinite[]={0x7f800000u,0xff800000u,0x7fc00001u},offset;int i,j,k,checksum;dheader_t h;
 	ri.Error=Com_Error;ri.Printf=Print;ri.FS_ReadFile=FS_ReadFile;ri.FS_FreeFile=FS_FreeFile;ri.Hunk_Alloc=RendererHunk;ri.Malloc=RendererMalloc;ri.Free=RendererFree;subdivisions.value=4;
@@ -233,5 +282,5 @@ int main(void) {
 	NativeSurface(MST_PLANAR,999,5999,0,0);NativeSurface(MST_PLANAR,1,0,0,0);NativeSurface(MST_TRIANGLE_SOUP,999,5999,0,0);NativeSurface(MST_TRIANGLE_SOUP,0,0,0,0);
 	NativeSurface(MST_PATCH,31*31,0,31,31);NativeSurface(MST_PATCH,65*15,0,65,15);
 	Build(MST_PATCH,129*3,0,129,3);Header(&h);Check(!BSP_ValidateGeometry(source,&h,CM_MAX_PATCH_GRID_SIZE,MAX_PATCH_VERTS),"collision native 129-column boundary");
-	CurveGoldens();NumericCurves();NumericFaces();NativeFacePlanes();NativeNodraw();NativeLighting();NativeFlares();Check(!heapCount && !fileAllocation && !patchWorkspace && patchAllocations==patchFrees,"all fixture ownership released");FreeHunks();puts("BSP finite geometry, native storage, renderer rejection and surface/curve regressions passed (issue #45)");return 0;
+	RendererWorkspaceReuse();CurveGoldens();NumericCurves();NumericFaces();NativeFacePlanes();NativeNodraw();NativeLighting();NativeFlares();Check(!heapCount && !fileAllocation && !patchWorkspace && patchAllocations==patchFrees,"all fixture ownership released");FreeHunks();puts("BSP finite geometry, native storage, renderer rejection and surface/curve regressions passed (issue #45)");return 0;
 }

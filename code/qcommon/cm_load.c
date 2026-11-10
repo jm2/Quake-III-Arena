@@ -60,6 +60,11 @@ int			c_traces, c_brush_traces, c_patch_traces;
 
 byte		*cmod_base;
 
+/* Patch builds kept by the preflight, by surface number, for CMod_LoadPatches.
+ * A surface without one, when memory ran short, is built again as before. */
+static cPatchCollideResult_t **cm_keptPatches;
+static int cm_numKeptPatches;
+
 #ifndef BSPC
 cvar_t		*cm_noAreas;
 cvar_t		*cm_noCurves;
@@ -543,8 +548,13 @@ void CMod_LoadPatches( lump_t *surfs, lump_t *verts ) {
 		patch->contents = cm.shaders[shaderNum].contentFlags;
 		patch->surfaceFlags = cm.shaders[shaderNum].surfaceFlags;
 
-		// create the internal facet structure
-		patch->pc = CM_GeneratePatchCollide( width, height, points );
+		// create the internal facet structure, or publish the preflight's identical build
+		if ( i < cm_numKeptPatches && cm_keptPatches[i] ) {
+			patch->pc = CM_PublishPatchCollide( cm_keptPatches[i] );
+			cm_keptPatches[i] = NULL;
+		} else {
+			patch->pc = CM_GeneratePatchCollide( width, height, points );
+		}
 	}
 }
 
@@ -590,8 +600,22 @@ static qboolean CM_BSPBudgetAllocation( int size, int *remaining ) {
 	return qtrue;
 }
 
-/* Geometry/references have already checked every source span and dimension. */
-static const char *CM_ValidateBSPPatchGrids( const byte *buffer, const dheader_t *header, int *remaining ) {
+static void CM_FreeKeptPatches( void ) {
+	int i;
+
+	if ( !cm_keptPatches ) return;
+	for ( i = 0 ; i < cm_numKeptPatches ; i++ ) {
+		if ( cm_keptPatches[i] ) CM_FreePatchCollideResult( cm_keptPatches[i] );
+	}
+	free( cm_keptPatches );
+	cm_keptPatches = NULL;
+	cm_numKeptPatches = 0;
+}
+
+/* Geometry/references have already checked every source span and dimension.
+ * One grid workspace, allocated at the first patch, serves the whole map, and
+ * each patch's build is kept for CMod_LoadPatches when memory allows. */
+static const char *CM_ValidateBSPPatchGridsWith( cPatchWorkspace_t **workspace, const byte *buffer, const dheader_t *header, int *remaining ) {
 	const byte *surface, *vertices;
 	vec3_t points[MAX_PATCH_VERTS];
 	int i, j, k, count, width, height, sizes[3];
@@ -611,7 +635,17 @@ static const char *CM_ValidateBSPPatchGrids( const byte *buffer, const dheader_t
 				points[j][k] = BSP_GeometryFloat(vertices + j * sizeof(drawVert_t) + k * 4);
 			}
 		}
-		error = CM_ValidatePatchCollideAllocations( width, height, points, sizes );
+		if ( !*workspace ) {
+			*workspace = CM_AllocPatchCollideWorkspace();
+			if ( !*workspace ) return "collision patch preflight workspace allocation failed";
+			cm_keptPatches = malloc( count * sizeof( *cm_keptPatches ) );
+			if ( cm_keptPatches ) {
+				Com_Memset( cm_keptPatches, 0, count * sizeof( *cm_keptPatches ) );
+				cm_numKeptPatches = count;
+			}
+		}
+		error = CM_ValidatePatchCollideWorkspace( *workspace, width, height, points, sizes,
+			cm_keptPatches ? &cm_keptPatches[i] : NULL );
 		if ( error ) return error;
 		if ( !CM_BSPBudgetAllocation(sizeof(cPatch_t),remaining) ) return "collision BSP exceeds remaining hunk memory";
 		for ( j = 0 ; j < 3 ; j++ ) {
@@ -619,6 +653,17 @@ static const char *CM_ValidateBSPPatchGrids( const byte *buffer, const dheader_t
 		}
 	}
 	return NULL;
+}
+
+static const char *CM_ValidateBSPPatchGrids( const byte *buffer, const dheader_t *header, int *remaining ) {
+	cPatchWorkspace_t *workspace = NULL;
+	const char *error;
+
+	CM_FreeKeptPatches();
+	error = CM_ValidateBSPPatchGridsWith( &workspace, buffer, header, remaining );
+	if ( workspace ) CM_FreePatchCollideWorkspace( workspace );
+	if ( error ) CM_FreeKeptPatches();
+	return error;
 }
 
 /** Match every direct collision array allocation, including the reserved box hull. */
@@ -747,6 +792,7 @@ void CM_LoadMap( const char *name, qboolean clientload, int *checksum ) {
 	CMod_LoadEntityString (&header.lumps[LUMP_ENTITIES]);
 	CMod_LoadVisibility( &header.lumps[LUMP_VISIBILITY] );
 	CMod_LoadPatches( &header.lumps[LUMP_SURFACES], &header.lumps[LUMP_DRAWVERTS] );
+	CM_FreeKeptPatches();
 
 	// we are NOT freeing the file, because it is cached for the ref
 	FS_FreeFile (buf);

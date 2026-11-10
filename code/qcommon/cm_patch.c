@@ -1255,17 +1255,72 @@ static const char *CM_RefinePatchGrid( cGrid_t *grid, int width, int height, vec
 	return NULL;
 }
 
-/* No world, hunk, facet or plane state is published during this preflight. */
-const char *CM_ValidatePatchCollideAllocations( int width, int height, vec3_t *points, int sizes[3] ) {
-	cGrid_t *grid;
+/* The map preflight reuses one grid for all of its patches. The refinement
+ * writes every cell it later reads, as the generator's uninitialized grid
+ * already requires, so nothing carries over from the previous patch. */
+struct cPatchWorkspace_s {
+	cGrid_t		grid;
+};
+
+cPatchWorkspace_t *CM_AllocPatchCollideWorkspace( void ) {
+	return malloc( sizeof( cPatchWorkspace_t ) );
+}
+
+void CM_FreePatchCollideWorkspace( cPatchWorkspace_t *workspace ) {
+	free( workspace );
+}
+
+/* Everything CM_GeneratePatchCollide would publish for one patch, kept from
+ * the map preflight so the loader copies it instead of building it again. */
+struct cPatchCollideResult_s {
+	vec3_t			bounds[2];		// before the epsilon expansion
+	int				blocks;			// c_totalPatchBlocks share
+	qboolean		block;			// the build met a degenerate block
+	vec3_t			blockPoints[4];	// its first one, for debugBlockPoints
+	int				numPlanes;
+	int				numFacets;
+	patchPlane_t	*planes;		// both arrays follow the header
+	facet_t			*facets;
+};
+
+static cPatchCollideResult_t *CM_KeepPatchCollide( const cGrid_t *grid ) {
+	cPatchCollideResult_t *result;
+	int i, j;
+
+	result = malloc( sizeof( *result ) + numPlanes * sizeof( patchPlane_t ) + numFacets * sizeof( facet_t ) );
+	if ( !result ) return NULL;
+	ClearBounds( result->bounds[0], result->bounds[1] );
+	for ( i = 0 ; i < grid->width ; i++ ) {
+		for ( j = 0 ; j < grid->height ; j++ ) {
+			AddPointToBounds( grid->points[i][j], result->bounds[0], result->bounds[1] );
+		}
+	}
+	result->blocks = ( grid->width - 1 ) * ( grid->height - 1 );
+	result->block = debugBlock;
+	Com_Memcpy( result->blockPoints, debugBlockPoints, sizeof( result->blockPoints ) );
+	result->numPlanes = numPlanes;
+	result->numFacets = numFacets;
+	result->planes = (patchPlane_t *)( result + 1 );
+	result->facets = (facet_t *)( result->planes + numPlanes );
+	Com_Memcpy( result->planes, planes, numPlanes * sizeof( patchPlane_t ) );
+	Com_Memcpy( result->facets, facets, numFacets * sizeof( facet_t ) );
+	return result;
+}
+
+/* No world, hunk, facet or plane state is published during this preflight.
+ * With keep, a successful build is also returned for CM_PublishPatchCollide,
+ * or NULL when there is no memory for it and the loader must build again. */
+const char *CM_ValidatePatchCollideWorkspace( cPatchWorkspace_t *workspace, int width, int height, vec3_t *points, int sizes[3], cPatchCollideResult_t **keep ) {
+	cGrid_t *grid = &workspace->grid;
 	const char *error;
 	int savedPlanes = numPlanes, savedFacets = numFacets;
 	qboolean savedBlock = debugBlock;
 	vec3_t savedBlockPoints[4];
 
-	grid = malloc( sizeof( *grid ) );
-	if ( !grid ) return "collision patch preflight workspace allocation failed";
+	if ( keep ) *keep = NULL;
 	Com_Memcpy(savedBlockPoints,debugBlockPoints,sizeof(savedBlockPoints));
+	/* Start clear so a kept build records the first degenerate block it meets. */
+	if ( keep ) debugBlock = qfalse;
 	error = CM_RefinePatchGrid( grid, width, height, points );
 	if ( !error ) error = CM_PatchCollideFromGrid( grid );
 	if ( !error && sizes ) {
@@ -1273,11 +1328,26 @@ const char *CM_ValidatePatchCollideAllocations( int width, int height, vec3_t *p
 		sizes[1] = numFacets * sizeof( facet_t );
 		sizes[2] = numPlanes * sizeof( patchPlane_t );
 	}
+	if ( !error && keep ) *keep = CM_KeepPatchCollide( grid );
 	numPlanes = savedPlanes;
 	numFacets = savedFacets;
 	debugBlock = savedBlock;
 	Com_Memcpy(debugBlockPoints,savedBlockPoints,sizeof(savedBlockPoints));
-	free( grid );
+	return error;
+}
+
+void CM_FreePatchCollideResult( cPatchCollideResult_t *result ) {
+	free( result );
+}
+
+const char *CM_ValidatePatchCollideAllocations( int width, int height, vec3_t *points, int sizes[3] ) {
+	cPatchWorkspace_t *workspace;
+	const char *error;
+
+	workspace = CM_AllocPatchCollideWorkspace();
+	if ( !workspace ) return "collision patch preflight workspace allocation failed";
+	error = CM_ValidatePatchCollideWorkspace( workspace, width, height, points, sizes, NULL );
+	CM_FreePatchCollideWorkspace( workspace );
 	return error;
 }
 
@@ -1334,6 +1404,40 @@ struct patchCollide_s	*CM_GeneratePatchCollide( int width, int height, vec3_t *p
 	pf->bounds[1][1] += 1;
 	pf->bounds[1][2] += 1;
 
+	return pf;
+}
+
+/* CM_GeneratePatchCollide's publication of a build kept by the preflight:
+ * the same hunk allocations in the same order, the same bytes and the same
+ * debug and block-count side effects. The result is released. */
+struct patchCollide_s *CM_PublishPatchCollide( cPatchCollideResult_t *result ) {
+	patchCollide_t	*pf;
+
+	pf = Hunk_Alloc( sizeof( *pf ), h_high );
+	VectorCopy( result->bounds[0], pf->bounds[0] );
+	VectorCopy( result->bounds[1], pf->bounds[1] );
+	c_totalPatchBlocks += result->blocks;
+	if ( result->block && !debugBlock ) {
+		debugBlock = qtrue;
+		Com_Memcpy( debugBlockPoints, result->blockPoints, sizeof( debugBlockPoints ) );
+	}
+	pf->numPlanes = result->numPlanes;
+	pf->numFacets = result->numFacets;
+	pf->facets = Hunk_Alloc( result->numFacets * sizeof( *pf->facets ), h_high );
+	Com_Memcpy( pf->facets, result->facets, result->numFacets * sizeof( *pf->facets ) );
+	pf->planes = Hunk_Alloc( result->numPlanes * sizeof( *pf->planes ), h_high );
+	Com_Memcpy( pf->planes, result->planes, result->numPlanes * sizeof( *pf->planes ) );
+
+	// expand by one unit for epsilon purposes
+	pf->bounds[0][0] -= 1;
+	pf->bounds[0][1] -= 1;
+	pf->bounds[0][2] -= 1;
+
+	pf->bounds[1][0] += 1;
+	pf->bounds[1][1] += 1;
+	pf->bounds[1][2] += 1;
+
+	CM_FreePatchCollideResult( result );
 	return pf;
 }
 
