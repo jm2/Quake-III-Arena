@@ -81,6 +81,12 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
+      # The install image reproducibility test (issue #405) needs genisoimage.
+      - name: Install genisoimage
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends genisoimage
+
       - name: Run packaging utility regressions
         run: python -m unittest tests.test_packaging_tools -v
 

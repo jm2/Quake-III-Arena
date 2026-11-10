@@ -91,6 +91,21 @@ done
 # build_mac/, tools/, release_mac/ and the helper scripts are all found there.
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+# Reproducible builds (issue #405): GCC's __DATE__ and the application and
+# image dates come from SOURCE_DATE_EPOCH. A caller's value wins; otherwise it
+# is the last commit's time, when this is a git checkout, so every build of a
+# commit gives the same bytes.
+if [ -z "${SOURCE_DATE_EPOCH:-}" ] && command -v git > /dev/null 2>&1 &&
+   [ "$(git rev-parse --show-toplevel 2>/dev/null)" = "$(pwd -P)" ]; then
+    SOURCE_DATE_EPOCH="$(git log -1 --format=%ct 2>/dev/null || true)"
+fi
+if [ -n "${SOURCE_DATE_EPOCH:-}" ]; then
+    export SOURCE_DATE_EPOCH
+    echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
+else
+    unset SOURCE_DATE_EPOCH
+fi
+
 # Every program the build needs, checked before anything is done (issue #231).
 MISSING_COMMANDS=""
 for cmd in cmake make python3 od; do
@@ -562,7 +577,11 @@ EOF
 
      # Create Hybrid Image
      rm -f "$IMAGE_NAME" "${IMAGE_NAME}.iso"
-     
+
+     # The image records each file's modification time: make them all
+     # SOURCE_DATE_EPOCH (issue #405; nothing happens when it is unset).
+     python3 mac_app.py set-dates "$CONTENT_DIR"
+
      if [ "$MKISOFS" == "hdiutil" ]; then
          # Native macOS approach
          echo "Using hdiutil to create hybrid image..."
@@ -584,7 +603,12 @@ EOF
          # Create Hybrid Image (No -part, as that might confuse simple mounting)
          # -hfs automatically detects AppleDouble (._ file) if present (in most versions).
          echo "Using mkisofs/genisoimage..."
-         $MKISOFS -hfs -double -map "$MAPPING_FILE" -o "$IMAGE_NAME" -V "Quake 3 Arena" "$CONTENT_DIR"
+         # In UTC, the ISO directory records' dates do not depend on the
+         # host's time zone. genisoimage stamps the volume dates with the time
+         # it runs; with SOURCE_DATE_EPOCH, mac_app.py writes that over them
+         # (issue #405).
+         TZ=UTC $MKISOFS -hfs -double -map "$MAPPING_FILE" -o "$IMAGE_NAME" -V "Quake 3 Arena" "$CONTENT_DIR"
+         python3 mac_app.py set-dates "$IMAGE_NAME"
     fi
     
     verify_image_applications "$IMAGE_NAME"

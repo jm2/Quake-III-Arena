@@ -47,7 +47,11 @@ has to start, and any error but the final disconnect fails the run.
     containers: kHasBundle updates (with MacBinary CRC), resource-map parsing,
     each launch-blocking defect (type/creator, data fork, missing or empty
     resources, `cfrg`, `SIZE`, `BNDL` signature, bundle flag), removal of
-    incomplete outputs, and resource-fork/Finder-info export (issues #225/#226).
+    incomplete outputs, and resource-fork/Finder-info export (issues #225/#226);
+  - install genisoimage and check that two install images made a second apart
+    from a 200 MB sparse pak are byte-identical once `mac_app.py set-dates`
+    has run, and that `finalize` and `set-dates` write `SOURCE_DATE_EPOCH`
+    over every date (issue #405).
 - `Host C regressions (ASan/UBSan)`
   - summarizes eight parallel jobs, `Host C regressions (gcc|clang K/4)`. Each
     runs one quarter of the sorted `tests/run_*_tests.sh` runners through

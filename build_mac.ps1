@@ -108,6 +108,49 @@ foreach ($Argument in $args) {
     }
 }
 
+# Reproducible builds (issue #405): GCC's __DATE__ and the application and
+# image dates come from SOURCE_DATE_EPOCH. A caller's value wins; otherwise it
+# is the last commit's time, when this is a git checkout, so every build of a
+# commit gives the same bytes. The environment is the caller's session, so
+# run again with the default set and remove it afterwards.
+if (-not $env:SOURCE_DATE_EPOCH -and (Get-Command "git" -ErrorAction SilentlyContinue)) {
+    # Outside a checkout, or in one git refuses (dubious ownership), git
+    # fails and writes to stderr. Windows PowerShell 5.1 turns that stderr
+    # into a terminating error under "Stop", so ask with "Continue".
+    $PreviousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $GitTop = git rev-parse --show-toplevel 2>$null
+        $GitTopStatus = $LASTEXITCODE
+        $CommitTime = $null
+        if ($GitTopStatus -eq 0 -and $GitTop -and
+            [System.IO.Path]::GetFullPath("$GitTop").TrimEnd('\', '/') -eq
+            [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\', '/')) {
+            $CommitTime = git log -1 --format=%ct 2>$null
+            if ($LASTEXITCODE -ne 0) { $CommitTime = $null }
+        }
+    }
+    catch {
+        $CommitTime = $null
+    }
+    finally {
+        $ErrorActionPreference = $PreviousPreference
+    }
+    if ($CommitTime) {
+        $env:SOURCE_DATE_EPOCH = "$CommitTime".Trim()
+        try {
+            & $PSCommandPath @args
+            exit $LASTEXITCODE
+        }
+        finally {
+            Remove-Item Env:SOURCE_DATE_EPOCH -ErrorAction SilentlyContinue
+        }
+    }
+}
+if ($env:SOURCE_DATE_EPOCH) {
+    Write-Host "SOURCE_DATE_EPOCH=$env:SOURCE_DATE_EPOCH"
+}
+
 # Add default MSYS2 binary path if it exists
 if (Test-Path "C:\msys64\usr\bin") {
     $env:PATH = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;$env:PATH"
@@ -558,9 +601,30 @@ if ($PackageMode) {
     # Run mkisofs (Hybrid HFS)
     $ImageName = Join-Path $ReleaseRoot "Quake3_Install.img"
     if (Test-Path $ImageName) { Remove-Item $ImageName -Force }
-    & $MkIsoFs -hfs -double -map $MappingFile -o $ImageName -V "Quake 3 Arena" $ContentDir | Out-Null
+    # The image records each file's modification time: make them all
+    # SOURCE_DATE_EPOCH (issue #405; nothing happens when it is unset).
+    python mac_app.py set-dates $ContentDir
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not set the dates of $ContentDir."
+    }
+    # In UTC, the ISO directory records' dates do not depend on the host's
+    # time zone. genisoimage stamps the volume dates with the time it runs;
+    # with SOURCE_DATE_EPOCH, mac_app.py writes that over them.
+    $CallerTZ = $env:TZ
+    $env:TZ = "UTC"
+    try {
+        & $MkIsoFs -hfs -double -map $MappingFile -o $ImageName -V "Quake 3 Arena" $ContentDir | Out-Null
+    }
+    finally {
+        if ($null -eq $CallerTZ) { Remove-Item Env:TZ -ErrorAction SilentlyContinue }
+        else { $env:TZ = $CallerTZ }
+    }
     if ($LASTEXITCODE -ne 0) {
         throw "HFS image creation failed for $ImageName."
+    }
+    python mac_app.py set-dates $ImageName
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not set the dates of $ImageName."
     }
     
     if ((Test-Path $ImageName) -and (Get-Item $ImageName).Length -gt 0) {

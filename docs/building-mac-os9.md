@@ -111,9 +111,58 @@ none. `retro68_pinned=no` means they are not the ones `retro68-versions.txt`
 pins. `static_modules_ldscript_sha256` is the hash of the linker script the
 configure generates from the toolchain's default script to bracket the game
 modules (issue #457). The manifest holds no dates or paths, so it changes only
-with the PEF or the toolchain. The PEF itself embeds the source directory
-(`assert()` messages carry `__FILE__`), so the same source built in another
-directory has another `pef_sha256`.
+with the PEF or the toolchain.
+
+## Reproducible builds
+
+The same commit, built with the same toolchain and the same
+`SOURCE_DATE_EPOCH`, gives byte-identical `<name>.pef`, `<name>.bin`,
+`<name>.ad` and `%<name>.ad` files, and the same `pef_sha256`, in any checkout
+directory and at any time (issue #405). Package mode's
+`Quake3_Install.img.bin` is byte-identical too when it is made with
+genisoimage or mkisofs from the same game data.
+
+`build_mac.sh` and `build_mac.ps1` set `SOURCE_DATE_EPOCH` to the time of the
+last commit (`git log -1 --format=%ct`) when it is unset or empty and the
+repository root is a git checkout, and print the value they use. Every build
+of a commit is therefore reproducible by default. Uncommitted changes do not
+change the value. To use another time, set it yourself:
+
+```sh
+SOURCE_DATE_EPOCH=1767225600 ./build_mac.sh
+```
+
+- `cmake/Quake3PrefixMap.cmake` compiles with
+  `-ffile-prefix-map=<source tree>=.`, so `__FILE__` (in `assert()` messages)
+  and debug information name `./code/...` instead of the checkout directory.
+- GCC takes `__DATE__` (the version string and the `gamedate` cvar) from
+  `SOURCE_DATE_EPOCH`.
+- Rez stamps the MacBinary dates with the time it runs, whatever
+  `SOURCE_DATE_EPOCH` says. `mac_app.py finalize` writes `SOURCE_DATE_EPOCH`
+  over them. The AppleDouble pair holds no dates.
+- In package mode, `mac_app.py set-dates` sets the modification time of
+  everything in `release_mac/content` to `SOURCE_DATE_EPOCH`, genisoimage runs
+  with `TZ=UTC`, and `mac_app.py set-dates` then writes `SOURCE_DATE_EPOCH`
+  over the dates genisoimage stamped with the time it ran: the HFS volume
+  dates (both master directory blocks), folder and file dates, and the ISO
+  9660 volume descriptor dates. It also zeroes the free space of the HFS
+  catalog's leaf nodes, where genisoimage leaves stale records, and each
+  fork's slack (its logical end to the end of its last allocation block).
+  With the retail 457 MB `pak0.pk3` the allocation blocks are 8 KB, and
+  genisoimage leaves uninitialized memory there. No ISO 9660 extent lies in
+  that slack.
+  `ndif_image.py` writes its MacBinary dates from `SOURCE_DATE_EPOCH` too.
+  Images made with hdiutil (HFS+) are not normalized.
+
+Without `SOURCE_DATE_EPOCH` (no git, or a source tree without `.git`), the
+dates are those of the build, and builds made on different days also differ
+in `__DATE__`.
+
+`tests/run_reproducible_build_tests.sh` checks the prefix map. With
+genisoimage or mkisofs installed, it compares two install images made a second
+apart from a 200 MB sparse `pak0.pk3`, so the allocation blocks are larger
+than 2 KB, as with the retail data. When Rez is installed, it also compares
+two Rez and `finalize` runs made in different directories and time zones.
 
 ## Checking and rebuilding the toolchain
 

@@ -10,14 +10,24 @@ resources and writes the application in three host-independent containers:
 
 Rez cannot set Finder flags. "finalize" sets kHasBundle, without which the
 Finder ignores the application's BNDL/FREF/icon resources, in every container
-and then verifies them. "verify" checks type/creator, flags, the data fork
-against the PEF, and the resources a launchable PowerPC application needs.
+and then verifies them. Rez stamps the MacBinary dates with the time it runs,
+so when SOURCE_DATE_EPOCH is set "finalize" writes that time over them (issue
+#405); the AppleDouble pair holds no dates. "verify" checks type/creator,
+flags, the data fork against the PEF, and the resources a launchable PowerPC
+application needs.
 "resource-fork" and "finder-info" export one container's resource fork and
 Finder info for hosts that store real forks (macOS).
+"set-dates" makes package mode's install image reproducible: given a
+directory, it sets the modification time of everything in it to
+SOURCE_DATE_EPOCH; given the HFS/ISO image genisoimage made from it, it writes
+SOURCE_DATE_EPOCH over the volume, folder, file and ISO volume descriptor
+dates genisoimage stamped with the time it ran, and zeroes the stale catalog
+records and uninitialized fork slack it leaves.
 """
 
 import argparse
 import binascii
+import datetime
 import os
 import struct
 import sys
@@ -33,8 +43,25 @@ APPLEDOUBLE_RESOURCE_FORK = 2
 APPLEDOUBLE_FINDER_INFO = 9
 
 HFS_MDB_OFFSET = 1024
+HFS_DIRECTORY_RECORD = 1
 HFS_FILE_RECORD = 2
 HFS_FILE_RECORD_SIZE = 102
+# Offsets of the dates (creation, modification, backup) in the master
+# directory block and in catalog folder and file records.
+HFS_MDB_DATES = (0x02, 0x06, 0x40)
+HFS_RECORD_DATES = {HFS_DIRECTORY_RECORD: (10, 14, 18), HFS_FILE_RECORD: (44, 48, 52)}
+# How far from the end of an image to look for the copy of the master
+# directory block: genisoimage's 300 KB of padding and an allocation block,
+# which is at most 32 KB on a 2 GB volume.
+HFS_ALTERNATE_MDB_TAIL = 1024 * 1024
+
+# Seconds from the Mac epoch (1904-01-01) to the Unix epoch, both UTC.
+MAC_EPOCH_OFFSET = 2082844800
+
+# ISO 9660 volume descriptors (HFS/ISO hybrids) start at sector 16. Their
+# creation, modification, expiration and effective dates are 17 bytes each.
+ISO9660_SECTOR = 2048
+ISO9660_DESCRIPTOR_DATES = (813, 830, 847, 864)
 
 
 class FormatError(ValueError):
@@ -104,13 +131,23 @@ def read_macbinary(path):
     )
 
 
+def _write_macbinary_header(path, header):
+    struct.pack_into(">H", header, 124, binascii.crc_hqx(bytes(header[:124]), 0))
+    with open(path, "r+b") as stream:
+        stream.write(header)
+
+
 def _set_macbinary_flags(path, mask):
     header = _macbinary_header(path)
     header[73] |= mask >> 8
     header[101] |= mask & 0xFF
-    struct.pack_into(">H", header, 124, binascii.crc_hqx(bytes(header[:124]), 0))
-    with open(path, "r+b") as stream:
-        stream.write(header)
+    _write_macbinary_header(path, header)
+
+
+def _set_macbinary_dates(path, mac_time):
+    header = _macbinary_header(path)
+    struct.pack_into(">II", header, 91, mac_time, mac_time)
+    _write_macbinary_header(path, header)
 
 
 # AppleDouble ----------------------------------------------------------------
@@ -228,8 +265,8 @@ class _HfsVolume:
         offset = self._catalog_offset(number * node_size)
         return offset, self._read(offset, node_size, "catalog node")
 
-    def file_records(self):
-        """Yield (image offset of record data, parent ID, name, record)."""
+    def leaf_nodes(self):
+        """Yield (image offset, bytes) of each catalog leaf node in order."""
         _, header = self._node(0, 512)
         if header[8] != 1:
             raise FormatError(f"{self.path}: malformed catalog header node")
@@ -242,6 +279,16 @@ class _HfsVolume:
             node_offset, node = self._node(node_number, node_size)
             if node[8] != 0xFF:
                 raise FormatError(f"{self.path}: catalog leaf chain reaches a non-leaf node")
+            yield node_offset, node
+            node_number = struct.unpack_from(">I", node, 0)[0]
+
+    def leaf_records(self):
+        """Yield (image offset of record data, parent ID, name, record).
+
+        record runs from the record data to the end of its catalog node.
+        """
+        for node_offset, node in self.leaf_nodes():
+            node_size = len(node)
             for index in range(struct.unpack_from(">H", node, 10)[0]):
                 record = struct.unpack_from(">H", node, node_size - 2 * (index + 1))[0]
                 key_length = node[record]
@@ -249,12 +296,16 @@ class _HfsVolume:
                 name = node[record + 7:record + 7 + node[record + 6]]
                 data = record + 1 + key_length
                 data += data & 1
-                if node[data] == HFS_FILE_RECORD:
-                    body = node[data:data + HFS_FILE_RECORD_SIZE]
-                    if len(body) != HFS_FILE_RECORD_SIZE:
-                        raise FormatError(f"{self.path}: truncated catalog file record")
-                    yield node_offset + data, parent_id, _mac_name(name), body
-            node_number = struct.unpack_from(">I", node, 0)[0]
+                yield node_offset + data, parent_id, _mac_name(name), node[data:]
+
+    def file_records(self):
+        """Yield (image offset of record data, parent ID, name, record)."""
+        for offset, parent_id, name, record in self.leaf_records():
+            if record[:1] == bytes([HFS_FILE_RECORD]):
+                body = record[:HFS_FILE_RECORD_SIZE]
+                if len(body) != HFS_FILE_RECORD_SIZE:
+                    raise FormatError(f"{self.path}: truncated catalog file record")
+                yield offset, parent_id, name, body
 
     def find(self, name):
         try:
@@ -298,6 +349,196 @@ def _set_hfs_flags(path, mask, name=None):
         stream.write(struct.pack(">H", flags))
 
 
+def _find_alternate_mdbs(path, stream, mdb):
+    """Image offsets of the copies of the master directory block mdb.
+
+    The copy is the volume's second-to-last sector. Its offset is not
+    recorded. libhfs (Rez) puts it 1 KB before the end of the image, near the
+    end of the allocation area. genisoimage puts it one allocation block
+    before the 300 KB of padding that ends its images, and its allocation
+    area can run megabytes past the end of the file. Look in both places for
+    a sector that matches mdb's allocation layout and volume name;
+    genisoimage's copy is the one it formatted the volume with, so its counts
+    and IDs are stale.
+    """
+    size = os.fstat(stream.fileno()).st_size
+    block_count, block_size = struct.unpack_from(">HI", mdb, 0x12)
+    allocation_end = struct.unpack_from(">H", mdb, 0x1C)[0] * 512 + block_count * block_size
+    window = 8 * block_size + 1024
+    first = max(HFS_MDB_OFFSET + 512, (allocation_end - window) // 512 * 512)
+    last = min(size - 512, allocation_end + window)
+    tail = max(HFS_MDB_OFFSET + 512, (size - HFS_ALTERNATE_MDB_TAIL) // 512 * 512)
+    candidates = sorted(set(range(first, last + 1, 512)) | set(range(tail, size - 511, 512)))
+    copies = []
+    for offset in candidates:
+        stream.seek(offset)
+        blob = stream.read(0x40)
+        if (blob[:2] == b"BD" and blob[0x12:0x1E] == mdb[0x12:0x1E]
+                and blob[0x24:0x40] == mdb[0x24:0x40]):
+            copies.append(offset)
+    return copies
+
+
+def _fork_slack(volume):
+    """Yield (image offset, length) of each fork's bytes past its logical end.
+
+    A fork owns whole allocation blocks. With blocks larger than its 2 KB
+    ISO sectors, genisoimage leaves uninitialized memory between a fork's
+    logical end and the end of its last block. No ISO extent lies there: the
+    next file's starts at the next allocation block.
+    """
+    for _, _, name, record in volume.file_records():
+        for logical_at, physical_at, extents_at in ((26, 30, 74), (36, 40, 86)):
+            logical = struct.unpack_from(">I", record, logical_at)[0]
+            physical = struct.unpack_from(">I", record, physical_at)[0]
+            position = 0
+            for start, length in volume._chunks(
+                    record[extents_at:extents_at + 12], physical, f"{name!r} fork"):
+                low = max(position, logical)
+                if low < position + length:
+                    yield start + low - position, position + length - low
+                position += length
+
+
+def _set_hfs_dates(path, mac_time):
+    """Write mac_time over every nonzero date of the volume and its catalog.
+
+    The dates are in the master directory block and its copy, and in each
+    folder and file record. A zero date (never backed up) stays zero. The
+    free space of each catalog leaf node is zeroed, where genisoimage leaves
+    stale records, dates included, and so is each fork's slack (see
+    _fork_slack).
+    """
+    def overwrite(stream, base, blob, offsets):
+        for offset in offsets:
+            if struct.unpack_from(">I", blob, offset)[0]:
+                stream.seek(base + offset)
+                stream.write(struct.pack(">I", mac_time))
+
+    with open(path, "r+b") as stream:
+        volume = _HfsVolume(path, stream)
+        try:
+            records = [(offset, record) for offset, _, _, record in volume.leaf_records()
+                       if record[:1] and record[0] in HFS_RECORD_DATES]
+            free_space = []
+            for node_offset, node in volume.leaf_nodes():
+                # The offset after the last record's is where free space starts.
+                count = struct.unpack_from(">H", node, 10)[0]
+                table = len(node) - 2 * (count + 1)
+                start = struct.unpack_from(">H", node, table)[0]
+                if not 14 <= start <= table:
+                    raise FormatError(f"{path}: malformed catalog leaf node")
+                free_space.append((node_offset + start, table - start))
+            free_space += list(_fork_slack(volume))
+        except (IndexError, struct.error):
+            raise FormatError(f"{path}: malformed catalog leaf node") from None
+        for offset, record in records:
+            dates = HFS_RECORD_DATES[record[0]]
+            if len(record) < dates[-1] + 4:
+                raise FormatError(f"{path}: truncated catalog record")
+            overwrite(stream, offset, record, dates)
+        for offset, length in free_space:
+            stream.seek(offset)
+            stream.write(bytes(length))
+        mdb = volume._read(HFS_MDB_OFFSET, 0x44, "master directory block")
+        for offset in [HFS_MDB_OFFSET] + _find_alternate_mdbs(path, stream, mdb):
+            overwrite(stream, offset, volume._read(offset, 0x44, "master directory block"),
+                      HFS_MDB_DATES)
+        _set_iso9660_dates(stream, mac_time)
+
+
+def _iso9660_record_dates(stream, root_record, image_size):
+    """The offsets of the recording dates of every directory record reachable
+    from root_record (the root directory record's offset in a volume
+    descriptor), the root record included."""
+    offsets = [root_record + 18]
+    stream.seek(root_record)
+    record = stream.read(34)
+    pending = [(struct.unpack_from("<I", record, 2)[0], struct.unpack_from("<I", record, 10)[0])]
+    seen = set()
+    while pending:
+        extent, size = pending.pop()
+        if extent in seen:
+            continue
+        seen.add(extent)
+        start = extent * ISO9660_SECTOR
+        if start + size > image_size:
+            raise FormatError("ISO 9660 directory extent past the end of the image")
+        stream.seek(start)
+        data = stream.read(size)
+        position = 0
+        while position < size:
+            length = data[position]
+            if length == 0:  # records do not cross sectors: skip to the next
+                position = (position // ISO9660_SECTOR + 1) * ISO9660_SECTOR
+                continue
+            if length < 34 or position + length > size:
+                raise FormatError("malformed ISO 9660 directory record")
+            offsets.append(start + position + 18)
+            name_length = data[position + 32]
+            name = data[position + 33:position + 33 + name_length]
+            if data[position + 25] & 2 and name not in (b"\0", b"\1"):
+                pending.append((struct.unpack_from("<I", data, position + 2)[0],
+                                struct.unpack_from("<I", data, position + 10)[0]))
+            position += length
+    return offsets
+
+
+def _is_junction(entry):
+    """Whether entry is a Windows junction, to be neither stamped nor walked.
+
+    os.path.isjunction is Python 3.12's; before it, any reparse point (a
+    junction or a link) counts, from the attributes Windows' lstat reports.
+    Elsewhere there are no junctions."""
+    isjunction = getattr(os.path, "isjunction", None)
+    if isjunction is not None:
+        return isjunction(entry)
+    try:
+        attributes = getattr(os.lstat(entry), "st_file_attributes", 0)
+    except OSError:
+        return False
+    return bool(attributes & 0x400)  # FILE_ATTRIBUTE_REPARSE_POINT
+
+
+def _set_iso9660_dates(stream, mac_time):
+    """Write mac_time over the dates of the ISO 9660 side of an HFS/ISO hybrid.
+
+    genisoimage stamps the creation, modification and effective dates of each
+    volume descriptor with the time it runs. Directory records mostly carry
+    the files' modification times, which set-dates on the staged folder fixes,
+    but not all: on CI's Ubuntu runner a ".." record carried the time
+    genisoimage ran. So every directory record's recording date is written
+    too, found by walking each descriptor's tree. An unset descriptor date
+    (all "0" digits) stays unset.
+    """
+    unix_time = mac_time - MAC_EPOCH_OFFSET
+    moment = datetime.datetime.fromtimestamp(unix_time, datetime.timezone.utc)
+    stamp = moment.strftime("%Y%m%d%H%M%S00").encode("ascii") + b"\0"
+    record_date = bytes([moment.year - 1900, moment.month, moment.day,
+                         moment.hour, moment.minute, moment.second, 0])
+    stream.seek(0, os.SEEK_END)
+    image_size = stream.tell()
+    writes = []
+    for sector in range(16, 16 + 64):
+        stream.seek(sector * ISO9660_SECTOR)
+        descriptor = stream.read(ISO9660_SECTOR)
+        if len(descriptor) < ISO9660_SECTOR or descriptor[1:6] != b"CD001":
+            break
+        if descriptor[0] == 255:
+            break
+        if descriptor[0] not in (1, 2):
+            continue
+        for offset in ISO9660_DESCRIPTOR_DATES:
+            if descriptor[offset:offset + 16] != b"0" * 16:
+                writes.append((sector * ISO9660_SECTOR + offset, stamp))
+        for offset in _iso9660_record_dates(stream, sector * ISO9660_SECTOR + 156, image_size):
+            writes.append((offset, record_date))
+    # Found first, written after, so a malformed tree changes nothing.
+    for offset, value in writes:
+        stream.seek(offset)
+        stream.write(value)
+
+
 # Containers -----------------------------------------------------------------
 
 def container_kind(path):
@@ -330,6 +571,52 @@ def set_flags(path, mask, hfs_name=None):
         _set_appledouble_flags(path, mask)
     else:
         _set_hfs_flags(path, mask, hfs_name)
+
+
+def set_dates(path, mac_time):
+    """Write mac_time (seconds since 1904, UTC) over a container's dates.
+
+    For a directory, make it the modification time of everything in it.
+    """
+    if os.path.isdir(path):
+        times = (mac_time - MAC_EPOCH_OFFSET,) * 2
+        # Native Windows Python cannot set a link's own time: skip links there.
+        # A Windows junction is no link to os.path.islink, and os.walk before
+        # Python 3.12 descends into one: skip junctions and do not walk them,
+        # so nothing outside the tree is touched.
+        own_link_times = os.utime in os.supports_follow_symlinks
+        is_junction = _is_junction
+        for root, directories, files in os.walk(path):
+            directories[:] = [name for name in directories
+                              if not is_junction(os.path.join(root, name))]
+            for name in directories + files:
+                entry = os.path.join(root, name)
+                if own_link_times:
+                    os.utime(entry, times, follow_symlinks=False)
+                elif not os.path.islink(entry):
+                    os.utime(entry, times)
+        os.utime(path, times)
+        return
+    kind = container_kind(path)
+    if kind == "macbinary":
+        _set_macbinary_dates(path, mac_time)
+    elif kind == "hfs":
+        _set_hfs_dates(path, mac_time)
+    # Rez's AppleDouble pair has no File Dates Info entry.
+
+
+def source_date_epoch():
+    """SOURCE_DATE_EPOCH as a Mac date, or None when it is unset or empty."""
+    value = os.environ.get("SOURCE_DATE_EPOCH", "")
+    if not value:
+        return None
+    try:
+        mac_time = int(value) + MAC_EPOCH_OFFSET
+    except ValueError:
+        raise FormatError(f"SOURCE_DATE_EPOCH={value!r} is not an integer") from None
+    if not 0 <= mac_time <= 0xFFFFFFFF:
+        raise FormatError(f"SOURCE_DATE_EPOCH={value} is outside the Mac date range")
+    return mac_time
 
 
 def finder_info(mac_file):
@@ -505,6 +792,11 @@ def main(argv=None):
     export.add_argument("output")
     info = commands.add_parser("finder-info", help="print an app's Finder info as hex")
     info.add_argument("app")
+    dates = commands.add_parser(
+        "set-dates", help="write SOURCE_DATE_EPOCH over the dates of MacBinary "
+        "files and HFS images, or make it the modification time of everything "
+        "in a directory; does nothing when SOURCE_DATE_EPOCH is unset")
+    dates.add_argument("paths", nargs="+", metavar="PATH")
     args = parser.parse_args(argv)
 
     try:
@@ -515,6 +807,12 @@ def main(argv=None):
             return 0
         if args.command == "finder-info":
             print(finder_info(load(args.app)).hex().upper())
+            return 0
+        if args.command == "set-dates":
+            mac_time = source_date_epoch()
+            if mac_time is not None:
+                for path in args.paths:
+                    set_dates(path, mac_time)
             return 0
     except (OSError, FormatError) as error:
         print(f"Error: {error}", file=sys.stderr)
@@ -529,15 +827,26 @@ def main(argv=None):
             print(f"Classic application check FAILED: {error}", file=sys.stderr)
             return 1
     required = tuple(filter(None, args.require.split(",")))
+    problems = []
     if args.command == "finalize":
+        try:
+            mac_time = source_date_epoch()
+        except FormatError as error:
+            mac_time = None
+            problems.append(str(error))
         for path in args.apps:
             try:
                 if "BNDL" in parse_resource_fork(load(path, args.hfs_name).resource_fork):
                     set_flags(path, K_HAS_BUNDLE, args.hfs_name)
             except (OSError, FormatError):
                 pass  # The verification below reports it with context.
-    problems = _verify_paths(args.apps, pef, args.type, args.creator,
-                             required, args.hfs_name)
+            if mac_time is not None:
+                try:
+                    set_dates(path, mac_time)
+                except (OSError, FormatError) as error:
+                    problems.append(f"{path}: cannot set dates: {error}")
+    problems += _verify_paths(args.apps, pef, args.type, args.creator,
+                              required, args.hfs_name)
     for problem in problems:
         print(f"Classic application check FAILED: {problem}", file=sys.stderr)
     if problems and args.command == "finalize":
