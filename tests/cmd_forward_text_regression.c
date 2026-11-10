@@ -77,6 +77,23 @@ int main( void ) {
 	Check( !strcmp( Execute( longCommand, 0 ), expected ), "long forward keeps the reliable command length" );
 	Check( !strcmp( Execute( longCommand, 1 ), expected ), "long forward after the image is freed" );
 
+	/* Cmd_Args joins the arguments into MAX_STRING_CHARS, but a tokenized
+	 * line can hold up to BIG_INFO_STRING (CVE-2019-1010043 in Quake3e) */
+	{
+		char	line[BIG_INFO_STRING];
+		int		i;
+
+		Q_strncpyz( line, "cmd", sizeof( line ) );
+		for ( i = 0 ; i < 1000 ; i++ ) {
+			Q_strcat( line, sizeof( line ), " abcdef" );
+		}
+		Cmd_TokenizeString( line );
+		Check( Cmd_Argc() == 1001, "the long line tokenizes" );
+		Check( strlen( Cmd_Args() ) == MAX_STRING_CHARS - 1, "Cmd_Args stops at its buffer" );
+		Check( !strncmp( Cmd_Args(), "abcdef abcdef ", 14 ), "and keeps what fits" );
+		Check( strlen( Cmd_ArgsFrom( 1 ) ) == strlen( line ) - 4, "Cmd_ArgsFrom keeps the whole line" );
+	}
+
 	puts( "Cmd forward text regression passed (issue #35)" );
 	return 0;
 }
