@@ -97,6 +97,7 @@ case "$1" in
     *ndif_image.py) { head -c 128 /dev/zero; cat "$2"; } > "$3" && exit 0 ;;
     *pak_identity.py)
         [ "$2" = verify ] || exit 1
+        ls "$4" | sed "s|^|$4/|" >> "$root/logs/verified.log"
         if grep -l -x -F bad "$4"/pak*.pk3 2> /dev/null | grep . > /dev/null; then
             echo "pak_identity.py: $4: not id's retail $3 paks" >&2
             exit 1
@@ -163,14 +164,17 @@ make_build_root() {
 }
 
 # make_game_data ROOT: the retail data package mode looks for, one copy of
-# each game's pak0 and pak1 under ROOT/gamedata. pak1 is present so no update
-# is downloaded. Change this (and only this) if pak selection changes.
+# each game's paks under ROOT/gamedata: baseq3 pak0-pak8 and missionpack
+# pak0-pak3, so the point release is there and nothing is downloaded.
+# Change this (and only this) if pak selection changes.
 make_game_data() {
     local root="$1" pak
     mkdir -p "$root/gamedata/baseq3" "$root/gamedata/missionpack"
-    for pak in pak0 pak1; do
-        echo "base $pak" > "$root/gamedata/baseq3/$pak.pk3"
-        echo "missionpack $pak" > "$root/gamedata/missionpack/$pak.pk3"
+    for pak in 0 1 2 3 4 5 6 7 8; do
+        echo "base pak$pak" > "$root/gamedata/baseq3/pak$pak.pk3"
+    done
+    for pak in 0 1 2 3; do
+        echo "missionpack pak$pak" > "$root/gamedata/missionpack/pak$pak.pk3"
     done
 }
 
@@ -250,8 +254,10 @@ expect_targets() {
             problems="$problems; no install image was written"
         [ -s "$root/release_mac/Quake3.bin" ] && [ -s "$root/release_mac/Quake3.manifest.txt" ] ||
             problems="$problems; the bare Quake3 application was not copied to release_mac"
-        grep -q -F "pak_identity.py verify baseq3 " "$logs/python.log" 2> /dev/null ||
-            problems="$problems; the baseq3 paks were not checked (#22)"
+        grep -q -x -F "python pak_identity.py verify baseq3 release_mac/content/Quake 3 Arena/baseq3" \
+            "$logs/python.log" 2> /dev/null &&
+            grep -q -F "baseq3/pak8.pk3" "$logs/verified.log" 2> /dev/null ||
+            problems="$problems; the staged baseq3 paks were not checked (#22)"
         if [ "$ta" = ON ]; then
             grep -q -F "pak_identity.py verify missionpack " "$logs/python.log" 2> /dev/null ||
                 problems="$problems; the missionpack paks were not checked (#22)"
@@ -397,9 +403,10 @@ run_cases() {
     make_build_root "$root"
     mkdir -p "$root/gamedata-demo/baseq3" "$Q3_TEST_WORK/alt-$script/baseq3"
     echo "other pak0" > "$root/gamedata-demo/baseq3/pak0.pk3"
-    for pak in pak0 pak1; do
-        echo "alt base $pak" > "$Q3_TEST_WORK/alt-$script/baseq3/$pak.pk3"
+    for pak in 0 1 2 3 4 5 6 7 8; do
+        echo "alt base pak$pak" > "$Q3_TEST_WORK/alt-$script/baseq3/pak$pak.pk3"
     done
+    ln -sfn "$Q3_TEST_WORK/alt-$script" "$Q3_TEST_WORK/link-$script"
     run_build "$script" "$root" package
     expect_failure "$label package refuses two candidate retail installs" "more than one"
     run_build "$script" "$root" package "--data=../alt-$script"
@@ -409,13 +416,31 @@ run_cases() {
     else
         pass "$label package --data=DIR staged the paks from DIR"
     fi
-    run_build "$script" "$root" package "--data=$Q3_TEST_WORK/missing-$script"
-    if [ "$Q3_STATUS" -ne 0 ] && [ ! -e "$root/logs/cmake.log" ] &&
-       grep -q -F -- "--data directory" "$Q3_OUT"; then
-        pass "$label rejects a missing --data directory before CMake"
-    else
-        fail "$label rejects a missing --data directory before CMake" "exit status $Q3_STATUS"
-    fi
+    run_build "$script" "$root" package "--data=$Q3_TEST_WORK/link-$script"
+    expect_targets "$label package --data=SYMLINK packages the install it points to" "$root" OFF 1
+    for missing in "$Q3_TEST_WORK/missing-$script" ""; do
+        run_build "$script" "$root" package "--data=$missing"
+        if [ "$Q3_STATUS" -ne 0 ] && [ ! -e "$root/logs/cmake.log" ] &&
+           grep -q -F -- "--data directory" "$Q3_OUT"; then
+            pass "$label rejects --data='${missing:+missing}' before CMake"
+        else
+            fail "$label rejects --data='${missing:+missing}' before CMake" "exit status $Q3_STATUS"
+        fi
+    done
+
+    # An install updated only to an earlier point release (no pak7, pak8)
+    # tries the download, which the stubs refuse.
+    make_build_root "$root"
+    rm -f "$root/gamedata/baseq3/pak7.pk3" "$root/gamedata/baseq3/pak8.pk3"
+    run_build "$script" "$root" package
+    expect_failure "$label package downloads the point release for an install without pak7 and pak8" \
+        "could not be downloaded"
+    [ "$Q3_DOWNLOADED" -eq 1 ] || fail "$label package tries the download without pak7 and pak8" "no download"
+    make_build_root "$root"
+    rm -f "$root/gamedata/missionpack/pak3.pk3"
+    run_build "$script" "$root" package --team-arena
+    expect_failure "$label package --team-arena downloads the point release without missionpack pak3" \
+        "could not be downloaded"
 
     # Without the point release paks: --offline stops; online, the download
     # is tried (the stubs refuse it) and its failure stops packaging too.

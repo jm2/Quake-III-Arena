@@ -85,6 +85,12 @@ def verify(game, directory):
     for name in sorted(os.listdir(directory)):
         lower = name.lower()
         if lower.startswith("pak") and lower.endswith(".pk3"):
+            if lower in found:
+                # pak1.pk3 and PAK1.PK3 on a case-sensitive volume: both
+                # would be packaged, and only one checked
+                problems.append(f"{os.path.join(directory, name)}: another pak has "
+                                f"the same name in a different case")
+                continue
             found[lower] = os.path.join(directory, name)
     for name in sorted(found):
         if name not in expected:

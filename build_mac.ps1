@@ -80,6 +80,9 @@ foreach ($Argument in $args) {
         }
         { $_ -like "--data=*" } {
             $DataArgument = $_.Substring(7)
+            if (-not $DataArgument) {
+                throw "--data directory '' does not exist."
+            }
             $DataBase = if ($Quake3CallerLocation) { $Quake3CallerLocation } else { (Get-Location).ProviderPath }
             if (-not [System.IO.Path]::IsPathRooted($DataArgument)) {
                 $DataArgument = Join-Path $DataBase $DataArgument
@@ -426,13 +429,17 @@ if ($PackageMode) {
                 Copy-Item -Destination $MissionPackDir -Force
         }
 
-        # Check for Updates (pak1-8)
+        # The 1.32 point release is baseq3 pak1-pak8 and missionpack
+        # pak1-pak3: download it if any is missing, as an install updated
+        # only to an earlier point release has some of them.
         $NeedUpdate = $false
-        if (-not (Test-Path "$BaseQ3Dir\pak1.pk3")) { $NeedUpdate = $true }
-        
-        if ($BuildTeamArena -and
-            -not (Test-Path "$MissionPackDir\pak1.pk3")) {
-            $NeedUpdate = $true
+        foreach ($Pak in 1..8) {
+            if (-not (Test-Path -LiteralPath (Join-Path $BaseQ3Dir "pak$Pak.pk3"))) { $NeedUpdate = $true }
+        }
+        if ($BuildTeamArena) {
+            foreach ($Pak in 1..3) {
+                if (-not (Test-Path -LiteralPath (Join-Path $MissionPackDir "pak$Pak.pk3"))) { $NeedUpdate = $true }
+            }
         }
 
         if ($NeedUpdate -and $OfflineMode) {

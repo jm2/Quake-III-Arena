@@ -303,7 +303,9 @@ needed Toast.
 
 Packaging refuses more than one candidate retail tree, pins the point release
 download by SHA-256 and checks every pak against id's retail checksums. Do not
-publish an artifact until the mounted image boots on Mac OS 9 hardware.
+publish an artifact until
+[#23](https://github.com/jm2/Quake-III-Arena/issues/23) is resolved and the
+mounted image boots on Mac OS 9 hardware.
 
 ## Startup parameters
 

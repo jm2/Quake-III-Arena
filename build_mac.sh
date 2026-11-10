@@ -63,8 +63,11 @@ for argument in "$@"; do
             BRINGUP_MODE=ON
             ;;
         --data=*)
-            # resolved now: the script changes directory below
-            if ! DATA_ROOT=$(cd -- "${argument#--data=}" 2> /dev/null && pwd); then
+            # Resolved now, as the script changes directory below: physically
+            # (find does not descend into a starting point that is a
+            # symlink) and ignoring CDPATH.
+            if [ -z "${argument#--data=}" ] ||
+               ! DATA_ROOT=$(CDPATH= cd -P -- "${argument#--data=}" 2> /dev/null && pwd -P); then
                 echo "Error: --data directory '${argument#--data=}' does not exist." >&2
                 exit 2
             fi
@@ -413,15 +416,17 @@ if [ "$PACKAGE_MODE" -eq 1 ]; then
                  -exec cp {} "$RELEASE_ROOT/content/Quake 3 Arena/missionpack/" \;
         fi
         
-        # Check for Updates
-        # Download if pak1 is missing in baseq3 OR if we have missionpack but missing its updates
+        # The 1.32 point release is baseq3 pak1-pak8 and missionpack
+        # pak1-pak3: download it if any is missing, as an install updated
+        # only to an earlier point release has some of them.
         NEED_UPDATE=0
-        if [ ! -f "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/pak1.pk3" ]; then
-            NEED_UPDATE=1
-        fi
-        if [ "$BUILD_TEAM_ARENA_ENABLED" -eq 1 ] &&
-           [ ! -f "$RELEASE_ROOT/content/Quake 3 Arena/missionpack/pak1.pk3" ]; then
-             NEED_UPDATE=1
+        for pak in 1 2 3 4 5 6 7 8; do
+            [ -f "$RELEASE_ROOT/content/Quake 3 Arena/baseq3/pak$pak.pk3" ] || NEED_UPDATE=1
+        done
+        if [ "$BUILD_TEAM_ARENA_ENABLED" -eq 1 ]; then
+            for pak in 1 2 3; do
+                [ -f "$RELEASE_ROOT/content/Quake 3 Arena/missionpack/pak$pak.pk3" ] || NEED_UPDATE=1
+            done
         fi
 
         if [ "$NEED_UPDATE" -eq 1 ] && [ "$OFFLINE_MODE" -eq 1 ]; then

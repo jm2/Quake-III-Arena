@@ -999,6 +999,19 @@ class PakIdentityTests(unittest.TestCase):
         self.check_verify([("pak0.pk3", [("f", b"zero")])], stock,
                           ["pak1.pk3: missing", "pak2.pk3: missing"])
 
+    def test_verify_refuses_paks_whose_names_differ_only_in_case(self):
+        stock = self.stock_for(b"zero", b"one")
+        # PAK1.PK3 sorts first, so it is the one checked (and refused for its
+        # checksum); pak1.pk3 is refused for the clash
+        self.check_verify([("pak0.pk3", [("f", b"zero")]), ("pak1.pk3", [("f", b"one")]),
+                           ("PAK1.PK3", [("f", b"edited")])],
+                          stock, ["pak1.pk3: another pak has the same name in a different case",
+                                  "PAK1.PK3: checksum"])
+        # the clash alone is refused too, even when both copies are good
+        self.check_verify([("pak0.pk3", [("f", b"zero")]), ("pak1.pk3", [("f", b"one")]),
+                           ("PAK1.PK3", [("f", b"one")])],
+                          stock, ["pak1.pk3: another pak has the same name in a different case"])
+
     def test_verify_ignores_files_that_are_not_paks(self):
         stock = self.stock_for(b"zero")
         self.check_verify([("pak0.pk3", [("f", b"zero")]), ("q3config.cfg", [("x", b"y")]),
