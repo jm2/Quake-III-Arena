@@ -8,6 +8,7 @@ $ErrorActionPreference = "Stop"
 # holds that location, as a failed run can leave build_mac pushed.
 if (-not $Quake3AtRepositoryRoot -and (Get-Location).ProviderPath -ne $PSScriptRoot) {
     $Quake3AtRepositoryRoot = $true
+    $Quake3CallerLocation = (Get-Location).ProviderPath	# for a relative --data
     Push-Location -LiteralPath $PSScriptRoot -StackName Quake3Caller
     try {
         & $PSCommandPath @args
@@ -19,7 +20,8 @@ if (-not $Quake3AtRepositoryRoot -and (Get-Location).ProviderPath -ne $PSScriptR
 }
 
 function Show-Usage {
-    Write-Host "Usage: .\build_mac.ps1 [package|--package] [--base-only|--team-arena] [--bringup] [-h|--help]"
+    Write-Host "Usage: .\build_mac.ps1 [package|--package] [--base-only|--team-arena] [--bringup]"
+    Write-Host "                       [--data=DIR] [--offline] [-h|--help]"
     Write-Host ""
     Write-Host "  (no args)            Configure, build, and validate the launchable Quake3"
     Write-Host "                       application: build_mac\Quake3.bin (MacBinary) and"
@@ -31,9 +33,17 @@ function Show-Usage {
     Write-Host "  --base-only          Build only Quake3 (the default)."
     Write-Host "  --team-arena         Build Quake3 and Quake3_TeamArena."
     Write-Host "  --bringup            Build at -O0 instead of the optimized default."
+    Write-Host "  --data=DIR           Package mode: look for the retail baseq3 (and"
+    Write-Host "                       missionpack) folders under DIR only. The default is"
+    Write-Host "                       the repository. Every pak must be one of id's retail"
+    Write-Host "                       paks (pak_identity.py), or packaging stops."
+    Write-Host "  --offline            Package mode: never download the 1.32 point release;"
+    Write-Host "                       its paks must already be beside the retail pak0.pk3."
 }
 
 $PackageMode = $false
+$DataRoot = (Get-Location).ProviderPath
+$OfflineMode = $false
 $TeamArenaMode = "OFF"
 $BringupMode = "OFF"
 $PackageModeSet = $false
@@ -66,6 +76,25 @@ foreach ($Argument in $args) {
         }
         "--bringup" {
             $BringupMode = "ON"
+            break
+        }
+        { $_ -like "--data=*" } {
+            $DataArgument = $_.Substring(7)
+            if (-not $DataArgument) {
+                throw "--data directory '' does not exist."
+            }
+            $DataBase = if ($Quake3CallerLocation) { $Quake3CallerLocation } else { (Get-Location).ProviderPath }
+            if (-not [System.IO.Path]::IsPathRooted($DataArgument)) {
+                $DataArgument = Join-Path $DataBase $DataArgument
+            }
+            if (-not (Test-Path -LiteralPath $DataArgument -PathType Container)) {
+                throw "--data directory '$($_.Substring(7))' does not exist."
+            }
+            $DataRoot = (Resolve-Path -LiteralPath $DataArgument).ProviderPath
+            break
+        }
+        "--offline" {
+            $OfflineMode = $true
             break
         }
         { $_ -in @("-h", "--help") } {
@@ -365,10 +394,12 @@ if ($PackageMode) {
     Write-Host "Checking for assets..."
     
     # Find pak0.pk3 inside a folder named exactly baseq3 (or missionpack),
-    # outside release_mac. Every pak beside it ships in the image, so more
-    # than one candidate is refused rather than taking whichever comes first.
+    # under the data root (--data, else the repository), outside release_mac.
+    # Every pak beside it ships in the image, so more than one candidate is
+    # refused rather than taking whichever comes first, and pak_identity.py
+    # checks each pak against id's retail checksums below (#22).
     function Find-RetailPak0([string]$GameDir) {
-        $Found = @(Get-ChildItem -Path . -Filter "pak0.pk3" -Recurse -File -ErrorAction SilentlyContinue |
+        $Found = @(Get-ChildItem -LiteralPath $DataRoot -Filter "pak0.pk3" -Recurse -File -ErrorAction SilentlyContinue |
             Where-Object { $_.Directory.Name -eq $GameDir -and
                            $_.LinkType -ne "SymbolicLink" -and
                            ($_.FullName -split '[\\/]') -notcontains "release_mac" })
@@ -398,15 +429,23 @@ if ($PackageMode) {
                 Copy-Item -Destination $MissionPackDir -Force
         }
 
-        # Check for Updates (pak1-8)
+        # The 1.32 point release is baseq3 pak1-pak8 and missionpack
+        # pak1-pak3: download it if any is missing, as an install updated
+        # only to an earlier point release has some of them.
         $NeedUpdate = $false
-        if (-not (Test-Path "$BaseQ3Dir\pak1.pk3")) { $NeedUpdate = $true }
-        
-        if ($BuildTeamArena -and
-            -not (Test-Path "$MissionPackDir\pak1.pk3")) {
-            $NeedUpdate = $true
+        foreach ($Pak in 1..8) {
+            if (-not (Test-Path -LiteralPath (Join-Path $BaseQ3Dir "pak$Pak.pk3"))) { $NeedUpdate = $true }
+        }
+        if ($BuildTeamArena) {
+            foreach ($Pak in 1..3) {
+                if (-not (Test-Path -LiteralPath (Join-Path $MissionPackDir "pak$Pak.pk3"))) { $NeedUpdate = $true }
+            }
         }
 
+        if ($NeedUpdate -and $OfflineMode) {
+            throw ("The 1.32 point release paks are not beside the retail pak0.pk3, " +
+                "and --offline forbids downloading them.")
+        }
         if ($NeedUpdate) {
             Write-Host "Downloading Updates (BaseQ3 / MissionPack)..." -ForegroundColor Yellow
             # The 1.32 point release paks, as ioquake3 hosts them. They go
@@ -448,8 +487,18 @@ if ($PackageMode) {
                 }
             }
             else {
-                Write-Host "Warning: Failed to download Updates." -ForegroundColor Yellow
+                throw ("The 1.32 point release could not be downloaded from $PrUrl. " +
+                    "Put its paks beside the retail pak0.pk3, or retry when online.")
             }
+        }
+
+        # Every pak in the image must be id's: a demo, a different release
+        # or an edited pak would fail on pure servers or not load (#22).
+        python pak_identity.py verify baseq3 $BaseQ3Dir
+        if ($LASTEXITCODE -ne 0) { throw "The baseq3 paks are not id's retail paks." }
+        if ($BuildTeamArena) {
+            python pak_identity.py verify missionpack $MissionPackDir
+            if ($LASTEXITCODE -ne 0) { throw "The missionpack paks are not id's retail paks." }
         }
     }
     else {
