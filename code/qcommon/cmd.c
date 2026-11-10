@@ -367,7 +367,9 @@ char	*Cmd_Args( void ) {
 	int		i;
 
 	// Cmd_TokenizeString takes up to BIG_INFO_STRING, more than this
-	// buffer: bound the copy, as Quake3e does (CVE-2019-1010043).
+	// buffer: the copy is bounded.  This is CVE-2019-1010043 in Quake3e,
+	// which enlarged its buffer to BIG_INFO_STRING instead; every caller
+	// here needs at most MAX_STRING_CHARS.
 	cmd_args[0] = 0;
 	for ( i = 1 ; i < cmd_argc ; i++ ) {
 		Q_strcat( cmd_args, sizeof( cmd_args ), cmd_argv[i] );
