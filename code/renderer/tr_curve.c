@@ -357,10 +357,10 @@ void R_FreeSurfaceGridMesh( srfGridMesh_t *grid ) {
 R_SubdividePatchToGrid
 =================
 */
-typedef struct {
+struct patchGridWorkspace_s {
 	drawVert_t ctrl[MAX_GRID_SIZE][MAX_GRID_SIZE];
 	float errorTable[2][MAX_GRID_SIZE];
-} patchGridWorkspace_t;
+};
 
 static qboolean R_PatchFiniteVector( const float *values, int count ) {
 	int i;
@@ -555,15 +555,30 @@ static const char *R_RefinePatchGrid( int *widthOut, int *heightOut,
 	return NULL;
 }
 
+/* The map preflight reuses one workspace for all of its patches. The
+ * refinement writes every control and error entry it later reads, as the
+ * generator's uninitialized workspace already requires. */
+patchGridWorkspace_t *R_AllocPatchGridWorkspace( void ) {
+	return malloc(sizeof(patchGridWorkspace_t));
+}
+
+void R_FreePatchGridWorkspace( patchGridWorkspace_t *workspace ) {
+	free(workspace);
+}
+
 /* No renderer/hunk state or mesh allocations are published during validation. */
+const char *R_ValidatePatchGridWorkspace( patchGridWorkspace_t *workspace, int width, int height, const drawVert_t *points ) {
+	return R_RefinePatchGrid(&width,&height,workspace->ctrl,workspace->errorTable,points);
+}
+
 const char *R_ValidatePatchGrid( int width, int height, const drawVert_t *points ) {
 	patchGridWorkspace_t *workspace;
 	const char *error;
 
-	workspace = malloc(sizeof(*workspace));
+	workspace = R_AllocPatchGridWorkspace();
 	if ( !workspace ) return "renderer patch preflight workspace allocation failed";
-	error = R_RefinePatchGrid(&width,&height,workspace->ctrl,workspace->errorTable,points);
-	free(workspace);
+	error = R_ValidatePatchGridWorkspace(workspace,width,height,points);
+	R_FreePatchGridWorkspace(workspace);
 	return error;
 }
 

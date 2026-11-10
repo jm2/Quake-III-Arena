@@ -93,8 +93,16 @@ static void AreaSuccess(void) {
     Check(cache->reachabilities==(unsigned char *)cache+sizeof(*cache)+4&&cache->reachabilities[1]==0,"native byte-index offset retained");
     prior=requests;Check(AAS_GetAreaRoutingCache(1,1,-1)==cache&&requests==prior,"warm native cache does not allocate");Cleanup();
 }
-static void AreaFailure(int existing,int position) {
-    aas_routingcache_t *previous=NULL;unsigned char before[512];int priorSize,priorOwners;AreaWorld();
+/* Up to 128 incoming links the update's start times stay on the stack (#251),
+ * so only a busier goal area has a workspace request that can fail. */
+static aas_reversedlink_t busyLinks[129];
+static void BusyGoal(void) {
+    int i;
+    for(i=0;i<129;i++){busyLinks[i].areanum=2;busyLinks[i].linknum=1;busyLinks[i].next=i<128?busyLinks+i+1:NULL;}
+    reversed[1].numlinks=129;reversed[1].first=busyLinks;
+}
+static void AreaFailure(int existing,int position,int busy) {
+    aas_routingcache_t *previous=NULL;unsigned char before[512];int priorSize,priorOwners;AreaWorld();if(busy)BusyGoal();
     if(existing){previous=AAS_GetAreaRoutingCache(1,1,-1);Check(previous!=NULL,"initial native cache succeeds");memcpy(before,previous,previous->size);}
     priorSize=routingcachesize;priorOwners=Outstanding();failAt=requests+position;
     Check(AAS_GetAreaRoutingCache(1,1,existing?-2:-1)==NULL,"failed native area update must not publish a blank cache");
@@ -111,7 +119,7 @@ static void PortalFailure(int position) {
     failAt=0;Check(AAS_GetPortalRoutingCache(1,1,-1)!=NULL,"nested nullable portal failure can retry");Cleanup();
 }
 static void PortalQueuedFailure(void) {
-    aas_routingcache_t *cache;int i;PortalWorld();failAt=4;
+    aas_routingcache_t *cache;int i;PortalWorld();failAt=3; /* portal cache, first side cache, then the second side cache fails */
     Check(AAS_GetPortalRoutingCache(1,1,-1)==NULL,"later nested failure aborts unpublished portal cache");
     Check(!portalCaches[1]&&areaSlots[1][0]&&Outstanding()==1&&routingcachesize==areaSlots[1][0]->size,"valid nested cache stays physically owned and failed outer cache releases");
     Check(aasworld.oldestcache==areaSlots[1][0]&&aasworld.newestcache==areaSlots[1][0],"valid nested cache stays in native LRU after abort");
@@ -129,7 +137,7 @@ static void RouteFailures(void) {
     Check(!AAS_AreaRouteToGoalArea(4,origin,1,-1,&time,&reach)&&!areaSlots[2][1],"mixed query handles nullable side-cache provider");Cleanup();
 }
 int main(int argc,char **argv) {
-    if(argc>1){int proof=atoi(argv[1]);if(proof==1)AreaFailure(0,2);else if(proof==2)AreaFailure(0,1);else PortalQueuedFailure();}
-    else {int existing,position;AreaSuccess();for(existing=0;existing<2;existing++)for(position=1;position<3;position++)AreaFailure(existing,position);for(position=1;position<4;position++)PortalFailure(position);PortalQueuedFailure();RouteFailures();puts("Native AAS nullable cache/workspace propagation, physical ownership and retry passed (issue #47)");}
+    if(argc>1){int proof=atoi(argv[1]);if(proof==1)AreaFailure(0,2,1);else if(proof==2)AreaFailure(0,1,0);else PortalQueuedFailure();}
+    else {int existing,position;AreaSuccess();for(existing=0;existing<2;existing++){AreaFailure(existing,1,0);for(position=1;position<3;position++)AreaFailure(existing,position,1);}for(position=1;position<3;position++)PortalFailure(position);PortalQueuedFailure();RouteFailures();puts("Native AAS nullable cache/workspace propagation, physical ownership and retry passed (issue #47)");}
     return 0;
 }

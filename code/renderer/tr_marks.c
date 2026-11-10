@@ -173,7 +173,7 @@ static void R_BoxLeafSurfaces(mnode_t *node,vec3_t mins,vec3_t maxs,surfaceType_
 
 /* Validated decision-node parents allow constant-space front-first traversal.
  * Shared leaves are processed through their current owner, not leaf parents. */
-void R_BoxSurfaces_r(mnode_t *node,vec3_t mins,vec3_t maxs,surfaceType_t **list,int listsize,int *listlength,vec3_t dir) {
+static void R_BoxSurfacesParents(mnode_t *node,vec3_t mins,vec3_t maxs,surfaceType_t **list,int listsize,int *listlength,vec3_t dir) {
 	mnode_t *root=node,*child,*completed;
 	int side=0,s;
 	qboolean entering=qtrue;
@@ -207,6 +207,36 @@ void R_BoxSurfaces_r(mnode_t *node,vec3_t mins,vec3_t maxs,surfaceType_t **list,
 			R_BoxLeafSurfaces(child,mins,maxs,list,listsize,listlength,dir);
 			entering=qfalse;
 		}
+	}
+}
+
+/* As CM_BoxLeafnums_r: crossed nodes keep their back child on a fixed stack,
+ * so each plane side is computed once, and a front subtree met with the
+ * stack full is walked through the parents, so there is no depth limit. */
+#define R_BOX_PENDING 128
+
+void R_BoxSurfaces_r(mnode_t *node,vec3_t mins,vec3_t maxs,surfaceType_t **list,int listsize,int *listlength,vec3_t dir) {
+	mnode_t *pending[R_BOX_PENDING];
+	int count=0,s;
+
+	for ( ;; ) {
+		while ( node->contents==-1 ) {
+			s=BoxOnPlaneSide(mins,maxs,node->plane);
+			if ( s==1 ) {
+				node=node->children[0];
+			} else if ( s==2 ) {
+				node=node->children[1];
+			} else if ( count<R_BOX_PENDING ) {
+				pending[count++]=node->children[1];
+				node=node->children[0];
+			} else {
+				R_BoxSurfacesParents(node->children[0],mins,maxs,list,listsize,listlength,dir);
+				node=node->children[1];
+			}
+		}
+		R_BoxLeafSurfaces(node,mins,maxs,list,listsize,listlength,dir);
+		if ( !count ) return;
+		node=pending[--count];
 	}
 }
 

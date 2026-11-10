@@ -11,5 +11,6 @@ for Q3_TEST_MODE in normal fast; do
         -fsanitize=address,undefined "${Q3_TEST_FLAGS[@]}" \
         "-DQ3_AAS_ROUTE_SOURCE=\"$Q3_TEST_ROOT/code/botlib/be_aas_route.c\"" \
         "$Q3_TEST_ROOT/tests/aas_routing_workspace_regression.c" -Wl,--gc-sections -lm -o "$Q3_TEST_BINARY"
-    ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 "$Q3_TEST_BINARY"
+    # Frames on the real stack, so the start times kept there must be cleared (#251).
+    ASAN_OPTIONS=detect_stack_use_after_return=0:detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 "$Q3_TEST_BINARY"
 done

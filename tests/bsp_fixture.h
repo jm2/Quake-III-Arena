@@ -69,6 +69,17 @@ void CM_FloodAreaConnections(void) { floods++; }
 #ifndef BSP_FIXTURE_NATIVE_PATCH_COLLISION
 const char *CM_ValidatePatchCollide(int width,int height,vec3_t *points) { (void)width;(void)height;(void)points;return NULL; }
 const char *CM_ValidatePatchCollideAllocations(int width,int height,vec3_t *points,int sizes[3]) { memset(sizes,0,3*sizeof(int));return CM_ValidatePatchCollide(width,height,points); }
+struct cPatchWorkspace_s { int unused; };
+static cPatchWorkspace_t fixturePatchWorkspace;
+cPatchWorkspace_t *CM_AllocPatchCollideWorkspace(void) { return &fixturePatchWorkspace; }
+void CM_FreePatchCollideWorkspace(cPatchWorkspace_t *workspace) { Check(workspace==&fixturePatchWorkspace,"fixture patch workspace release"); }
+/* Nothing is kept, so the loader still calls the generator stub below. */
+const char *CM_ValidatePatchCollideWorkspace(cPatchWorkspace_t *workspace,int width,int height,vec3_t *points,int sizes[3],cPatchCollideResult_t **keep) {
+	Check(workspace==&fixturePatchWorkspace,"fixture patch workspace");if(keep)*keep=NULL;return CM_ValidatePatchCollideAllocations(width,height,points,sizes);
+}
+struct patchCollide_s *CM_PublishPatchCollide(cPatchCollideResult_t *result) { (void)result;Check(0,"fixture keeps no patch builds");return NULL; }
+void CM_FreePatchCollideResult(cPatchCollideResult_t *result) { Check(!result,"fixture keeps no patch builds"); }
+int CM_PatchCollideResultSize(const cPatchCollideResult_t *result) { Check(!result,"fixture keeps no patch builds"); return 0; }
 struct patchCollide_s *CM_GeneratePatchCollide(int width,int height,vec3_t *points) {
 	Check(expectedPatch && width==3 && height==3 && points[0][0]==-1 && points[8][0]==1,"validated patch callback");patchCalls++;return (struct patchCollide_s *)&patchToken;
 }
